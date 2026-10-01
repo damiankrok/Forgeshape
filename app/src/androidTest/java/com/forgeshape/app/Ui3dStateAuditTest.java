@@ -145,7 +145,7 @@ public final class Ui3dStateAuditTest {
         record("UI3D-03", "sketch_ready", "S07 tool_rail_rectangle", MUST_HIDE,
                 shown(R.id.tool_rail_rectangle));
         record("UI3D-03", "sketch_ready", "S35 cad_extrude_flip", MUST_SHOW,
-                shown(R.id.cad_extrude_flip));
+                shown(R.id.cad_extrude_flip_glyph));
         record("UI3D-03", "sketch_ready", "S36 cad_extrude_second_value", MUST_HIDE,
                 shown(R.id.cad_extrude_second_value));
         record("UI3D-03", "sketch_ready", "S38 cad_canvas_edit_sketch", MUST_HIDE,
@@ -157,7 +157,7 @@ public final class Ui3dStateAuditTest {
         // --- One Side -> Symmetric -> Two Sides ---------------------------
         press(R.id.cad_extrude_extent_symmetric);
         record("UI3D-03", "extent_symmetric", "S35 cad_extrude_flip", MUST_HIDE,
-                shown(R.id.cad_extrude_flip));
+                shown(R.id.cad_extrude_flip_glyph));
         record("UI3D-03", "extent_symmetric", "S36 cad_extrude_second_value", MUST_HIDE,
                 shown(R.id.cad_extrude_second_value));
         Ui3dAuditRecorder.capture("ui3d03_05_symmetric");
@@ -166,14 +166,14 @@ public final class Ui3dStateAuditTest {
         record("UI3D-03", "extent_two_sides", "S36 cad_extrude_second_value", MUST_SHOW,
                 shown(R.id.cad_extrude_second_value));
         record("UI3D-03", "extent_two_sides", "S35 cad_extrude_flip", MUST_HIDE,
-                shown(R.id.cad_extrude_flip));
+                shown(R.id.cad_extrude_flip_glyph));
         Ui3dAuditRecorder.capture("ui3d03_06_two_sides");
 
         press(R.id.cad_extrude_extent_one_side);
         record("UI3D-03", "extent_back_to_one_side", "S36 cad_extrude_second_value", MUST_HIDE,
                 shown(R.id.cad_extrude_second_value));
         record("UI3D-03", "extent_back_to_one_side", "S35 cad_extrude_flip", MUST_SHOW,
-                shown(R.id.cad_extrude_flip));
+                shown(R.id.cad_extrude_flip_glyph));
 
         // --- Apply Extrude -> a committed body ----------------------------
         commitExtrude("0.4");
@@ -489,7 +489,7 @@ public final class Ui3dStateAuditTest {
         final double scaleNear = extrudeState()[NativeViewport.CAD_EXTRUDE_SCALE];
         Ui3dAuditRecorder.note("UI3D-08", "camera-attached scale far=" + scaleFar + " near="
                 + scaleNear + " (it must shrink as the camera pulls back and saturate in"
-                + " [0.80, 1.60])");
+                + " [0.40, 1.60])");
 
         // --- Symmetric ------------------------------------------------------
         press(R.id.cad_extrude_extent_symmetric);
@@ -920,83 +920,60 @@ public final class Ui3dStateAuditTest {
     }
 
     private void measureExtrudeCluster(String caseId, String action, String captureName) {
-        settleLayout();
-        final double[] tool = extrudeState();
-        if (tool[NativeViewport.CAD_EXTRUDE_ACTIVE] == 0.0
-                || tool[NativeViewport.CAD_EXTRUDE_ON_SCREEN] == 0.0) {
-            Ui3dAuditRecorder.spatialUnmeasured(caseId, action, "S35 cad_extrude cluster",
-                    "FEATURE_ANCHORED", "the manipulator is inactive or its anchor is off screen");
-            return;
-        }
-        final float expectX = (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X];
-        final float expectY = (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y];
-        final float[] measured = onWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View leaf = workspace.findViewById(R.id.cad_extrude_depth_value);
-            final View viewport = workspace.findViewById(R.id.viewport_surface);
-            if (leaf == null || !leaf.isShown() || viewport == null) {
-                return null;
-            }
-            final View placed = Ui3dAuditRecorder.placedAncestor(leaf,
-                    workspace.findViewById(R.id.cad_extrude_canvas));
-            // The HUD stands its VALUE on the anchor (`CAD-VERTICAL-SLICE-R1`),
-            // so the value's centre is what is measured; the row is clamped
-            // where the value's offset inside it puts it.
-            final float[] box = Ui3dAuditRecorder.centreOf(placed, viewport);
-            final float[] centre = Ui3dAuditRecorder.centreOf(leaf, viewport);
-            final boolean clamp = Ui3dAuditRecorder.wouldClamp(placed, viewport,
-                    expectX - (centre[0] - box[0]), expectY - (centre[1] - box[1]));
-            return new float[]{centre[0], centre[1], clamp ? 1f : 0f};
-        });
-        if (measured == null) {
-            Ui3dAuditRecorder.spatialUnmeasured(caseId, action, "S35 cad_extrude cluster",
-                    "FEATURE_ANCHORED", "the anchor projects but the cluster is not on screen");
-            return;
-        }
-        Ui3dAuditRecorder.spatial(caseId, action, "S35 cad_extrude cluster", "FEATURE_ANCHORED",
-                expectX, expectY, measured[0], measured[1], density, measured[2] != 0f,
-                "scale=" + tool[NativeViewport.CAD_EXTRUDE_SCALE]
-                        + " extent=" + tool[NativeViewport.CAD_EXTRUDE_EXTENT]);
-        if (captureName != null) {
-            Ui3dAuditRecorder.captureWithOverlay(captureName, expectX, expectY, measured[0],
-                    measured[1], viewportOrigin());
-        }
+        measureLeaderValue(caseId, action, captureName, false);
     }
 
     private void measureSecondCluster(String caseId, String action, String captureName) {
+        measureLeaderValue(caseId, action, captureName, true);
+    }
+
+    /**
+     * Records where an extrude value stands against where its leader puts it
+     * (`CAD-FOUNDATION-C1`): above the middle of the visible part of the
+     * dimension line native projects, never on the shaft it measures.
+     */
+    private void measureLeaderValue(String caseId, String action, String captureName,
+                                    boolean second) {
         settleLayout();
         final double[] tool = extrudeState();
+        final String surface = second ? "S36 cad_extrude_second_value" : "S35 cad_extrude value";
+        final int id = second ? R.id.cad_extrude_second_value : R.id.cad_extrude_depth_value;
         if (tool[NativeViewport.CAD_EXTRUDE_ACTIVE] == 0.0
-                || tool[NativeViewport.CAD_EXTRUDE_SECOND_ON_SCREEN] == 0.0) {
-            Ui3dAuditRecorder.spatialUnmeasured(caseId, action, "S36 cad_extrude_second_value",
-                    "FEATURE_ANCHORED", "the second anchor is absent or off screen; shown="
-                            + shown(R.id.cad_extrude_second_value));
+                || CadLeaderHudChecks.leader(tool, second) == null) {
+            Ui3dAuditRecorder.spatialUnmeasured(caseId, action, surface, "FEATURE_ANCHORED",
+                    "the manipulator is inactive or its leader does not project; shown="
+                            + shown(id));
             return;
         }
-        final float expectX = (float) tool[NativeViewport.CAD_EXTRUDE_SECOND_LABEL_X];
-        final float expectY = (float) tool[NativeViewport.CAD_EXTRUDE_SECOND_LABEL_Y];
         final float[] measured = onWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View leaf = workspace.findViewById(R.id.cad_extrude_second_value);
+            final android.widget.TextView value = workspace.findViewById(id);
             final View viewport = workspace.findViewById(R.id.viewport_surface);
-            if (leaf == null || !leaf.isShown() || viewport == null) {
+            if (value == null || !value.isShown() || viewport == null) {
                 return null;
             }
-            final View placed = Ui3dAuditRecorder.placedAncestor(leaf,
-                    workspace.findViewById(R.id.cad_extrude_canvas));
-            final float[] centre = Ui3dAuditRecorder.centreOf(placed, viewport);
-            final boolean clamp = Ui3dAuditRecorder.wouldClamp(placed, viewport, expectX, expectY);
-            return new float[]{centre[0], centre[1], clamp ? 1f : 0f};
+            final float[] expected = CadLeaderHudChecks.expectedValueCentre(tool, value, viewport,
+                    density, second);
+            if (expected == null) {
+                return null;
+            }
+            final float[] centre = CadLeaderHudChecks.centreIn(value, viewport);
+            final boolean clamp = Ui3dAuditRecorder.wouldClamp(value, viewport, expected[0],
+                    expected[1]);
+            return new float[]{expected[0], expected[1], centre[0], centre[1], clamp ? 1f : 0f,
+                    value.getRotation()};
         });
         if (measured == null) {
-            Ui3dAuditRecorder.spatialUnmeasured(caseId, action, "S36 cad_extrude_second_value",
-                    "FEATURE_ANCHORED", "the second anchor projects but the value is not shown");
+            Ui3dAuditRecorder.spatialUnmeasured(caseId, action, surface, "FEATURE_ANCHORED",
+                    "the leader projects but the value is not on screen");
             return;
         }
-        Ui3dAuditRecorder.spatial(caseId, action, "S36 cad_extrude_second_value",
-                "FEATURE_ANCHORED", expectX, expectY, measured[0], measured[1], density,
-                measured[2] != 0f, "negative=" + tool[NativeViewport.CAD_EXTRUDE_NEGATIVE]);
+        Ui3dAuditRecorder.spatial(caseId, action, surface, "FEATURE_ANCHORED", measured[0],
+                measured[1], measured[2], measured[3], density, measured[4] != 0f,
+                "scale=" + tool[NativeViewport.CAD_EXTRUDE_SCALE] + " extent="
+                        + tool[NativeViewport.CAD_EXTRUDE_EXTENT] + " rotation=" + measured[5]);
         if (captureName != null) {
-            Ui3dAuditRecorder.captureWithOverlay(captureName, expectX, expectY, measured[0],
-                    measured[1], viewportOrigin());
+            Ui3dAuditRecorder.captureWithOverlay(captureName, measured[0], measured[1],
+                    measured[2], measured[3], viewportOrigin());
         }
     }
 

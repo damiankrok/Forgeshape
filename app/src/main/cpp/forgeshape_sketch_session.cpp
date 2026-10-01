@@ -164,6 +164,9 @@ CadStatus SketchSession::begin(Workplane plane) {
     gridStep_ = kSketchGridSpacingMeters;
     selectedEntityId_ = kNoSketchEntity;
     regions_ = SketchRegionExtraction{};
+    arrangement_ = SketchArrangement{};
+    faceShapes_.clear();
+    selectionLost_ = false;
     extrude_ = ExtrudeFeature{};
     oneSideDirection_ = ExtrudeDirection::AlongNormal;
     operation_ = CadFeatureOperation::NewBody;
@@ -171,7 +174,6 @@ CadStatus SketchSession::begin(Workplane plane) {
     targetBaseState_ = CadBodyState{};
     hasTargetState_ = false;
     editingFeatureId_ = 0;
-    editingSupport_ = CadFeatureSupport{};
     evaluation_ = CadCandidateEvaluation{};
     regionTapArmed_ = false;
     tool_ = SketchTool::Rectangle;
@@ -200,12 +202,14 @@ void SketchSession::cancel() {
     sketch_ = CadSketch{};
     selectedEntityId_ = kNoSketchEntity;
     regions_ = SketchRegionExtraction{};
+    arrangement_ = SketchArrangement{};
+    faceShapes_.clear();
+    selectionLost_ = false;
     extrude_ = ExtrudeFeature{};
     // An edit session that is cancelled has, by construction, written nothing
     // to the body: the staged copy simply goes away with the session.
     editingBodyId_ = kNoObject;
     editingFeatureId_ = 0;
-    editingSupport_ = CadFeatureSupport{};
     operation_ = CadFeatureOperation::NewBody;
     targetBodyId_ = kNoObject;
     targetBaseState_ = CadBodyState{};
@@ -260,9 +264,6 @@ CadStatus SketchSession::beginEditFeature(ObjectId bodyId, const CadBodyState& s
     sketch_ = *view.sketch;
     extrude_ = *view.extrude;
     operation_ = view.operation;
-    if (view.support != nullptr) {
-        editingSupport_ = *view.support;
-    }
     // The staged extent comes back with the body, and so does the One Side
     // memory a mode round trip needs: for a One Side body it is the side the
     // solid is on, and for a two-sided one the canonical `AlongNormal`.
@@ -321,9 +322,8 @@ CadStatus SketchSession::commitEdit(ConstructionScene& scene, ConstructionHistor
     if (history.editInProgress()) {
         return fail(CadStatus::RefusedEditInProgress);
     }
-    if (extrude_.profileEntityId == kNoSketchEntity) {
-        return fail(regions_.regions.size() > 1 ? CadStatus::AmbiguousProfile
-                                                : CadStatus::ProfileNotFound);
+    if (!selectionChosen()) {
+        return fail(unchosenStatus());
     }
     SceneObject* object = scene.findBody(editingBodyId_);
     CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
@@ -814,7 +814,16 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                                       viewportHeight, &positiveSide)) {
                 return false;  // off the arrow: orbit, pan and tap are untouched
             }
-            regionTapArmed_ = false;
+            // ON the drawn arrow the finger means the arrow, at once. Merely in
+            // its grab corridor the gesture is captured -- a drag still takes
+            // the arrow -- but the tap stays armed, because the corridor
+            // crosses the cells around the chosen area and a still tap there
+            // is a fill-bucket tap on the cell under the finger
+            // (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`).
+            if (extrudeDrag_.onDrawnArrow(anchors, camera, pointers[0].x, pointers[0].y,
+                                          viewportWidth, viewportHeight)) {
+                regionTapArmed_ = false;
+            }
             if (!extrudeDrag_.beginDrag(pointers[0].id, anchors, positiveSide, camera,
                                         pointers[0].x, pointers[0].y, viewportWidth,
                                         viewportHeight)) {
@@ -833,6 +842,11 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             if (!extrudeDrag_.capturing() || count != 1 || pointers == nullptr
                 || pointers[0].id != extrudeDrag_.capturedPointerId()) {
                 return extrudeDrag_.capturing();
+            }
+            if (regionTapArmed_) {
+                // Still possibly a tap: the depth holds until the finger has
+                // travelled past the tap slop, so a tap leaves nothing behind.
+                return true;
             }
             Meters distance = 0.0;
             if (extrudeDrag_.updateDrag(pointers[0].id, camera, pointers[0].x, pointers[0].y,
@@ -862,9 +876,20 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                 return false;
             }
             if (actionPointerId >= 0 && actionPointerId != extrudeDrag_.capturedPointerId()) {
+                regionTapArmed_ = false;
                 restoreCancelledExtrudeDrag();
                 return false;
             }
+            if (regionTapArmed_ && action == TouchAction::Up) {
+                // A still tap in the corridor, off the drawn arrow: it never
+                // moved the depth, so the capture ends with nothing written and
+                // the cell under the finger toggles.
+                regionTapArmed_ = false;
+                restoreCancelledExtrudeDrag();
+                toggleRegionAt(camera, regionTapX_, regionTapY_, viewportWidth, viewportHeight);
+                return true;
+            }
+            regionTapArmed_ = false;
             extrudeDrag_.endDrag();
             touchOverlay();
             return true;
@@ -1208,6 +1233,61 @@ CadStatus SketchSession::replaceEntity(SketchEntityId id, SketchEntity::Payload 
 // Finish and extrude
 // ---------------------------------------------------------------------------
 
+namespace {
+
+// The atomic face that IS a loop region exactly (`CAD-V6-S2`): every boundary
+// fragment of the face is a WHOLE source edge, the outer cycle's entities are
+// exactly the region's outer loop members, and each hole likewise. Identity
+// equivalence, never a nearest match: a region any crossing split names no
+// face and answers false.
+bool regionAsPlanarFace(const SketchRegionExtraction& regions, const SketchRegion& region,
+                        const SketchArrangement& arrangement, size_t* outIndex) {
+    const auto wholeMembers = [](const FragmentCycle& cycle, std::vector<SketchEntityId>* ids) {
+        for (const FragmentRef& f : cycle) {
+            if (f.startCut.kind != ArrangementCutKind::SourceStart
+                || f.endCut.kind != ArrangementCutKind::SourceEnd) {
+                return false;
+            }
+            ids->push_back(f.sourceEntityId);
+        }
+        std::sort(ids->begin(), ids->end());
+        ids->erase(std::unique(ids->begin(), ids->end()), ids->end());
+        return true;
+    };
+    const auto loopMembers = [&regions](uint32_t loop) {
+        std::vector<SketchEntityId> ids = regions.loops.profiles[loop].memberEntityIds;
+        std::sort(ids.begin(), ids.end());
+        return ids;
+    };
+    std::vector<std::vector<SketchEntityId>> wantHoles;
+    for (uint32_t h : region.holeLoops) wantHoles.push_back(loopMembers(h));
+    std::sort(wantHoles.begin(), wantHoles.end());
+    const std::vector<SketchEntityId> wantOuter = loopMembers(region.outerLoop);
+    for (size_t i = 0; i < arrangement.faces.size(); ++i) {
+        const PlanarFaceRef& ref = arrangement.faces[i].ref;
+        std::vector<SketchEntityId> outer;
+        if (!wholeMembers(ref.outer, &outer) || outer != wantOuter
+            || ref.holes.size() != wantHoles.size()) {
+            continue;
+        }
+        std::vector<std::vector<SketchEntityId>> holes;
+        bool whole = true;
+        for (const FragmentCycle& hole : ref.holes) {
+            std::vector<SketchEntityId> ids;
+            whole = whole && wholeMembers(hole, &ids);
+            holes.push_back(std::move(ids));
+        }
+        std::sort(holes.begin(), holes.end());
+        if (whole && holes == wantHoles) {
+            *outIndex = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
 CadStatus SketchSession::finish() {
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
@@ -1219,7 +1299,20 @@ CadStatus SketchSession::finish() {
         return fail(sketchWhy);
     }
     SketchRegionExtraction extraction = extractSketchRegions(sketch_);
-    if (extraction.loops.profiles.empty()) {
+    // `CAD-V6-S2`: the arrangement decides whether this sketch's areas need
+    // planar faces. It is derived every Finish from the authored entities and
+    // stored nowhere.
+    SketchArrangement arrangement = deriveSketchArrangement(sketch_);
+    // ONE decision (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`): a sketch whose loops
+    // cross but whose arrangement cannot be derived is refused by the
+    // arrangement's own name, never handed to the loop model to be read as
+    // whole overlapping loops.
+    const SketchSelectionModeDecision mode = decideSketchSelectionMode(arrangement, extraction);
+    if (mode.status != CadStatus::Ok) {
+        return fail(mode.status);
+    }
+    const bool planar = mode.kind == CadSelectionKind::PlanarFaces;
+    if (!planar && extraction.loops.profiles.empty()) {
         // The FIRST rejection is the most useful thing to say: "your polyline
         // is open" beats "no closed profile".
         const CadStatus why = extraction.loops.rejections.empty()
@@ -1228,7 +1321,35 @@ CadStatus SketchSession::finish() {
         return fail(why);
     }
     regions_ = std::move(extraction);
-    reconcileRegionSelection();
+    arrangement_ = std::move(arrangement);
+    faceShapes_.clear();
+    selectionLost_ = false;
+    if (planar) {
+        // One shape per atomic face -- its own one-face union -- for the tap,
+        // the labels and the hatch. A face whose shape cannot be built (never
+        // for a derived face) makes the whole sketch unselectable by name.
+        for (size_t i = 0; i < arrangement_.faces.size(); ++i) {
+            std::vector<PlanarProfileComponent> shape;
+            const CadStatus why = mergePlanarFaceSelection(arrangement_, {i}, &shape);
+            if (why != CadStatus::Ok || shape.size() != 1u) {
+                regions_ = SketchRegionExtraction{};
+                arrangement_ = SketchArrangement{};
+                faceShapes_.clear();
+                return fail(why == CadStatus::Ok ? CadStatus::PlanarFaceDegenerate : why);
+            }
+            faceShapes_.push_back(std::move(shape.front()));
+        }
+        reconcilePlanarSelection();
+    } else {
+        if (extrude_.selection == CadSelectionKind::PlanarFaces) {
+            // A face-selected feature whose sketch no longer needs faces: its
+            // stored faces are not re-read as regions (`CAD-V6-S2`, no
+            // nearest rebind); the user chooses again.
+            selectionLost_ = !extrude_.planarFaces.empty();
+            clearPlanarSelection();
+        }
+        reconcileRegionSelection();
+    }
     state_ = SketchSessionState::Ready;
     touchCandidate();
     return fail(CadStatus::Ok);
@@ -1265,6 +1386,8 @@ void SketchSession::backToEditing() {
         return;
     }
     regions_ = SketchRegionExtraction{};
+    arrangement_ = SketchArrangement{};
+    faceShapes_.clear();
     regionTapArmed_ = false;
     state_ = SketchSessionState::Editing;
     touchCandidate();
@@ -1277,6 +1400,15 @@ CadStatus SketchSession::selectProfile(SketchEntityId anchorEntityId) {
     const SketchRegion* region = findSketchRegion(regions_, anchorEntityId);
     if (region == nullptr) {
         return fail(CadStatus::ProfileNotFound);
+    }
+    if (!faceShapes_.empty()) {
+        // Planar faces (`CAD-V6-S2`): a region is choosable only as the one
+        // atomic face it exactly is; a region a crossing split names none.
+        size_t index = 0;
+        if (!regionAsPlanarFace(regions_, *region, arrangement_, &index)) {
+            return fail(CadStatus::PlanarFaceUnresolved);
+        }
+        return selectPlanarFace(index);
     }
     if (region->status != CadStatus::Ok) {
         return fail(region->status);
@@ -1303,6 +1435,13 @@ CadStatus SketchSession::toggleRegion(SketchEntityId outerAnchorId) {
     if (region == nullptr) {
         return fail(CadStatus::ProfileNotFound);
     }
+    if (!faceShapes_.empty()) {
+        size_t index = 0;
+        if (!regionAsPlanarFace(regions_, *region, arrangement_, &index)) {
+            return fail(CadStatus::PlanarFaceUnresolved);
+        }
+        return togglePlanarFace(index);
+    }
     std::vector<ProfileRegionRef> current = extrudeRegions(extrude_);
     if (regionSelected(outerAnchorId)) {
         setExtrudeRegions(&extrude_, toggleRegionSelection(current, *region));
@@ -1312,21 +1451,19 @@ CadStatus SketchSession::toggleRegion(SketchEntityId outerAnchorId) {
     if (region->status != CadStatus::Ok) {
         return fail(region->status);
     }
-    // Keep only the selected regions this one can stand beside: a region it
-    // overlaps, touches or shares a loop with is replaced by it.
-    std::vector<ProfileRegionRef> next;
-    for (const ProfileRegionRef& ref : current) {
-        std::vector<ProfileRegionRef> pair = {ref, sketchRegionRef(*region)};
-        std::sort(pair.begin(), pair.end(), [](const ProfileRegionRef& a, const ProfileRegionRef& b) {
-            return a.outerAnchorId < b.outerAnchorId;
-        });
-        if (validateRegionSelection(regions_, pair) == CadStatus::Ok) {
-            next.push_back(ref);
-        }
-    }
-    next.push_back(sketchRegionRef(*region));
+    // A PURE toggle (`CAD-FOUNDATION-C1`): the tapped region joins the
+    // selection and no other region changes. A region beside its own hole is
+    // legal -- the selection means their union -- so the only additions left
+    // to refuse are the ones no rule can merge without guessing (loops that
+    // touch or cross) and the bound; those are refused BY NAME and the
+    // selection stands exactly as it was. Nothing is ever dropped silently.
+    std::vector<ProfileRegionRef> next = toggleRegionSelection(current, *region);
     if (next.size() > kMaxProfileRegions) {
         return fail(CadStatus::TooManyRegions);
+    }
+    const CadStatus why = validateRegionSelection(regions_, next);
+    if (why != CadStatus::Ok) {
+        return fail(why);
     }
     setExtrudeRegions(&extrude_, std::move(next));
     touchCandidate();
@@ -1342,11 +1479,226 @@ bool SketchSession::toggleRegionAt(const CameraSnapshot& camera, float x, float 
     if (!screenToSketch(camera, x, y, viewportWidth, viewportHeight, &point)) {
         return false;
     }
+    if (!faceShapes_.empty()) {
+        // The atomic face under the finger: strictly inside its outer loop and
+        // outside its holes. Faces do not overlap; the smallest wins a tie.
+        size_t hit = faceShapes_.size();
+        for (size_t i = 0; i < faceShapes_.size(); ++i) {
+            const PlanarProfileComponent& shape = faceShapes_[i];
+            bool inside = sketchPointStrictlyInside(point, shape.outer.polygon);
+            for (const PlanarProfileLoop& hole : shape.holes) {
+                inside = inside && !sketchPointStrictlyInside(point, hole.polygon);
+            }
+            if (inside && (hit == faceShapes_.size() || shape.area < faceShapes_[hit].area)) {
+                hit = i;
+            }
+        }
+        return hit < faceShapes_.size() && togglePlanarFace(hit) == CadStatus::Ok;
+    }
     SketchEntityId anchor = kNoSketchEntity;
     if (!sketchRegionAt(regions_, point, &anchor)) {
         return false;
     }
     return toggleRegion(anchor) == CadStatus::Ok;
+}
+
+// ---------------------------------------------------------------------------
+// Planar faces (`CAD-V6-S2`)
+// ---------------------------------------------------------------------------
+
+bool SketchSession::selectionChosen() const {
+    return extrude_.selection == CadSelectionKind::PlanarFaces
+                   ? !extrude_.planarFaces.empty()
+                   : extrude_.profileEntityId != kNoSketchEntity;
+}
+
+size_t SketchSession::selectedAreaCount() const {
+    return extrude_.selection == CadSelectionKind::PlanarFaces ? extrude_.planarFaces.size()
+                                                               : extrudeRegions(extrude_).size();
+}
+
+CadStatus SketchSession::unchosenStatus() const {
+    if (selectionLost_) {
+        return CadStatus::PlanarFaceUnresolved;
+    }
+    const size_t areas = faceShapes_.empty() ? regions_.regions.size() : faceShapes_.size();
+    return areas > 1 ? CadStatus::AmbiguousProfile : CadStatus::ProfileNotFound;
+}
+
+void SketchSession::setPlanarSelection(std::vector<PlanarFaceRef> faces) {
+    std::sort(faces.begin(), faces.end(), [](const PlanarFaceRef& a, const PlanarFaceRef& b) {
+        return comparePlanarFaceRef(a, b) < 0;
+    });
+    extrude_.selection = CadSelectionKind::PlanarFaces;
+    extrude_.planarFaces = std::move(faces);
+    extrude_.profileEntityId = kNoSketchEntity;
+    extrude_.profileHoleIds.clear();
+    extrude_.additionalRegions.clear();
+}
+
+void SketchSession::clearPlanarSelection() {
+    extrude_.selection = CadSelectionKind::LoopRegions;
+    extrude_.planarFaces.clear();
+}
+
+std::vector<size_t> SketchSession::selectedPlanarFaceIndices() const {
+    std::vector<size_t> indices;
+    if (extrude_.selection != CadSelectionKind::PlanarFaces) {
+        return indices;
+    }
+    for (const PlanarFaceRef& ref : extrude_.planarFaces) {
+        size_t index = 0;
+        if (resolvePlanarFaceRef(arrangement_, ref, &index)) {
+            indices.push_back(index);
+        }
+    }
+    return indices;
+}
+
+void SketchSession::reconcilePlanarSelection() {
+    // A stored face selection that still resolves EXACTLY -- every face, and
+    // its union merges -- survives Back to Sketch and Edit Sketch untouched.
+    if (extrude_.selection == CadSelectionKind::PlanarFaces && !extrude_.planarFaces.empty()) {
+        const std::vector<size_t> indices = selectedPlanarFaceIndices();
+        if (indices.size() == extrude_.planarFaces.size()
+            && mergePlanarFaceSelection(arrangement_, indices, nullptr) == CadStatus::Ok) {
+            setPlanarSelection(extrude_.planarFaces);
+            return;
+        }
+        // Lost: never re-bound to a nearest face. The user chooses again.
+        selectionLost_ = true;
+    } else if (extrude_.selection == CadSelectionKind::LoopRegions
+               && extrude_.profileEntityId != kNoSketchEntity) {
+        // A region selection over a sketch that now needs faces: kept only
+        // when EVERY chosen region is exactly an atomic face (its whole loop,
+        // unsplit) and the faces merge -- never re-read as a nearest face.
+        std::vector<PlanarFaceRef> faces;
+        bool exact = true;
+        for (const ProfileRegionRef& ref : extrudeRegions(extrude_)) {
+            const SketchRegion* region = findSketchRegion(regions_, ref.outerAnchorId);
+            size_t index = 0;
+            exact = exact && region != nullptr && region->holeAnchorIds == ref.holeAnchorIds
+                    && regionAsPlanarFace(regions_, *region, arrangement_, &index);
+            if (exact) faces.push_back(arrangement_.faces[index].ref);
+        }
+        std::vector<size_t> indices;
+        for (const PlanarFaceRef& face : faces) {
+            size_t i = 0;
+            if (resolvePlanarFaceRef(arrangement_, face, &i)) indices.push_back(i);
+        }
+        if (exact && mergePlanarFaceSelection(arrangement_, indices, nullptr) == CadStatus::Ok) {
+            setPlanarSelection(std::move(faces));
+            return;
+        }
+        selectionLost_ = editingFeatureId_ != 0;
+    }
+    // Exactly ONE face is chosen for the user; with more, nothing is -- the
+    // loop-region policy, unchanged.
+    if (faceShapes_.size() == 1u) {
+        setPlanarSelection({arrangement_.faces.front().ref});
+        selectionLost_ = false;
+    } else {
+        setPlanarSelection({});
+    }
+}
+
+bool SketchSession::planarFaceSelected(size_t index) const {
+    if (index >= arrangement_.faces.size() || faceShapes_.empty()) {
+        return false;
+    }
+    for (const PlanarFaceRef& ref : extrude_.planarFaces) {
+        if (samePlanarFaceRef(ref, arrangement_.faces[index].ref)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SketchSession::planarFaceInfo(size_t index, SketchPoint* outInterior, double* outArea) const {
+    if (index >= faceShapes_.size()) {
+        return false;
+    }
+    const PlanarProfileComponent& shape = faceShapes_[index];
+    if (outArea != nullptr) {
+        *outArea = arrangement_.faces[index].area;
+    }
+    if (outInterior != nullptr) {
+        std::vector<std::vector<SketchPoint>> loops{shape.outer.polygon};
+        for (const PlanarProfileLoop& hole : shape.holes) loops.push_back(hole.polygon);
+        if (!sketchLoopsInteriorPoint(loops, outInterior)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+CadStatus SketchSession::togglePlanarFace(size_t index) {
+    if (state_ != SketchSessionState::Ready || faceShapes_.empty()) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (index >= arrangement_.faces.size()) {
+        return fail(CadStatus::ProfileNotFound);
+    }
+    const PlanarFaceRef& tapped = arrangement_.faces[index].ref;
+    std::vector<PlanarFaceRef> next;
+    bool removed = false;
+    for (const PlanarFaceRef& ref : extrude_.planarFaces) {
+        if (samePlanarFaceRef(ref, tapped)) {
+            removed = true;
+        } else {
+            next.push_back(ref);
+        }
+    }
+    if (!removed) {
+        // A PURE toggle: the tapped face joins and no other face changes. An
+        // addition that cannot merge (a pinch) or passes the bound is refused
+        // BY NAME and the selection stands exactly as it was.
+        if (next.size() + 1u > kMaxPlanarFaceSelection) {
+            return fail(CadStatus::TooManyRegions);
+        }
+        next.push_back(tapped);
+        std::vector<size_t> indices;
+        for (const PlanarFaceRef& ref : next) {
+            size_t i = 0;
+            if (resolvePlanarFaceRef(arrangement_, ref, &i)) indices.push_back(i);
+        }
+        const CadStatus why = mergePlanarFaceSelection(arrangement_, indices, nullptr);
+        if (why != CadStatus::Ok) {
+            return fail(why);
+        }
+    }
+    setPlanarSelection(std::move(next));
+    selectionLost_ = false;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::selectPlanarFace(size_t index) {
+    if (state_ != SketchSessionState::Ready || faceShapes_.empty()) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (index >= arrangement_.faces.size()) {
+        return fail(CadStatus::ProfileNotFound);
+    }
+    setPlanarSelection({arrangement_.faces[index].ref});
+    selectionLost_ = false;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+bool SketchSession::planarSelectionAnchor(SketchPoint* out) const {
+    std::vector<PlanarProfileComponent> components;
+    if (mergePlanarFaceSelection(arrangement_, selectedPlanarFaceIndices(), &components)
+                != CadStatus::Ok
+        || components.empty()) {
+        return false;
+    }
+    // The FIRST union component's area centroid when it stands on material,
+    // otherwise a point that does -- the loop-region anchor's own rule.
+    const PlanarProfileComponent& first = components.front();
+    std::vector<std::vector<SketchPoint>> loops{first.outer.polygon};
+    for (const PlanarProfileLoop& hole : first.holes) loops.push_back(hole.polygon);
+    return sketchLoopsInteriorPoint(loops, out);
 }
 
 // THE one writer of the extrusion. Every typed value, every drag sample, every
@@ -1385,10 +1737,15 @@ CadStatus SketchSession::applyExtrudeFeature(const ExtrudeFeature& requested) {
     if (!sidesOk) {
         return fail(CadStatus::InvalidExtrudeDepth);
     }
-    // The regions are chosen elsewhere, never here: only the extent moves.
+    // The selection is chosen elsewhere, never here: only the extent moves --
+    // whichever kind of selection it is.
     const std::vector<ProfileRegionRef> regions = extrudeRegions(extrude_);
+    const CadSelectionKind kind = extrude_.selection;
+    std::vector<PlanarFaceRef> faces = extrude_.planarFaces;
     extrude_ = requested;
     setExtrudeRegions(&extrude_, regions);
+    extrude_.selection = kind;
+    extrude_.planarFaces = std::move(faces);
     if (extrude_.extent == ExtrudeExtentMode::OneSide) {
         // The user's live One Side choice IS the transition memory; nothing
         // else writes it, so the two can never disagree.
@@ -1434,6 +1791,9 @@ CadStatus SketchSession::setExtrudeSide(bool positiveSide, Meters distance) {
 // ---------------------------------------------------------------------------
 
 bool SketchSession::selectionAnchorPoint(SketchPoint* out) const {
+    if (extrude_.selection == CadSelectionKind::PlanarFaces) {
+        return planarSelectionAnchor(out);
+    }
     return extrudeSelectionAnchorPoint(regions_, extrude_, out);
 }
 
@@ -1470,44 +1830,62 @@ CadStatus SketchSession::flipExtrudeDirection() {
 CadBodyState SketchSession::candidateState() const {
     // A new body: the sketch and its extrusion, exactly what R0 built.
     if (editingFeatureId_ == 0 && operation_ == CadFeatureOperation::NewBody) {
-        CadBodyState state;
-        state.sketch = sketch_;
-        state.extrude = extrude_;
-        return state;
+        return makeCadBodyState(sketch_, extrude_);
     }
     // Everything else is the TARGET body's chain with one feature appended or
     // replaced -- the same SceneObject, never a copy of it.
     CadBodyState state = targetBaseState_;
     if (editingFeatureId_ == kCadFeatureId) {
-        state.sketch = sketch_;
+        cadBaseSketch(state) = sketch_;
         state.extrude = extrude_;
         return state;
     }
-    CadFeature feature;
-    feature.operation = operation_;
-    feature.sketch = sketch_;
-    // A later feature's sketch is placed by its support alone; the TopoRef the
-    // session authored against (a face of this very body) is not carried into
-    // the chain, where it would be a cycle.
-    feature.sketch.plane = Workplane::XY;
-    feature.sketch.hasFaceSupport = false;
-    feature.sketch.faceSupport = TopoRef{};
-    feature.extrude = extrude_;
     if (editingFeatureId_ > kCadFeatureId) {
-        feature.featureId = editingFeatureId_;
-        feature.support = editingSupport_;
+        // The feature's sketch is edited IN THE TABLE, where every feature
+        // that extrudes it reads it; its placement stays the record's own. A
+        // sketch on one of the body's faces is authored on its canonical XY
+        // with no TopoRef, which is exactly what was staged from it.
+        CadSketchRecord* record = cadFeatureSketchRecord(state, editingFeatureId_);
+        if (record != nullptr) {
+            record->sketch = sketch_;
+            if (record->hasFeatureSupport) {
+                record->sketch.plane = Workplane::XY;
+                record->sketch.hasFaceSupport = false;
+                record->sketch.faceSupport = TopoRef{};
+            }
+        }
         for (CadFeature& existing : state.laterFeatures) {
             if (existing.featureId == editingFeatureId_) {
-                existing = feature;
+                existing.operation = operation_;
+                existing.extrude = extrude_;
             }
         }
         return state;
     }
-    feature.featureId = nextCadFeatureId(state);
-    feature.support.featureId = sketch_.faceSupport.producerLocalFeatureId;
-    feature.support.face = sketch_.faceSupport.face;
-    feature.support.lineageToken = sketch_.faceSupport.lineageToken;
-    state.laterFeatures.push_back(std::move(feature));
+    // A NEW Add or Cut: a new retained sketch on the face the session authored
+    // against, and a new feature extruding it. The TopoRef the session used (a
+    // face of this very body) becomes the record's own-feature support; carried
+    // into the chain as a TopoRef it would be a cycle.
+    CadSketch sketch = sketch_;
+    sketch.plane = Workplane::XY;
+    sketch.hasFaceSupport = false;
+    sketch.faceSupport = TopoRef{};
+    CadFeatureSupport support;
+    support.featureId = sketch_.faceSupport.producerLocalFeatureId;
+    support.face = sketch_.faceSupport.face;
+    support.lineageToken = sketch_.faceSupport.lineageToken;
+    if (appendCadLaterFeatureWithSketch(&state, operation_, support, std::move(sketch), extrude_)
+        == 0) {
+        // A full chain or table cannot take another feature. The candidate
+        // still carries the attempt -- a feature naming no sketch -- so the
+        // evaluation refuses it by name (`TooManyFeatures`/`SketchNotFound`)
+        // rather than committing the unchanged target as if it had worked.
+        CadFeature refused;
+        refused.featureId = state.nextFeatureId;
+        refused.operation = operation_;
+        refused.extrude = extrude_;
+        state.laterFeatures.push_back(std::move(refused));
+    }
     return state;
 }
 
@@ -1592,9 +1970,8 @@ const CadCandidateEvaluation& SketchSession::evaluateCandidate() {
         evaluation_ = next;
         return evaluation_;
     }
-    if (extrude_.profileEntityId == kNoSketchEntity) {
-        next.status = regions_.regions.size() > 1 ? CadStatus::AmbiguousProfile
-                                                  : CadStatus::ProfileNotFound;
+    if (!selectionChosen()) {
+        next.status = unchosenStatus();
         evaluation_ = next;
         return evaluation_;
     }
@@ -1646,9 +2023,8 @@ CadStatus SketchSession::commit(ConstructionScene& scene, ConstructionHistory& h
     if (history.editInProgress()) {
         return fail(CadStatus::RefusedEditInProgress);
     }
-    if (extrude_.profileEntityId == kNoSketchEntity) {
-        return fail(regions_.regions.size() > 1 ? CadStatus::AmbiguousProfile
-                                                : CadStatus::ProfileNotFound);
+    if (!selectionChosen()) {
+        return fail(unchosenStatus());
     }
     if (operation_ != CadFeatureOperation::NewBody) {
         return commitIntoTarget(scene, history, outId);
@@ -1746,6 +2122,10 @@ float hueForWorldAxis(const Vec3& direction) {
 }  // namespace
 
 SketchOverlayPtr SketchSession::overlay(float worldPerUnit) {
+    return overlay(worldPerUnit, CadExtrudeViewFacts{});
+}
+
+SketchOverlayPtr SketchSession::overlay(float worldPerUnit, const CadExtrudeViewFacts& view) {
     if (!active()) {
         if (overlay_ && !overlay_->vertices.empty()) {
             overlay_ = std::make_shared<SketchOverlay>();
@@ -1756,13 +2136,45 @@ SketchOverlayPtr SketchSession::overlay(float worldPerUnit) {
         }
         return overlay_;
     }
-    if (overlayDirty_ || !overlay_ || overlayWorldPerUnit_ != worldPerUnit) {
-        buildOverlay(worldPerUnit);
+    const bool cameraChanged = overlay_
+                               && (overlayWorldPerUnit_ != worldPerUnit
+                                   || !sameCadExtrudeViewFacts(overlayView_, view));
+    if (overlayDirty_ || !overlay_ || cameraChanged) {
+        // An authored change already advanced the revision (`touchOverlay`).
+        // A rebuild the camera alone caused moves vertex POSITIONS -- the
+        // snap marker, the hatch, the head, the dimension -- often at an
+        // unchanged vertex count, so it must be a new revision too or the
+        // renderer's upload gate would keep drawing the previous zoom.
+        if (!overlayDirty_ && cameraChanged) {
+            ++overlayRevision_;
+        }
+        buildOverlay(worldPerUnit, view);
     }
     return overlay_;
 }
 
-void SketchSession::buildOverlay(float worldPerUnit) {
+bool SketchSession::extrudeViewFacts(const CameraSnapshot& camera, int viewportWidth,
+                                     int viewportHeight, CadExtrudeViewFacts* out) const {
+    if (out == nullptr) {
+        return false;
+    }
+    *out = CadExtrudeViewFacts{};
+    CadExtrudeAnchors anchors;
+    if (!extrudeAnchors(&anchors)) {
+        return false;
+    }
+    CadExtrudeViewFacts built;
+    if (!cadExtrudeManipulatorScale(anchors, camera, viewportHeight, &built.scale)) {
+        return false;
+    }
+    built.leaderValid =
+            cadExtrudeLeaderSide(anchors, camera, viewportWidth, viewportHeight, &built.leaderSide);
+    built.valid = true;
+    *out = built;
+    return true;
+}
+
+void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& view) {
     auto built = std::make_shared<SketchOverlay>();
     built->revision = overlayRevision_;
     std::vector<GizmoVertex>& v = built->vertices;
@@ -1824,19 +2236,40 @@ void SketchSession::buildOverlay(float worldPerUnit) {
     // emphasised; everything else is neutral.
     SketchOverlayRange entities;
     entities.firstVertex = static_cast<uint32_t>(v.size());
-    std::vector<const SketchRegion*> chosenRegions;
+    // What is drawn as chosen is the UNION the extrusion will make
+    // (`CAD-FOUNDATION-C1`), so a hole the selection filled is hatched as
+    // material and its loop is not emphasised as a boundary, while a hole the
+    // selection left open stays empty and emphasised.
+    std::vector<SketchRegionComponent> chosenComponents;
+    // `CAD-V6-S2`: in PlanarFaces mode what is drawn as chosen is the union of
+    // the chosen ATOMIC faces -- their own fragment loops, never a whole
+    // source loop -- so the hatch covers exactly what will extrude.
+    std::vector<std::vector<std::vector<SketchPoint>>> chosenLoops;
     if (state_ == SketchSessionState::Ready) {
-        for (const ProfileRegionRef& ref : extrudeRegions(extrude_)) {
-            if (const SketchRegion* region = findSketchRegion(regions_, ref.outerAnchorId)) {
-                chosenRegions.push_back(region);
+        if (extrude_.selection == CadSelectionKind::PlanarFaces) {
+            std::vector<PlanarProfileComponent> planar;
+            if (mergePlanarFaceSelection(arrangement_, selectedPlanarFaceIndices(), &planar)
+                == CadStatus::Ok) {
+                for (const PlanarProfileComponent& component : planar) {
+                    std::vector<std::vector<SketchPoint>> loops{component.outer.polygon};
+                    for (const PlanarProfileLoop& hole : component.holes) {
+                        loops.push_back(hole.polygon);
+                    }
+                    chosenLoops.push_back(std::move(loops));
+                }
+            }
+        } else {
+            chosenComponents = mergeSelectedRegions(regions_, extrudeRegions(extrude_));
+            for (const SketchRegionComponent& component : chosenComponents) {
+                chosenLoops.push_back(sketchComponentLoops(regions_, component));
             }
         }
     }
     std::vector<SketchEntityId> emphasisedMembers;
-    for (const SketchRegion* region : chosenRegions) {
+    for (const SketchRegionComponent& component : chosenComponents) {
         const std::vector<ClosedProfile>& loops = regions_.loops.profiles;
-        std::vector<uint32_t> loopIndices = region->holeLoops;
-        loopIndices.push_back(region->outerLoop);
+        std::vector<uint32_t> loopIndices = component.holeLoops;
+        loopIndices.push_back(component.outerLoop);
         for (uint32_t l : loopIndices) {
             if (l < loops.size()) {
                 emphasisedMembers.insert(emphasisedMembers.end(), loops[l].memberEntityIds.begin(),
@@ -1965,28 +2398,29 @@ void SketchSession::buildOverlay(float worldPerUnit) {
                      local(SketchPoint{cursor_.u, cursor_.v + half}), 0.0f, 1.0f);
         }
     }
-    // The chosen regions' hatch: lines clipped to each region by the even-odd
-    // rule, so a hole reads as EMPTY rather than as selected material. A few
-    // reference units apart at any zoom, bounded per region.
-    if (!chosenRegions.empty() && worldPerUnit > 0.0f) {
+    // The union's hatch: lines clipped to each component by the even-odd
+    // rule, so a hole left open reads as EMPTY rather than as selected
+    // material and a filled one reads as material. A few
+    // reference units apart at any zoom, bounded per component.
+    if (!chosenLoops.empty() && worldPerUnit > 0.0f) {
         const double spacing = 14.0 * static_cast<double>(worldPerUnit);
-        for (const SketchRegion* region : chosenRegions) {
-            const std::vector<SketchPoint> hatch = sketchRegionHatch(regions_, *region, spacing);
+        for (const std::vector<std::vector<SketchPoint>>& loops : chosenLoops) {
+            const std::vector<SketchPoint> hatch = sketchLoopsHatch(loops, spacing);
             for (size_t i = 0; i + 1 < hatch.size(); i += 2) {
                 pushLine(&v, local(hatch[i]), local(hatch[i + 1]), opAxis, opHandle);
             }
         }
     }
-    // The extrude preview: every chosen loop's far cap, near cap and edges --
+    // The extrude preview: every union loop's far cap, near cap and edges --
     // holes included, so the preview of a ring shows its bore.
-    if (!chosenRegions.empty()) {
+    if (!chosenLoops.empty()) {
         // The SAME two offsets `generateCadMesh` extrudes between, so the
         // preview and the solid it previews cannot disagree about where the
         // caps are in any extent mode.
         const double nearOffset = -extrudeNegativeDistance(extrude_);
         const double farOffset = extrudePositiveDistance(extrude_);
-        for (const SketchRegion* region : chosenRegions) {
-            for (const std::vector<SketchPoint>& loop : sketchRegionLoops(regions_, *region)) {
+        for (const std::vector<std::vector<SketchPoint>>& loops : chosenLoops) {
+            for (const std::vector<SketchPoint>& loop : loops) {
                 const size_t n = loop.size();
                 for (size_t i = 0; i < n; ++i) {
                     const SketchPoint& a = loop[i];
@@ -2004,15 +2438,12 @@ void SketchSession::buildOverlay(float worldPerUnit) {
         // axis, in the SAME range and at the same weight as the preview it
         // belongs to, so the renderer needed no new style and no new case. Its
         // shaft is the depth; only its head and base tick take the camera-
-        // attached control scale, and that scale is derived from the caller
-        // worldPerUnit rather than from a second camera read, so what is drawn
-        // and what is hit-tested are one number.
+        // attached control scale -- the frame's ONE manipulator scale fact,
+        // read at the arrow's own base (`cadExtrudeManipulatorScale`), which
+        // is exactly the number the hit test grabs with. No facts, no arrow.
         CadExtrudeAnchors anchors;
-        CadExtrudeControlScale controlScale;
-        if (extrudeAnchors(&anchors)
-            && cadExtrudeControlScaleFor(perPixel > 0.0 ? static_cast<float>(perPixel) : 0.0f,
-                                         &controlScale)) {
-            appendCadExtrudeArrow(&v, anchors, controlScale.world, extrudeDrag_.capturing(),
+        if (view.valid && extrudeAnchors(&anchors)) {
+            appendCadExtrudeArrow(&v, anchors, view.scale.world, extrudeDrag_.capturing(),
                                   extrudeDrag_.capturedPositiveSide());
         }
     }
@@ -2056,6 +2487,16 @@ void SketchSession::buildOverlay(float worldPerUnit) {
                          local(offsetBy(at, su, sv, tick)), 0.0f, 1.0f);
             }
         }
+        // The extrusion's own technical-drawing leader (`CAD-FOUNDATION-C1`),
+        // in the same annotation range and drawing language, sized by the
+        // frame's one manipulator scale fact so it cannot disagree with the
+        // head beside it.
+        CadExtrudeAnchors leaderAnchors;
+        CadExtrudeLeader leader;
+        if (view.valid && view.leaderValid && extrudeAnchors(&leaderAnchors)
+            && cadExtrudeLeaderFor(leaderAnchors, view.leaderSide, view.scale.world, &leader)) {
+            appendCadExtrudeLeader(&v, leaderAnchors, leader, view.scale.world);
+        }
         dimension.vertexCount = static_cast<uint32_t>(v.size()) - dimension.firstVertex;
         dimension.style = SketchOverlayStyle::Dimension;
         built->ranges.push_back(dimension);
@@ -2070,6 +2511,7 @@ void SketchSession::buildOverlay(float worldPerUnit) {
     overlay_ = built;
     overlayDirty_ = false;
     overlayWorldPerUnit_ = worldPerUnit;
+    overlayView_ = view;
 }
 
 SketchSession& sketchSession() {

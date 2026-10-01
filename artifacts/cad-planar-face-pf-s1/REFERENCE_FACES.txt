@@ -1,0 +1,15 @@
+PF-S1-01: Ok nodes=6 frags=8 faces=3 cross=2 tj=0 ec=4 tan=0 pruned=0
+  area=11.607301 outer: 1.0[S>E] 1.1[S>X(2.0#0)] ~2.0[X(1.1#0)>X(1.1#1)] 1.1[X(2.0#1)>E] 1.2[S>E] 1.3[S>E]
+  area=0.392699 outer: 1.1[X(2.0#0)>X(2.0#1)] 2.0[X(1.1#0)>X(1.1#1)]
+  area=0.392699 outer: ~1.1[X(2.0#0)>X(2.0#1)] 2.0[X(1.1#1)>X(1.1#0)]
+PF-S1-02: Ok nodes=11 frags=11 faces=2 cross=0 tj=2 ec=8 tan=0 pruned=2
+  area=12.000000 outer: 1.0[S>E] 1.1[S>X(2.0#0)] 1.1[X(2.0#0)>X(4.0#0)] 1.1[X(4.0#0)>E] 1.2[S>E] 1.3[S>E]
+  area=1.000000 outer: ~1.1[X(2.0#0)>X(4.0#0)] 2.0[S>E] 3.0[S>E] 4.0[S>E]
+PF-S1-03: Ok nodes=2 frags=4 faces=3 cross=2 tj=0 ec=0 tan=0 pruned=0
+  area=1.556246 outer: 1.0[X(2.0#0)>X(2.0#1)] ~2.0[X(1.0#0)>X(1.0#1)]
+  area=1.585347 outer: 1.0[X(2.0#1)>X(2.0#0)] 2.0[X(1.0#0)>X(1.0#1)]
+  area=1.556246 outer: ~1.0[X(2.0#1)>X(2.0#0)] 2.0[X(1.0#1)>X(1.0#0)]
+PF-S1-04: Ok nodes=6 frags=6 faces=3 cross=0 tj=0 ec=4 tan=0 pruned=0
+  area=10.429204 outer: 1.0[S>E] 1.1[S>E] 1.2[S>E] 1.3[S>E] | hole: ~2.0[S>E] | hole: ~3.0[S>E]
+  area=0.785398 outer: 2.0[S>E]
+  area=0.785398 outer: 3.0[S>E]

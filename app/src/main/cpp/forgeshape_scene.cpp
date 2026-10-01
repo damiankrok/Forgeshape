@@ -197,8 +197,8 @@ SceneObject* ConstructionScene::addCadBody(CadBodyState state, CadStatus* outWhy
     }
     // A face-supported body's producer must exist and its face must resolve
     // BEFORE an id is minted, so a bad support costs nothing.
-    if (state.sketch.hasFaceSupport) {
-        const CadStatus supportWhy = validateCadFaceSupport(state.sketch.faceSupport);
+    if (cadBaseSketch(state).hasFaceSupport) {
+        const CadStatus supportWhy = validateCadFaceSupport(cadBaseSketch(state).faceSupport);
         if (supportWhy != CadStatus::Ok) {
             if (outWhy != nullptr) {
                 *outWhy = supportWhy;

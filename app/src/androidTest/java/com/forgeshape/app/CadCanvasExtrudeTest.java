@@ -11,6 +11,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.os.SystemClock;
@@ -123,9 +124,11 @@ public final class CadCanvasExtrudeTest {
             final View value = canvas.findViewById(R.id.cad_extrude_depth_value);
             final View flip = canvas.findViewById(R.id.cad_extrude_flip);
             final View badge = canvas.findViewById(R.id.cad_extrude_operation);
+            final View panel = canvas.findViewById(R.id.cad_extrude_panel);
             assertNotNull("with the exact value", value);
-            assertNotNull("a direct Flip", flip);
-            assertNotNull("and the operation badge", badge);
+            assertNotNull("a Flip in the action palette", flip);
+            assertNotNull("the operation badge on the panel", badge);
+            assertNotNull("and the panel's one touch target", panel);
             final CharSequence operation = badge.getContentDescription();
             assertTrue("which says New Body: " + operation, operation != null
                     && operation.toString().toLowerCase().contains("new body"));
@@ -135,15 +138,16 @@ public final class CadCanvasExtrudeTest {
             // an authored size times the scale rule's floor.
             final float density = activity.getResources().getDisplayMetrics().density;
             final int floor = Math.round(48f * density);
-            for (View control : new View[]{value, flip, badge}) {
+            for (View control : new View[]{value, flip, panel}) {
                 assertEquals("a control's hit area is never scaled", 1.0f,
                         control.getScaleX() * control.getScaleY(), 0.0f);
             }
             assertTrue("the value control is a real target", value.getHeight() >= floor - 1);
-            assertTrue("and so is Flip", flip.getHeight() >= floor - 1
-                    && flip.getWidth() >= floor - 1);
-            assertTrue("and so is the badge", badge.getHeight() >= floor - 1
-                    && badge.getWidth() >= floor - 1);
+            assertTrue("and so is the panel", panel.getHeight() >= floor - 1
+                    && panel.getWidth() >= floor - 1);
+            // `CAD-FOUNDATION-C2`: the badge is a glyph on the panel's plate,
+            // stating the operation; the panel's proxy is what a finger takes.
+            assertFalse("the badge itself takes no touch", badge.isClickable());
             return null;
         });
     }
@@ -627,6 +631,236 @@ public final class CadCanvasExtrudeTest {
     }
 
     // -----------------------------------------------------------------------
+    // CAD-FOUNDATION-C2: close / normal / far / very far
+    // -----------------------------------------------------------------------
+
+    @Test
+    public void cadFoundationC2_theActionPanelStaysOneUnitAtTheTipAtEveryZoom() {
+        beginSketchXy();
+        drawRectangle(2.0, 1.0);
+        finishSketch();
+        // The Ready view keeps the sketch's orthographic projection, where the
+        // camera distance changes nothing on screen; Perspective -- a state the
+        // user reaches from the Display popover -- makes the distance the zoom,
+        // so a placed pose is a deterministic zoom sequence.
+        final int projectionBefore = NativeViewport.projectionMode();
+        assertEquals(NativeViewport.PROJECTION_PERSPECTIVE,
+                NativeViewport.setProjectionMode(NativeViewport.PROJECTION_PERSPECTIVE));
+        try {
+            zoomSequence();
+        } finally {
+            NativeViewport.setProjectionMode(projectionBefore);
+        }
+    }
+
+    private void zoomSequence() {
+        final String[] names = {"close", "normal", "far", "very_far"};
+        final float[] distances = {4.0f, 9.0f, 18.0f, 60.0f};
+        final float[] plateW = new float[distances.length];
+        final float[] textSp = new float[distances.length];
+        for (int i = 0; i < distances.length; i++) {
+            final float distance = distances[i];
+            doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+                assertTrue(NativeViewport.debugSetCameraPose(0.8f, 0.55f, distance));
+                workspace.onNativeStateChanged();
+                return null;
+            });
+            settleLayout();
+            final double[] tool = toolState();
+            final int index = i;
+            final String where = names[i] + " (distance " + distance + ")";
+            final String record = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+                final float density = activity.getResources().getDisplayMetrics().density;
+                final CadExtrudeCanvasView canvas = workspace.cadExtrudeCanvas();
+                final View viewport = workspace.findViewById(R.id.viewport_surface);
+                // The model: the rectangle's footprint on the sketch plane.
+                float minX = Float.MAX_VALUE;
+                float minY = Float.MAX_VALUE;
+                float maxX = -Float.MAX_VALUE;
+                float maxY = -Float.MAX_VALUE;
+                final float[] p = new float[2];
+                for (double[] corner : new double[][]{{-1, -0.5}, {1, -0.5}, {1, 0.5},
+                        {-1, 0.5}}) {
+                    assertTrue(NativeViewport.sketchScreenPoint(corner[0], corner[1], p));
+                    minX = Math.min(minX, p[0]);
+                    maxX = Math.max(maxX, p[0]);
+                    minY = Math.min(minY, p[1]);
+                    maxY = Math.max(maxY, p[1]);
+                }
+                final float modelDp = Math.max(maxX - minX, maxY - minY) / density;
+                final CadHudPresentation.PanelLayout panel = canvas.lastPanelLayout();
+                final android.widget.TextView value =
+                        canvas.findViewById(R.id.cad_extrude_depth_value);
+                final float leaderDp = (float) Math.hypot(
+                        tool[NativeViewport.CAD_EXTRUDE_LEADER_END_X]
+                                - tool[NativeViewport.CAD_EXTRUDE_LEADER_START_X],
+                        tool[NativeViewport.CAD_EXTRUDE_LEADER_END_Y]
+                                - tool[NativeViewport.CAD_EXTRUDE_LEADER_START_Y]) / density;
+                final float valueWidthDp = value.getPaint().measureText(
+                        value.getText().toString()) / density;
+                textSp[index] = canvas.lastValueTextSp();
+                plateW[index] = panel.visible ? panel.plateWidth : 0.0f;
+                // One panel, whole or absent: never a partial set of icons.
+                final View plate = canvas.findViewById(R.id.cad_extrude_panel_plate);
+                final View proxy = canvas.findViewById(R.id.cad_extrude_panel);
+                assertEquals(where + ": the plate and its proxy are shown together",
+                        plate.isShown(), proxy.isShown());
+                if (panel.visible) {
+                    final String why = CadLeaderHudChecks.panelAtArrow(tool, canvas, viewport,
+                            density, 3);
+                    assertNull(where + ": " + why, why);
+                } else {
+                    assertFalse(where + ": a hidden panel shows no glyph", plate.isShown());
+                }
+                if (value.isShown()) {
+                    final String on = CadLeaderHudChecks.valueOnLeader(tool, value, viewport,
+                            density, false);
+                    assertNull(where + ": the value stays on its leader: " + on, on);
+                    assertFalse(where + ": the value is formatted, never the double's "
+                            + "expansion: " + value.getText(),
+                            value.getText().toString().matches(".*\\.\\d{4,}.*"));
+                    if (tool[NativeViewport.CAD_EXTRUDE_CLAMP]
+                            == NativeViewport.CAD_EXTRUDE_CLAMP_LOW) {
+                        assertTrue(where + ": at the scale floor the value is never wider "
+                                + "than the dimension it states (" + valueWidthDp + " dp vs "
+                                + leaderDp + " dp)", valueWidthDp <= leaderDp + 1.0f);
+                    }
+                }
+                return names[index] + " distance=" + distance
+                        + " scale=" + tool[NativeViewport.CAD_EXTRUDE_SCALE]
+                        + " clamp=" + (int) tool[NativeViewport.CAD_EXTRUDE_CLAMP]
+                        + " model_dp=" + modelDp
+                        + " panel_visible=" + panel.visible
+                        + " panel_rotation=" + panel.rotation
+                        + " panel_slide_dp=" + panel.slide / density
+                        + " panel_dp=" + panel.plateWidth / density + "x"
+                        + panel.plateHeight / density
+                        + " proxy_dp=" + panel.hitWidth / density + "x"
+                        + panel.hitHeight / density
+                        + " panel_reach_dp=" + (panel.visible
+                                ? CadLeaderHudChecks.panelReachDp(tool, canvas, viewport, density)
+                                : Float.NaN)
+                        + " value_shown=" + value.isShown()
+                        + " value=\"" + value.getText() + "\""
+                        + " value_sp=" + textSp[index]
+                        + " value_dp=" + valueWidthDp
+                        + " leader_dp=" + leaderDp
+                        + " collapsed=" + canvas.lastAnnotationCollapsed();
+            });
+            android.util.Log.i("ForgeShape", "CADFC2_ZOOM " + record + " capture="
+                    + captureZoom(names[i]));
+        }
+        for (int i = 1; i < distances.length; i++) {
+            assertTrue("a farther camera never draws a larger panel",
+                    plateW[i] <= plateW[i - 1] + 0.5f);
+            assertTrue("nor larger value text", textSp[i] <= textSp[i - 1] + 1e-4f);
+        }
+        assertTrue("the zoom-out visibly shrinks the panel: " + plateW[0] + " -> " + plateW[2],
+                plateW[2] < plateW[0]);
+    }
+
+    /**
+     * Saves the screen for one zoom level into the app's evidence directory,
+     * which CI DEVICE pulls. The renderer is given six newly presented frames
+     * first (SwiftShader presents a few a second), and a timeout is recorded
+     * rather than asserted: the capture is evidence, every claim is asserted
+     * from native and view state above.
+     */
+    private static String captureZoom(String name) {
+        final long start = NativeViewport.debugRendererFramesPresented();
+        final long began = SystemClock.uptimeMillis();
+        long seen = 0;
+        while (SystemClock.uptimeMillis() - began < 15000L && seen < 6) {
+            final long now = NativeViewport.debugRendererFramesPresented();
+            seen = now >= start ? now - start : now;
+            SystemClock.sleep(50);
+        }
+        final android.graphics.Bitmap frame = androidx.test.platform.app.InstrumentationRegistry
+                .getInstrumentation().getUiAutomation().takeScreenshot();
+        if (frame == null) {
+            return "unavailable";
+        }
+        final java.io.File dir = new java.io.File(androidx.test.platform.app
+                .InstrumentationRegistry.getInstrumentation().getTargetContext()
+                .getExternalFilesDir(null), "evidence/cad-foundation-c2");
+        //noinspection ResultOfMethodCallIgnored
+        dir.mkdirs();
+        final java.io.File png = new java.io.File(dir, "zoom_" + name + ".png");
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(png)) {
+            frame.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
+        } catch (java.io.IOException error) {
+            return "write_failed";
+        }
+        return png.getName() + " frames=" + seen;
+    }
+
+    /**
+     * The panel is ONE touch target with real input (`CAD-FOUNDATION-C2`): a
+     * finger on the plate -- on any of its glyphs -- opens the action palette,
+     * and a finger on the palette's Flip reverses the side. Sent through the
+     * window's own dispatch, so the event takes the path a finger does.
+     */
+    @Test
+    public void cadFoundationC2_aRealTapOnThePanelOpensThePaletteAndItsFlipActs() {
+        beginSketchXy();
+        drawRectangle(2.0, 1.0);
+        finishSketch();
+        final int directionBefore = (int) toolState()[NativeViewport.CAD_EXTRUDE_DIRECTION];
+        final double depthBefore = toolState()[NativeViewport.CAD_EXTRUDE_DEPTH];
+        // The drawn EXTENT glyph, the leftmost on the plate: the tap lands on
+        // what the user sees, and the one proxy owns it.
+        final float[] extentGlyph = onWorkspace(rule.getScenario(), (activity, workspace) ->
+                windowCentre(workspace.cadExtrudeCanvas().findViewById(R.id.cad_extrude_extent)));
+        tapWindow(extentGlyph[0], extentGlyph[1]);
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final CadExtrudeCanvasView canvas = workspace.cadExtrudeCanvas();
+            assertTrue("a tap on the plate opened the action palette",
+                    canvas.actionPaletteOpen());
+            assertTrue("with the extent row", canvas.findViewById(
+                    R.id.cad_extrude_extent_palette).isShown());
+            assertTrue("and Flip, in One Side", canvas.findViewById(R.id.cad_extrude_flip)
+                    .isShown());
+            return null;
+        });
+        assertEquals("opening the palette changed nothing native", directionBefore,
+                (int) toolState()[NativeViewport.CAD_EXTRUDE_DIRECTION]);
+        final float[] flip = onWorkspace(rule.getScenario(), (activity, workspace) ->
+                windowCentre(workspace.cadExtrudeCanvas().findViewById(R.id.cad_extrude_flip)));
+        tapWindow(flip[0], flip[1]);
+        final double[] after = toolState();
+        assertTrue("the palette's Flip reversed the side",
+                (int) after[NativeViewport.CAD_EXTRUDE_DIRECTION] != directionBefore);
+        assertEquals("and kept the exact depth", depthBefore,
+                after[NativeViewport.CAD_EXTRUDE_DEPTH], 0.0);
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertFalse("the act closed the palette",
+                    workspace.cadExtrudeCanvas().actionPaletteOpen());
+            return null;
+        });
+    }
+
+    private static float[] windowCentre(View view) {
+        final int[] at = new int[2];
+        view.getLocationInWindow(at);
+        // Scale about the (0, 0) pivot folds into the reported location; the
+        // visual size does too.
+        return new float[]{at[0] + view.getWidth() * view.getScaleX() * 0.5f,
+                at[1] + view.getHeight() * view.getScaleY() * 0.5f};
+    }
+
+    /** One finger down and up at a WINDOW point, through the window's dispatch. */
+    private void tapWindow(final float x, final float y) {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View root = activity.getWindow().getDecorView();
+            final long down = SystemClock.uptimeMillis();
+            send(root, down, down, MotionEvent.ACTION_DOWN, x, y);
+            send(root, down, down + 40L, MotionEvent.ACTION_UP, x, y);
+            return null;
+        });
+        settleLayout();
+    }
+
+    // -----------------------------------------------------------------------
     // E2E-CADUXS1-09: camera-attached presentation
     // -----------------------------------------------------------------------
 
@@ -638,7 +872,7 @@ public final class CadCanvasExtrudeTest {
 
         final double[] near = toolState();
         assertTrue("the scale is inside the bounded band",
-                near[NativeViewport.CAD_EXTRUDE_SCALE] >= 0.80 - 1e-6
+                near[NativeViewport.CAD_EXTRUDE_SCALE] >= 0.40 - 1e-6
                         && near[NativeViewport.CAD_EXTRUDE_SCALE] <= 1.60 + 1e-6);
 
         // Pull the camera back with a real two-finger pinch and read the scale
@@ -650,7 +884,7 @@ public final class CadCanvasExtrudeTest {
         assertEquals("E2E-CADUXS1-09: zooming changes no authored value", depthBefore,
                 far[NativeViewport.CAD_EXTRUDE_DEPTH], 0.0);
         assertTrue("and the scale stays inside the band",
-                far[NativeViewport.CAD_EXTRUDE_SCALE] >= 0.80 - 1e-6
+                far[NativeViewport.CAD_EXTRUDE_SCALE] >= 0.40 - 1e-6
                         && far[NativeViewport.CAD_EXTRUDE_SCALE] <= 1.60 + 1e-6);
         assertTrue("a farther camera never draws the cluster larger",
                 far[NativeViewport.CAD_EXTRUDE_SCALE] <= near[NativeViewport.CAD_EXTRUDE_SCALE]

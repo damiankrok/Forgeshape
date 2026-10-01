@@ -13,6 +13,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.graphics.Bitmap;
@@ -229,25 +230,35 @@ public final class CadVerticalSliceTest {
                 ringPreview[NativeViewport.CANDIDATE_MEASURE_COMPONENTS], 0.0);
         capture("02_ring_selected_hatched");
 
-        // Switch to the DISK: the ring is dropped (they share the circle) and
-        // the preview becomes the cylinder.
-        tapSketch(rule.getScenario(), 0.0, 0.0);
+        // Tap the DISK with the ring selected (`CAD-FOUNDATION-C1`): a pure
+        // toggle ADDS it and keeps the ring, and the preview is their union --
+        // the solid rectangle -- rather than a silent switch to the disk.
+        tapAwayFromArrow(DISK_POINTS);
         assertTrue(NativeViewport.sketchProfileInfo(disk, info));
         assertEquals("the disk is selected", 1.0, info[NativeViewport.SKETCH_REGION_SELECTED], 0.0);
         assertTrue(NativeViewport.sketchProfileInfo(ring, info));
-        assertEquals("and the ring was dropped", 0.0, info[NativeViewport.SKETCH_REGION_SELECTED], 0.0);
-        final double[] diskPreview = candidate();
-        assertTrue("a new candidate revision", diskPreview[NativeViewport.CANDIDATE_MEASURE_REVISION]
+        assertEquals("and the ring was KEPT", 1.0, info[NativeViewport.SKETCH_REGION_SELECTED], 0.0);
+        assertEquals("two regions in the extrusion", 2.0,
+                toolState()[NativeViewport.CAD_EXTRUDE_SELECTED_REGIONS], 0.0);
+        final double[] unionPreview = candidate();
+        assertTrue("a new candidate revision", unionPreview[NativeViewport.CANDIDATE_MEASURE_REVISION]
                 != ringPreview[NativeViewport.CANDIDATE_MEASURE_REVISION]);
-        assertEquals("the preview is the cylinder", diskArea * depth,
-                diskPreview[NativeViewport.CANDIDATE_MEASURE_VOLUME],
-                diskArea * depth * VOLUME_TOLERANCE);
-        capture("02b_disk_selected");
+        assertEquals("the preview is the solid rectangle", rectArea * depth,
+                unionPreview[NativeViewport.CANDIDATE_MEASURE_VOLUME],
+                rectArea * depth * VOLUME_TOLERANCE);
+        assertEquals("in one shell", 1.0,
+                unionPreview[NativeViewport.CANDIDATE_MEASURE_COMPONENTS], 0.0);
+        capture("02b_ring_plus_disk_union");
 
-        // And back to the ring.
-        tapSketch(rule.getScenario(), 1.5, 0.0);
+        // A second tap on the disk removes the disk and ONLY the disk. The
+        // union's arrow now stands at the rectangle's centre -- ON the disk --
+        // and a press on the arrow is a drag, so the tap is made on the disk's
+        // own material away from the arrow, as a user would.
+        tapAwayFromArrow(DISK_POINTS);
         assertTrue(NativeViewport.sketchProfileInfo(ring, info));
-        assertEquals("the ring again", 1.0, info[NativeViewport.SKETCH_REGION_SELECTED], 0.0);
+        assertEquals("the ring stays", 1.0, info[NativeViewport.SKETCH_REGION_SELECTED], 0.0);
+        assertTrue(NativeViewport.sketchProfileInfo(disk, info));
+        assertEquals("the disk left", 0.0, info[NativeViewport.SKETCH_REGION_SELECTED], 0.0);
         assertEquals(ringArea * depth, candidate()[NativeViewport.CANDIDATE_MEASURE_VOLUME],
                 ringArea * depth * VOLUME_TOLERANCE);
 
@@ -274,6 +285,272 @@ public final class CadVerticalSliceTest {
     }
 
     // =======================================================================
+    // 1b. `CAD-FOUNDATION-C1`: rectangle + two circles, the union of regions
+    // =======================================================================
+
+    @Test
+    public void owner_rectangle_two_circles_union() {
+        final int bodiesBefore = NativeViewport.sceneBodyCount();
+        beginSketch(R.id.sketch_plane_xy);
+        drawRectangle(4.0, 3.0);
+        final double[] drawn = new double[NativeViewport.SKETCH_ENTITY_SIZE];
+        assertTrue(NativeViewport.sketchSelectedEntity(drawn));
+        final double rectArea = drawn[NativeViewport.SKETCH_ENTITY_VALUES + 2]
+                * drawn[NativeViewport.SKETCH_ENTITY_VALUES + 3];
+        selectTool(rule.getScenario(), R.id.tool_rail_circle);
+        dragSketch(rule.getScenario(), -1.0, 0.0, -0.6, 0.0);
+        dragSketch(rule.getScenario(), 1.0, 0.0, 1.4, 0.0);
+        assertEquals("a rectangle and two circles", 3.0,
+                sketchStateArray()[NativeViewport.SKETCH_ENTITY_COUNT], 0.0);
+        finishSketch();
+
+        // J1: three atomic regions, and with more than one nothing is chosen.
+        final long[] anchors = regionAnchors();
+        assertEquals("O, A and B", 3, anchors.length);
+        assertEquals("nothing is auto-selected", 0.0,
+                toolState()[NativeViewport.CAD_EXTRUDE_SELECTED_REGIONS], 0.0);
+        final double[] info = new double[NativeViewport.SKETCH_REGION_INFO_SIZE];
+        long o = NativeViewport.NO_OBJECT;
+        final List<Long> disks = new ArrayList<>();
+        fact("union.entities", sketchStateArray()[NativeViewport.SKETCH_ENTITY_COUNT]);
+        for (long anchor : anchors) {
+            assertTrue(NativeViewport.sketchProfileInfo(anchor, info));
+            if (info[NativeViewport.SKETCH_REGION_HOLES] == 2.0) {
+                o = anchor;
+            } else {
+                disks.add(anchor);
+            }
+        }
+        assertTrue("O is the rectangle with two holes", o != NativeViewport.NO_OBJECT);
+        assertEquals(2, disks.size());
+        // A is the circle drawn first (the lower anchor), at u = -1.
+        final long a = Math.min(disks.get(0), disks.get(1));
+        final long b = Math.max(disks.get(0), disks.get(1));
+        assertTrue(NativeViewport.sketchProfileInfo(a, info));
+        final double areaA = info[NativeViewport.SKETCH_REGION_AREA];
+        assertTrue(NativeViewport.sketchProfileInfo(b, info));
+        final double areaB = info[NativeViewport.SKETCH_REGION_AREA];
+        fact("union.areas_m2", "rect=" + rectArea + " A=" + areaA + " B=" + areaB);
+
+        // Tap O: O alone.
+        tapAwayFromArrow(O_POINTS);
+        assertSelected("tap O", o, true, a, false, b, false);
+        final double depth = toolState()[NativeViewport.CAD_EXTRUDE_DEPTH];
+        assertEquals("O is the rectangle minus both disks", (rectArea - areaA - areaB) * depth,
+                candidate()[NativeViewport.CANDIDATE_MEASURE_VOLUME],
+                rectArea * depth * VOLUME_TOLERANCE);
+        // Tap A: A JOINS, O stays -- the rectangle with only B as a hole.
+        tapAwayFromArrow(A_POINTS);
+        assertSelected("tap A", o, true, a, true, b, false);
+        final double[] oa = candidate();
+        assertEquals("O+A is the rectangle with only hole B", (rectArea - areaB) * depth,
+                oa[NativeViewport.CANDIDATE_MEASURE_VOLUME], rectArea * depth * VOLUME_TOLERANCE);
+        assertEquals("one shell", 1.0, oa[NativeViewport.CANDIDATE_MEASURE_COMPONENTS], 0.0);
+        capture("16_union_o_plus_a");
+
+        // J3: tap A again -- A leaves and ONLY A.
+        tapAwayFromArrow(A_POINTS);
+        assertSelected("tap A again", o, true, a, false, b, false);
+        // J2: all three are the solid rectangle.
+        tapAwayFromArrow(A_POINTS);
+        tapAwayFromArrow(B_POINTS);
+        assertSelected("all three", o, true, a, true, b, true);
+        assertEquals("O+A+B is the solid rectangle", rectArea * depth,
+                candidate()[NativeViewport.CANDIDATE_MEASURE_VOLUME],
+                rectArea * depth * VOLUME_TOLERANCE);
+        capture("17_union_all_three");
+        // Back to O+A for the commit.
+        tapAwayFromArrow(B_POINTS);
+        assertSelected("O+A again", o, true, a, true, b, false);
+
+        final long body = extrudeWithDepth("0.5");
+        assertTrue("a CAD body", body != NativeViewport.NO_OBJECT);
+        assertEquals("ONE body", bodiesBefore + 1, NativeViewport.sceneBodyCount());
+        final double[] m = measure(body);
+        fact("union.body_volume_m3", m[NativeViewport.CAD_MEASURE_VOLUME]);
+        assertEquals("volume = (rectangle - B) x depth", (rectArea - areaB) * 0.5,
+                m[NativeViewport.CAD_MEASURE_VOLUME], rectArea * 0.5 * VOLUME_TOLERANCE);
+        assertEquals("one watertight shell", 1.0, m[NativeViewport.CAD_MEASURE_COMPONENTS], 0.0);
+        capture("18_union_committed");
+
+        // Reopen the sketch: the stored atomic selection is still O+A.
+        final int opened = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int status = NativeViewport.sketchBeginEdit(body);
+            workspace.onNativeStateChanged();
+            return status;
+        });
+        assertEquals("the sketch reopens", NativeViewport.CAD_OK, opened);
+        settleLayout();
+        if (sketchState() != NativeViewport.SKETCH_READY) {
+            finishSketch();
+        }
+        assertSelected("reopened", o, true, a, true, b, false);
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.sketchCancel();
+            workspace.onNativeStateChanged();
+            return null;
+        });
+        settleLayout();
+    }
+
+    // Candidate tap points, in sketch (u, v), inside each region and outside
+    // its holes. A press on the extrude ARROW is a drag, and a union's arrow can
+    // stand on a region the test must still tap, so each tap takes the
+    // candidate whose pixel is farthest from the arrow's projected shaft.
+    private static final double[][] DISK_POINTS = {{0.5, 0.0}, {-0.5, 0.0}, {0.0, 0.5},
+            {0.0, -0.5}, {0.35, 0.35}, {-0.35, -0.35}, {0.35, -0.35}, {-0.35, 0.35}};
+    private static final double[][] O_POINTS = {{0.0, 1.0}, {0.0, -1.0}, {1.7, 1.0},
+            {-1.7, -1.0}, {1.7, -1.0}, {-1.7, 1.0}};
+    private static final double[][] A_POINTS = {{-1.0, 0.0}, {-1.25, 0.0}, {-0.75, 0.0},
+            {-1.0, 0.25}, {-1.0, -0.25}};
+    private static final double[][] B_POINTS = {{1.0, 0.0}, {1.25, 0.0}, {0.75, 0.0},
+            {1.0, 0.25}, {1.0, -0.25}};
+    private static final double[][] FACE_RING_POINTS = {{0.5, 0.0}, {-0.5, 0.0}, {0.0, 0.5},
+            {0.0, -0.5}, {0.5, 0.5}, {-0.5, -0.5}};
+    private static final double[][] FACE_DISK_POINTS = {{0.0, 0.0}, {0.15, 0.0}, {-0.15, 0.0},
+            {0.0, 0.15}, {0.0, -0.15}};
+
+    /**
+     * Taps the candidate sketch point that projects farthest from the extrude
+     * arrow's shaft (or the first one when there is no arrow yet).
+     */
+    private void tapAwayFromArrow(double[][] candidates) {
+        final double[] tool = toolState();
+        double[] best = candidates[0];
+        if (tool[NativeViewport.CAD_EXTRUDE_ACTIVE] != 0.0
+                && tool[NativeViewport.CAD_EXTRUDE_ON_SCREEN] != 0.0) {
+            final double lx = tool[NativeViewport.CAD_EXTRUDE_LABEL_X];
+            final double ly = tool[NativeViewport.CAD_EXTRUDE_LABEL_Y];
+            final double tx = tool[NativeViewport.CAD_EXTRUDE_TIP_X];
+            final double ty = tool[NativeViewport.CAD_EXTRUDE_TIP_Y];
+            // The base is the shaft's other end: label is its midpoint.
+            final double bx = 2.0 * lx - tx;
+            final double by = 2.0 * ly - ty;
+            final double ex = tx + (tx - lx) * 0.5;
+            final double ey = ty + (ty - ly) * 0.5;
+            double bestDistance = -1.0;
+            final float[] at = new float[2];
+            for (double[] c : candidates) {
+                if (!NativeViewport.sketchScreenPoint(c[0], c[1], at)) {
+                    continue;
+                }
+                final double d = distanceToSegment(at[0], at[1], bx, by, ex, ey);
+                if (d > bestDistance) {
+                    bestDistance = d;
+                    best = c;
+                }
+            }
+        }
+        tapSketch(rule.getScenario(), best[0], best[1]);
+    }
+
+    private static double distanceToSegment(double px, double py, double ax, double ay,
+                                            double bx, double by) {
+        final double dx = bx - ax;
+        final double dy = by - ay;
+        final double lengthSq = dx * dx + dy * dy;
+        double t = lengthSq > 1e-9 ? ((px - ax) * dx + (py - ay) * dy) / lengthSq : 0.0;
+        t = Math.max(0.0, Math.min(1.0, t));
+        return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
+    }
+
+    /** Asserts which of three regions are selected, by anchor. */
+    private static void assertSelected(String where, long o, boolean oOn, long a, boolean aOn,
+                                       long b, boolean bOn) {
+        final double[] info = new double[NativeViewport.SKETCH_REGION_INFO_SIZE];
+        final long[] ids = {o, a, b};
+        final boolean[] on = {oOn, aOn, bOn};
+        final String[] names = {"O", "A", "B"};
+        for (int i = 0; i < 3; i++) {
+            assertTrue(NativeViewport.sketchProfileInfo(ids[i], info));
+            assertEquals(where + ": " + names[i] + (on[i] ? " selected" : " not selected"),
+                    on[i] ? 1.0 : 0.0, info[NativeViewport.SKETCH_REGION_SELECTED], 0.0);
+        }
+    }
+
+    // =======================================================================
+    // 1c. `CAD-FOUNDATION-C1` J4: a merged selection feeds same-body Add and Cut
+    // =======================================================================
+
+    @Test
+    public void merged_selection_feeds_same_body_add_and_cut() {
+        final long base = baseBodyOnXz();
+        final int bodies = NativeViewport.sceneBodyCount();
+        final double[] areas = faceSketchSquareAroundDisk(1.2, 0.35);
+        final double full = areas[0] + areas[1];
+        // Ring and disk both chosen: the union is the whole square.
+        tapAwayFromArrow(FACE_RING_POINTS);
+        tapAwayFromArrow(FACE_DISK_POINTS);
+        assertEquals("both regions", 2.0, toolState()[NativeViewport.CAD_EXTRUDE_SELECTED_REGIONS],
+                0.0);
+        chooseOperationOnCanvas(R.id.cad_extrude_operation_add);
+        assertEquals("the merged Add is valid", NativeViewport.CAD_OK,
+                (int) toolState()[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS]);
+        final long added = extrudeWithDepth("0.5");
+        assertEquals("Add returns the SAME body", base, added);
+        assertEquals("no body was created", bodies, NativeViewport.sceneBodyCount());
+        assertEquals("the whole square was added", 4.0 + full * 0.5,
+                measure(base)[NativeViewport.CAD_MEASURE_VOLUME], 4.5 * VOLUME_TOLERANCE);
+        capture("19_merged_add");
+        undo();
+        assertEquals(4.0, measure(base)[NativeViewport.CAD_MEASURE_VOLUME], 4.0 * VOLUME_TOLERANCE);
+
+        faceSketchSquareAroundDisk(1.2, 0.35);
+        tapAwayFromArrow(FACE_RING_POINTS);
+        tapAwayFromArrow(FACE_DISK_POINTS);
+        chooseOperationOnCanvas(R.id.cad_extrude_operation_cut);
+        assertEquals("the merged Cut is valid", NativeViewport.CAD_OK,
+                (int) toolState()[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS]);
+        final long cut = extrudeWithDepth("0.5");
+        assertEquals("Cut returns the SAME body", base, cut);
+        assertEquals("no body was created", bodies, NativeViewport.sceneBodyCount());
+        final double[] m = measure(base);
+        assertEquals("the whole square was cut, no core left standing", 4.0 - full * 0.5,
+                m[NativeViewport.CAD_MEASURE_VOLUME], 4.0 * VOLUME_TOLERANCE);
+        assertEquals("one shell", 1.0, m[NativeViewport.CAD_MEASURE_COMPONENTS], 0.0);
+        capture("20_merged_cut");
+    }
+
+    /**
+     * A face sketch on the base's far cap: a centred square around a centred
+     * circle, finished. Returns {ring area, disk area}.
+     */
+    private double[] faceSketchSquareAroundDisk(double side, double radius) {
+        assertTrue(NativeViewport.debugSetCameraPose(0.7f, 0.9f, 8.0f));
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue(NativeViewport.supportChooserBegin(true));
+            workspace.onNativeStateChanged();
+            return null;
+        });
+        settleLayout();
+        tapWorld(rule.getScenario(), 0.0, 1.0, 0.0);
+        tapWorld(rule.getScenario(), 0.0, 1.0, 0.0);
+        assertEquals("a face-supported sketch is open", NativeViewport.SKETCH_EDITING, sketchState());
+        selectTool(rule.getScenario(), R.id.tool_rail_rectangle);
+        dragSketch(rule.getScenario(), -side / 2, -side / 2, side / 2, side / 2);
+        selectTool(rule.getScenario(), R.id.tool_rail_circle);
+        dragSketch(rule.getScenario(), 0.0, 0.0, radius, 0.0);
+        assertEquals("a square and a circle", 2.0,
+                sketchStateArray()[NativeViewport.SKETCH_ENTITY_COUNT], 0.0);
+        finishSketch();
+        final long[] anchors = regionAnchors();
+        assertEquals("the ring and the disk", 2, anchors.length);
+        final double[] info = new double[NativeViewport.SKETCH_REGION_INFO_SIZE];
+        double ring = 0.0;
+        double disk = 0.0;
+        for (long anchor : anchors) {
+            assertTrue(NativeViewport.sketchProfileInfo(anchor, info));
+            if (info[NativeViewport.SKETCH_REGION_HOLES] == 1.0) {
+                ring = info[NativeViewport.SKETCH_REGION_AREA];
+            } else {
+                disk = info[NativeViewport.SKETCH_REGION_AREA];
+            }
+        }
+        fact("face_union.areas_m2", "ring=" + ring + " disk=" + disk);
+        return new double[]{ring, disk};
+    }
+
+    // =======================================================================
     // 2. The compact, icon-first extrude HUD
     // =======================================================================
 
@@ -289,46 +566,45 @@ public final class CadVerticalSliceTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final float density = activity.getResources().getDisplayMetrics().density;
             final View canvas = workspace.cadExtrudeCanvas();
-            final View cluster = canvas.findViewById(R.id.cad_extrude_cluster);
-            assertNotNull(cluster);
-            assertTrue("the cluster is on screen", cluster.isShown());
-            final Rect box = screenRect(cluster);
-            final Rect viewport = screenRect(workspace.findViewById(R.id.viewport_surface));
-            fact("hud.cluster", box.toShortString() + " w_dp=" + box.width() / density
-                    + " h_dp=" + box.height() / density + " viewport_pct="
-                    + pct(box, viewport));
-            // The pre-change cluster was 1027 x 171 px (6.78 % of the viewport).
-            assertTrue("the cluster stays compact: " + box.width() / density + " dp",
-                    box.width() / density <= 360f);
-            assertTrue("well under the 6.78 % it covered before: " + pct(box, viewport),
-                    pct(box, viewport) < 3.0);
-
-            // Icons, not text pills, while Tool Labels is off (the default).
-            for (int id : new int[]{R.id.cad_extrude_extent, R.id.cad_extrude_operation,
-                    R.id.cad_extrude_flip}) {
-                final View control = canvas.findViewById(id);
-                assertNotNull("control " + id, control);
-                assertTrue("shown " + id, control.isShown());
-                assertIconControl(control, density, "hud." + name(activity, id));
-            }
-
-            // The exact value stands ON the arrow shaft's midpoint.
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
             final double[] tool = new double[NativeViewport.CAD_EXTRUDE_SIZE];
             NativeViewport.cadExtrudeToolState(tool);
-            final View value = canvas.findViewById(R.id.cad_extrude_depth_value);
-            assertTrue(value.isShown());
-            final Rect v = screenRect(value);
-            final double dx = v.exactCenterX() - (viewport.left + tool[NativeViewport.CAD_EXTRUDE_LABEL_X]);
-            final double dy = v.exactCenterY() - (viewport.top + tool[NativeViewport.CAD_EXTRUDE_LABEL_Y]);
-            final double offDp = Math.hypot(dx, dy) / density;
-            fact("hud.value_to_shaft_dp", offDp);
-            assertTrue("the value is on the shaft (was 99.5 dp away): " + offDp, offDp <= 4.0);
-            assertTrue("value hit height >= 48 dp", value.getHeight() >= Math.round(48f * density) - 1);
+            assertTrue("the leader projects", tool[NativeViewport.CAD_EXTRUDE_LEADER_ON_SCREEN] != 0);
+            // `CAD-FOUNDATION-C2`: ONE action panel -- extent, operation and
+            // Flip on one plate scaled as a unit -- standing just past the
+            // arrow's point, with ONE unscaled >= 48 dp proxy over it.
+            final String panel = CadLeaderHudChecks.panelAtArrow(tool, canvas, viewport, density,
+                    3);
+            final View plate = canvas.findViewById(R.id.cad_extrude_panel_plate);
+            final View proxy = canvas.findViewById(R.id.cad_extrude_panel);
+            fact("hud.panel_plate", screenRect(plate).toShortString() + " scale="
+                    + plate.getScaleX());
+            fact("hud.panel_proxy", screenRect(proxy).toShortString());
+            fact("hud.panel_reach_dp",
+                    CadLeaderHudChecks.panelReachDp(tool, canvas, viewport, density));
+            assertNull("the panel: " + panel, panel);
+            assertTrue("the panel is described", proxy.getContentDescription() != null
+                    && proxy.getContentDescription().toString().toLowerCase(Locale.ROOT)
+                            .contains("one side"));
+            for (int id : new int[]{R.id.cad_extrude_extent, R.id.cad_extrude_operation,
+                    R.id.cad_extrude_flip_glyph}) {
+                final View glyph = canvas.findViewById(id);
+                assertTrue("glyph shown " + name(activity, id), glyph.isShown());
+                assertFalse("and it takes no touch of its own " + name(activity, id),
+                        glyph.isClickable());
+            }
+            // The exact value stands ABOVE the leader, reading along it.
+            final TextView value = canvas.findViewById(R.id.cad_extrude_depth_value);
+            final String why = CadLeaderHudChecks.valueOnLeader(tool, value, viewport, density,
+                    false);
+            fact("hud.value", "rotation=" + value.getRotation() + " text_sp="
+                    + value.getTextSize() / activity.getResources().getDisplayMetrics().scaledDensity);
+            assertNull("the value belongs to its leader: " + why, why);
             return null;
         });
 
-        // An orbit moves the arrow; the value follows its anchor on the next
-        // refresh rather than standing where it was.
+        // An orbit moves the arrow and its leader; the value and the glyphs
+        // follow on the next refresh rather than standing where they were.
         final double[] beforeOrbit = toolState();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertTrue(NativeViewport.debugSetCameraPose(1.1f, 0.5f, 9.0f));
@@ -337,32 +613,32 @@ public final class CadVerticalSliceTest {
         });
         settleLayout();
         final double[] afterOrbit = toolState();
-        assertTrue("the orbit moved the anchor",
-                Math.hypot(afterOrbit[NativeViewport.CAD_EXTRUDE_LABEL_X]
-                                - beforeOrbit[NativeViewport.CAD_EXTRUDE_LABEL_X],
-                        afterOrbit[NativeViewport.CAD_EXTRUDE_LABEL_Y]
-                                - beforeOrbit[NativeViewport.CAD_EXTRUDE_LABEL_Y]) > 4.0);
+        assertTrue("the orbit moved the leader",
+                Math.hypot(afterOrbit[NativeViewport.CAD_EXTRUDE_LEADER_START_X]
+                                - beforeOrbit[NativeViewport.CAD_EXTRUDE_LEADER_START_X],
+                        afterOrbit[NativeViewport.CAD_EXTRUDE_LEADER_START_Y]
+                                - beforeOrbit[NativeViewport.CAD_EXTRUDE_LEADER_START_Y]) > 4.0);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final float density = activity.getResources().getDisplayMetrics().density;
-            final Rect viewport = screenRect(workspace.findViewById(R.id.viewport_surface));
-            final Rect v = screenRect(workspace.cadExtrudeCanvas()
-                    .findViewById(R.id.cad_extrude_depth_value));
-            final double off = Math.hypot(
-                    v.exactCenterX() - (viewport.left + afterOrbit[NativeViewport.CAD_EXTRUDE_LABEL_X]),
-                    v.exactCenterY() - (viewport.top + afterOrbit[NativeViewport.CAD_EXTRUDE_LABEL_Y]))
-                    / density;
-            fact("hud.value_to_shaft_after_orbit_dp", off);
-            assertTrue("the value followed the orbit: " + off, off <= 4.0);
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final double[] tool = new double[NativeViewport.CAD_EXTRUDE_SIZE];
+            NativeViewport.cadExtrudeToolState(tool);
+            final String why = CadLeaderHudChecks.valueOnLeader(tool,
+                    workspace.cadExtrudeCanvas().findViewById(R.id.cad_extrude_depth_value),
+                    viewport, density, false);
+            assertNull("the value followed the orbit: " + why, why);
             return null;
         });
 
-        // The extent palette opens from the one extent control and closes on a choice.
-        clickCanvas(R.id.cad_extrude_extent);
+        // The action palette opens from the one panel and closes on a choice.
+        clickCanvas(R.id.cad_extrude_panel);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View canvas = workspace.cadExtrudeCanvas();
             assertTrue("the extent palette is open",
                     canvas.findViewById(R.id.cad_extrude_extent_palette).isShown());
             final float density = activity.getResources().getDisplayMetrics().density;
+            // The palette is ordinary, readable screen chrome: its choices keep
+            // the reference glyph whatever the camera is doing.
             for (int id : new int[]{R.id.cad_extrude_extent_one_side,
                     R.id.cad_extrude_extent_symmetric, R.id.cad_extrude_extent_two_sides}) {
                 assertIconControl(canvas.findViewById(id), density, "hud." + name(activity, id));
@@ -379,11 +655,14 @@ public final class CadVerticalSliceTest {
                     canvas.findViewById(R.id.cad_extrude_extent_palette).isShown());
             assertFalse("Flip is absent outside One Side",
                     canvas.findViewById(R.id.cad_extrude_flip).isShown());
+            assertEquals("and so is its glyph on the panel", View.GONE,
+                    canvas.findViewById(R.id.cad_extrude_flip_glyph).getVisibility());
             return null;
         });
         capture("06_compact_hud_symmetric");
 
-        // Tool Labels ON adds short captions without turning the row into pills.
+        // Tool Labels ON captions the PALETTE, where the choice is made, and
+        // never a glyph attached to the drawing.
         final AppPreferences before = onWorkspace(rule.getScenario(),
                 (activity, workspace) -> workspace.currentPreferences());
         assertFalse("Tool Labels defaults to OFF", before.toolLabels());
@@ -393,19 +672,23 @@ public final class CadVerticalSliceTest {
         });
         settleLayout();
         try {
+            clickCanvas(R.id.cad_extrude_panel);
             doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-                final float density = activity.getResources().getDisplayMetrics().density;
-                final View cluster = workspace.cadExtrudeCanvas().findViewById(R.id.cad_extrude_cluster);
-                final Rect box = screenRect(cluster);
-                fact("hud.cluster_labels_on", box.toShortString() + " w_dp=" + box.width() / density);
-                assertTrue("labels on stays compact: " + box.width() / density,
-                        box.width() / density <= 360f);
-                assertTrue("a caption is drawn",
-                        containsShownText(cluster, activity.getString(R.string.extent_symmetric))
-                                || containsShownTextIgnoreCase(cluster, "symmetric"));
+                final View canvas = workspace.cadExtrudeCanvas();
+                final View palette = canvas.findViewById(R.id.cad_extrude_extent_palette);
+                assertTrue("the palette is open", palette.isShown());
+                assertTrue("a caption is drawn in the palette",
+                        containsShownText(palette, activity.getString(R.string.extent_symmetric))
+                                || containsShownTextIgnoreCase(palette, "symmetric"));
+                for (int id : new int[]{R.id.cad_extrude_extent, R.id.cad_extrude_operation}) {
+                    final View attached = canvas.findViewById(id);
+                    assertFalse("no caption on the attached " + name(activity, id),
+                            containsAnyShownText(attached));
+                }
                 return null;
             });
             capture("07_compact_hud_labels_on");
+            clickCanvas(R.id.cad_extrude_panel);
 
             // The preference is application state: it survives the Activity
             // being rebuilt, and it never touched the project.
@@ -752,13 +1035,13 @@ public final class CadVerticalSliceTest {
                     workspace.findViewById(R.id.precision_toggle).isShown());
             assertTrue("Extrude is the one transition",
                     workspace.findViewById(R.id.extrude_sketch).isShown());
-            final View cluster = workspace.cadExtrudeCanvas().findViewById(R.id.cad_extrude_cluster);
-            assertTrue("the HUD is up", cluster.isShown());
+            final View value =
+                    workspace.cadExtrudeCanvas().findViewById(R.id.cad_extrude_depth_value);
+            assertTrue("the HUD is up", value.isShown());
             final View host = workspace.findViewById(R.id.workspace_trailing_host);
             fact("ready.trailing_host", screenRect(host).toShortString() + " viewport_pct="
                     + pct(screenRect(host), viewport));
-            fact("ready.hud", screenRect(cluster).toShortString() + " viewport_pct="
-                    + pct(screenRect(cluster), viewport));
+            fact("ready.hud_value", screenRect(value).toShortString());
             return null;
         });
 
@@ -843,7 +1126,8 @@ public final class CadVerticalSliceTest {
             final View canvas = workspace.cadExtrudeCanvas();
             final View badge = canvas.findViewById(R.id.cad_extrude_operation);
             assertTrue("the operation badge is shown", badge.isShown());
-            badge.performClick();
+            // The badge is a glyph on the panel; the panel opens the palette.
+            canvas.findViewById(R.id.cad_extrude_panel).performClick();
             return null;
         });
         settleLayout();
@@ -1022,8 +1306,9 @@ public final class CadVerticalSliceTest {
     // -----------------------------------------------------------------------
 
     /**
-     * An icon control: a 48 dp hit rectangle, a drawn glyph of 24..32 dp, and a
-     * content description that says what it is.
+     * A PALETTE icon control: a 48 dp hit rectangle, the reference 28 dp glyph
+     * (palettes are screen chrome and do not follow the camera), and a content
+     * description that says what it is.
      */
     private void assertIconControl(View control, float density, String label) {
         assertNotNull(label, control);
@@ -1041,7 +1326,7 @@ public final class CadVerticalSliceTest {
         fact(label, screenRect(control).toShortString() + " hit_dp="
                 + control.getWidth() / density + "x" + control.getHeight() / density
                 + " glyph_dp=" + glyphDp);
-        assertTrue(label + " glyph 24..32 dp: " + glyphDp, glyphDp >= 23.5f && glyphDp <= 32.5f);
+        assertEquals(label + " glyph is the reference 28 dp: " + glyphDp, 28.0f, glyphDp, 0.75f);
         final CharSequence description = control.getContentDescription();
         assertTrue(label + " has a description", description != null && description.length() > 0);
     }
@@ -1083,6 +1368,22 @@ public final class CadVerticalSliceTest {
             final ViewGroup group = (ViewGroup) root;
             for (int i = 0; i < group.getChildCount(); ++i) {
                 if (containsShownText(group.getChildAt(i), text)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsAnyShownText(View root) {
+        if (root instanceof TextView && root.isShown()
+                && ((TextView) root).getText().length() > 0) {
+            return true;
+        }
+        if (root instanceof ViewGroup) {
+            final ViewGroup group = (ViewGroup) root;
+            for (int i = 0; i < group.getChildCount(); ++i) {
+                if (containsAnyShownText(group.getChildAt(i))) {
                     return true;
                 }
             }

@@ -58,6 +58,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_cad_extrude_tool.cpp
     forgeshape_sketch.cpp
     forgeshape_sketch_region.cpp
+    forgeshape_sketch_arrangement.cpp
     forgeshape_sketch_overlay.cpp
     forgeshape_sketch_session.cpp
     forgeshape_support_chooser.cpp
@@ -112,6 +113,9 @@ set(FORGESHAPE_SELFTEST_SOURCES
     forgeshape_cad_selftest.cpp
     forgeshape_cad_a3_selftest.cpp
     forgeshape_cad_feature_selftest.cpp
+    forgeshape_sketch_arrangement_selftest.cpp
+    forgeshape_sketch_fill_selftest.cpp
+    forgeshape_cad_v6_selftest.cpp
     forgeshape_sketch_ux_selftest.cpp
     forgeshape_construction_selftest.cpp
     forgeshape_cone_capsule_selftest.cpp

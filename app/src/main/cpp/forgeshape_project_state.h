@@ -58,6 +58,9 @@ constexpr float kLoadedSculptVertexColor = 0.5f;
 // and the recovery candidate check, which must never offer a candidate this
 // build could not load. Restating the rule in either place is how the two
 // silently drifted apart when a second representation arrived.
+//
+// Since `CAD-V6-S1` it is also false for a CAD body with a PlanarFaces
+// selection: valid format, validated exactly, not yet regenerable here.
 bool runtimeCanEvaluateProject(const ProjectDocument& document);
 
 // Reads the whole running project into a portable document.

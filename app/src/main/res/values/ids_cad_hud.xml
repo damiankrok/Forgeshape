@@ -11,13 +11,17 @@
   keep naming the same acts.
 -->
 <resources>
-    <!-- The primary cluster: extent button, exact value, operation badge, Flip. -->
-    <item name="cad_extrude_cluster" type="id" />
-    <!-- The ONE extent button, showing the mode currently in force. -->
+    <!-- CAD-FOUNDATION-C2: the ONE action panel at the arrow's point. The
+         plate is a drawing (it takes no touch); its glyphs keep the ids that
+         name what they STATE — the extent in force, the operation in force —
+         and cad_extrude_flip names the Flip act in the action palette. -->
+    <item name="cad_extrude_panel" type="id" />
+    <item name="cad_extrude_panel_plate" type="id" />
     <item name="cad_extrude_extent" type="id" />
-    <!-- The palette the extent button opens: One Side, Symmetric, Two Sides. -->
+    <item name="cad_extrude_flip_glyph" type="id" />
+    <!-- The action palette the panel opens: extent, operation and Flip rows. -->
+    <item name="cad_extrude_actions_palette" type="id" />
     <item name="cad_extrude_extent_palette" type="id" />
-    <!-- The palette the operation badge opens, holding only what can be chosen. -->
     <item name="cad_extrude_operation_palette" type="id" />
     <item name="cad_extrude_operation_new_body" type="id" />
     <item name="cad_extrude_operation_add" type="id" />

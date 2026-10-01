@@ -1,36 +1,139 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.85.0
-**Updated:** 2026-09-30
-**Latest closeout:** **`FUNCTION-COUNCIL-C1` (D1) — `PASS-FUNCTION-COUNCIL-C1-D1`**
-(2026-09-29). **Import GLB is refused in Sculpt.** Record:
-`artifacts/function-council-c1-d1/SUMMARY.md`.
+**Status Version:** 0.93.0
+**Updated:** 2026-10-01
+**Latest closeout:** **`CAD-V6-S2-RESEARCH-FILL-PICK-HUD3D-R1` —
+`PASS-CAD-V6-S2-RESEARCH-FILL-PICK-HUD3D`** (2026-10-01). READ-ONLY research
+after the OWNER rejected the second S2 physical review; no product, test, build,
+format or workflow change; no CI, DEVICE or FullSharded; not merged. Record:
+`artifacts/cad-v6-s2-research/` (IMPLEMENTATION_PLAN.md first).
 
-- **Reproduced before the fix.** On `a1b50f2` plus the new test only
-  (`CI DEVICE` `36641798987`, 3/3 red), an import in Sculpt did four things
-  while the mode stayed Sculpt:
-  - created six bodies and made the first one active;
-  - dropped the sculpt target, revision and undo to 0;
-  - recorded a Construction step;
-  - left the project unencodable (`UnresolvedReference`).
-- **Fixed in three layers on `f29f482`.**
-  - The import row is absent in Sculpt.
-  - A late picker result is refused before the file is read.
-  - `importGlbDurable` refuses `RefusedInSculpt` under the commit's lock.
-  - There is no Java mode flag.
-- **Neutrality asserted, format unchanged.** A refusal leaves the mode, the
-  active body, the sculpt target, the ids, the sculpt revision and both
-  undo depths unchanged. The same holds for the fingerprint, the project
-  bytes and the active body's flags. No format changed.
-- **Legal import unchanged.** After Back to Construction, the same file
-  imports as before.
-- **Gates on `f29f482`:**
-  - `CI FAST` `36643103708` green, 44/44 corpus parity.
-  - `CI DEVICE` `36643101662` attempt 2 green: 23/23 tokens,
-    `OK (31 tests)`, D1 class first. Attempt 1 was a dropped startup capture
-    before any test, classified as infrastructure in `TEST_EVIDENCE.md`.
-  - Host `GLTF` 282, `SCENE` 175 and `PROJECT` 256 checks, 0 failed.
-  - **FullSharded NOT RUN.**
+- **Fill selection.** Proven: `togglePlanarFace` merge-validates every ADD
+  (`mergePlanarFaces` keeps one `nodeUsed` set across all loops →
+  `PlanarFacesTouchAtPoint`) while REMOVE is unchecked, so 7 → remove → 6 can
+  leave a pinched set every later add is refused against — the OWNER's exact
+  sequence, reproduced. The vendored kernel accepts point-touching shells with
+  separate vertex rings (Add/Cut one-tool ≡ sequential); a scratch copy without
+  the pinch return merges and regenerates all 127 subsets of the 7-cell sketch.
+  Decision: selection is a set (tap checks the cap only); point-touching faces
+  are separate components; refusals move to preview/commit. No format change.
+- **Picking.** Not native math (front ≡ back, round trip < 3e-5 m, every
+  non-edge-on view). Causes: the camera orbits on sub-slop Moves and the tap is
+  resolved at the Down pixel with the post-orbit camera (physical-only); a still
+  tap on the DRAWN arrow shaft is eaten; Java HUD proxies (≥ 48 dp, invisible)
+  take Downs over cells; plus the selection confound above.
+- **HUD.** Option B chosen: native world-derived dock frame (axial billboard in
+  the leader's plane, anchored past `cadExtrudeArrowPoint`, hidden whole
+  off-viewport or below sin 0.35), drawn by one Android overlay through a
+  4-point homography, ONE operation badge, touch claimed only inside the drawn
+  quad ∪ the 48 dp floor; dimension label unchanged; no renderer change.
+
+**Previous closeout:** **`CAD-V6-S2-CORRECTION-FILL-HUD-R1` — `PASS-CAD-V6-S2-CORRECTION-FILL-HUD`**
+(2026-10-01), **TECH PASS / OWNER RE-REVIEW REQUIRED / INTERMEDIATE V6 BRANCH /
+NOT MERGED.** On `feature/cad-v6-sketch-face-r1` only; `main` unchanged at
+`6c9f156`. The OWNER's two S2 blockers from the physical-device review are
+corrected. Record: `artifacts/cad-v6-s2-correction/SUMMARY.md` (BEFORE.md first).
+
+- **Fill bucket.** Every bounded cell of a sketch's curves is one selectable
+  planar face — **splines included**: one source edge per authored span, the
+  exact Bezier `sketchSplineSpan` states (shared with the profile
+  tessellation), intersected on the curve against lines, circles, arcs and
+  other spans. The OWNER-style mixed sketch derives 8 cells; no valid cell
+  selection returns `OverlappingRegions`/`OverlappingHoles`. A pinch is the new
+  `PlanarFacesTouchAtPoint` (code 61). `decideSketchSelectionMode` refuses an
+  arrangement failure over crossing loops by name — no silent legacy fallback;
+  legacy-exact sketches stay `LoopRegions`. A still tap in the extrude arrow's
+  grab corridor, off the drawn arrow, toggles the cell under it. No `CADB` v7,
+  no layout change; corpus 57/57 byte-identical, `cad_spline_face_v6` now a
+  valid file with unchanged bytes.
+- **Action panel.** One continuous function of the projected arrow: on the
+  arrow's line past its point, sliding back along it (to the shaft's base) at
+  an edge, turned by 0.35 × the leader's reading angle (capped 25°, tapered to
+  level before vertical). No candidate sides.
+- **Gates.** Host `HOST_SELFTESTS_OK (3971 checks, 0 failed)`; JVM 121/121;
+  release guard PASS; corpus 57/57. `CI DEVICE` `36848559518` on `7c4849a`:
+  16/22 (test grid precondition ×5, close-zoom panel hidden ×1 — both fixed in
+  `130b6e2`); `CI DEVICE` `36851090923` on `130b6e2`
+  (CadPlanarFaceOwnerCorrectionTest, CadPlanarFaceRuntimeTest,
+  CadCanvasExtrudeTest): **PASS 22/22**. `CI FAST` `36852991198` on `f989114`
+  (product code identical to `130b6e2`): **success**, JVM 121/121, corpus
+  57/57, release guard PASS. OWNER APK: artifact `11156751499`
+  (`ci-fast-evidence`), `app/build/outputs/apk/debug/app-debug.apk`,
+  12,817,709 bytes, SHA-256
+  `10572296ddc28dea9eb7c4a4cee7cb149bd2f272e698412248dcafd47dac6c26`.
+  **FullSharded NOT RUN.** S3 not started.
+
+**Previous closeout:** **`CAD-V6-S2-PLANAR-RUNTIME-R1` — `PASS-CAD-V6-S2-PLANAR-RUNTIME`**
+(2026-09-30), **TECH PASS / INTERMEDIATE V6 BRANCH / NOT MERGED / OWNER REVIEW
+APK READY.** On `feature/cad-v6-sketch-face-r1` only; `main` is unchanged at
+`6c9f156`. **A sketch whose curves cross is extruded by the atomic faces the
+user taps**, for New Body, Add and Cut, and a PlanarFaces project opens.
+Record: `artifacts/cad-v6-s2/SUMMARY.md` (BEFORE.md first).
+
+- **Fragment side tokens.** A union-boundary piece of a source edge is its own
+  side face with its own token (`CadFaceToken` + two `ArrangementCut`s); a
+  whole edge keeps the legacy token. `CADB` v6 FACE code 4, v6-only; codes
+  1..3 and all 56 earlier fixtures unchanged; `cad_fragment_support_v6` makes
+  57/57. No v7.
+- **Runtime.** `mergePlanarFaces` → `derivePlanarFeature` → `appendPrism`;
+  `sketchRequiresPlanarFaces` chooses the mode at Finish; tap, preview, commit,
+  reopen and Edit Sketch all work on faces; a topology edit that loses a face
+  is refused by name; `runtimeCanEvaluateProject` no longer refuses faces.
+- **Stale support chooser fixed.** `refreshChosenSupport` re-validates at
+  confirm; a scene-changing Undo/Redo cancels the chooser.
+- **Gates.** Host `HOST_SELFTESTS_OK (3934 checks, 0 failed)`; release guard
+  PASS; JVM tests pass; corpus 57/57. `CI DEVICE` `36790265291` on `67f4962`
+  (CadPlanarFaceRuntimeTest, CadVerticalSliceTest, SketchExtrudeTest,
+  JniBoundaryHardeningTest): 27/29 — the two failures were the new test's own
+  1% bound against a measured 1.03% chord deficit, fixed test-only in
+  `10a4e4d`; `CI DEVICE` `36792102052` on `10a4e4d`
+  (CadPlanarFaceRuntimeTest): **PASS 6/6**. `CI FAST` `36793534746` on
+  `973e906` (docs-only beyond `10a4e4d`): **success**, corpus 57/57. OWNER APK:
+  artifact `11133101364`, `app-debug.apk` 12,579,121 bytes, SHA-256
+  `9dc8ea8bd4e82e31c00d034a127f303659f3d3545198880005e9b9af2f076528`;
+  physical-device review OWNER REVIEW REQUIRED.
+  **FullSharded NOT RUN.** S3 not started.
+
+**Previous closeout:** **`CAD-V6-S1-C1-ID-LIFETIME-R1` — `PASS-CAD-V6-S1-C1-ID-LIFETIME`**
+(2026-09-30), TECH PASS / V6 INTERMEDIATE BRANCH / NOT MERGED. A feature id and
+a sketch id are unique along ONE FORWARD HISTORY BRANCH (Model A, made
+structural: `CadBody::applyState` refuses to lower either high-water mark).
+Record: `artifacts/cad-v6-s1-c1/SUMMARY.md`. Gates: `CI FAST` `36775468595` on
+`ab5e071`.
+
+**Previous closeout:** **`CAD-V6-S1-MODEL-CODEC-R1` — `PASS-CAD-V6-S1-MODEL-CODEC`**
+(2026-09-30), TECH PASS / INTERMEDIATE BRANCH / NOT MERGED. A CAD Body's
+sketches are a TABLE and a feature references one by id; `CADB` v6 persists
+that and planar-face selections (validated, not yet regenerated, refused on
+load). 12 v6 fixtures; the 44 older byte-identical. Record:
+`artifacts/cad-v6-s1/SUMMARY.md`. Gates: `CI FAST` `36765133987` on `b42a5ab`.
+
+**Previous closeout:** **`CAD-PLANAR-FACE-PF-S1-ARRANGEMENT-R1` — `PASS-CAD-PLANAR-FACE-PF-S1`**
+(2026-09-30). The planar-arrangement engine (`forgeshape_sketch_arrangement`):
+analytic intersections and T-junctions, fragments, a half-edge graph, bounded
+atomic faces and a canonical `PlanarFaceRef` per face, resolved by exact
+equality. Record: `artifacts/cad-planar-face-pf-s1/SUMMARY.md`. Gates:
+`CI FAST` `36754276652` on `7d09e4a`; CI DEVICE and FullSharded not run.
+
+**Previous closeout:** **`CAD-FOUNDATION-C2` — `PASS-CAD-FOUNDATION-C2-HUD-PLANAR-BLOCKED`**
+(2026-09-30). One action panel at the extrude arrow tip; labels at the display
+precision; planar faces classified Class B. Record:
+`artifacts/cad-foundation-c2/SUMMARY.md`. Gates: `CI DEVICE` `36744737415`
+`OK (46 tests)`; OWNER APK `CI FAST` `36744733518` artifact `11112660566`,
+10,910,129 bytes, SHA-256
+`81f5cd73195e4c59af11d89161a3881b30d9916ba8844fb693a148dcb4882b9e`. Its
+physical-device review is still OWNER REVIEW REQUIRED.
+
+**Previous closeout:** **`CAD-FOUNDATION-C1-UNION-HUD-R1` — `PASS-CAD-FOUNDATION-C1`**
+(2026-09-30). A region selection is the union of its atomic regions; the
+extrude HUD became a technical-drawing leader (its glyph placement is
+superseded by C2). Record: `artifacts/cad-foundation-c1/SUMMARY.md`. Gates:
+`CI DEVICE` `36728183647` `OK (45 tests)`; FullSharded not run.
+
+**Previous closeout:** **`FUNCTION-COUNCIL-C1` (D1) — `PASS-FUNCTION-COUNCIL-C1-D1`**
+(2026-09-29). **Import GLB is refused in Sculpt.** Record:
+`artifacts/function-council-c1-d1/SUMMARY.md`. Gates on `f29f482`: `CI FAST`
+`36643103708`, `CI DEVICE` `36643101662` (`OK (31 tests)`); FullSharded not run.
 
 **Latest audit:** **`FABLE-CAD-ARCHITECTURE-AUDIT-R1` —
 `PASS-FABLE-CAD-ARCHITECTURE-AUDIT-R1`** (2026-09-30). A read-only CAD
@@ -148,7 +251,9 @@ What the owner asked for, and what now stands, measured on the CI emulator:
   control with its three-icon palette, the value centred on the shaft, the
   operation badge and Flip. Each control has a 48 dp hit area and a 24–32 dp
   glyph. The row covers **2.70 %** of the viewport, down from 6.78 %, and the
-  value stands **0.18 dp** from the shaft, down from 99.5 dp.
+  value stands **0.18 dp** from the shaft, down from 99.5 dp. *(Superseded by
+  `CAD-FOUNDATION-C1`: the row became a technical-drawing leader with the value
+  above it and 0.40..1.60 visual glyphs; see the latest closeout.)*
 - **Tool Labels.** A preference (Settings → Interface, default OFF) that adds
   captions to the HUD icons.
 - **Ready withdraws the drawing chrome.** The Tool Rail, the orientation
@@ -3890,6 +3995,18 @@ or cutout window has not been measured.
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
 
+**`CAD-V6-S1` debt (branch `feature/cad-v6-sketch-face-r1`).**
+
+- **The PF-S1 at-cap arrangement benchmark still runs on every debug start**
+  (20 derivations of a 64 × 64 grid inside CAD_FEATURE, ~0.5–0.7 s on the host
+  `-O1` build). S1 deliberately did not multiply it and did not add another;
+  it should move off the startup path when the suite is next reorganised.
+- **A curved face's solid is its chord polygon** (`CAD-V6-S2`). A face row's
+  area is exact (the arrangement integrates arcs), while the extruded solid is
+  short of it by the chord deficit — measured 0.50%–1.03% of the curved part
+  on CI DEVICE `36792102052`. That is the existing tessellation rule, not a new
+  one; it is recorded because the two numbers the user can read differ.
+
 **FUNCTION-COUNCIL-R1 defects still open** (source-confirmed; the evidence is
 in `artifacts/function-council-r1/COUNCIL_FINDINGS.md` §1). D1 was closed by
 `FUNCTION-COUNCIL-C1`; none of these was touched by it.
@@ -4510,36 +4627,21 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return this status to the ForgeShape coordinator,
-which creates the OWNER-review APK task for the integrated CAD vertical slice
-plus Sculpt, now including the D1 correction.** The next product slice is
-chosen afterwards from three inputs:
+**Exactly one next step: `CAD-V6-S2-CORRECTION-FILL-PICK-R2` on
+`feature/cad-v6-sketch-face-r1`** — Phase 1 of
+`artifacts/cad-v6-s2-research/IMPLEMENTATION_PLAN.md`: selection as a set (the
+tap checks the cap only), point-touching faces as separate components,
+refusals at preview/commit, the Ready tap resolved against the Down camera with
+no orbit while it is armed, only the arrow HEAD claiming a still tap, a stated
+edge-on threshold, and attribution tokens. It needs its own authorisation.
+Phase 2 (`CAD-V6-S2-HUD3D-R1`, the world-attached one-badge dock) follows only
+after the OWNER accepts Phase 1 on a physical device. `CAD-V6-S3` (retained-
+sketch mobile UX) waits for both. The branch merges to `main` only after the
+completed v6 migration passes the Tier-5 aggregate once.
 
-- the Council findings;
-- this D1 closeout;
-- the OWNER's feedback from the app.
-
-`FUNCTION-COUNCIL-C1` (D1) is closed and starts nothing. D2–D7 and the
-import-during-sketch observation are recorded debt, not authorised work.
-
-The Council's other OWNER decisions are still open (`COUNCIL_FINDINGS.md` §5,
-`NEXT_VERTICAL_SLICE_OPTIONS.md`):
-
-- whether a test-only JVM layout dependency is allowed;
-- what a sketch on ANOTHER body's face should make;
-- the next vertical slice.
-
-The lean tiers are no longer open: they are adopted as `TEST-OWNER-04`.
-
-- **Where it stands.** `CAD-VERTICAL-SLICE-R1` passed its milestone aggregate
-  (`36607747079`, `FULL_SHARDED_SUITE_PASS`, 629/629 on `fa0b6b4`) and is on
-  `main`.
-- **No handoff APK is issued by this closeout.** The OWNER-review build is the
-  coordinator's separate task.
-
-The OWNER review of `POST_AUDIT.md` §3 (OWNER-LATER aesthetics) and §4 (the
-three proposed next tasks) still stands. None of those tasks is authorised by
-this status.
+`FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
+recorded debt, not authorised work. The Council's other OWNER decisions are
+still open (`COUNCIL_FINDINGS.md` §5, `NEXT_VERTICAL_SLICE_OPTIONS.md`).
 
 Do not start Revolve, Through All, To Object, Intersect, a Hole feature,
 fillet, chamfer, shell, a pattern, a constraint solver, CAD → Sculpt, Stage024,
@@ -4556,8 +4658,9 @@ anchored to it, a `New Body` badge that names what the act does without
 suggesting an Add or a Cut that do not exist, and the retained sketch reachable
 in one tap from the committed body instead of three. The camera-attached size
 rule is a new function beside
-`gizmoWorldScale`, never a change to it, and its 0.80 floor is the arithmetic
-that keeps the smallest live control at exactly 48 dp.
+`gizmoWorldScale`, never a change to it. (Its floor was 0.80 then;
+`CAD-FOUNDATION-C1` lowered it to 0.40, because the 48 dp floor is now an
+invisible proxy that does not depend on the band.)
 
 **`OQ-CAD-UX-01` is CLOSED by `CAD-UX-S1-C1`, and the answer was not to unlock
 the sketch view.** A sketch is AUTHORED through the exact support-normal view

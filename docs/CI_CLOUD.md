@@ -41,7 +41,7 @@ build, and its checksum is validated first.
   symbols and 0 self-test token/check-name strings on both ABIs — and, as the
   control, more than 0 of both in the debug APK.
 - **`.forge` corpus parity**: `scripts/build-forge-corpus.ps1` (the independent
-  encoder) regenerates all 44 fixtures into a scratch directory under `pwsh`,
+  encoder) regenerates all 57 fixtures into a scratch directory under `pwsh`,
   and every committed fixture must be byte-identical.
 - `scripts/test-instrumented-runtime.ps1`, `scripts/test-instrumented-sharding.ps1`
   and `scripts/verify-device-guards.ps1` (the latter through a CI-only

@@ -125,6 +125,32 @@ final class ViewportAnchorSpace {
      *         rather than moving it to a coordinate derived from geometry that
      *         does not exist yet
      */
+    /**
+     * Centres a box of {@code width x height} (the view's LAYOUT size, before
+     * any scale or rotation it wears about its own centre) on a viewport point,
+     * with NO clamp: for a box whose fit the caller has already proved in its
+     * drawn form, where clamping the layout box would move what is drawn off
+     * the point it belongs to.
+     *
+     * @return whether a placement was written, on {@link #place}'s terms
+     */
+    boolean placeCentred(View placed, float centreX, float centreY, float width, float height) {
+        if (!ready() || !(placed.getParent() instanceof View)) {
+            return false;
+        }
+        final View parent = (View) placed.getParent();
+        if (!parent.isLaidOut() || !placed.isLaidOut()) {
+            layoutPending = true;
+        }
+        viewport.getLocationInWindow(here);
+        parent.getLocationInWindow(there);
+        final float offsetX = here[0] - there[0] - placed.getLeft();
+        final float offsetY = here[1] - there[1] - placed.getTop();
+        placed.setTranslationX(centreX - width * 0.5f + offsetX);
+        placed.setTranslationY(centreY - height * 0.5f + offsetY);
+        return true;
+    }
+
     boolean place(View placed, float anchorX, float anchorY, float width, float height) {
         if (!ready() || !(placed.getParent() instanceof View)) {
             return false;

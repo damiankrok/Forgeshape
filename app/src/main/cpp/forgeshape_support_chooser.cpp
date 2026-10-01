@@ -8,6 +8,57 @@
 #include "forgeshape_selection.h"
 
 namespace forgeshape {
+
+namespace {
+
+// A face's world frame from its world matrix: columns u, v, n and the origin.
+SketchFrame frameOf(const Mat4& faceWorld) {
+    SketchFrame frame;
+    frame.origin = mat4TransformPoint(faceWorld, Vec3{0, 0, 0});
+    frame.u = vec3Normalize(mat4TransformDirection(faceWorld, Vec3{1, 0, 0}));
+    frame.v = vec3Normalize(mat4TransformDirection(faceWorld, Vec3{0, 1, 0}));
+    frame.n = vec3Normalize(mat4TransformDirection(faceWorld, Vec3{0, 0, 1}));
+    return frame;
+}
+
+}  // namespace
+
+CadStatus refreshChosenSupport(const ConstructionScene& scene, const ChosenSupport& chosen,
+                               ChosenSupport* out) {
+    if (out == nullptr) {
+        return CadStatus::NotSketching;
+    }
+    if (chosen.kind == ChosenSupport::Kind::WorldPlane) {
+        *out = chosen;
+        return CadStatus::Ok;
+    }
+    if (chosen.kind != ChosenSupport::Kind::Face) {
+        return CadStatus::ProfileNotFound;
+    }
+    // The SAME rule a committed face-supported body is held to, now.
+    const CadStatus why = scene.validateCadFaceSupport(chosen.faceRef);
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    const SceneObject* producer = scene.findBody(chosen.faceRef.producerObjectId);
+    CadFace face;
+    Mat4 producerModel;
+    if (producer == nullptr || producer->cadOrNull() == nullptr
+        || resolveCadFeatureFace(producer->cadOrNull()->state(),
+                                 chosen.faceRef.producerLocalFeatureId, chosen.faceRef.face, &face)
+                   != CadStatus::Ok
+        || !scene.resolveWorldModel(producer->objectId(), &producerModel)) {
+        return CadStatus::ProfileNotFound;
+    }
+    const Mat4 faceWorld = mat4Multiply(producerModel, cadFaceFrameMatrix(face));
+    if (!mat4Finite(faceWorld)) {
+        return CadStatus::ProfileNotFound;
+    }
+    ChosenSupport fresh = chosen;
+    fresh.worldFrame = frameOf(faceWorld);
+    *out = fresh;
+    return CadStatus::Ok;
+}
 namespace {
 
 void pushLine(std::vector<GizmoVertex>* out, const Vec3& a, const Vec3& b, float axis,
@@ -173,13 +224,7 @@ ChosenSupport SupportChooser::resolve(const CameraSnapshot& camera, float x, flo
                             best.faceRef.face = rg.token;
                             best.faceRef.lineageToken = cadFeatureTopologySignature(
                                     body->cadOrNull()->state(), rg.featureId);
-                            best.worldFrame.origin = mat4TransformPoint(faceWorld, Vec3{0, 0, 0});
-                            best.worldFrame.u =
-                                vec3Normalize(mat4TransformDirection(faceWorld, Vec3{1, 0, 0}));
-                            best.worldFrame.v =
-                                vec3Normalize(mat4TransformDirection(faceWorld, Vec3{0, 1, 0}));
-                            best.worldFrame.n =
-                                vec3Normalize(mat4TransformDirection(faceWorld, Vec3{0, 0, 1}));
+                            best.worldFrame = frameOf(faceWorld);
                         }
                         break;
                     }

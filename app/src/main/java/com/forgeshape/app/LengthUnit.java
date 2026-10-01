@@ -56,9 +56,32 @@ enum LengthUnit {
      * the precision surface's captioned rows (`SKETCH-UX-R1` E1), and a bare
      * number floating over a drawing is ambiguous in exactly the way a technical
      * drawing must not be.
+     *
+     * <p><b>An annotation is READ, not edited, so it is written at the display
+     * precision</b> (`CAD-FOUNDATION-C2`): {@link #DISPLAY_DECIMALS} places in
+     * this unit, half-up, trailing zeros stripped — the one bounded-precision rule
+     * the product already had for a profile's area label, now shared rather than
+     * restated. A dragged depth is a binary64 the user never typed, and its
+     * shortest round-trip decimal ({@code 2.3593521118164062}) is noise on a
+     * drawing. Nothing about the value changes: the editor a label opens is still
+     * seeded by {@link #format}, which keeps every digit, and native keeps the
+     * double.
      */
     String formatWithUnit(double meters) {
-        return format(meters) + " " + label;
+        return present(atDisplayPrecision(BigDecimal.valueOf(meters)
+                .movePointRight(decimalExponent))) + " " + label;
+    }
+
+    /**
+     * Decimal places a READ-ONLY label shows in its own unit: 3, so a metre
+     * reads to the millimetre and a millimetre to the micrometre. OWNER-TUNABLE
+     * presentation; never applied to a field, a submission or native state.
+     */
+    static final int DISPLAY_DECIMALS = 3;
+
+    /** The one bounded-precision rule for a label: {@link #DISPLAY_DECIMALS}, half-up. */
+    private static BigDecimal atDisplayPrecision(BigDecimal shifted) {
+        return shifted.setScale(DISPLAY_DECIMALS, java.math.RoundingMode.HALF_UP);
     }
 
     /** Converts a value already written in {@code from} into this unit, exactly. */
@@ -75,11 +98,9 @@ enum LengthUnit {
      * chip does not carry a double's whole expansion.
      */
     static String formatArea(LengthUnit unit, double squareMeters) {
-        final BigDecimal shifted = BigDecimal.valueOf(squareMeters)
-                .movePointRight(2 * unit.decimalExponent)
-                .setScale(3, java.math.RoundingMode.HALF_UP)
-                .stripTrailingZeros();
-        return shifted.toPlainString() + " " + unit.label + "²";
+        final BigDecimal shifted = atDisplayPrecision(BigDecimal.valueOf(squareMeters)
+                .movePointRight(2 * unit.decimalExponent));
+        return present(shifted) + " " + unit.label + "²";
     }
 
     /** Converts a value written in this unit into authoritative meters, exactly. */

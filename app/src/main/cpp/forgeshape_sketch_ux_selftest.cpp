@@ -84,9 +84,9 @@ SketchArc unitSemicircle() {
 // stage has to extrude.
 CadBodyState arcAndLineBody(double depth = 1.0) {
     CadBodyState state;
-    state.sketch.plane = Workplane::XY;
-    addSketchEntity(&state.sketch, unitSemicircle());
-    addSketchEntity(&state.sketch, SketchLine{SketchPoint{-1.0, 0.0}, SketchPoint{1.0, 0.0}});
+    cadBaseSketch(state).plane = Workplane::XY;
+    addSketchEntity(&cadBaseSketch(state), unitSemicircle());
+    addSketchEntity(&cadBaseSketch(state), SketchLine{SketchPoint{-1.0, 0.0}, SketchPoint{1.0, 0.0}});
     state.extrude.profileEntityId = 1;  // the chain's smallest member id
     state.extrude.depth = depth;
     state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -101,12 +101,12 @@ CadBodyState arcAndLineBody(double depth = 1.0) {
 // waiting to happen.
 CadBodyState splineAndLineBody() {
     CadBodyState state;
-    state.sketch.plane = Workplane::XY;
+    cadBaseSketch(state).plane = Workplane::XY;
     SketchSpline spline;
     spline.points = {SketchPoint{-1.0, 0.0}, SketchPoint{-0.5, 0.75}, SketchPoint{0.5, 0.75},
                      SketchPoint{1.0, 0.0}};
-    addSketchEntity(&state.sketch, spline);
-    addSketchEntity(&state.sketch, SketchLine{SketchPoint{1.0, 0.0}, SketchPoint{-1.0, 0.0}});
+    addSketchEntity(&cadBaseSketch(state), spline);
+    addSketchEntity(&cadBaseSketch(state), SketchLine{SketchPoint{1.0, 0.0}, SketchPoint{-1.0, 0.0}});
     state.extrude.profileEntityId = 1;
     state.extrude.depth = 0.5;
     state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -116,12 +116,12 @@ CadBodyState splineAndLineBody() {
 // A plain rectangle body, for the edit-session and dependency cases.
 CadBodyState rectBody(double w, double h, double depth) {
     CadBodyState state;
-    state.sketch.plane = Workplane::XY;
+    cadBaseSketch(state).plane = Workplane::XY;
     SketchRectangle r;
     r.center = SketchPoint{0.0, 0.0};
     r.width = w;
     r.height = h;
-    addSketchEntity(&state.sketch, r);
+    addSketchEntity(&cadBaseSketch(state), r);
     state.extrude.profileEntityId = 1;
     state.extrude.depth = depth;
     state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -283,7 +283,7 @@ void testCurveProfiles(Recorder& r) {
     // An arc and a line closing one profile, and it extrudes.
     {
         const CadBodyState state = arcAndLineBody();
-        const ProfileExtraction extraction = extractClosedProfiles(state.sketch);
+        const ProfileExtraction extraction = extractClosedProfiles(cadBaseSketch(state));
         const ClosedProfile* profile = extraction.profiles.empty()
                                            ? nullptr
                                            : &extraction.profiles.front();
@@ -300,7 +300,7 @@ void testCurveProfiles(Recorder& r) {
     // A spline and a line likewise.
     {
         const CadBodyState state = splineAndLineBody();
-        const ProfileExtraction extraction = extractClosedProfiles(state.sketch);
+        const ProfileExtraction extraction = extractClosedProfiles(cadBaseSketch(state));
         ConstructionMesh mesh;
         r.check("CADUXR1_30_a_spline_and_a_line_close_one_profile_and_extrude",
                 extraction.profiles.size() == 1
@@ -342,8 +342,8 @@ void testCurveProfiles(Recorder& r) {
     // the same polygon, twice, value for value.
     {
         const CadBodyState state = arcAndLineBody();
-        const ProfileExtraction a = extractClosedProfiles(state.sketch);
-        const ProfileExtraction b = extractClosedProfiles(state.sketch);
+        const ProfileExtraction a = extractClosedProfiles(cadBaseSketch(state));
+        const ProfileExtraction b = extractClosedProfiles(cadBaseSketch(state));
         bool same = a.profiles.size() == 1 && b.profiles.size() == 1
                     && a.profiles[0].polygon.size() == b.profiles[0].polygon.size();
         for (size_t i = 0; same && i < a.profiles[0].polygon.size(); ++i) {
@@ -673,10 +673,10 @@ void testEditSketch(Recorder& r) {
     // one that changes sizes but not the set of faces.
     {
         CadBodyState child = rectBody(0.5, 0.5, 0.25);
-        child.sketch.hasFaceSupport = true;
-        child.sketch.faceSupport.producerObjectId = bodyId;
-        child.sketch.faceSupport.face.kind = CadFaceKind::CapFar;
-        child.sketch.faceSupport.lineageToken =
+        cadBaseSketch(child).hasFaceSupport = true;
+        cadBaseSketch(child).faceSupport.producerObjectId = bodyId;
+        cadBaseSketch(child).faceSupport.face.kind = CadFaceKind::CapFar;
+        cadBaseSketch(child).faceSupport.lineageToken =
                 cadTopologySignature(object->cadOrNull()->state());
         CadStatus childWhy = CadStatus::Ok;
         SceneObject* childObject = scene.addCadBody(child, &childWhy);
@@ -920,11 +920,11 @@ ProjectDocument cadFaceCurveDocument() {
     document.hasCad = true;
     const ProjectCadBody producer = rectangleProfileBody(1, 4.0, 4.0, 1.0);
     ProjectCadBody dependent = arcProfileBody(2, 0.5);
-    dependent.state.sketch.hasFaceSupport = true;
-    dependent.state.sketch.faceSupport.producerObjectId = producer.objectId;
-    dependent.state.sketch.faceSupport.producerLocalFeatureId = kCadFeatureId;
-    dependent.state.sketch.faceSupport.face = CadFaceToken{CadFaceKind::CapFar, 0, 0};
-    dependent.state.sketch.faceSupport.lineageToken = cadTopologySignature(producer.state);
+    cadBaseSketch(dependent.state).hasFaceSupport = true;
+    cadBaseSketch(dependent.state).faceSupport.producerObjectId = producer.objectId;
+    cadBaseSketch(dependent.state).faceSupport.producerLocalFeatureId = kCadFeatureId;
+    cadBaseSketch(dependent.state).faceSupport.face = CadFaceToken{CadFaceKind::CapFar, 0, 0};
+    cadBaseSketch(dependent.state).faceSupport.lineageToken = cadTopologySignature(producer.state);
     document.cad.bodies.push_back(producer);
     document.cad.bodies.push_back(dependent);
     return document;
@@ -1042,12 +1042,12 @@ bool firstProfileOf(const CadSketch& sketch, SketchEntityId anchor, ClosedProfil
 void readyRectangleSession(SketchSession* session, Workplane plane, double w, double h,
                            double depth, double centreU = 0.0, double centreV = 0.0) {
     CadBodyState state;
-    state.sketch.plane = plane;
+    cadBaseSketch(state).plane = plane;
     SketchRectangle rect;
     rect.center = SketchPoint{centreU, centreV};
     rect.width = w;
     rect.height = h;
-    addSketchEntity(&state.sketch, rect);
+    addSketchEntity(&cadBaseSketch(state), rect);
     state.extrude.profileEntityId = 1;
     state.extrude.depth = depth;
     state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -1111,12 +1111,12 @@ void testCanvasExtrudeAnchors(Recorder& r) {
         face.v = Vec3{0.0f, 0.0f, -1.0f};
         face.n = Vec3{0.0f, 1.0f, 0.0f};
         CadBodyState state;
-        state.sketch.plane = Workplane::XY;  // a face sketch canonical basis
+        cadBaseSketch(state).plane = Workplane::XY;  // a face sketch canonical basis
         SketchRectangle rect;
         rect.center = SketchPoint{0.0, 0.0};
         rect.width = 1.0;
         rect.height = 1.0;
-        addSketchEntity(&state.sketch, rect);
+        addSketchEntity(&cadBaseSketch(state), rect);
         state.extrude.profileEntityId = 1;
         state.extrude.depth = 2.0;
         state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -1288,15 +1288,16 @@ void testCanvasExtrudeScale(Recorder& r) {
                         && veryFar.unclampedScale < kCadExtrudeControlMinScale
                         && veryNear.unclampedScale > kCadExtrudeControlMaxScale);
     }
-    // The band is pinned by value. Since `CAD-VERTICAL-SLICE-R1` the HUD scales
-    // only its glyphs by it and never its 48 dp hit areas (CadHudPresentationTest
-    // asserts that floor at every scale on the JVM), so what is left to pin here
-    // is the band itself: 0.80 .. 1.60, a factor of exactly two.
+    // The band is pinned by value. The HUD sizes only what it draws by it and
+    // never a hit area (CadHudPresentationTest asserts the 48 dp proxy at every
+    // scale on the JVM), so what is left to pin here is the band itself:
+    // `CAD-FOUNDATION-C1` widened it to 0.40 .. 1.60, a factor of four, so a
+    // pulled-back camera visibly shrinks the manipulator with the work.
     {
-        r.check("CADUXS1_09_d_the_scale_band_is_0_80_to_1_60_a_factor_of_two",
-                near2(kCadExtrudeControlMinScale, 0.80, 1e-6)
+        r.check("CADUXS1_09_d_the_scale_band_is_0_40_to_1_60_a_factor_of_four",
+                near2(kCadExtrudeControlMinScale, 0.40, 1e-6)
                         && near2(kCadExtrudeControlMaxScale, 1.60, 1e-6)
-                        && near2(kCadExtrudeControlMaxScale / kCadExtrudeControlMinScale, 2.0,
+                        && near2(kCadExtrudeControlMaxScale / kCadExtrudeControlMinScale, 4.0,
                                  1e-6));
     }
     // A degenerate camera quantity produces nothing rather than a guess.
@@ -1335,6 +1336,216 @@ void testCanvasExtrudeScale(Recorder& r) {
         const bool gotB = cadExtrudeControlScale(distant, anchors.base, 2000, &b);
         r.check("CADUXS1_09_g_a_farther_camera_draws_a_smaller_control",
                 gotA && gotB && b.scale < a.scale);
+    }
+}
+
+// `CAD-FOUNDATION-C1` S3 and S4: ONE manipulator scale fact at the arrow's own
+// base, and a camera-caused overlay rebuild is a new overlay revision.
+bool overlayHasPointNear(const SketchOverlay& overlay, const Vec3& p, float tolerance) {
+    for (const GizmoVertex& v : overlay.vertices) {
+        if (std::fabs(v.position[0] - p.x) <= tolerance && std::fabs(v.position[1] - p.y) <= tolerance
+            && std::fabs(v.position[2] - p.z) <= tolerance) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void testCadFoundationOneScale(Recorder& r) {
+    // A profile far from the world origin, under a perspective camera: the
+    // configuration where the origin and the anchor are at different depths,
+    // so a second read of metersPerPixel would give a second number.
+    SketchSession session;
+    readyRectangleSession(&session, Workplane::XY, 2.0, 1.0, 1.0, 6.0, 4.0);
+    CadExtrudeAnchors anchors;
+    const bool haveAnchors = session.extrudeAnchors(&anchors);
+    const int h = 2000;
+    const CameraSnapshot camera =
+            uxPerspectiveCamera(Vec3{6.0f, 3.0f, 6.0f}, Vec3{0.0f, 0.0f, 0.0f}, 1080, h);
+    CadExtrudeViewFacts facts;
+    const bool haveFacts = session.extrudeViewFacts(camera, 1080, h, &facts);
+    // What the hit test grabs with and what the HUD slot reports: the one
+    // function, at the anchor.
+    CadExtrudeControlScale hit;
+    const bool haveHit = cadExtrudeManipulatorScale(anchors, camera, h, &hit);
+    // What the overlay USED to be sized by: the world origin.
+    float originPerUnit = 0.0f;
+    const bool haveOrigin = gizmoWorldScale(camera, Vec3{0.0f, 0.0f, 0.0f}, h, &originPerUnit);
+    const float originPerPixel = originPerUnit / gizmoPixelsPerReferenceUnit();
+    r.check("CADFC1_S3_a_one_scale_fact_at_the_anchor_feeds_hit_test_and_hud",
+            haveAnchors && haveFacts && haveHit && facts.valid
+                    && facts.scale.metersPerPixel == hit.metersPerPixel
+                    && facts.scale.world == hit.world && facts.scale.scale == hit.scale);
+    r.check("CADFC1_S3_b_the_origin_and_the_anchor_really_are_two_depths_here",
+            haveOrigin && originPerPixel > 0.0f
+                    && std::fabs(originPerPixel - hit.metersPerPixel)
+                               > 0.05f * hit.metersPerPixel);
+    // The DRAWN head: the overlay built from the frame's facts puts the arrow
+    // point exactly where the hit test extends the grab to.
+    const SketchOverlayPtr drawn = session.overlay(originPerUnit, facts);
+    const Vec3 headPoint = vec3Add(
+            anchors.tip,
+            vec3Scale(anchors.axis, static_cast<float>(hit.world * kCadExtrudeArrowHeadLengthFraction)));
+    r.check("CADFC1_S3_c_the_drawn_head_is_sized_by_the_same_fact_the_hit_test_uses",
+            drawn && overlayHasPointNear(*drawn, headPoint, 1.0e-4f)
+                    && sameCadExtrudeViewFacts(session.overlayViewFacts(), facts)
+                    && session.overlayViewFacts().scale.metersPerPixel == hit.metersPerPixel);
+    // Without the frame's facts there is no arrow at all, rather than one
+    // sized by some other number.
+    SketchSession bare;
+    readyRectangleSession(&bare, Workplane::XY, 2.0, 1.0, 1.0, 6.0, 4.0);
+    const SketchOverlayPtr unsized = bare.overlay(originPerUnit);
+    r.check("CADFC1_S3_d_no_camera_fact_means_no_arrow_rather_than_a_guessed_one",
+            unsized && !overlayHasPointNear(*unsized, headPoint, 1.0e-4f)
+                    && !bare.overlayViewFacts().valid);
+
+    // S4: a zoom that rebuilds the overlay advances its revision, the result
+    // is publishable, and an unchanged camera reuses it untouched.
+    {
+        const uint64_t r0 = drawn->revision;
+        const SketchOverlayPtr same = session.overlay(originPerUnit, facts);
+        const bool cached = same.get() == drawn.get() && same->revision == r0;
+        const SketchOverlayPtr zoomed = session.overlay(originPerUnit * 1.5f, facts);
+        const bool zoomBumped = zoomed.get() != drawn.get() && zoomed->revision > r0
+                                && zoomed->revision == session.overlayRevision();
+        const bool publishable = !zoomed->vertices.empty()
+                                 && zoomed->vertices.size() <= kMaxSketchOverlayVertices
+                                 && zoomed->ranges.size() == 5;
+        r.check("CADFC1_S4_a_a_zoom_rebuild_advances_the_overlay_revision",
+                cached && zoomBumped && publishable);
+        // The manipulator's own fact changing alone (the camera moved the
+        // anchor's depth) is a camera rebuild too.
+        CadExtrudeViewFacts closer = facts;
+        const CameraSnapshot near =
+                uxPerspectiveCamera(Vec3{2.0f, 3.0f, 4.0f}, Vec3{6.0f, 4.0f, 0.0f}, 1080, h);
+        session.extrudeViewFacts(near, 1080, h, &closer);
+        const uint64_t r1 = zoomed->revision;
+        const SketchOverlayPtr moved = session.overlay(originPerUnit * 1.5f, closer);
+        r.check("CADFC1_S4_b_a_manipulator_scale_change_alone_advances_the_revision",
+                closer.valid && !sameCadExtrudeViewFacts(closer, facts) && moved->revision > r1
+                        && overlayHasPointNear(
+                                   *moved,
+                                   vec3Add(anchors.tip,
+                                           vec3Scale(anchors.axis,
+                                                     static_cast<float>(
+                                                             closer.scale.world
+                                                             * kCadExtrudeArrowHeadLengthFraction))),
+                                   1.0e-4f));
+        // An authored change bumps once, not twice.
+        const uint64_t r2 = session.overlayRevision();
+        session.setExtrude(1.25, ExtrudeDirection::AlongNormal);
+        const uint64_t r3 = session.overlayRevision();
+        const SketchOverlayPtr edited = session.overlay(originPerUnit * 1.5f, closer);
+        r.check("CADFC1_S4_c_an_authored_change_is_published_at_its_own_revision",
+                r3 > r2 && edited->revision == r3);
+    }
+}
+
+// `CAD-FOUNDATION-C1` E: the technical-drawing leader.
+double lengthOf(const Vec3& v) { return std::sqrt(static_cast<double>(vec3Dot(v, v))); }
+
+void testCadFoundationLeader(Recorder& r) {
+    const int w = 1080;
+    const int h = 2000;
+    SketchSession session;
+    readyRectangleSession(&session, Workplane::XY, 2.0, 1.0, 1.0, 1.0, 0.5);
+    CadExtrudeAnchors anchors;
+    session.extrudeAnchors(&anchors);
+    const CameraSnapshot camera =
+            uxPerspectiveCamera(Vec3{5.0f, 4.0f, 6.0f}, Vec3{1.0f, 0.5f, 0.5f}, w, h);
+    CadExtrudeViewFacts facts;
+    const bool got = session.extrudeViewFacts(camera, w, h, &facts);
+    CadExtrudeLeader leader;
+    const bool built =
+            got && facts.leaderValid
+            && cadExtrudeLeaderFor(anchors, facts.leaderSide, facts.scale.world, &leader);
+    const double offset = facts.scale.world * kCadExtrudeLeaderOffsetFraction;
+    const Vec3 dim = vec3Sub(leader.positive.end, leader.positive.start);
+    const Vec3 shaft = vec3Sub(anchors.positive.tip, anchors.base);
+    r.check("CADFC1_E_a_the_leader_is_a_dimension_line_parallel_to_the_axis_beside_the_shaft",
+            built && std::fabs(vec3Dot(facts.leaderSide, anchors.normal)) < 1e-5f
+                    && near2(lengthOf(vec3Sub(leader.positive.start, anchors.base)), offset, 1e-5)
+                    && near2(lengthOf(vec3Sub(leader.positive.end, anchors.positive.tip)), offset,
+                             1e-5)
+                    && near2(lengthOf(dim), lengthOf(shaft), 1e-5)
+                    && vec3Dot(vec3Normalize(dim), anchors.normal) > 0.99999f);
+    // On screen the leader stands on the READING-UP side of the shaft: the
+    // side upright text along it reads above, so the value never sits on the
+    // shaft it measures.
+    float bx, by, tx, ty, lx, ly;
+    const bool projected =
+            projectWorldToScreen(camera, anchors.base, w, h, &bx, &by)
+            && projectWorldToScreen(camera, anchors.positive.tip, w, h, &tx, &ty)
+            && projectWorldToScreen(camera, leader.positive.start, w, h, &lx, &ly);
+    float dx = tx - bx;
+    float dy = ty - by;
+    if (dx < 0.0f || (dx == 0.0f && dy > 0.0f)) {
+        dx = -dx;
+        dy = -dy;
+    }
+    r.check("CADFC1_E_b_the_leader_stands_on_the_reading_up_side_of_the_shaft",
+            projected && ((lx - bx) * dy + (ly - by) * -dx) > 0.0f);
+    // It is in the overlay's Dimension range with the frame's facts, and absent
+    // without them.
+    const SketchOverlayPtr withFacts = session.overlay(0.01f, facts);
+    const uint32_t dimensionWith = withFacts->ranges.size() == 5 ? withFacts->ranges[4].vertexCount : 0u;
+    SketchSession bare;
+    readyRectangleSession(&bare, Workplane::XY, 2.0, 1.0, 1.0, 1.0, 0.5);
+    const SketchOverlayPtr without = bare.overlay(0.01f);
+    r.check("CADFC1_E_c_the_leader_is_drawn_in_the_Dimension_range_only_with_the_frame_facts",
+            withFacts->ranges.size() == 5
+                    && withFacts->ranges[4].style == SketchOverlayStyle::Dimension
+                    && dimensionWith == 2u * (2u + 1u + 2u)
+                    && overlayHasPointNear(*withFacts, leader.positive.start, 1e-4f)
+                    && without->ranges.size() == 5 && without->ranges[4].vertexCount == 0u);
+    // Symmetric: a leader per side, and the base extension is shared.
+    {
+        SketchSession sym;
+        readyRectangleSession(&sym, Workplane::XY, 2.0, 1.0, 1.0, 1.0, 0.5);
+        sym.setExtrudeExtent(ExtrudeExtentMode::Symmetric);
+        CadExtrudeViewFacts sf;
+        sym.extrudeViewFacts(camera, w, h, &sf);
+        const SketchOverlayPtr o = sym.overlay(0.01f, sf);
+        r.check("CADFC1_E_d_symmetric_draws_one_leader_per_side_with_one_shared_base_extension",
+                sf.leaderValid && o->ranges.size() == 5
+                        && o->ranges[4].vertexCount == 2u * (1u + 2u * (1u + 1u + 2u)));
+    }
+    // Looking straight down the axis still names a perpendicular, never NaN.
+    {
+        const CameraSnapshot down =
+                uxPerspectiveCamera(Vec3{1.0f, 0.5f, 9.0f}, Vec3{1.0f, 0.5f, 0.0f}, w, h);
+        Vec3 side{};
+        const bool ok = cadExtrudeLeaderSide(anchors, down, w, h, &side);
+        r.check("CADFC1_E_e_a_view_down_the_axis_falls_back_to_a_deterministic_perpendicular",
+                ok && vec3Finite(side) && std::fabs(vec3Dot(side, anchors.normal)) < 1e-5f
+                        && near2(lengthOf(side), 1.0, 1e-5));
+    }
+    // The leader shrinks with the camera like the head: a farther camera gives
+    // a smaller offset, monotonically, inside the band.
+    {
+        bool monotonic = true;
+        double previous = 1.0e9;
+        for (int i = 0; i < 12; ++i) {
+            const float distance = 3.0f + 1.5f * static_cast<float>(i);
+            const Vec3 eye{1.0f + distance * 0.5f, 0.5f + distance * 0.4f, distance * 0.75f};
+            const CameraSnapshot c = uxPerspectiveCamera(eye, Vec3{1.0f, 0.5f, 0.5f}, w, h);
+            CadExtrudeViewFacts f;
+            if (!session.extrudeViewFacts(c, w, h, &f)) {
+                monotonic = false;
+                break;
+            }
+            // The on-screen offset in pixels is scale * reference pixels.
+            const double pixels = f.scale.pixels;
+            if (!f.scale.clampedLow && !f.scale.clampedHigh) {
+                if (pixels >= previous) {
+                    monotonic = false;
+                    break;
+                }
+                previous = pixels;
+            }
+        }
+        r.check("CADFC1_E_f_the_annotation_shrinks_monotonically_as_the_camera_pulls_back",
+                monotonic && previous < 1.0e9);
     }
 }
 
@@ -2345,7 +2556,7 @@ void testDataContract(Recorder& r) {
     // A file whose sketch closes no profile is refused, curve or not.
     {
         CadBodyState open = arcAndLineBody();
-        open.sketch.entities.pop_back();  // drop the closing line
+        cadBaseSketch(open).entities.pop_back();  // drop the closing line
         ProjectDocument document = documentFor(rectBody(1.0, 1.0, 1.0));
         if (!document.cad.bodies.empty()) {
             document.cad.bodies[0].state = open;
@@ -2449,7 +2660,7 @@ void measurePerformance() {
     auto t2 = Clock::now();
     const CadBodyState mixed = arcAndLineBody();
     for (int i = 0; i < 50; ++i) {
-        extractClosedProfiles(mixed.sketch);
+        extractClosedProfiles(cadBaseSketch(mixed));
     }
     auto t3 = Clock::now();
     ConstructionMesh mesh;
@@ -2486,6 +2697,8 @@ int runSketchUxSelfTests(SketchUxSelfTestResult* out, int maxOut) {
     testCanvasExtrudeAnchors(r);
     testCanvasExtrudeFlip(r);
     testCanvasExtrudeScale(r);
+    testCadFoundationOneScale(r);
+    testCadFoundationLeader(r);
     testCanvasExtrudeDrag(r);
     testCanvasExtrudeSessionGesture(r);
     testCanvasExtrudeParityAndPurity(r);

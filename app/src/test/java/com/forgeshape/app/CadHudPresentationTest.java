@@ -11,70 +11,72 @@ import java.util.Set;
 import org.junit.Test;
 
 /**
- * The compact CAD extrude HUD's presentation rules, on the JVM
- * (`CAD-VERTICAL-SLICE-R1`).
+ * The CAD extrude HUD's presentation rules, on the JVM
+ * (`CAD-VERTICAL-SLICE-R1`, `CAD-FOUNDATION-C1`).
  *
  * <p>What is held here is the part of the HUD that is arithmetic and lookup:
- * the glyph follows the camera-attached scale inside a fixed band while the
- * touch target never moves off the 48 dp floor; each extent and each operation
- * has its own glyph and caption; the operation palette offers exactly what
- * native says is available; Flip is a One Side control; and the placement puts
- * the VALUE, not the cluster, on the arrow's anchor. A device proves the views
- * obey it; this proves the rule itself.
+ * the glyph and the value text follow the camera-attached scale over a wide
+ * band while the invisible touch proxy never moves off the 48 dp floor; the
+ * value reads upright along its leader and stands above it on the visible part
+ * of the line; the attached glyphs stand along the leader without their proxies
+ * overlapping each other or the value, and a control whose point is off screen
+ * is hidden rather than clamped; each extent and each operation has its own
+ * glyph and caption, and captions belong to palettes; the operation palette
+ * offers exactly what native says is available; Flip is a One Side control. A
+ * device proves the views obey it; this proves the rule itself.
  */
 public final class CadHudPresentationTest {
 
     /** The camera-attached multiplier's band, restated from the native rule. */
-    private static final double SCALE_MIN = 0.80;
+    private static final double SCALE_MIN = 0.40;
     private static final double SCALE_MAX = 1.60;
 
     // -----------------------------------------------------------------------
-    // Glyph and hit
+    // Visual size and hit proxy
     // -----------------------------------------------------------------------
 
     @Test
-    public void theGlyphStaysInsideItsBandForEveryScaleInTheNativeRange() {
-        for (int step = 0; step <= 80; step++) {
-            final double scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * step / 80.0;
-            final float glyph = CadHudPresentation.glyphDp(scale);
-            assertTrue("glyph " + glyph + " dp at scale " + scale + " is at least 24 dp",
-                    glyph >= 24.0f);
-            assertTrue("glyph " + glyph + " dp at scale " + scale + " is at most 32 dp",
-                    glyph <= 32.0f);
-            assertTrue("and never reaches its own hit rectangle",
-                    glyph < CadHudPresentation.hitDp(scale));
-        }
-        assertEquals("the floor saturates", 24.0f, CadHudPresentation.glyphDp(SCALE_MIN), 0.0f);
-        assertEquals("the ceiling saturates", 32.0f, CadHudPresentation.glyphDp(SCALE_MAX), 0.0f);
-    }
-
-    @Test
-    public void theGlyphFollowsTheCameraBetweenTheBounds() {
+    public void theGlyphFollowsTheWholeBandAndSaturatesAtBothEnds() {
         assertEquals(28.0f, CadHudPresentation.glyphDp(1.0), 1e-6f);
-        assertEquals(28.0f * 1.1f, CadHudPresentation.glyphDp(1.1), 1e-4f);
+        assertEquals(28.0f * 0.40f, CadHudPresentation.glyphDp(SCALE_MIN), 1e-4f);
+        assertEquals(28.0f * 1.60f, CadHudPresentation.glyphDp(SCALE_MAX), 1e-4f);
+        assertEquals("below the band it saturates", CadHudPresentation.glyphDp(SCALE_MIN),
+                CadHudPresentation.glyphDp(0.1), 0.0f);
+        assertEquals("above the band it saturates", CadHudPresentation.glyphDp(SCALE_MAX),
+                CadHudPresentation.glyphDp(5.0), 0.0f);
         float previous = 0.0f;
-        for (int step = 0; step <= 80; step++) {
-            final double scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * step / 80.0;
+        for (int step = 0; step <= 120; step++) {
+            final double scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * step / 120.0;
             final float glyph = CadHudPresentation.glyphDp(scale);
-            assertTrue("monotonic in the scale", glyph >= previous);
+            assertTrue("strictly monotonic inside the band", glyph > previous);
             previous = glyph;
         }
     }
 
     @Test
-    public void theHitRectangleIsTheFloorAtEveryScale() {
-        final double[] scales = {SCALE_MIN, 0.9, 1.0, 1.25, SCALE_MAX, 0.1, 5.0, Double.NaN,
+    public void theVisualRangeIsFarWiderThanTheOldTwentyFourToThirtyTwoClamp() {
+        final float smallest = CadHudPresentation.glyphDp(SCALE_MIN);
+        final float largest = CadHudPresentation.glyphDp(SCALE_MAX);
+        assertTrue("a pulled-back camera draws well under the old 24 dp floor: " + smallest,
+                smallest < 24.0f * 0.5f);
+        assertTrue("a close camera draws past the old 32 dp ceiling: " + largest,
+                largest > 32.0f);
+        assertEquals("a factor of four, not the old four thirds", 4.0f, largest / smallest, 1e-4f);
+    }
+
+    @Test
+    public void theHitProxyIsTheFloorAtEveryScaleWhateverIsDrawn() {
+        final double[] scales = {SCALE_MIN, 0.5, 0.9, 1.0, 1.25, SCALE_MAX, 0.1, 5.0, Double.NaN,
                 Double.POSITIVE_INFINITY, 0.0, -1.0};
         for (double scale : scales) {
-            assertTrue("hit >= 48 dp at scale " + scale, CadHudPresentation.hitDp(scale) >= 48);
-            assertEquals("and exactly the floor: the hit area never follows the camera",
-                    48, CadHudPresentation.hitDp(scale));
+            assertEquals("the proxy never follows the camera", 48,
+                    CadHudPresentation.hitDp(scale));
         }
         for (float density : new float[]{1.0f, 1.5f, 2.0f, 2.625f, 3.0f, 3.5f, 4.0f}) {
             assertEquals(Math.round(48 * density), CadHudPresentation.hitPx(density));
             for (int step = 0; step <= 16; step++) {
                 final double scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * step / 16.0;
-                assertTrue("the glyph fits inside the hit rectangle in pixels too",
+                assertTrue("the drawn glyph fits inside the proxy in pixels too",
                         CadHudPresentation.glyphPx(scale, density)
                                 < CadHudPresentation.hitPx(density));
             }
@@ -82,19 +84,34 @@ public final class CadHudPresentationTest {
     }
 
     @Test
-    public void theReferenceGlyphIsWellUnderTheOldSixtyDpControl() {
-        // The cluster this replaces authored every control at 60 dp and scaled
-        // the whole VIEW, so the smallest a control could be drawn was exactly
-        // 48 dp and the largest 96 dp of text pill. The glyph is now 28 dp at the
-        // reference scale and 32 dp at the largest, inside an unscaled 48 dp
-        // target.
-        final float oldAuthoredDp = 60.0f;
-        assertEquals(28.0f, CadHudPresentation.glyphDp(1.0), 0.0f);
-        assertTrue(CadHudPresentation.glyphDp(1.0) <= oldAuthoredDp / 2.0f);
-        assertTrue("even the largest glyph is smaller than the old floor",
-                CadHudPresentation.glyphDp(SCALE_MAX) < 48.0f);
-        assertTrue("and the hit area is smaller than the old reference control",
-                CadHudPresentation.hitDp(1.0) < oldAuthoredDp);
+    public void theValueTextFollowsThePanelsScaleInsideItsLegibilityBand() {
+        assertEquals(14.0f, CadHudPresentation.valueTextSp(1.0), 1e-6f);
+        assertEquals("the floor keeps it readable", 9.0f,
+                CadHudPresentation.valueTextSp(SCALE_MIN), 0.0f);
+        assertEquals("the ceiling keeps it an annotation", 18.0f,
+                CadHudPresentation.valueTextSp(SCALE_MAX), 0.0f);
+        assertEquals("the SAME saturating multiplier as the panel, not its own",
+                CadHudPresentation.valueTextSp(SCALE_MIN), CadHudPresentation.valueTextSp(0.05),
+                0.0f);
+        float previous = 0.0f;
+        for (int step = 0; step <= 60; step++) {
+            final double scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * step / 60.0;
+            final float sp = CadHudPresentation.valueTextSp(scale);
+            assertTrue("monotonic", sp >= previous);
+            assertTrue("banded", sp >= 9.0f && sp <= 18.0f);
+            // Inside the band the text and the glyph keep one ratio: one policy.
+            if (sp > 9.0f && sp < 18.0f) {
+                assertEquals(14.0f / 28.0f, sp / CadHudPresentation.glyphDp(scale), 1e-4f);
+            }
+            previous = sp;
+        }
+    }
+
+    @Test
+    public void theLoneRetainedSketchChipKeepsItsCompactBand() {
+        assertEquals(24.0f, CadHudPresentation.loneGlyphDp(SCALE_MIN), 0.0f);
+        assertEquals(28.0f, CadHudPresentation.loneGlyphDp(1.0), 1e-6f);
+        assertEquals(32.0f, CadHudPresentation.loneGlyphDp(SCALE_MAX), 0.0f);
     }
 
     @Test
@@ -103,15 +120,475 @@ public final class CadHudPresentationTest {
                 Double.NEGATIVE_INFINITY, 0.0, -0.5}) {
             assertEquals(1.0f, CadHudPresentation.effectiveScale(scale), 0.0f);
             assertEquals(28.0f, CadHudPresentation.glyphDp(scale), 0.0f);
+            assertEquals(14.0f, CadHudPresentation.valueTextSp(scale), 0.0f);
         }
         assertEquals(1.25f, CadHudPresentation.effectiveScale(1.25), 0.0f);
     }
 
     @Test
-    public void theValuesPillIsSmallerThanItsHitRow() {
-        assertEquals("the value's visible pill is 32 dp", 32, CadHudPresentation.VALUE_PILL_DP);
-        assertTrue("inside the 48 dp hit row", CadHudPresentation.VALUE_PILL_DP
-                < CadHudPresentation.hitDp(1.0));
+    public void captionsBelongToPalettesAndNeverToAPanelGlyph() {
+        assertTrue(CadHudPresentation.captionShown(true, false));
+        assertFalse(CadHudPresentation.captionShown(true, true));
+        assertFalse(CadHudPresentation.captionShown(false, false));
+        assertFalse(CadHudPresentation.captionShown(false, true));
+    }
+
+    // -----------------------------------------------------------------------
+    // The leader: upright reading, clipping, layout
+    // -----------------------------------------------------------------------
+
+    @Test
+    public void theReadingAngleIsAlwaysUpright() {
+        assertEquals(0.0f, CadHudPresentation.readingAngleDegrees(1.0f, 0.0f), 1e-4f);
+        assertEquals("a leftward line reads left to right", 0.0f,
+                CadHudPresentation.readingAngleDegrees(-1.0f, 0.0f), 1e-4f);
+        assertEquals("a vertical line reads bottom to top", -90.0f,
+                CadHudPresentation.readingAngleDegrees(0.0f, 1.0f), 1e-4f);
+        assertEquals(-90.0f, CadHudPresentation.readingAngleDegrees(0.0f, -1.0f), 1e-4f);
+        assertEquals(45.0f, CadHudPresentation.readingAngleDegrees(1.0f, 1.0f), 1e-4f);
+        assertEquals("flipped past 90 degrees rather than read upside down", 45.0f,
+                CadHudPresentation.readingAngleDegrees(-1.0f, -1.0f), 1e-4f);
+        assertEquals(-45.0f, CadHudPresentation.readingAngleDegrees(-1.0f, 1.0f), 1e-4f);
+        for (int degrees = -360; degrees <= 360; degrees += 5) {
+            final double r = Math.toRadians(degrees);
+            final float a = CadHudPresentation.readingAngleDegrees((float) Math.cos(r),
+                    (float) Math.sin(r));
+            assertTrue("in [-90, 90) at " + degrees + ": " + a, a >= -90.0f && a < 90.0f);
+        }
+        assertEquals(0.0f, CadHudPresentation.readingAngleDegrees(0.0f, 0.0f), 0.0f);
+    }
+
+    @Test
+    public void aLeaderIsClippedToItsVisiblePartAndAWhollyHiddenOneHasNone() {
+        final float[] inside = CadHudPresentation.clipToViewport(10, 10, 90, 50, 100, 100);
+        assertEquals(10.0f, inside[0], 1e-4f);
+        assertEquals(90.0f, inside[2], 1e-4f);
+        final float[] crossing = CadHudPresentation.clipToViewport(-100, 50, 50, 50, 100, 100);
+        assertEquals(0.0f, crossing[0], 1e-4f);
+        assertEquals(50.0f, crossing[2], 1e-4f);
+        assertEquals(null, CadHudPresentation.clipToViewport(-50, -50, -10, -10, 100, 100));
+        assertEquals(null, CadHudPresentation.clipToViewport(150, 10, 300, 90, 100, 100));
+        assertEquals(null, CadHudPresentation.clipToViewport(Float.NaN, 0, 1, 1, 100, 100));
+    }
+
+    private static CadHudPresentation.LeaderLayout layout(float sx, float sy, float ex,
+                                                          float ey) {
+        return CadHudPresentation.layoutLeader(sx, sy, ex, ey, 1080.0f, 2000.0f, 40.0f, 8.0f);
+    }
+
+    @Test
+    public void theValueStandsAboveTheMiddleOfItsLeaderAndReadsAlongIt() {
+        final CadHudPresentation.LeaderLayout l = layout(300, 1000, 700, 1000);
+        assertTrue(l.valueVisible);
+        assertEquals(0.0f, l.rotation, 1e-4f);
+        assertEquals("centred along the line", 500.0f, l.valueX, 1e-3f);
+        assertEquals("above it by half the text and the gap", 1000.0f - 20.0f - 8.0f, l.valueY,
+                1e-3f);
+        assertEquals(400.0f, l.visibleLength, 1e-3f);
+        // A steep leader drawn from bottom to top still reads upright, above.
+        final CadHudPresentation.LeaderLayout steep = layout(500, 1400, 500, 600);
+        assertEquals(-90.0f, steep.rotation, 1e-4f);
+        assertTrue("above a vertical line is to its left", steep.valueX < 500.0f);
+        assertEquals(1000.0f, steep.valueY, 1e-3f);
+        // The same leader drawn the other way gives the same reading.
+        final CadHudPresentation.LeaderLayout reversed = layout(500, 600, 500, 1400);
+        assertEquals(steep.rotation, reversed.rotation, 1e-4f);
+        assertEquals(steep.valueX, reversed.valueX, 1e-3f);
+    }
+
+    @Test
+    public void aValueStandsOnTheVisiblePartAndAWhollyHiddenLeaderHasNone() {
+        final CadHudPresentation.LeaderLayout l = layout(700, 1000, 1400, 1000);
+        assertTrue(l.valueVisible);
+        assertEquals((700.0f + 1080.0f) * 0.5f, l.valueX, 1e-3f);
+        assertEquals(380.0f, l.visibleLength, 1e-3f);
+        assertFalse(layout(1200, 100, 1500, 100).valueVisible);
+    }
+
+    // -----------------------------------------------------------------------
+    // The action panel (CAD-FOUNDATION-C2)
+    // -----------------------------------------------------------------------
+
+    /** A 2.625-density phone, 1080 x 2000 px: 48 dp = 126 px. */
+    private static final float DENSITY = 2.625f;
+
+    private static CadHudPresentation.PanelLayout panel(float hx, float hy, float ax, float ay,
+                                                        int icons, double scale) {
+        return CadHudPresentation.layoutPanel(true, hx, hy, ax, ay, refW(icons), refH(), scale,
+                DENSITY, 1080.0f, 2000.0f);
+    }
+
+    /** The plate's reference box in px, as a view would measure it. */
+    private static float refW(int icons) {
+        return CadHudPresentation.panelReferenceWidthDp(icons) * DENSITY;
+    }
+
+    private static float refH() {
+        return CadHudPresentation.panelReferenceHeightDp() * DENSITY;
+    }
+
+    @Test
+    public void thePanelIsOneRigidPlateWhoseInternalSpacingNeverChangesWithZoom() {
+        assertEquals(3, CadHudPresentation.panelIconCount(NativeViewport.EXTENT_ONE_SIDE));
+        assertEquals(2, CadHudPresentation.panelIconCount(NativeViewport.EXTENT_SYMMETRIC));
+        assertEquals(2, CadHudPresentation.panelIconCount(NativeViewport.EXTENT_TWO_SIDES));
+        // Reference plate: 3 x 28 + 2 x 2 + 2 x 4 = 96 x 36 dp.
+        assertEquals(96.0f, CadHudPresentation.panelReferenceWidthDp(3), 1e-4f);
+        assertEquals(66.0f, CadHudPresentation.panelReferenceWidthDp(2), 1e-4f);
+        assertEquals(36.0f, CadHudPresentation.panelReferenceHeightDp(), 1e-4f);
+        for (int step = 0; step <= 24; step++) {
+            final double scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * step / 24.0;
+            final float s = CadHudPresentation.visualScale(scale);
+            final float glyph = CadHudPresentation.glyphDp(scale);
+            final float first = CadHudPresentation.panelIconOffsetDp(0, 3, scale);
+            final float middle = CadHudPresentation.panelIconOffsetDp(1, 3, scale);
+            final float last = CadHudPresentation.panelIconOffsetDp(2, 3, scale);
+            assertEquals("the middle glyph is the plate's centre", 0.0f, middle, 1e-4f);
+            assertEquals("evenly pitched", middle - first, last - middle, 1e-4f);
+            assertEquals("the pitch is one fixed multiple of the glyph at every zoom",
+                    30.0f / 28.0f, (middle - first) / glyph, 1e-4f);
+            final CadHudPresentation.PanelLayout p = panel(540, 1000, 80, 0, 3, scale);
+            assertEquals("the plate scales as ONE unit",
+                    96.0f / 36.0f, p.plateWidth / p.plateHeight, 1e-4f);
+            assertEquals(96.0f * s * DENSITY, p.plateWidth, 1e-2f);
+            assertEquals(s, p.scale, 0.0f);
+        }
+    }
+
+    @Test
+    public void thePanelStandsJustPastTheArrowsPointAlongTheArrow() {
+        for (double scale : new double[]{SCALE_MIN, 1.0, SCALE_MAX}) {
+            final CadHudPresentation.PanelLayout p = panel(540, 1000, 80, 0, 3, scale);
+            assertTrue(p.visible);
+            assertEquals("no slide in open space", 0.0f, p.slide, 0.0f);
+            assertEquals("on the arrow's line", 1000.0f, p.centreY, 1e-3f);
+            assertTrue("past the point", p.centreX > 540.0f);
+            final float clear = (CadHudPresentation.ARROW_CORRIDOR_DP
+                    + CadHudPresentation.PANEL_CLEAR_DP) * DENSITY;
+            assertEquals("its proxy's near edge exactly one clear corridor from the point",
+                    clear, CadHudPresentation.panelClearance(p), 1e-2f);
+            assertEquals(540.0f + clear + p.hitWidth * 0.5f, p.centreX, 1e-2f);
+        }
+        // Any direction: the centre stands ON the arrow's line, past the point,
+        // and clear of the grab corridor.
+        for (int degrees = 0; degrees < 360; degrees += 10) {
+            final double r = Math.toRadians(degrees);
+            // A screen direction in PIXELS, as native's points give it.
+            final CadHudPresentation.PanelLayout p = panel(540, 1000,
+                    (float) (Math.cos(r) * 80.0), (float) (Math.sin(r) * 80.0), 3, 1.0);
+            assertTrue(p.visible);
+            final float along = (float) ((p.centreX - 540) * Math.cos(r)
+                    + (p.centreY - 1000) * Math.sin(r));
+            final float across = (float) (-(p.centreX - 540) * Math.sin(r)
+                    + (p.centreY - 1000) * Math.cos(r));
+            assertTrue("past the point at " + degrees, along > 0.0f);
+            assertEquals("on the arrow's line at " + degrees, 0.0f, across, 1e-2f);
+            assertTrue("clear of the arrow's grab corridor at " + degrees,
+                    CadHudPresentation.panelClearance(p)
+                            >= CadHudPresentation.ARROW_CORRIDOR_DP * DENSITY);
+        }
+    }
+
+    @Test
+    public void thePanelIsShownWholeOrNotAtAllAndOnlySlidesBackAlongTheArrow() {
+        // Past the point would leave the viewport: it slides BACK along the
+        // arrow's own line, never to the side of the shaft.
+        final CadHudPresentation.PanelLayout back = CadHudPresentation.layoutPanel(true, 900,
+                1000, 1, 0, refW(3), refH(), 1.0, DENSITY, 1080, 2000);
+        assertTrue(back.visible);
+        assertEquals("still on the arrow's line", 1000.0f, back.centreY, 1e-3f);
+        assertTrue("slid back", back.slide > 0.0f);
+        assertEquals("by exactly the least that fits", 1080.0f, back.centreX + back.hitWidth * 0.5f,
+                1e-2f);
+        assertInside(back);
+        // Nowhere a whole panel fits on the arrow's line (a corner, pointing
+        // out of the screen): hidden WHOLE, never partial, never beside.
+        final CadHudPresentation.PanelLayout corner = CadHudPresentation.layoutPanel(true, 1075,
+                5, 1, -1, refW(3), refH(), 1.0, DENSITY, 1080, 2000);
+        assertFalse(corner.visible);
+        // Pointing along an edge, too close to it to fit across: no slide can
+        // help, so hidden rather than pushed sideways off the line.
+        assertFalse(panel(540, 10, 1, 0, 3, 1.0).visible);
+        // The point behind the camera or off screen: hidden, not guessed.
+        assertFalse(CadHudPresentation.layoutPanel(false, 540, 1000, 1, 0, refW(3), refH(), 1.0,
+                DENSITY, 1080, 2000).visible);
+        assertFalse(panel(-20, 1000, 1, 0, 3, 1.0).visible);
+        // Every visible placement over a sweep is wholly inside the viewport,
+        // on the arrow's line, between the point and the attached offset.
+        for (int x = 0; x <= 1080; x += 60) {
+            for (int y = 0; y <= 2000; y += 100) {
+                final CadHudPresentation.PanelLayout p = panel(x, y, 60, 60, 3, 1.3);
+                if (!p.visible) {
+                    continue;
+                }
+                assertInside(p);
+                final float r = (float) Math.sqrt(0.5);
+                assertEquals(0.0f, -(p.centreX - x) * r + (p.centreY - y) * r, 1e-2f);
+                final float along = (p.centreX - x) * r + (p.centreY - y) * r;
+                // The axis (60, 60) is the shaft's middle to its point, so the
+                // base stands 2 x 84.85 px behind the point.
+                assertTrue("never behind the shaft's base: " + along,
+                        along >= -2.0f * (float) Math.hypot(60, 60) - 1e-2f);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Continuity (CAD-V6-S2-CORRECTION-FILL-HUD-R1)
+    // -----------------------------------------------------------------------
+
+    /** A panel width at scale 1: the size of a jump the OWNER saw. */
+    private static final float PANEL_WIDTH_PX = 96.0f * DENSITY;
+
+    private static CadHudPresentation.PanelLayout atAngle(float hx, float hy, double degrees,
+                                                          double scale) {
+        final double r = Math.toRadians(degrees);
+        return panel(hx, hy, (float) (Math.cos(r) * 80.0), (float) (Math.sin(r) * 80.0), 3, scale);
+    }
+
+    /** HUD-CONT-01: an orbit that turns the arrow moves the panel continuously. */
+    @Test
+    public void hudCont01_turningTheArrowMovesThePanelContinuouslyWithNoSideJump() {
+        CadHudPresentation.PanelLayout previous = null;
+        float largestMove = 0.0f;
+        float largestTurn = 0.0f;
+        for (int step = 0; step <= 640; step++) {
+            final double degrees = -80.0 + 160.0 * step / 640.0;  // 0.25 degree steps
+            final CadHudPresentation.PanelLayout p = atAngle(540, 1000, degrees, 1.0);
+            assertTrue("open space always fits at " + degrees, p.visible);
+            final double r = Math.toRadians(degrees);
+            final float across = (float) (-(p.centreX - 540) * Math.sin(r)
+                    + (p.centreY - 1000) * Math.cos(r));
+            assertEquals("never beside the shaft at " + degrees, 0.0f, across, 1e-2f);
+            if (previous != null) {
+                final float move = (float) Math.hypot(p.centreX - previous.centreX,
+                        p.centreY - previous.centreY);
+                largestMove = Math.max(largestMove, move);
+                largestTurn = Math.max(largestTurn, Math.abs(p.rotation - previous.rotation));
+            }
+            previous = p;
+        }
+        assertTrue("a quarter degree of orbit moves the panel a few pixels at most, never a "
+                + "panel width: " + largestMove, largestMove < 0.05f * PANEL_WIDTH_PX);
+        // The steepest the rotation ever changes is the follow plus the taper's
+        // own slope (cap over taper band): a bounded rate, never a jump.
+        final float steepest = CadHudPresentation.PANEL_ROTATION_FOLLOW
+                + CadHudPresentation.PANEL_ROTATION_MAX_DEGREES
+                        / CadHudPresentation.PANEL_ROTATION_TAPER_DEGREES;
+        assertTrue("and turns it at a bounded rate: " + largestTurn,
+                largestTurn <= steepest * 0.25f + 1e-3f);
+    }
+
+    /** HUD-CONT-02: an arrow tip approaching each edge slides the panel back along it. */
+    @Test
+    public void hudCont02_nearAnEdgeThePanelSlidesBackAlongTheArrowAndHidesOnlyWhenNothingFits() {
+        final float[][] approaches = {
+                {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0.8f, 0.6f}, {-0.6f, -0.8f}};
+        for (float[] u : approaches) {
+            CadHudPresentation.PanelLayout previous = null;
+            boolean hidden = false;
+            for (int step = 0; step <= 1200; step++) {
+                // From the middle toward the edge the arrow points at.
+                final float t = step / 1200.0f;
+                final float hx = 540.0f + u[0] * 539.0f * t;
+                final float hy = 1000.0f + u[1] * 999.0f * t;
+                final CadHudPresentation.PanelLayout p = panel(hx, hy, u[0] * 80, u[1] * 80, 3, 1.0);
+                if (!p.visible) {
+                    // Hidden only when NO centre on the arrow's line, from the
+                    // attached offset past the point back to the shaft's base
+                    // (160 px behind it), fits.
+                    final float clear = (CadHudPresentation.ARROW_CORRIDOR_DP
+                            + CadHudPresentation.PANEL_CLEAR_DP) * DENSITY;
+                    final float n = norm(u);
+                    final float ux = u[0] / n;
+                    final float uy = u[1] / n;
+                    final float half = 0.5f * (p.hitWidth * Math.abs(ux) + p.hitHeight * Math.abs(uy));
+                    boolean fits = false;
+                    for (float along = clear + half; along >= -160.0f; along -= 0.5f) {
+                        final float cx = hx + ux * along;
+                        final float cy = hy + uy * along;
+                        fits = fits || (cx - p.hitWidth * 0.5f >= 0 && cy - p.hitHeight * 0.5f >= 0
+                                && cx + p.hitWidth * 0.5f <= 1080 && cy + p.hitHeight * 0.5f <= 2000);
+                    }
+                    assertFalse("hidden although a slide fits at " + hx + "," + hy, fits);
+                    hidden = true;
+                    continue;
+                }
+                assertFalse("once hidden toward an edge, it does not reappear further on",
+                        hidden);
+                assertInside(p);
+                final float across = -(p.centreX - hx) * u[1] / norm(u)
+                        + (p.centreY - hy) * u[0] / norm(u);
+                assertEquals("on the arrow's line, never teleported across it", 0.0f, across,
+                        1e-2f);
+                if (previous != null) {
+                    final float move = (float) Math.hypot(p.centreX - previous.centreX,
+                            p.centreY - previous.centreY);
+                    final float tipMove = (float) Math.hypot(u[0] * 539.0f, u[1] * 999.0f) / 1200.0f;
+                    assertTrue("the panel moves no more than the tip does: " + move,
+                            move <= tipMove + 1e-2f);
+                }
+                previous = p;
+            }
+        }
+    }
+
+    private static float norm(float[] u) {
+        return (float) Math.hypot(u[0], u[1]);
+    }
+
+    /** HUD-CONT-03: through vertical the reading angle wraps; the panel does not flip. */
+    @Test
+    public void hudCont03_passingVerticalNeverFlipsThePanel() {
+        float previous = Float.NaN;
+        for (int step = 0; step <= 1200; step++) {
+            final double degrees = 30.0 + 120.0 * step / 1200.0;  // through +90
+            final float rotation = atAngle(540, 1000, degrees, 1.0).rotation;
+            assertTrue(Math.abs(rotation) <= CadHudPresentation.PANEL_ROTATION_MAX_DEGREES);
+            if (!Float.isNaN(previous)) {
+                assertTrue("continuous at " + degrees + ": " + previous + " -> " + rotation,
+                        Math.abs(rotation - previous) < 1.0f);
+            }
+            previous = rotation;
+        }
+        previous = Float.NaN;
+        for (int step = 0; step <= 1200; step++) {
+            final double degrees = -150.0 + 120.0 * step / 1200.0;  // through -90
+            final float rotation = atAngle(540, 1000, degrees, 1.0).rotation;
+            if (!Float.isNaN(previous)) {
+                assertTrue("continuous at " + degrees, Math.abs(rotation - previous) < 1.0f);
+            }
+            previous = rotation;
+        }
+        assertEquals("vertical reads level", 0.0f,
+                CadHudPresentation.panelRotationDegrees(0.0f, -1.0f), 1e-4f);
+        assertEquals("horizontal reads level", 0.0f,
+                CadHudPresentation.panelRotationDegrees(1.0f, 0.0f), 1e-4f);
+        assertEquals("a 30 degree line turns the panel by 0.35 of it",
+                0.35f * 30.0f, CadHudPresentation.panelRotationDegrees(
+                        (float) Math.cos(Math.toRadians(30)), (float) Math.sin(Math.toRadians(30))),
+                1e-3f);
+        assertEquals("pointing left reads the same line the same way",
+                CadHudPresentation.panelRotationDegrees(1.0f, 0.3f),
+                CadHudPresentation.panelRotationDegrees(-1.0f, -0.3f), 1e-5f);
+    }
+
+    /** HUD-CONT-04: across the whole scale band the panel is one rigid group. */
+    @Test
+    public void hudCont04_theScaleSweepKeepsOneRigidGroup() {
+        CadHudPresentation.PanelLayout previous = null;
+        for (int step = 0; step <= 240; step++) {
+            final double scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * step / 240.0;
+            final CadHudPresentation.PanelLayout p = atAngle(540, 1000, 20.0, scale);
+            assertTrue(p.visible);
+            assertEquals("one aspect at every scale", 96.0f / 36.0f, p.plateWidth / p.plateHeight,
+                    1e-4f);
+            final float glyph = CadHudPresentation.glyphDp(scale);
+            assertEquals("the glyph pitch is one fixed multiple of the glyph",
+                    30.0f / 28.0f, (CadHudPresentation.panelIconOffsetDp(1, 3, scale)
+                            - CadHudPresentation.panelIconOffsetDp(0, 3, scale)) / glyph, 1e-4f);
+            assertEquals("the scale does not turn it", atAngle(540, 1000, 20.0, 1.0).rotation,
+                    p.rotation, 0.0f);
+            if (previous != null) {
+                assertTrue("a zoom step moves it continuously", Math.hypot(
+                        p.centreX - previous.centreX, p.centreY - previous.centreY) < 3.0);
+            }
+            previous = p;
+        }
+    }
+
+    /** HUD-CONT-05: the one proxy covers the TURNED plate and keeps the 48 dp floor. */
+    @Test
+    public void hudCont05_theProxyCoversTheTurnedPlateAndStaysAtLeast48dp() {
+        final float hit = CadHudPresentation.HIT_DP * DENSITY;
+        for (double scale : new double[]{SCALE_MIN, 1.0, SCALE_MAX}) {
+            for (int degrees = -89; degrees <= 89; degrees++) {
+                final CadHudPresentation.PanelLayout p = atAngle(540, 1000, degrees, scale);
+                assertTrue(p.visible);
+                assertTrue(p.hitWidth >= hit && p.hitHeight >= hit);
+                final double r = Math.toRadians(p.rotation);
+                final float c = (float) Math.cos(r);
+                final float sn = (float) Math.sin(r);
+                for (int corner = 0; corner < 4; corner++) {
+                    final float lx = ((corner & 1) == 0 ? -0.5f : 0.5f) * p.plateWidth;
+                    final float ly = ((corner & 2) == 0 ? -0.5f : 0.5f) * p.plateHeight;
+                    final float x = p.centreX + lx * c - ly * sn;
+                    final float y = p.centreY + lx * sn + ly * c;
+                    assertTrue("corner " + corner + " at " + degrees + " deg, scale " + scale,
+                            CadHudPresentation.panelOwnsTouch(p, x, y));
+                }
+            }
+        }
+    }
+
+    private static void assertInside(CadHudPresentation.PanelLayout p) {
+        assertTrue(p.centreX - p.hitWidth * 0.5f >= 0.0f);
+        assertTrue(p.centreY - p.hitHeight * 0.5f >= 0.0f);
+        assertTrue(p.centreX + p.hitWidth * 0.5f <= 1080.0f);
+        assertTrue(p.centreY + p.hitHeight * 0.5f <= 2000.0f);
+    }
+
+    @Test
+    public void anArrowSeenEndOnStillPlacesThePanelDeterministically() {
+        final CadHudPresentation.PanelLayout a = panel(540, 1000, 0.2f, 0.1f, 2, 1.0);
+        final CadHudPresentation.PanelLayout b = panel(540, 1000, 0.0f, 0.0f, 2, 1.0);
+        assertTrue(a.visible && b.visible);
+        assertEquals("a sub-pixel direction reads as screen right", a.centreX, b.centreX, 0.0f);
+        assertEquals(1000.0f, b.centreY, 0.0f);
+    }
+
+    @Test
+    public void theHitAreaIsOneGroupProxyIndependentOfTheDrawnSize() {
+        final float hit = CadHudPresentation.HIT_DP * DENSITY;
+        for (int step = 0; step <= 24; step++) {
+            final double scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * step / 24.0;
+            final CadHudPresentation.PanelLayout p = panel(300, 1000, 80, 0, 3, scale);
+            assertTrue("at least 48 dp each way", p.hitWidth >= hit && p.hitHeight >= hit);
+            assertTrue("covering the whole drawn plate",
+                    p.hitWidth >= p.plateWidth && p.hitHeight >= p.plateHeight);
+            assertEquals("in whole pixels", Math.rint(p.hitWidth), p.hitWidth, 0.0);
+            // A plate measured a pixel or two wider than the dp sum (per-child
+            // rounding) is still covered: the box reasoned about is the box drawn.
+            final CadHudPresentation.PanelLayout wide = CadHudPresentation.layoutPanel(true, 300,
+                    1000, 80, 0, refW(3) + 2.0f, refH() + 1.0f, scale, DENSITY, 1080, 2000);
+            assertTrue(wide.hitWidth >= (refW(3) + 2.0f) * wide.scale
+                    && wide.hitHeight >= (refH() + 1.0f) * wide.scale);
+            // Every drawn glyph centre is owned by the ONE proxy, whatever the zoom.
+            for (int i = 0; i < 3; i++) {
+                final float gx = p.centreX
+                        + CadHudPresentation.panelIconOffsetDp(i, 3, scale) * DENSITY;
+                assertTrue(CadHudPresentation.panelOwnsTouch(p, gx, p.centreY));
+            }
+            assertFalse("the arrow's point is never the panel's",
+                    CadHudPresentation.panelOwnsTouch(p, 300, 1000));
+        }
+        // At the scale the drawn pitch would put three 48 dp proxies on top of
+        // each other: the reason there is one proxy, stated as numbers.
+        final float pitchDp = CadHudPresentation.panelIconOffsetDp(1, 3, 1.0)
+                - CadHudPresentation.panelIconOffsetDp(0, 3, 1.0);
+        assertTrue(pitchDp < CadHudPresentation.HIT_DP);
+        assertFalse(CadHudPresentation.panelOwnsTouch(new CadHudPresentation.PanelLayout(), 0, 0));
+    }
+
+    @Test
+    public void theAnnotationCollapsesWholeOnlyAtTheFloorAndWhenTheValueOutgrowsItsLeader() {
+        assertTrue("at the floor, a leader shorter than its value",
+                CadHudPresentation.annotationCollapsed(true, 40.0f, 90.0f));
+        assertFalse("at the floor, a long leader: a big model still reads",
+                CadHudPresentation.annotationCollapsed(true, 400.0f, 90.0f));
+        assertFalse("a short leader still shrinking with the camera: a thin extrusion up close",
+                CadHudPresentation.annotationCollapsed(false, 10.0f, 90.0f));
+        assertFalse(CadHudPresentation.annotationCollapsed(false, 400.0f, 90.0f));
+    }
+
+    @Test
+    public void aRotatedValueCoversItsRotatedBounds() {
+        final float[] flat = CadHudPresentation.rotatedBounds(100, 40, 0);
+        assertEquals(100.0f, flat[0], 1e-3f);
+        assertEquals(40.0f, flat[1], 1e-3f);
+        final float[] upright = CadHudPresentation.rotatedBounds(100, 40, -90);
+        assertEquals(40.0f, upright[0], 1e-3f);
+        assertEquals(100.0f, upright[1], 1e-3f);
     }
 
     // -----------------------------------------------------------------------
@@ -269,26 +746,6 @@ public final class CadHudPresentationTest {
     // -----------------------------------------------------------------------
     // Placement
     // -----------------------------------------------------------------------
-
-    @Test
-    public void theValueCentreOffsetPutsTheValueOnTheAnchor() {
-        // A 236-wide cluster whose value starts at 56 and is 72 wide: the value's
-        // centre is 92 from the cluster's left, the cluster's centre 118.
-        final int width = 236;
-        final int valueStart = 56;
-        final int valueWidth = 72;
-        final float offset = CadHudPresentation.valueCentreOffset(width, valueStart, valueWidth);
-        assertEquals(26.0f, offset, 0.0f);
-        // ViewportAnchorSpace centres the CLUSTER on (anchor + offset); the
-        // value's centre then lands on the anchor exactly.
-        final float anchor = 540.0f;
-        final float clusterLeft = (anchor + offset) - width * 0.5f;
-        assertEquals(anchor, clusterLeft + valueStart + valueWidth * 0.5f, 1e-4f);
-        assertEquals("a value that IS the whole cluster needs no offset", 0.0f,
-                CadHudPresentation.valueCentreOffset(100, 0, 100), 0.0f);
-        assertTrue("a value right of centre pulls the cluster left",
-                CadHudPresentation.valueCentreOffset(200, 150, 40) < 0.0f);
-    }
 
     @Test
     public void clampedStartMirrorsTheSharedViewportClamp() {

@@ -423,6 +423,38 @@ public:
     // Whether the region is part of the current selection.
     bool regionSelected(SketchEntityId outerAnchorId) const;
 
+    // --- planar faces (`CAD-V6-S2`) ---------------------------------------
+    //
+    // When a finished sketch's areas need the planar arrangement
+    // (`sketchRequiresPlanarFaces`: a crossing or T-junction cut an area the
+    // loop-region model cannot name), the session selects ATOMIC FACES instead
+    // of regions: `extrude().selection` is `PlanarFaces`, a tap toggles exactly
+    // the face under the finger, several faces extrude as their union, and the
+    // stored selection is the canonical `PlanarFaceRef` list -- never an index.
+    // Every other sketch stays on `LoopRegions`, byte for byte as before. The
+    // indices below are TRANSIENT (into the arrangement derived at Finish, in
+    // its canonical face order) and are re-read on every refresh.
+    CadSelectionKind selectionKind() const { return extrude_.selection; }
+    const SketchArrangement& arrangement() const { return arrangement_; }
+    size_t planarFaceCount() const { return faceShapes_.size(); }
+    bool planarFaceSelected(size_t index) const;
+    // A point strictly inside the face and outside its holes, and its area.
+    bool planarFaceInfo(size_t index, SketchPoint* outInterior, double* outArea) const;
+    // Adds the face or, when selected, removes it. Refused by name, the
+    // selection standing as it was, when the union would pinch
+    // (`PlanarFacesTouchAtPoint`) or exceed `kMaxPlanarFaceSelection`.
+    CadStatus togglePlanarFace(size_t index);
+    // Selects exactly this face: the panel's list row.
+    CadStatus selectPlanarFace(size_t index);
+    // Whether anything is chosen, whichever the selection kind.
+    bool selectionChosen() const;
+    // How many regions or faces are chosen.
+    size_t selectedAreaCount() const;
+    // True after Finish found that a stored face selection (an edited feature)
+    // no longer resolves exactly: nothing is re-bound, the candidate reports
+    // `PlanarFaceUnresolved`, and the user chooses again or cancels.
+    bool selectionLost() const { return selectionLost_; }
+
     // --- the operation (`CAD-VERTICAL-SLICE-R1`) --------------------------
     //
     // New Body, Add or Cut: what the extrusion does to material. New Body makes
@@ -497,6 +529,15 @@ public:
     // chosen profile, or when the geometry cannot produce anchors.
     bool extrudeAnchors(CadExtrudeAnchors* out) const;
 
+    // The camera-derived facts the manipulator is DRAWN with for one frame
+    // (`CAD-FOUNDATION-C1`), read once through `cadExtrudeManipulatorScale` at
+    // the manipulator's own base. The frame hands the SAME value to
+    // `overlay`, and the chrome reads it through here too, so the drawn head,
+    // the hit test and the HUD glyphs are one number. Invalid (and false)
+    // whenever there are no anchors.
+    bool extrudeViewFacts(const CameraSnapshot& camera, int viewportWidth, int viewportHeight,
+                          CadExtrudeViewFacts* out) const;
+
     // Reverses which side of the sketch plane the solid grows on, keeping the
     // exact depth and the same profile. A One Side control ALONE: Symmetric
     // reaches both sides already, and Two Sides states both explicitly, so in
@@ -534,8 +575,18 @@ public:
     // inactive. `worldPerUnit` sizes the snap marker; it is the world length
     // of one reference unit at the plane, which the caller derives from the
     // camera exactly as the gizmo does.
+    //
+    // `view` is the manipulator's camera facts for this frame
+    // (`extrudeViewFacts`); without them no arrow is drawn, because an arrow
+    // sized by any other scale would disagree with what the hit test grabs.
+    // A rebuild the CAMERA causes -- another `worldPerUnit` or other view
+    // facts -- is a new overlay revision, so the renderer's revision-gated
+    // upload can never keep the previous zoom's vertices.
     SketchOverlayPtr overlay(float worldPerUnit);
+    SketchOverlayPtr overlay(float worldPerUnit, const CadExtrudeViewFacts& view);
     uint64_t overlayRevision() const { return overlayRevision_; }
+    // The manipulator facts the current overlay was BUILT with; verification.
+    const CadExtrudeViewFacts& overlayViewFacts() const { return overlayView_; }
 
     // --- mapping, for the shell's verification --------------------------
 
@@ -614,7 +665,13 @@ private:
                                             const CadBodyState& candidate,
                                             const CadBodyMesh& candidateMesh) const;
     CadStatus fail(CadStatus why) { lastStatus_ = why; return why; }
-    void buildOverlay(float worldPerUnit);
+    void reconcilePlanarSelection();
+    CadStatus unchosenStatus() const;
+    void setPlanarSelection(std::vector<PlanarFaceRef> faces);
+    void clearPlanarSelection();
+    std::vector<size_t> selectedPlanarFaceIndices() const;
+    bool planarSelectionAnchor(SketchPoint* out) const;
+    void buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& view);
 
     SketchSessionState state_ = SketchSessionState::Inactive;
     SketchTool tool_ = SketchTool::Rectangle;
@@ -627,6 +684,12 @@ private:
     SketchEntityId selectedEntityId_ = kNoSketchEntity;
 
     SketchRegionExtraction regions_;
+    // `CAD-V6-S2`: the arrangement derived at Finish and, when the session is
+    // selecting planar faces, one shape per atomic face (its own one-face union)
+    // for hit testing, labels and the hatch. Derived; cleared with `regions_`.
+    SketchArrangement arrangement_;
+    std::vector<PlanarProfileComponent> faceShapes_;
+    bool selectionLost_ = false;
     ExtrudeFeature extrude_;
     // `CAD-VERTICAL-SLICE-R1`. What the extrusion does; see `setOperation`.
     CadFeatureOperation operation_ = CadFeatureOperation::NewBody;
@@ -635,10 +698,10 @@ private:
     ObjectId targetBodyId_ = kNoObject;
     CadBodyState targetBaseState_;
     bool hasTargetState_ = false;
-    // An edit session's feature (0 when authoring a new one) and, for a later
-    // feature, the support it keeps.
+    // An edit session's feature (0 when authoring a new one). The sketch's
+    // placement is not staged here: it belongs to the sketch RECORD in the
+    // staged state, which an edit rewrites the entities of and nothing else.
     uint32_t editingFeatureId_ = 0;
-    CadFeatureSupport editingSupport_{};
     // Bumped by every authored change that could change the candidate.
     uint64_t candidateRevision_ = 1;
     CadCandidateEvaluation evaluation_;
@@ -699,6 +762,7 @@ private:
     uint64_t overlayRevision_ = 0;
     bool overlayDirty_ = true;
     float overlayWorldPerUnit_ = 0.0f;
+    CadExtrudeViewFacts overlayView_{};
     std::shared_ptr<SketchOverlay> overlay_;
 };
 

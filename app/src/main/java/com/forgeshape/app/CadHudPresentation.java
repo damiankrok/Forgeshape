@@ -1,46 +1,94 @@
 package com.forgeshape.app;
 
 /**
- * The compact CAD extrude HUD's presentation rules, as plain values
- * (`CAD-VERTICAL-SLICE-R1`).
+ * The CAD extrude HUD's presentation rules, as plain values
+ * (`CAD-VERTICAL-SLICE-R1`, reshaped as a technical-drawing annotation by
+ * `CAD-FOUNDATION-C1`, and its controls gathered into ONE action panel by
+ * `CAD-FOUNDATION-C2`).
  *
  * <p><b>Why a separate class.</b> {@link CadExtrudeCanvasView} is a view and
- * can only be argued about on a device. The decisions it makes — how big a
- * glyph is drawn at a camera scale, how big the touch target is, which icon
- * and caption name a mode or an operation, which operations the badge offers,
- * where the cluster must stand so its VALUE lands on the arrow — are
- * arithmetic and lookup, and holding them here lets a JVM case pin every one
- * of them. The view asks; this answers; neither holds a domain value.
+ * can only be argued about on a device. The decisions it makes — how big the
+ * panel and the value text are drawn at a camera scale, how big the invisible
+ * touch proxy is, where the panel stands against the arrow, when the whole
+ * annotation collapses, which way the value reads, which icon and caption name
+ * a mode or an operation, which operations the palette offers — are arithmetic
+ * and lookup, and holding them here lets a JVM case pin every one of them. The
+ * view asks; this answers; neither holds a domain value, and nothing here
+ * projects: every screen point it reasons about was projected below JNI.
  *
- * <p><b>The glyph and the touch target are two different facts.</b> The glyph
- * follows the camera-attached multiplier native reports ({@code
- * CAD_EXTRUDE_SCALE}, 0.80..1.60), so the cluster still reads as belonging to
- * the work: {@code clamp(28 x scale, 24, 32)} dp. The hit area does NOT follow
- * it: every control is 48 dp at every scale. The previous cluster scaled whole
- * views by the multiplier, which scaled the hit area down with the glyph and
- * forced every control to be authored at 60 dp just so the smallest scale
- * still cleared the floor — a 60 dp text pill is what made the old cluster
- * span a phone's whole viewport.
+ * <p><b>Two annotations, one scale.</b> The exact VALUE stands above the
+ * dimension leader native draws beside the shaft, rotated to it and kept
+ * upright. The extent, the operation and (One Side only) Flip are ONE compact
+ * ACTION PANEL: a rigid plate of glyphs laid out once at its reference size and
+ * scaled as a unit, attached just past the arrow's drawn point (the head) on
+ * the arrow's own screen line and turned modestly with it — one continuous
+ * function of the projected arrow (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`). Both
+ * follow the ONE camera-attached multiplier native reports
+ * ({@code CAD_EXTRUDE_SCALE}, 0.40..1.60): the panel's every length is
+ * {@code reference x scale}, and the value's text is {@code 14 sp x scale}
+ * inside a legibility band. The panel is shown WHOLE or not at all — it never
+ * loses one icon to the screen edge and never spreads its icons apart.
+ *
+ * <p><b>What is drawn and what is touched are two facts.</b> The plate is a
+ * drawing and takes no touch. The panel's touch target is ONE invisible group
+ * proxy, at least 48 dp each way and covering the whole plate, which opens the
+ * action palette — ordinary, readable screen chrome holding every choice at
+ * its full size. At the scales the plate is drawn at, three 48 dp proxies
+ * centred on three glyphs would overlap one another (the glyph pitch is 30 dp
+ * at scale 1), and spreading the glyphs to clear them is exactly the scatter
+ * this panel replaces; so a touch never has to choose between icons.
+ *
+ * <p><b>OWNER-TUNABLE.</b> Every size constant below is a provisional
+ * presentation choice with stated arithmetic, not architecture; the
+ * physical-device review decides the final values.
  *
  * <p>Holds no Android type and reads no state; the {@code R} ids it returns
  * are plain integers.
  */
 final class CadHudPresentation {
 
-    /** The interactive floor, in dp: every HUD control's hit rectangle. */
+    /** The interactive floor, in dp: every HUD control's invisible touch proxy. */
     static final int HIT_DP = 48;
-    /** The glyph at scale 1.0, in dp. */
+    /** The drawn glyph at scale 1.0, in dp. OWNER-TUNABLE. */
     static final float GLYPH_BASE_DP = 28.0f;
-    /** The smallest glyph, in dp: still legible on a pulled-back camera. */
-    static final float GLYPH_MIN_DP = 24.0f;
     /**
-     * The largest glyph, in dp. Below the 48 dp hit rectangle with room for
-     * the pressed shape around it, so a close camera never grows a glyph into
-     * its own control's edge.
+     * The visual scale band the glyph and the value text follow — the native
+     * band, restated so a JVM case can hold it: 0.40 is a glyph of about 11 dp
+     * on a pulled-back camera, 1.60 one of about 45 dp up close. OWNER-TUNABLE.
      */
-    static final float GLYPH_MAX_DP = 32.0f;
-    /** The visible height of the exact value's pill, in dp (inside 48 dp). */
-    static final int VALUE_PILL_DP = 32;
+    static final float VISUAL_SCALE_MIN = 0.40f;
+    static final float VISUAL_SCALE_MAX = 1.60f;
+    /**
+     * The value text at scale 1.0, and its legibility band, in sp. The text
+     * follows the SAME visual scale as the panel; the band only keeps it
+     * readable at the far end and bounded at the near one. OWNER-TUNABLE.
+     */
+    static final float VALUE_TEXT_BASE_SP = 14.0f;
+    static final float VALUE_TEXT_MIN_SP = 9.0f;
+    static final float VALUE_TEXT_MAX_SP = 18.0f;
+    /** How far the value's text stands above its leader, in dp. */
+    static final float VALUE_GAP_DP = 3.0f;
+    /** The action panel's gap between two glyphs, at scale 1.0, in dp. OWNER-TUNABLE. */
+    static final float PANEL_GAP_DP = 2.0f;
+    /** The action panel's plate padding around its glyphs, at scale 1.0, in dp. */
+    static final float PANEL_PAD_DP = 4.0f;
+    /**
+     * The extrude arrow's grab corridor, in dp — {@code kCadExtrudeGrabRadiusUnits}
+     * restated. Wherever the viewport allows, the panel's touch proxy stands at
+     * least this far (plus {@link #PANEL_CLEAR_DP}) from the arrow's drawn
+     * point, so it takes no touch that would have grabbed the arrow; only at an
+     * edge does it slide back along the shaft toward the point.
+     */
+    static final float ARROW_CORRIDOR_DP = 24.0f;
+    /** The extra gap between the arrow's corridor and the panel's proxy, in dp. */
+    static final float PANEL_CLEAR_DP = 4.0f;
+    /**
+     * The retained-sketch chip's glyph band, in dp. That chip is a lone control
+     * standing on a committed body, not a drawing annotation, and it keeps the
+     * compact band it was approved with.
+     */
+    static final float LONE_GLYPH_MIN_DP = 24.0f;
+    static final float LONE_GLYPH_MAX_DP = 32.0f;
 
     /** The operations, in the native enum's order and the palette's order. */
     static final int[] OPERATIONS = {
@@ -71,10 +119,15 @@ final class CadHudPresentation {
         return (float) scale;
     }
 
-    /** The drawn glyph, in dp: {@code clamp(28 x scale, 24, 32)}. */
+    /** The multiplier clamped into the visual band. */
+    static float visualScale(double scale) {
+        final float s = effectiveScale(scale);
+        return Math.max(VISUAL_SCALE_MIN, Math.min(VISUAL_SCALE_MAX, s));
+    }
+
+    /** The drawn glyph, in dp: {@code 28 x clamp(scale, 0.40, 1.60)}. */
     static float glyphDp(double scale) {
-        final float wanted = GLYPH_BASE_DP * effectiveScale(scale);
-        return Math.max(GLYPH_MIN_DP, Math.min(GLYPH_MAX_DP, wanted));
+        return GLYPH_BASE_DP * visualScale(scale);
     }
 
     /** The drawn glyph in pixels at a display density. At least one pixel. */
@@ -82,15 +135,45 @@ final class CadHudPresentation {
         return Math.max(1, Math.round(glyphDp(scale) * density));
     }
 
+    /** The lone retained-sketch chip's glyph, in dp: {@code clamp(28 x scale, 24, 32)}. */
+    static float loneGlyphDp(double scale) {
+        final float wanted = GLYPH_BASE_DP * effectiveScale(scale);
+        return Math.max(LONE_GLYPH_MIN_DP, Math.min(LONE_GLYPH_MAX_DP, wanted));
+    }
+
+    static int loneGlyphPx(double scale, float density) {
+        return Math.max(1, Math.round(loneGlyphDp(scale) * density));
+    }
+
     /**
-     * The hit rectangle's side, in dp. Deliberately takes the scale and
-     * ignores it: that is the whole rule, stated where a case can hold it.
+     * The value's text size, in sp: {@code clamp(14 x visualScale, 9, 18)} —
+     * the panel's own multiplier, so the value and the panel grow and shrink
+     * together.
+     */
+    static float valueTextSp(double scale) {
+        final float wanted = VALUE_TEXT_BASE_SP * visualScale(scale);
+        return Math.max(VALUE_TEXT_MIN_SP, Math.min(VALUE_TEXT_MAX_SP, wanted));
+    }
+
+    /**
+     * Whether a control shows its Tool Labels caption. A palette choice does
+     * when the preference is on; a glyph on the action panel never does,
+     * because it shrinks with the work and a fixed-size word under a shrinking
+     * mark would be neither drawing nor chrome.
+     */
+    static boolean captionShown(boolean toolLabels, boolean attached) {
+        return toolLabels && !attached;
+    }
+
+    /**
+     * The touch proxy's side, in dp. Deliberately takes the scale and ignores
+     * it: that is the whole rule, stated where a case can hold it.
      */
     static int hitDp(double scale) {
         return HIT_DP;
     }
 
-    /** The hit rectangle's side in pixels at a display density. */
+    /** The touch proxy's side in pixels at a display density. */
     static int hitPx(float density) {
         return Math.round(HIT_DP * density);
     }
@@ -274,23 +357,412 @@ final class CadHudPresentation {
     // -----------------------------------------------------------------------
 
     /**
-     * How far the cluster's centre must stand from the anchor so that the
-     * VALUE's centre lands on it.
-     *
-     * <p>{@link ViewportAnchorSpace} centres whatever box it is given on the
-     * anchor. The anchor is the arrow shaft's midpoint and the value is the
-     * number that measures that shaft, so it is the value — not the cluster —
-     * that belongs there; the extent button stands to its left and the badge
-     * and Flip to its right. Passing {@code anchor + offset} to the shared
-     * placement puts the value's centre exactly on the anchor, and the shared
-     * clamp still keeps the whole cluster inside the viewport.
-     *
-     * @param clusterWidth the cluster's measured width
-     * @param valueStart   the value's left edge inside the cluster
-     * @param valueWidth   the value's measured width
+     * The upright reading angle of a screen direction, in degrees within
+     * {@code [-90, 90)}: the direction itself when it points right (or, when
+     * exactly vertical, up the screen), otherwise the reverse. Text rotated by it
+     * never reads upside down, and a vertical leader reads bottom to top — the
+     * drawing convention. Native signs the leader's side with the SAME rule, so
+     * "above the leader" is always away from the shaft. A zero vector reads 0.
      */
-    static float valueCentreOffset(int clusterWidth, int valueStart, int valueWidth) {
-        return clusterWidth * 0.5f - (valueStart + valueWidth * 0.5f);
+    static float readingAngleDegrees(float dx, float dy) {
+        if (dx == 0.0f && dy == 0.0f) {
+            return 0.0f;
+        }
+        if (dx < 0.0f || (dx == 0.0f && dy > 0.0f)) {
+            dx = -dx;
+            dy = -dy;
+        }
+        final float degrees = (float) Math.toDegrees(Math.atan2(dy, dx));
+        return degrees >= 90.0f ? degrees - 180.0f : degrees;
+    }
+
+    /**
+     * The part of the segment {@code (x0,y0)-(x1,y1)} inside {@code [0,w] x
+     * [0,h]} (Liang–Barsky), as {@code {x0, y0, x1, y1}}, or null when none of it
+     * is. The value stands on the visible part of its leader, so a leader running
+     * off the screen still has its value where the user can read and tap it —
+     * and a leader wholly off screen has no value at all rather than one clamped
+     * to an edge at a guess.
+     */
+    static float[] clipToViewport(float x0, float y0, float x1, float y1, float w, float h) {
+        if (!(w > 0.0f) || !(h > 0.0f) || Float.isNaN(x0) || Float.isNaN(y0)
+                || Float.isNaN(x1) || Float.isNaN(y1)) {
+            return null;
+        }
+        final float dx = x1 - x0;
+        final float dy = y1 - y0;
+        final float[] p = {-dx, dx, -dy, dy};
+        final float[] q = {x0, w - x0, y0, h - y0};
+        float t0 = 0.0f;
+        float t1 = 1.0f;
+        for (int i = 0; i < 4; i++) {
+            if (p[i] == 0.0f) {
+                if (q[i] < 0.0f) {
+                    return null;
+                }
+                continue;
+            }
+            final float t = q[i] / p[i];
+            if (p[i] < 0.0f) {
+                if (t > t1) {
+                    return null;
+                }
+                t0 = Math.max(t0, t);
+            } else {
+                if (t < t0) {
+                    return null;
+                }
+                t1 = Math.min(t1, t);
+            }
+        }
+        return new float[]{x0 + dx * t0, y0 + dy * t0, x0 + dx * t1, y0 + dy * t1};
+    }
+
+    /**
+     * Where one leader's value stands, in viewport pixels.
+     *
+     * <p>{@code valueVisible} false means the leader is wholly off screen and
+     * its value is hidden with it. {@code visibleLength} is how much of the
+     * leader is on screen, in pixels — what {@link #annotationCollapsed}
+     * compares the value's own width with.
+     */
+    static final class LeaderLayout {
+        boolean valueVisible;
+        float valueX;
+        float valueY;
+        /** The value's rotation, degrees, upright. */
+        float rotation;
+        /** The on-screen length of the leader, px. */
+        float visibleLength;
+    }
+
+    /**
+     * Lays one leader's value out: above the middle of the leader's VISIBLE
+     * part, rotated to the leader and upright.
+     *
+     * @param sx         the leader's start (beside the base), viewport px
+     * @param sy         the same, vertically
+     * @param ex         the leader's end (beside the tip), viewport px
+     * @param ey         the same, vertically
+     * @param viewportW  the viewport width, px
+     * @param viewportH  the viewport height, px
+     * @param textH      the value TEXT's own height, px (what stands above the line)
+     * @param valueGapPx the gap between the leader and the value text, px
+     */
+    static LeaderLayout layoutLeader(float sx, float sy, float ex, float ey, float viewportW,
+                                     float viewportH, float textH, float valueGapPx) {
+        final LeaderLayout out = new LeaderLayout();
+        final float[] visible = clipToViewport(sx, sy, ex, ey, viewportW, viewportH);
+        if (visible == null) {
+            return out;
+        }
+        float dx = ex - sx;
+        float dy = ey - sy;
+        final float length = (float) Math.hypot(dx, dy);
+        if (length > 1.0e-3f) {
+            dx /= length;
+            dy /= length;
+        } else {
+            // Seen end-on: the leader is a point. Read horizontally about it.
+            dx = 1.0f;
+            dy = 0.0f;
+        }
+        out.rotation = readingAngleDegrees(dx, dy);
+        final double radians = Math.toRadians(out.rotation);
+        final float rx = (float) Math.cos(radians);
+        final float ry = (float) Math.sin(radians);
+        // "Up" for upright text along the reading direction, y-down screen.
+        final float ux = ry;
+        final float uy = -rx;
+        final float mx = (visible[0] + visible[2]) * 0.5f;
+        final float my = (visible[1] + visible[3]) * 0.5f;
+        final float above = textH * 0.5f + valueGapPx;
+        out.valueX = mx + ux * above;
+        out.valueY = my + uy * above;
+        out.visibleLength = (float) Math.hypot(visible[2] - visible[0], visible[3] - visible[1]);
+        out.valueVisible = true;
+        return out;
+    }
+
+    /**
+     * Whether the whole annotation — the value(s) and the action panel —
+     * collapses (`CAD-FOUNDATION-C2`).
+     *
+     * <p>Only when BOTH hold: native reports the camera scale clamped at its
+     * FLOOR (the annotation has stopped shrinking with the work), and the
+     * leader's visible length is shorter than the value's own text — so the
+     * number would be bigger than the dimension it states. Either alone is not
+     * enough: a large model at its floor still has a long leader to stand on,
+     * and a thin extrusion seen up close has a short leader but a scale that is
+     * still shrinking with the camera. Collapsing hides the annotation WHOLE;
+     * the arrow stays (native draws it), and the exact fields stay one tap away
+     * on the precision surface.
+     */
+    static boolean annotationCollapsed(boolean clampedAtFloor, float leaderVisibleLength,
+                                       float valueTextWidth) {
+        return clampedAtFloor && leaderVisibleLength < valueTextWidth;
+    }
+
+    // -----------------------------------------------------------------------
+    // The action panel
+    // -----------------------------------------------------------------------
+
+    /** How many glyphs the panel holds: extent and operation, plus Flip in One Side. */
+    static int panelIconCount(int extentMode) {
+        return flipPresent(extentMode) ? 3 : 2;
+    }
+
+    /** The plate's width at scale 1.0, in dp: the glyphs, their gaps and the padding. */
+    static float panelReferenceWidthDp(int iconCount) {
+        final int n = Math.max(1, iconCount);
+        return n * GLYPH_BASE_DP + (n - 1) * PANEL_GAP_DP + 2.0f * PANEL_PAD_DP;
+    }
+
+    /** The plate's height at scale 1.0, in dp. */
+    static float panelReferenceHeightDp() {
+        return GLYPH_BASE_DP + 2.0f * PANEL_PAD_DP;
+    }
+
+    /**
+     * The centre of glyph {@code index} relative to the plate's centre, along
+     * the plate, in dp at the given scale. Every glyph's offset is its
+     * reference offset times the ONE visual scale, so the ratio between any two
+     * spacings — and between a spacing and a glyph — never changes with zoom.
+     */
+    static float panelIconOffsetDp(int index, int iconCount, double scale) {
+        final float pitch = GLYPH_BASE_DP + PANEL_GAP_DP;
+        return (index - (iconCount - 1) * 0.5f) * pitch * visualScale(scale);
+    }
+
+    // -----------------------------------------------------------------------
+    // The action panel's transform (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`)
+    // -----------------------------------------------------------------------
+    //
+    // ONE continuous function of the projected arrow. The panel's centre stands
+    // on the arrow's own screen line, a fixed attached offset past its drawn
+    // point; near an edge it slides back along that SAME line by the least that
+    // fits; it turns by a bounded fraction of the leader's reading angle. No
+    // candidate is chosen, so nothing can jump to another side of the shaft: a
+    // small orbit is a small move.
+
+    /**
+     * The fraction of the leader's upright reading angle the panel follows.
+     * OWNER-TUNABLE: enough to read as belonging to the line, little enough
+     * that the icons never read as tipped over.
+     */
+    static final float PANEL_ROTATION_FOLLOW = 0.35f;
+    /** The most the panel ever turns, degrees either way. OWNER-TUNABLE. */
+    static final float PANEL_ROTATION_MAX_DEGREES = 25.0f;
+    /**
+     * How far from vertical the follow tapers back to level, degrees. The
+     * reading angle wraps from -90 to +90 as a line passes vertical; tapering
+     * to 0 over this band makes the rotation continuous through that wrap
+     * instead of flipping by twice the cap. OWNER-TUNABLE.
+     */
+    static final float PANEL_ROTATION_TAPER_DEGREES = 20.0f;
+
+    /**
+     * The panel's rotation for a projected arrow direction, degrees: the
+     * reading angle times {@link #PANEL_ROTATION_FOLLOW}, capped at
+     * {@link #PANEL_ROTATION_MAX_DEGREES}, and tapered linearly to 0 over the
+     * last {@link #PANEL_ROTATION_TAPER_DEGREES} before vertical. Continuous in
+     * the direction everywhere, including through vertical; a zero vector is 0.
+     */
+    static float panelRotationDegrees(float axisX, float axisY) {
+        if (!(Math.hypot(axisX, axisY) > 0.0)) {
+            return 0.0f;
+        }
+        final float reading = readingAngleDegrees(axisX, axisY);
+        final float follow = Math.max(-PANEL_ROTATION_MAX_DEGREES,
+                Math.min(PANEL_ROTATION_MAX_DEGREES, PANEL_ROTATION_FOLLOW * reading));
+        final float toVertical = 90.0f - Math.abs(reading);
+        final float taper = Math.max(0.0f, Math.min(1.0f, toVertical / PANEL_ROTATION_TAPER_DEGREES));
+        return follow * taper;
+    }
+
+    /** Where the action panel stands this frame, in viewport pixels. */
+    static final class PanelLayout {
+        /** False: the panel is hidden WHOLE this frame. */
+        boolean visible;
+        /** The plate's (and the proxy's) common centre. */
+        float centreX;
+        float centreY;
+        /** The drawn plate, scale folded in, BEFORE rotation. */
+        float plateWidth;
+        float plateHeight;
+        /** The plate's rotation, degrees (the panel follows the leader modestly). */
+        float rotation;
+        /**
+         * The touch proxy: an axis-aligned box covering the ROTATED plate, never
+         * below the hit floor.
+         */
+        float hitWidth;
+        float hitHeight;
+        /** The one visual multiplier the plate is drawn at. */
+        float scale;
+        /** The arrow point the panel is attached to. */
+        float anchorX;
+        float anchorY;
+        /** The arrow's unit screen direction the panel stands along. */
+        float axisX;
+        float axisY;
+        /** How far the panel slid back along the arrow to fit, px (0: none). */
+        float slide;
+    }
+
+    /**
+     * Lays the action panel out against the arrow's drawn point.
+     *
+     * <p>The panel is one box: a plate of {@code reference x scale}, turned by
+     * {@link #panelRotationDegrees}, and an axis-aligned touch proxy covering
+     * that turned plate and at least 48 dp each way, sharing one centre. The
+     * centre stands on the arrow's screen line past its point, at
+     * {@code clear + half}: the proxy's near edge a corridor-and-gap off the
+     * point ({@code half} is the proxy's own extent along the arrow, so this is
+     * continuous as the arrow turns). If that box leaves the viewport it slides
+     * BACK along the same line by the least distance that fits — continuously,
+     * never stepping and never to the side — at most until its centre reaches
+     * the shaft's base, so it always stands on the arrow (over the shaft near an
+     * edge, where nothing else fits). If no slide fits, the panel is hidden
+     * WHOLE; it never loses an icon to an edge.
+     *
+     * @param headOnScreen whether native projected the arrow's point
+     * @param headX        the arrow's drawn point, viewport px
+     * @param headY        the same, vertically
+     * @param axisX        the arrow's screen vector from the shaft's middle to
+     *                     its point, x — its direction places the panel and its
+     *                     length bounds the slide back (to the shaft's base)
+     * @param axisY        the same, y; under a pixel it reads as screen right
+     * @param plateWidth   the plate's MEASURED width at scale 1.0, px
+     * @param plateHeight  the same, vertically
+     * @param scale        native's camera-attached multiplier
+     * @param density      display density, px per dp
+     * @param viewportW    the viewport width, px
+     * @param viewportH    the viewport height, px
+     */
+    static PanelLayout layoutPanel(boolean headOnScreen, float headX, float headY, float axisX,
+                                   float axisY, float plateWidth, float plateHeight,
+                                   double scale, float density, float viewportW,
+                                   float viewportH) {
+        final PanelLayout out = new PanelLayout();
+        out.scale = visualScale(scale);
+        out.plateWidth = plateWidth * out.scale;
+        out.plateHeight = plateHeight * out.scale;
+        float dx = axisX;
+        float dy = axisY;
+        final float length = (float) Math.hypot(dx, dy);
+        // How far back along the shaft the panel may slide: to its base. The
+        // axis is the shaft's middle to its point, so the base is twice that
+        // behind the point.
+        final float shaft = length > 1.0f ? 2.0f * length : 0.0f;
+        // Under a pixel the projected arrow has no direction worth following
+        // (it points at the eye): read it as screen right, deterministically.
+        if (!(length > 1.0f)) {
+            dx = 1.0f;
+            dy = 0.0f;
+        } else {
+            dx /= length;
+            dy /= length;
+        }
+        out.axisX = dx;
+        out.axisY = dy;
+        out.rotation = panelRotationDegrees(dx, dy);
+        final float[] turned = rotatedBounds(out.plateWidth, out.plateHeight, out.rotation);
+        // Whole pixels, rounded UP: the proxy is a view with an integer box,
+        // and it must never be a pixel short of the plate it covers.
+        final float hit = HIT_DP * density;
+        out.hitWidth = (float) Math.ceil(Math.max(hit, turned[0]));
+        out.hitHeight = (float) Math.ceil(Math.max(hit, turned[1]));
+        out.anchorX = headX;
+        out.anchorY = headY;
+        if (!headOnScreen || Float.isNaN(headX) || Float.isNaN(headY)
+                || !inside(headX, headY, viewportW, viewportH)) {
+            return out;
+        }
+        final float clear = (ARROW_CORRIDOR_DP + PANEL_CLEAR_DP) * density;
+        // Half the proxy's extent along the arrow: its support in that direction.
+        final float half = 0.5f * (out.hitWidth * Math.abs(dx) + out.hitHeight * Math.abs(dy));
+        final float attached = clear + half;
+        final float nominalX = headX + dx * attached;
+        final float nominalY = headY + dy * attached;
+        // The slide b moves the centre to nominal - axis * b, b in
+        // [0, attached + shaft]: past the point, then back along the shaft as far
+        // as its base -- always ON the arrow, never beside it.
+        float lo = 0.0f;
+        float hi = attached + shaft;
+        final float[] range = slideRange(nominalX, dx, out.hitWidth * 0.5f, viewportW);
+        lo = Math.max(lo, range[0]);
+        hi = Math.min(hi, range[1]);
+        final float[] rangeY = slideRange(nominalY, dy, out.hitHeight * 0.5f, viewportH);
+        lo = Math.max(lo, rangeY[0]);
+        hi = Math.min(hi, rangeY[1]);
+        if (!(lo <= hi)) {
+            return out;
+        }
+        out.slide = lo;
+        out.centreX = nominalX - dx * lo;
+        out.centreY = nominalY - dy * lo;
+        out.visible = true;
+        return out;
+    }
+
+    /**
+     * The slides {@code b} for which a centre {@code c - u * b} keeps a box of
+     * half-extent {@code halfExtent} inside {@code [0, extent]} on one axis, as
+     * {@code {min, max}}; an empty range has {@code min > max}.
+     */
+    static float[] slideRange(float c, float u, float halfExtent, float extent) {
+        final float low = halfExtent;
+        final float high = extent - halfExtent;
+        if (Math.abs(u) < 1.0e-6f) {
+            // Sliding cannot move it on this axis: it fits or it does not.
+            return c >= low && c <= high
+                    ? new float[]{Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY}
+                    : new float[]{1.0f, 0.0f};
+        }
+        // low <= c - u * b <= high
+        final float a = (c - high) / u;
+        final float b = (c - low) / u;
+        return new float[]{Math.min(a, b), Math.max(a, b)};
+    }
+
+    /**
+     * Who owns a touch at {@code (x, y)}: the panel's ONE group proxy, or
+     * nobody (the viewport). There is no per-glyph answer to give — the plate
+     * takes no touch — so ownership can never depend on how close two shrunken
+     * glyphs stand.
+     */
+    static boolean panelOwnsTouch(PanelLayout layout, float x, float y) {
+        return layout.visible && Math.abs(x - layout.centreX) <= layout.hitWidth * 0.5f
+                && Math.abs(y - layout.centreY) <= layout.hitHeight * 0.5f;
+    }
+
+    /**
+     * The shortest distance from the arrow's point to the panel's proxy box, px.
+     * The corridor plus the clear gap whenever the panel did not have to slide.
+     */
+    static float panelClearance(PanelLayout layout) {
+        final float dx = Math.max(0.0f,
+                Math.abs(layout.anchorX - layout.centreX) - layout.hitWidth * 0.5f);
+        final float dy = Math.max(0.0f,
+                Math.abs(layout.anchorY - layout.centreY) - layout.hitHeight * 0.5f);
+        return (float) Math.hypot(dx, dy);
+    }
+
+    private static boolean inside(float x, float y, float w, float h) {
+        return x >= 0.0f && y >= 0.0f && x <= w && y <= h;
+    }
+
+    /**
+     * The axis-aligned box a {@code w x h} box rotated by {@code degrees}
+     * occupies, as {@code {width, height}} — what a rotated value covers on
+     * screen, for the clamp that keeps it inside the viewport.
+     */
+    static float[] rotatedBounds(float w, float h, float degrees) {
+        final double r = Math.toRadians(degrees);
+        final float c = (float) Math.abs(Math.cos(r));
+        final float s = (float) Math.abs(Math.sin(r));
+        return new float[]{w * c + h * s, w * s + h * c};
     }
 
     /**

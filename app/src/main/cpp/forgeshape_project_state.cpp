@@ -97,6 +97,10 @@ bool runtimeCanEvaluateProject(const ProjectDocument& document) {
             return false;
         }
     }
+    // A planar-face selection (`CADB` v6) is regenerated like any other since
+    // `CAD-V6-S2`, so it no longer stands in the way: the load validates and
+    // regenerates the whole document before it becomes the live scene, and a
+    // body that does not regenerate is refused all-or-nothing there.
     return true;
 }
 
@@ -488,20 +492,49 @@ void mixCadRegions(uint64_t& hash, const ExtrudeFeature& extrude) {
     }
 }
 
+// `CAD-V6-S1`: one planar-face selection, every semantic field of every ref.
+void mixPlanarFaceCycle(uint64_t& hash, const FragmentCycle& cycle) {
+    mixU64(hash, cycle.size());
+    for (const FragmentRef& fragment : cycle) {
+        mixU64(hash, fragment.sourceEntityId);
+        mixU64(hash, fragment.sourceEdgeLocalIndex);
+        for (const ArrangementCut* cut : {&fragment.startCut, &fragment.endCut}) {
+            mixU64(hash, static_cast<uint64_t>(cut->kind));
+            mixU64(hash, cut->partnerEntityId);
+            mixU64(hash, cut->partnerEdgeLocalIndex);
+            mixU64(hash, cut->ordinal);
+        }
+        mixU64(hash, fragment.reversed ? 1u : 0u);
+    }
+}
+
+void mixSelection(uint64_t& hash, const ExtrudeFeature& extrude) {
+    mixU64(hash, static_cast<uint64_t>(extrude.selection));
+    mixU64(hash, extrude.planarFaces.size());
+    for (const PlanarFaceRef& face : extrude.planarFaces) {
+        mixPlanarFaceCycle(hash, face.outer);
+        mixU64(hash, face.holes.size());
+        for (const FragmentCycle& hole : face.holes) {
+            mixPlanarFaceCycle(hash, hole);
+        }
+    }
+}
+
 void mixCad(uint64_t& hash, const CadBodyState& state) {
-    mixU64(hash, static_cast<uint64_t>(workplaneIndex(state.sketch.plane)));
+    const CadSketch& baseSketch = cadBaseSketch(state);
+    mixU64(hash, static_cast<uint64_t>(workplaneIndex(baseSketch.plane)));
     // CAD-A3: the face support is project truth, so it is part of the semantic
     // fingerprint -- a body re-supported on a different face is a different
     // project and must trigger a checkpoint.
-    mixU64(hash, state.sketch.hasFaceSupport ? 1u : 0u);
-    if (state.sketch.hasFaceSupport) {
-        const TopoRef& ref = state.sketch.faceSupport;
+    mixU64(hash, baseSketch.hasFaceSupport ? 1u : 0u);
+    if (baseSketch.hasFaceSupport) {
+        const TopoRef& ref = baseSketch.faceSupport;
         mixU64(hash, static_cast<uint64_t>(ref.producerObjectId));
         mixU64(hash, ref.producerLocalFeatureId);
         mixU64(hash, cadFaceTokenCode(ref.face));
         mixU64(hash, ref.lineageToken);
     }
-    mixU64(hash, state.sketch.nextEntityId);
+    mixU64(hash, baseSketch.nextEntityId);
     mixU64(hash, state.extrude.profileEntityId);
     mixDouble(hash, state.extrude.depth);
     mixU64(hash, static_cast<uint64_t>(extrudeDirectionIndex(state.extrude.direction)));
@@ -511,26 +544,33 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
     // is 0 and the second distance 0.0 for every state built before this stage.
     mixU64(hash, static_cast<uint64_t>(extrudeExtentModeIndex(state.extrude.extent)));
     mixDouble(hash, state.extrude.secondDistance);
-    mixCadEntities(hash, state.sketch);
+    mixCadEntities(hash, baseSketch);
     mixCadRegions(hash, state.extrude);
     // The retained feature chain (`CAD-VERTICAL-SLICE-R1`): every later
-    // feature's whole authored truth. Mixed only when there is one.
+    // feature's whole authored truth -- its sketch read THROUGH the table, so a
+    // legacy-shaped state hashes exactly as it did when each feature carried
+    // its own copy. Mixed only when there is one.
     if (!state.laterFeatures.empty()) {
         mixU64(hash, 0x46454154ull);  // "FEAT"
         mixU64(hash, state.laterFeatures.size());
         for (const CadFeature& feature : state.laterFeatures) {
+            const CadSketchRecord* record = findCadSketchRecord(state, feature.sketchId);
+            const CadSketch empty{};
+            const CadSketch& sketch = record != nullptr ? record->sketch : empty;
+            const CadFeatureSupport support =
+                    record != nullptr ? record->featureSupport : CadFeatureSupport{};
             mixU64(hash, feature.featureId);
             mixU64(hash, static_cast<uint64_t>(cadFeatureOperationIndex(feature.operation)));
-            mixU64(hash, feature.support.featureId);
-            mixU64(hash, cadFaceTokenCode(feature.support.face));
-            mixU64(hash, feature.support.lineageToken);
-            mixU64(hash, feature.sketch.nextEntityId);
+            mixU64(hash, support.featureId);
+            mixU64(hash, cadFaceTokenCode(support.face));
+            mixU64(hash, support.lineageToken);
+            mixU64(hash, sketch.nextEntityId);
             mixU64(hash, feature.extrude.profileEntityId);
             mixDouble(hash, feature.extrude.depth);
             mixU64(hash, static_cast<uint64_t>(extrudeDirectionIndex(feature.extrude.direction)));
             mixU64(hash, static_cast<uint64_t>(extrudeExtentModeIndex(feature.extrude.extent)));
             mixDouble(hash, feature.extrude.secondDistance);
-            mixCadEntities(hash, feature.sketch);
+            mixCadEntities(hash, sketch);
             mixU64(hash, 0x5245474Eull);
             mixU64(hash, feature.extrude.profileHoleIds.size());
             for (SketchEntityId hole : feature.extrude.profileHoleIds) {
@@ -544,6 +584,34 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
                     mixU64(hash, hole);
                 }
             }
+        }
+    }
+    // `CAD-V6-S1`: what only v6 can say -- the table's ids and placements, the
+    // high-water marks, which sketch each feature extrudes, and every
+    // selection's kind and faces. Mixed only when the state is NOT
+    // legacy-shaped, so every project a v1..v5 file can hold keeps exactly the
+    // fingerprint it always had, and a shared sketch is never mistaken for two
+    // identical copies.
+    if (!cadBodyStateLegacyRepresentable(state)) {
+        mixU64(hash, 0x56360000ull);  // "V6"
+        mixU64(hash, state.nextSketchId);
+        mixU64(hash, state.nextFeatureId);
+        mixU64(hash, state.baseSketchId);
+        mixU64(hash, state.sketches.size());
+        for (const CadSketchRecord& record : state.sketches) {
+            mixU64(hash, record.sketchId);
+            mixU64(hash, static_cast<uint64_t>(workplaneIndex(record.sketch.plane)));
+            mixU64(hash, record.hasFeatureSupport ? 1u : 0u);
+            mixU64(hash, record.featureSupport.featureId);
+            mixU64(hash, cadFaceTokenCode(record.featureSupport.face));
+            mixU64(hash, record.featureSupport.lineageToken);
+            mixU64(hash, record.sketch.nextEntityId);
+            mixCadEntities(hash, record.sketch);
+        }
+        mixSelection(hash, state.extrude);
+        for (const CadFeature& feature : state.laterFeatures) {
+            mixU64(hash, feature.sketchId);
+            mixSelection(hash, feature.extrude);
         }
     }
 }

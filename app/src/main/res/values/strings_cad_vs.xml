@@ -22,6 +22,11 @@
     <string name="status_cad_cut_no_intersection">Cut misses the body — nothing would be removed.</string>
     <string name="status_cad_cut_removes_body">Cut would remove the whole body.</string>
     <string name="status_cad_kernel_failed">The solid could not be computed from this feature.</string>
+    <!-- CAD-V6-S2-CORRECTION-FILL-HUD-R1: crossing curves that cannot be split into areas. -->
+    <string name="status_cad_curves_overlap">Two curves run along each other — the areas between them cannot be told apart.</string>
+    <string name="status_cad_too_many_crossings">Too many crossings in this sketch to split it into areas.</string>
+    <string name="status_cad_degenerate_area">Two curves enclose an area too thin to extrude.</string>
+    <string name="status_cad_areas_touch_at_point">Those areas meet only at a point — add the area between them, or extrude them separately.</string>
 
     <!-- The precision surface in Ready. -->
     <string name="sketch_operation_section">Operation</string>

@@ -1898,8 +1898,15 @@ void renderThreadMain() {
                             renderer.setSketchOverlay(forgeshape::SketchOverlayPtr{});
                         }
                     } else {
-                        renderer.setSketchOverlay(
-                            forgeshape::sketchSession().overlay(worldPerUnit));
+                        // The manipulator's ONE scale fact for this frame, read
+                        // at its own base anchor rather than at the origin the
+                        // grid and the snap marker are sized from, so the drawn
+                        // head is the head the hit test grabs.
+                        forgeshape::SketchSession& session = forgeshape::sketchSession();
+                        forgeshape::CadExtrudeViewFacts view;
+                        session.extrudeViewFacts(g_camera.snapshot(), g_camera.viewportWidth(),
+                                                 g_camera.viewportHeight(), &view);
+                        renderer.setSketchOverlay(session.overlay(worldPerUnit, view));
                     }
                 }
             }
@@ -4035,7 +4042,17 @@ namespace {
 // exactly on it. The caller holds g_stateMutex. Shared by the JNI confirm and
 // the confirm-on-reselect tap. Returns the CadStatus.
 forgeshape::CadStatus confirmChosenSupportLocked() {
-    const forgeshape::ChosenSupport& c = forgeshape::supportChooser().selected();
+    // Never the frame stored at the tap (`CAD-V6-S2`): the support is
+    // re-validated against the scene as it is now and its frame recomputed,
+    // so a producer an Undo or a Redo moved or removed cannot open a sketch on
+    // where its face used to be. A stale support begins nothing.
+    forgeshape::ChosenSupport c;
+    const forgeshape::CadStatus fresh = forgeshape::refreshChosenSupport(
+            forgeshape::constructionScene(), forgeshape::supportChooser().selected(), &c);
+    if (fresh != forgeshape::CadStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SUPPORT_CHOOSER_STALE:%s", forgeshape::cadStatusName(fresh));
+        return fresh;
+    }
     forgeshape::CadStatus status = forgeshape::CadStatus::NotSketching;
     if (c.kind == forgeshape::ChosenSupport::Kind::WorldPlane) {
         status = forgeshape::sketchSession().begin(c.plane);
@@ -4246,7 +4263,9 @@ Java_com_forgeshape_app_NativeViewport_sketchState(JNIEnv* env, jclass, jdoubleA
         values[2] = static_cast<double>(forgeshape::sketchToolIndex(s.tool()));
         values[3] = static_cast<double>(s.sketch().entities.size());
         values[4] = static_cast<double>(s.selectedEntityId());
-        values[5] = static_cast<double>(s.regions().regions.size());
+        // Regions, or -- in PlanarFaces mode (`CAD-V6-S2`) -- atomic faces.
+        values[5] = static_cast<double>(s.planarFaceCount() > 0 ? s.planarFaceCount()
+                                                                : s.regions().regions.size());
         values[6] = static_cast<double>(s.selectedProfileId());
         values[7] = s.extrude().depth;
         values[8] = static_cast<double>(forgeshape::extrudeDirectionIndex(s.extrude().direction));
@@ -4305,8 +4324,11 @@ Java_com_forgeshape_app_NativeViewport_sketchSelectProfile(JNIEnv*, jclass, jlon
     forgeshape::CadStatus status;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        status = forgeshape::sketchSession().selectProfile(
-            static_cast<forgeshape::SketchEntityId>(anchorId));
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        status = session.planarFaceCount() > 0
+                         ? (anchorId >= 1 ? session.selectPlanarFace(static_cast<size_t>(anchorId - 1))
+                                          : forgeshape::CadStatus::ProfileNotFound)
+                         : session.selectProfile(static_cast<forgeshape::SketchEntityId>(anchorId));
         beginPendingExtrudeFeatureView();
     }
     FS_LOGI("FORGESHAPE_SKETCH_PROFILE:%lld %s", (long long)anchorId,
@@ -4569,10 +4591,20 @@ Java_com_forgeshape_app_NativeViewport_sketchProfiles(JNIEnv* env, jclass, jlong
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         // Since `CAD-VERTICAL-SLICE-R1` a "profile" the user chooses is a
-        // REGION, named by its outer loop's anchor; one per closed loop.
-        for (const forgeshape::SketchRegion& region :
-             forgeshape::sketchSession().regions().regions) {
-            ids.push_back(static_cast<jlong>(region.outerAnchorId));
+        // REGION, named by its outer loop's anchor; one per closed loop. In
+        // PlanarFaces mode (`CAD-V6-S2`) the rows are the ATOMIC FACES, and a
+        // row's handle is its face index + 1 -- a TRANSIENT row handle into
+        // the arrangement derived at Finish, re-read on every refresh and
+        // never stored, because a face's identity is its canonical ref.
+        const forgeshape::SketchSession& session = forgeshape::sketchSession();
+        if (session.planarFaceCount() > 0) {
+            for (size_t i = 0; i < session.planarFaceCount(); ++i) {
+                ids.push_back(static_cast<jlong>(i + 1));
+            }
+        } else {
+            for (const forgeshape::SketchRegion& region : session.regions().regions) {
+                ids.push_back(static_cast<jlong>(region.outerAnchorId));
+            }
         }
     }
     if (out != nullptr && !ids.empty()) {
@@ -4605,8 +4637,36 @@ Java_com_forgeshape_app_NativeViewport_sketchProfileInfo(JNIEnv* env, jclass, jl
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         const forgeshape::SketchSession& s = forgeshape::sketchSession();
-        const forgeshape::SketchRegion* region = forgeshape::findSketchRegion(
-            s.regions(), static_cast<forgeshape::SketchEntityId>(anchorId));
+        const forgeshape::SketchRegion* region =
+            s.planarFaceCount() > 0 ? nullptr
+                                    : forgeshape::findSketchRegion(
+                                          s.regions(), static_cast<forgeshape::SketchEntityId>(anchorId));
+        forgeshape::SketchPoint interior;
+        double area = 0.0;
+        if (s.planarFaceCount() > 0 && anchorId >= 1
+            && s.planarFaceInfo(static_cast<size_t>(anchorId - 1), &interior, &area)) {
+            // A PlanarFaces row (`CAD-V6-S2`): a polygon-kind cell, always
+            // selectable, standing at its own interior point.
+            const size_t index = static_cast<size_t>(anchorId - 1);
+            const forgeshape::PlanarFaceRef& ref = s.arrangement().faces[index].ref;
+            found = true;
+            values[0] = 3;
+            values[1] = static_cast<double>(ref.outer.size());
+            values[2] = area;
+            values[3] = static_cast<double>(ref.holes.size());
+            values[4] = s.planarFaceSelected(index) ? 1.0 : 0.0;
+            values[5] = 1.0;
+            values[6] = 0.0;
+            float x = 0.0f;
+            float y = 0.0f;
+            if (s.sketchToScreen(g_camera.snapshot(), interior, g_camera.viewportWidth(),
+                                 g_camera.viewportHeight(), &x, &y)) {
+                values[7] = 1.0;
+                values[8] = x;
+                values[9] = y;
+            }
+            values[10] = 0.0;
+        }
         if (region != nullptr) {
             found = true;
             const forgeshape::ClosedProfile& outer = s.regions().loops.profiles[region->outerLoop];
@@ -4649,14 +4709,47 @@ Java_com_forgeshape_app_NativeViewport_sketchToggleRegion(JNIEnv*, jclass, jlong
     size_t selected = 0;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        status = forgeshape::sketchSession().toggleRegion(
-            static_cast<forgeshape::SketchEntityId>(anchorId));
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        status = session.planarFaceCount() > 0
+                         ? (anchorId >= 1 ? session.togglePlanarFace(static_cast<size_t>(anchorId - 1))
+                                          : forgeshape::CadStatus::ProfileNotFound)
+                         : session.toggleRegion(static_cast<forgeshape::SketchEntityId>(anchorId));
         beginPendingExtrudeFeatureView();
-        selected = forgeshape::extrudeRegions(forgeshape::sketchSession().extrude()).size();
+        selected = session.selectedAreaCount();
     }
     FS_LOGI("FORGESHAPE_SKETCH_REGION_TOGGLE anchor=%lld selected=%d %s", (long long)anchorId,
             (int)selected, forgeshape::cadStatusName(status));
     return cadCode(status);
+}
+
+// Which kind of selection the open session makes (`CAD-V6-S2`): 0 loop
+// regions, 1 planar faces. Read on demand; -1 when no sketch is Ready.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSelectionKind(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::SketchSession& session = forgeshape::sketchSession();
+    if (session.state() != forgeshape::SketchSessionState::Ready) {
+        return -1;
+    }
+    return session.selectionKind() == forgeshape::CadSelectionKind::PlanarFaces ? 1 : 0;
+}
+
+// Which kind of selection feature `index` (0 = base) of a CAD body stores
+// (`CAD-V6-S2`): 0 loop regions, 1 planar faces, -1 when there is none. A
+// verification read of committed truth; nothing is cached above JNI.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_cadFeatureSelectionKind(JNIEnv*, jclass, jlong bodyId,
+                                                                jint index) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::SceneObject* object =
+        forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(bodyId));
+    const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    forgeshape::CadFeatureView view;
+    if (body == nullptr || index < 0
+        || !forgeshape::cadFeatureAt(body->state(), static_cast<uint32_t>(index), &view)) {
+        return -1;
+    }
+    return view.extrude->selection == forgeshape::CadSelectionKind::PlanarFaces ? 1 : 0;
 }
 
 // What the extrusion does (`CAD-VERTICAL-SLICE-R1`): 0 New Body, 1 Add, 2 Cut.
@@ -4807,11 +4900,21 @@ bool resolveCadSketchWorldFrame(forgeshape::ConstructionScene& scene, forgeshape
 //   [29] how many of them are chosen
 //   [30] the feature an edit session edits, or 0
 //   [31] the candidate revision the evaluation answered
+//
+// `CAD-FOUNDATION-C1` added the technical-drawing LEADER each value stands
+// beside -- the dimension line the frame draws in the overlay's `Dimension`
+// range, projected through the same camera and read from the same one
+// manipulator scale fact. Written only when the caller's array reaches them:
+//   [32] 1 when the PRIMARY side's leader projects; 33..36 meaningless otherwise
+//   [33] leader start x (beside the base)  [34] y
+//   [35] leader end x (beside the tip)     [36] y
+//   [37] 1 when the SECOND side's leader projects; 38..41 meaningless otherwise
+//   [38] start x  [39] y  [40] end x  [41] y
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                                                            jdoubleArray out) {
     constexpr jsize kLegacySlots = 21;
-    constexpr jsize kMaxSlots = 32;
+    constexpr jsize kMaxSlots = 45;
     if (out == nullptr || env->GetArrayLength(out) < kLegacySlots) {
         return;
     }
@@ -4832,7 +4935,7 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
             values[26] = static_cast<double>(session.operationTargetId());
             values[28] = static_cast<double>(session.regions().regions.size());
             values[29] = static_cast<double>(
-                    forgeshape::extrudeRegions(session.extrude()).size());
+                    session.selectedAreaCount());
             values[30] = static_cast<double>(session.editingFeatureId());
             if (ready) {
                 // The SAME evaluation the render thread draws and the commit
@@ -4860,10 +4963,54 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                                  : 0.0;
             const int w = g_camera.viewportWidth();
             const int h = g_camera.viewportHeight();
-            forgeshape::CadExtrudeControlScale scale;
-            if (forgeshape::cadExtrudeControlScale(g_camera.snapshot(), anchors.base, h, &scale)) {
-                values[10] = scale.scale;
-                values[11] = scale.clampedLow ? 1.0 : (scale.clampedHigh ? 2.0 : 0.0);
+            // The SAME scale fact the frame draws the head with and the hit
+            // test grabs with (`extrudeViewFacts`), never a second read.
+            forgeshape::CadExtrudeViewFacts view;
+            if (session.extrudeViewFacts(g_camera.snapshot(), w, h, &view)) {
+                values[10] = view.scale.scale;
+                values[11] = view.scale.clampedLow ? 1.0 : (view.scale.clampedHigh ? 2.0 : 0.0);
+                // The PRIMARY arrow's drawn point (`CAD-FOUNDATION-C2`): the
+                // one spot the Android action panel is anchored to, from the
+                // SAME function the drawing and the hit test end the head at.
+                const forgeshape::CadExtrudeSideAnchor& primary =
+                        anchors.side(anchors.primaryIsPositive);
+                float px = 0.0f;
+                float py = 0.0f;
+                if (primary.present
+                    && forgeshape::projectWorldToScreen(
+                               g_camera.snapshot(),
+                               forgeshape::cadExtrudeArrowPoint(primary, view.scale.world), w, h,
+                               &px, &py)) {
+                    values[42] = 1.0;
+                    values[43] = px;
+                    values[44] = py;
+                }
+                forgeshape::CadExtrudeLeader leader;
+                if (view.leaderValid
+                    && forgeshape::cadExtrudeLeaderFor(anchors, view.leaderSide, view.scale.world,
+                                                       &leader)) {
+                    const forgeshape::CadExtrudeLeaderSide* leaderSides[2] = {
+                        &leader.of(anchors.primaryIsPositive),
+                        &leader.of(!anchors.primaryIsPositive)};
+                    const int leaderBase[2] = {32, 37};
+                    for (int s = 0; s < 2; ++s) {
+                        float ax = 0.0f;
+                        float ay = 0.0f;
+                        float bx = 0.0f;
+                        float by = 0.0f;
+                        if (forgeshape::projectWorldToScreen(g_camera.snapshot(),
+                                                             leaderSides[s]->start, w, h, &ax, &ay)
+                            && forgeshape::projectWorldToScreen(g_camera.snapshot(),
+                                                                leaderSides[s]->end, w, h, &bx,
+                                                                &by)) {
+                            values[leaderBase[s] + 0] = 1.0;
+                            values[leaderBase[s] + 1] = ax;
+                            values[leaderBase[s] + 2] = ay;
+                            values[leaderBase[s] + 3] = bx;
+                            values[leaderBase[s] + 4] = by;
+                        }
+                    }
+                }
             }
             // The two sides, projected through the same camera and by the same
             // rule, so neither cluster can be placed by a different arithmetic
@@ -5183,8 +5330,9 @@ Java_com_forgeshape_app_NativeViewport_cadBodySketchAnchor(JNIEnv* env, jclass, 
                                                              &point[0], &point[1]);
                     forgeshape::CadExtrudeControlScale scale;
                     if (found
-                        && forgeshape::cadExtrudeControlScale(g_camera.snapshot(), anchors.base,
-                                                              g_camera.viewportHeight(), &scale)) {
+                        && forgeshape::cadExtrudeManipulatorScale(anchors, g_camera.snapshot(),
+                                                                  g_camera.viewportHeight(),
+                                                                  &scale)) {
                         point[2] = scale.scale;
                     }
                 }
@@ -5586,20 +5734,21 @@ Java_com_forgeshape_app_NativeViewport_cadState(JNIEnv* env, jclass, jdoubleArra
         if (cad != nullptr) {
             found = true;
             const forgeshape::CadBodyState& state = cad->state();
-            values[0] = static_cast<double>(forgeshape::workplaneIndex(state.sketch.plane));
+            const forgeshape::CadSketch& baseSketch = forgeshape::cadBaseSketch(state);
+            values[0] = static_cast<double>(forgeshape::workplaneIndex(baseSketch.plane));
             values[1] = state.extrude.depth;
             values[2] = static_cast<double>(
                 forgeshape::extrudeDirectionIndex(state.extrude.direction));
             values[3] = static_cast<double>(static_cast<int>(forgeshape::cadProfileKind(state)));
             const forgeshape::SketchEntity* anchor =
-                forgeshape::findSketchEntity(state.sketch, state.extrude.profileEntityId);
+                forgeshape::findSketchEntity(baseSketch, state.extrude.profileEntityId);
             if (anchor != nullptr && anchor->rectangle() != nullptr) {
                 values[4] = anchor->rectangle()->width;
                 values[5] = anchor->rectangle()->height;
             } else if (anchor != nullptr && anchor->circle() != nullptr) {
                 values[4] = anchor->circle()->radius;
             }
-            values[6] = static_cast<double>(state.sketch.entities.size());
+            values[6] = static_cast<double>(baseSketch.entities.size());
             values[8] = static_cast<double>(
                 forgeshape::extrudeExtentModeIndex(state.extrude.extent));
             forgeshape::ProfileExtraction extraction;
@@ -5701,7 +5850,7 @@ static forgeshape::CadBodyState buildExtrudeCandidate(const forgeshape::CadBodyS
 static forgeshape::CadBodyState buildRectangleCandidate(const forgeshape::CadBodyState& current,
                                                         const double* values, int direction) {
     forgeshape::CadBodyState candidate = buildExtrudeCandidate(current, values + 2, direction);
-    for (forgeshape::SketchEntity& entity : candidate.sketch.entities) {
+    for (forgeshape::SketchEntity& entity : forgeshape::cadBaseSketch(candidate).entities) {
         if (entity.id() != candidate.extrude.profileEntityId) continue;
         if (const forgeshape::SketchRectangle* rectangle = entity.rectangle()) {
             forgeshape::SketchRectangle edited = *rectangle;
@@ -5716,7 +5865,7 @@ static forgeshape::CadBodyState buildRectangleCandidate(const forgeshape::CadBod
 static forgeshape::CadBodyState buildCircleCandidate(const forgeshape::CadBodyState& current,
                                                      const double* values, int direction) {
     forgeshape::CadBodyState candidate = buildExtrudeCandidate(current, values + 1, direction);
-    for (forgeshape::SketchEntity& entity : candidate.sketch.entities) {
+    for (forgeshape::SketchEntity& entity : forgeshape::cadBaseSketch(candidate).entities) {
         if (entity.id() != candidate.extrude.profileEntityId) continue;
         if (const forgeshape::SketchCircle* circle = entity.circle()) {
             forgeshape::SketchCircle edited = *circle;
@@ -5889,6 +6038,12 @@ static jint runHistoryStep(const char* label, bool forward) {
         }
         forgeshape::ConstructionHistory& history = forgeshape::constructionHistory();
         moved = forward ? history.redo(&report) : history.undo(&report);
+        if (moved) {
+            // A support chosen before the step names a scene that no longer
+            // stands (`CAD-V6-S2`): the chooser is closed rather than left to
+            // confirm a face the step may have moved, reshaped or removed.
+            forgeshape::supportChooser().cancel();
+        }
         undoDepth = history.undoDepth();
         redoDepth = history.redoDepth();
         bodyCount = forgeshape::constructionScene().bodyCount();

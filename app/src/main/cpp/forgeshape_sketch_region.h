@@ -44,10 +44,30 @@
 // by name instead:
 //   * a region whose holes touch or cross each other -- `OverlappingHoles`
 //     (the region is listed but not selectable);
-//   * a selection of two regions that overlap, touch, or share a boundary
-//     loop (a region and its own hole) -- `OverlappingRegions`;
+//   * a selection of two regions whose loops touch or cross, or one of which
+//     stands inside the other's material without being its own hole --
+//     `OverlappingRegions`;
 //   * self-intersecting, zero-area, open or forked loops -- refused where they
 //     always were, by the loop extraction.
+//
+// A selection is the UNION of the atomic regions it names
+// ---------------------------------------------------------
+// (`CAD-FOUNDATION-C1`.) A region and its own hole -- the ring around a disk
+// and the disk -- are two atomic regions that share the hole's loop as a
+// boundary, and choosing both means the union: the ring with that hole filled.
+// Nothing about the stored form changes to say so. The selection is still the
+// list of chosen atomic regions, each with the holes it was chosen with, so
+// `ProfileRegionMismatch` still guards a loop appearing or vanishing inside
+// what was chosen; the union is DERIVED by `mergeSelectedRegions`, by one
+// parity sentence over the nesting tree:
+//
+//     loop L bounds the union  <=>  selected(region(L)) != selected(region(parent(L)))
+//                                   (outside every loop counts as unselected)
+//
+// Because nesting regions are pairwise disjoint by construction, no 2D boolean
+// and no planar arrangement is needed, and every selection that was legal
+// before -- none of which chose a region beside its own hole -- unions to
+// exactly its own regions, with the same loops in the same order.
 #pragma once
 
 #include <cstdint>
@@ -139,7 +159,10 @@ ProfileRegionRef sketchRegionRef(const SketchRegion& region);
 //                         holes not strictly ascending) or the stored holes are
 //                         not exactly the derived ones
 //   OverlappingHoles      a chosen region's holes touch or cross
-//   OverlappingRegions    two chosen regions overlap, touch or share a loop
+//   OverlappingRegions    two chosen regions' loops touch or cross, or one
+//                         stands inside the other's material without being
+//                         its own direct hole (a region beside its own hole is
+//                         LEGAL: the selection means their union)
 CadStatus validateRegionSelection(const SketchRegionExtraction& extraction,
                                   const std::vector<ProfileRegionRef>& selection);
 
@@ -154,6 +177,40 @@ bool sketchRegionAt(const SketchRegionExtraction& extraction, const SketchPoint&
 std::vector<ProfileRegionRef> toggleRegionSelection(const std::vector<ProfileRegionRef>& selection,
                                                     const SketchRegion& region);
 
+// One connected piece of a selection's UNION (`CAD-FOUNDATION-C1`): a real
+// authored outer loop and the real authored loops bounding the holes left in
+// it. Derived, never stored; named by loop anchors exactly as a region is.
+struct SketchRegionComponent {
+    SketchEntityId outerAnchorId = kNoSketchEntity;
+    uint32_t outerLoop = 0;
+    // Ascending loop index, which is ascending anchor.
+    std::vector<uint32_t> holeLoops;
+    std::vector<SketchEntityId> holeAnchorIds;
+    // Outer area minus the holes' areas, square metres.
+    double area = 0.0;
+    // A point strictly on the component's material, and its area centroid
+    // (which may lie in a hole) -- the same two answers a region carries.
+    SketchPoint interiorPoint{};
+    SketchPoint centroid{};
+};
+
+// The union of a selection, as its connected components in ascending outer
+// anchor order, each with its holes ascending. The selection must already
+// pass `validateRegionSelection`; an outer anchor naming no region is skipped.
+//
+//   * a component's outer loop is a selected region's loop whose parent region
+//     is not selected (or which has no parent);
+//   * walking down from it, a selected child region CONTINUES the component
+//     (the shared loop is interior to the union and bounds nothing), and an
+//     unselected child region is a HOLE of it;
+//   * a selected region inside such a hole starts a component of its own.
+std::vector<SketchRegionComponent> mergeSelectedRegions(
+        const SketchRegionExtraction& extraction, const std::vector<ProfileRegionRef>& selection);
+
+// The polygons of one component: outer first, then each hole, as extracted.
+std::vector<std::vector<SketchPoint>> sketchComponentLoops(const SketchRegionExtraction& extraction,
+                                                           const SketchRegionComponent& component);
+
 // The polygons of one region: the outer loop counter-clockwise first, then
 // each hole in ascending anchor order, also as extracted (counter-clockwise).
 // Empty when the region does not exist.
@@ -166,6 +223,23 @@ std::vector<std::vector<SketchPoint>> sketchRegionLoops(const SketchRegionExtrac
 constexpr uint32_t kMaxRegionHatchLines = 96;
 std::vector<SketchPoint> sketchRegionHatch(const SketchRegionExtraction& extraction,
                                            const SketchRegion& region, double spacing);
+// The same hatch over a union component, so an absorbed hole reads as material
+// and a remaining one stays empty.
+std::vector<SketchPoint> sketchComponentHatch(const SketchRegionExtraction& extraction,
+                                              const SketchRegionComponent& component,
+                                              double spacing);
+
+// The same hatch over any loops -- the first the outer boundary, the rest holes
+// -- by the even-odd rule: what a PlanarFaces union component (`CAD-V6-S2`),
+// whose loops are fragment polygons rather than extracted profiles, is hatched
+// with. Presentation only.
+std::vector<SketchPoint> sketchLoopsHatch(const std::vector<std::vector<SketchPoint>>& loops,
+                                          double spacing);
+
+// Where an arrow or a label stands on loops (outer first, then holes): the
+// area centroid when it lies on material, else a scanned interior point -- the
+// one rule a region's and a union component's anchor follow. False for no loop.
+bool sketchLoopsInteriorPoint(const std::vector<std::vector<SketchPoint>>& loops, SketchPoint* out);
 
 // Point strictly inside a polygon by the even-odd rule; a point ON an edge is
 // not strictly inside.

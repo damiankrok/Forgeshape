@@ -814,7 +814,8 @@ bound — `ImpossibleCount` for a count out of range, **before** anything is
 allocated for it; `InvalidSemanticValue` for an unknown operation or face code,
 for ids out of order, for a support that names no earlier feature, for a stored
 hole set that is not EXACTLY the one the sketch derives for that outer loop, for
-two chosen regions that overlap, touch or share a loop, and for anything the
+two chosen regions whose loops touch or cross or one of which stands inside the
+other's material without being its own direct hole, and for anything the
 domain's own `validateCadBodyState` refuses. A body carrying later features is
 then **regenerated** through the boolean kernel as part of the check — an Add
 whose tool does not touch the body (`AddDisjoint`), an Add that adds nothing, a
@@ -835,14 +836,31 @@ such loop stays its own region, exactly as every earlier version read it — and
 region whose holes touch or cross each other cannot be selected. There is no
 planar arrangement: loops never split each other.
 
+**A selection means the UNION of the regions it lists** (`CAD-FOUNDATION-C1`).
+The stored list is unchanged — the chosen atomic regions, each with the holes
+it was chosen with — and a region may now be listed beside its own direct hole
+(a ring and its disk). What is extruded is derived by one parity rule over the
+parent tree: loop L bounds the union exactly when L's region is chosen and its
+parent's region is not (or L has no parent) — L is then a component's OUTER
+loop — or when L's region is not chosen and its parent's region is, walking down
+from such an outer loop through chosen regions — L is then one of that
+component's HOLES. Components are taken in ascending outer anchor, holes in
+ascending anchor. A list that chooses no region beside its own hole (every list
+an earlier build could write) unions to exactly its own regions, in the same
+order, with the same holes, so no stored byte, token or fixture changes. No
+section version changed either: an earlier build reading a list with a region
+beside its own hole refuses it by name (`InvalidSemanticValue` through
+`OverlappingRegions`), which is fail-closed.
+
 ### The lineage token, generalized
 
 `lineageToken` is §7c's signature of the SUPPORTING feature's own face topology,
-with the face list generalized to regions:
+with the face list generalized to the union components of the selection (for a
+list with no region beside its own hole these are exactly the chosen regions):
 
 ```
 faces = [CapPlane, CapFar]
-        then for each chosen region in ascending outer-anchor order:
+        then for each union component in ascending outer-anchor order:
           one Side per edge of its OUTER loop, in the loop's polygon order
           then for each hole in ascending anchor order:
             one Side per edge of the HOLE loop, in that loop's polygon order
@@ -867,6 +885,250 @@ A `TopoRef` of §7c may now name a LATER feature of its producer
 that feature's signature, and — because a Cut can carve a face away entirely —
 the face must still carry material in the producer's regenerated body.
 
+## 7g. `CADB` v6 — the retained sketch table and the selection kind (`CAD-V6-S1`)
+
+ONE version for two facts that both change what a feature's INPUT is, so there
+is one migration and not two:
+
+* **sketch identity.** A body carries a TABLE of retained sketches, each with a
+  stable, body-local, non-zero `sketchId`, and every feature — the first one
+  included — names the sketch it extrudes BY ID instead of carrying one inline.
+  Two features may therefore extrude ONE sketch, and a sketch may be retained
+  with no feature extruding it. Where a sketch stands belongs to the sketch,
+  because a sketch two features share stands in one place.
+* **the selection kind.** Every feature states explicitly WHAT it selects:
+  `LoopRegions` (the §7f `REGIONS` block, unchanged) or `PlanarFaces` — atomic
+  faces of the sketch's planar arrangement, named by canonical `PlanarFaceRef`
+  (`forgeshape_sketch_arrangement.h`, `CAD-PLANAR-FACE-PF-S1`).
+
+Plus the two id high-water marks, `nextSketchId` and `nextFeatureId`, so an id
+a deleted feature or sketch wore is never minted again (the feature-id reuse
+the CAD architecture audit flagged). A file states the marks of the state it
+was written from and nothing else: they describe the forward history branch
+that reached that state (`ARCHITECTURE.md`, id lifetime), and a reopened
+project continues from them. No history, redo branch or runtime floor is
+stored.
+
+### When v6 is written, and what an older reader does
+
+v6 is written **only** when a body says something v1..v5 cannot: a sketch two
+features name, a sketch no feature names, sketch ids other than the ones a
+legacy read synthesizes (below), a high-water mark other than the one it
+derives, a `PlanarFaces` selection, or a FRAGMENT face token (code 4) anywhere
+-- including a `TopoRef` naming another body's fragment side. Every other
+project writes v1..v5 exactly
+as before and is **byte-identical**; the forty-four fixtures that predate this
+stage prove it. An older build refuses v6 as a required section at an unknown
+version rather than opening a body with a shared sketch silently duplicated or a
+face selection silently read as a loop selection.
+
+### Layout
+
+v6 is its own body record — the sketch table REPLACES the inline sketches, so it
+is not a tail on v5. It understands every entity kind (§7b, §7d), carries the
+§7c `TopoRef` and the §7e extent, and holds every feature (the first one
+included) in one list.
+
+```
+u32  bodyCount                   1 .. 4096
+repeat bodyCount times, in ascending SCENE ORDER:
+  u64  objectId
+  u32  nextSketchId              > every sketchId below
+  u32  nextFeatureId             > every featureId below
+  u32  sketchCount               1 .. 16
+  repeat sketchCount times, strictly ascending sketchId:
+    u32  sketchId                != 0
+    u8   placementCode           1 workplane, 2 face of another CAD body,
+                                 3 face of an earlier feature of this body
+      1:  u8   workplaneCode     §4
+      2:  u64  producerObjectId  the §7c TopoRef; the sketch is on local XY
+          u32  producerFeatureId
+          FACE
+          u64  lineageToken
+      3:  u32  supportFeatureId  the §7f support; the sketch is on local XY
+          FACE
+          u64  lineageToken
+    u32  nextEntityId
+    u32  entityCount … then the entities, exactly as §7b and §7d (codes 1..6)
+  u32  featureCount              1 .. 16
+  repeat featureCount times, in chain (application) order:
+    u32  featureId               the first exactly 1; strictly ascending
+    u8   operationCode           the first 1 New Body; every later one 2 Add or 3 Cut
+    u32  sketchId                a sketch in this body's table
+    u8   extentCode              §7e
+    u8   directionCode
+    f64  depth
+    f64  secondDistance
+    u8   selectionKind           1 LoopRegions, 2 PlanarFaces
+      1:  u32  profileEntityId, then REGIONS (§7f)
+      2:  FACES
+```
+
+and
+
+```
+FACE      u8  faceKind                1 CapPlane, 2 CapFar, 3 Side (a WHOLE source
+                                      edge), 4 fragment Side (`CAD-V6-S2`)
+          u32 faceEdgeEntityId
+          u32 faceEdgeLocalIndex
+          faceKind 4 only:
+          CUT start                   the piece's two bounding cuts, in the
+          CUT end                     source edge's own parameter order
+FACES     u32 faceCount 1 .. 16
+          repeat faceCount: CYCLE outer, u32 holeCount 0 .. 64, CYCLE × holeCount
+CYCLE     u32 fragmentCount 1 .. 1024, then FRAGMENT × fragmentCount
+FRAGMENT  u32 sourceEntityId          != 0
+          u32 sourceEdgeLocalIndex    rectangle side 0..3, polyline segment k, else 0
+          CUT start
+          CUT end
+          u8  reversed                0 or 1; every other bit reserved
+CUT       u8  cutKind                 1 SourceStart, 2 Intersection, 3 SourceEnd
+          cutKind 2 only:
+          u32 partnerEntityId         != 0
+          u32 partnerEdgeLocalIndex
+          u32 ordinal                 this contact's place among this edge's
+                                      contacts with that partner edge, in this
+                                      edge's own parameter order
+```
+
+A body record is 20 bytes, then per sketch 14 bytes (placement 1), 42 (placement
+2) or 34 (placement 3) plus its entities -- and for a code-4 FACE its two cuts
+(1 byte for a source end, 13 for an intersection) -- then 4 bytes and per feature 28 bytes
+plus its selection: 4 + `REGIONS` for loop regions, and for faces 4 + per face
+4 + its cycles, per cycle 4 + per fragment 9 + its two cuts (1 byte for a source
+end, 13 for an intersection). Nothing in a face selection is a coordinate, a
+floating-point value, a vector index, a tessellation index or a triangle.
+
+The fixed caps, and why: sketches `kMaxCadSketches` = the feature cap (16);
+faces per selection `kMaxPlanarFaceSelection` = the region cap (16); holes per
+face `kMaxPlanarFaceHoles` = `kMaxRegionHoles` (64); fragments per cycle
+`kMaxPlanarFaceCycleFragments` = `kMaxProfileVertices` (1024), because every
+fragment becomes at least one polygon vertex when a face is extruded, so a longer
+cycle could never be regenerated.
+
+### Reading v1..v5 into the table (the migration)
+
+The file keeps its version; nothing is rewritten because it was read. A v1..v5
+body becomes, in memory: the first feature's inline sketch as sketch **1** (its
+placement the v1 workplane or the v2 `TopoRef`), each later feature's inline
+sketch as sketch **k + 1** in chain order (placement 3, its v5 support), every
+selection `LoopRegions`, `nextSketchId` = the sketch count + 1 and
+`nextFeatureId` = the last feature id + 1 (2 for a single feature). Feature ids
+and every support are kept as stored. Two inline sketches that happen to be
+byte-identical stay TWO sketches: the old format could not say they were one.
+Writing that state back produces the same v1..v5 bytes, because it is exactly
+the shape v6 is not required for.
+
+### The canonical form, and what is refused
+
+Structure first, by the codec, before any allocation: a count out of range is
+`ImpossibleCount`; an unknown placement, face, operation, extent, direction,
+selection or cut code, a first feature whose id is not 1 or whose operation is
+not New Body, and a later New Body are `InvalidSemanticValue`; a `reversed`
+byte other than 0 or 1 is `BadPayload` (a reserved bit, never masked).
+
+Everything else is the domain's `validateCadBodyState`, surfaced as
+`InvalidSemanticValue` and named in the domain (`CadStatus`):
+
+| Refused | `CadStatus` |
+| --- | --- |
+| a `sketchId` of 0, or sketches not strictly ascending | `SketchIdInvalid` |
+| two sketches with one id | `DuplicateSketchId` |
+| a feature naming an id the table lacks | `SketchNotFound` |
+| `nextSketchId` or `nextFeatureId` not above every id | `HighWaterInvalid` |
+| more than 16 sketches | `TooManySketches` |
+| the first feature on a placement-3 sketch; a second placement-1/2 sketch; a later feature on a placement-1/2 sketch other than the first feature's | `SketchSupportInvalid` |
+| a placement-3 sketch whose support names no EARLIER feature (for a sketch no feature extrudes: no feature of the body), a stale lineage, a missing or ineligible face | `FeatureSupportInvalid` (as §7f) |
+| a selection carrying the other kind's payload | `InvalidSelectionKind` |
+| an empty or over-long cycle, too many holes, a start cut of kind 3 or an end cut of kind 1, a source-end cut carrying a partner, an intersection naming partner 0, `sourceEntityId` 0 | `PlanarFaceRefMalformed` |
+| a cycle not rotated to its smallest fragment, a fragment twice in a cycle, holes or faces not strictly ascending | `PlanarFaceRefNotCanonical` |
+| one face twice in a selection | `DuplicatePlanarFace` |
+| a face the sketch's arrangement does not derive | `PlanarFaceUnresolved` |
+| a face selection over a sketch holding a curve kind the arrangement has no source edge for (none since `CAD-V6-S2-CORRECTION-FILL-HUD-R1`: a Spline is intersected span by span) | `PlanarFaceUnsupportedCurve` |
+| over a sketch with a spline span that crosses or touches itself | `SelfIntersectingProfile` |
+| over a sketch whose curves share a stretch | `PlanarFaceAmbiguousOverlap` |
+| over a sketch past the arrangement's caps | `PlanarFaceCapExceeded` |
+| an arrangement cycle below the area floor | `PlanarFaceDegenerate` |
+| a face selection whose UNION pinches -- two chosen faces meeting at one point | `PlanarFacesTouchAtPoint` (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`; it was `OverlappingRegions`, the loop model's name for a different thing) |
+| a union loop longer than `kMaxProfileVertices` | `TooManyEntities` |
+
+A code-4 FACE is refused by the CODEC (`InvalidSemanticValue`) unless it is a
+proper fragment in canonical form: its start cut is not a source end, its end
+cut not a source start, the two are not both source ends (that is the whole
+edge, whose one encoding is code 3), an intersection names a partner, and the
+edge entity is not 0. Code 4 exists only in v6: every v1..v5 reader refuses it
+as an unknown face kind.
+
+The ORDER of fragments, holes and faces is the canonical order the arrangement
+produces, stated as a total order on the tuples: a cut by (kind code − 1,
+partner entity, partner edge, ordinal); a fragment by (source entity, source
+edge, start cut, end cut, reversed); a cycle lexicographically by its fragments
+and then by length; a face by its outer cycle, then its holes in order, then the
+hole count. A cycle is rotated to start at its unique smallest fragment; the
+outer cycle runs counter-clockwise and every hole clockwise. A reader checks the
+rotation and the orders and refuses — it never re-sorts — and leaves the
+orientation to exact resolution, because only the arrangement knows it.
+
+**Resolution is exact.** A `PlanarFaceRef` resolves only if it EQUALS, tuple for
+tuple, one face the named sketch's arrangement derives (`resolvePlanarFaceRef`).
+There is no nearest-face search, no seed point and no fallback: an edit that
+adds or removes an intersection changes the face and the stored ref no longer
+resolves. The arrangement itself — analytic intersections of lines, polyline
+segments, rectangle sides, circles and arcs in binary64 sketch coordinates,
+T-junctions and endpoint coincidences within `kSketchCoincidenceMeters`, cuts
+named by partner and ordinal, the half-edge walk and the bounded faces — is the
+one `CAD-PLANAR-FACE-PF-S1` defines (`artifacts/cad-planar-face-pf-s1/SUMMARY.md`).
+
+**A Spline is one source edge per authored span** (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`).
+Span `i` — the curve between authored points `i` and `i + 1`, the exact cubic
+Bezier the profile tessellation samples (`sketchSplineSpan`) — is the fragment
+tuple's `sourceEdgeLocalIndex` `i`, and its cuts are the same semantic cuts
+every edge carries: the span's own start or end, or the k-th crossing with a
+named partner edge, counted along the span's parameter. It is intersected on the
+curve, never on its tessellation (a polynomial root isolation against a line or
+a circle, a bounded subdivision with Newton refinement against another span), a
+touch without a crossing makes no node, a shared stretch is
+`PlanarFaceAmbiguousOverlap`, and a span meeting itself is
+`SelfIntersectingProfile`. No sample index, tessellation index or coordinate is
+identity, so **no byte layout changed**: a spline fragment is written exactly as
+any other fragment. A Spline whose spans cross nothing (the `cad_spline_face_v6`
+spline) bounds no face and leaves every other ref resolving as before.
+
+### Regenerating a face selection, and its faces (`CAD-V6-S2`)
+
+A `PlanarFaces` feature is regenerated like any other: its stored faces resolve
+EXACTLY against the sketch's arrangement; their UNION is derived on the
+arrangement's own half-edges (a fragment both chosen faces walk cancels; the
+rest walks into loops; a positive loop is an outer boundary and a negative one
+a hole of the smallest outer that contains it); each loop becomes a polygon
+from its fragments' derived points (a straight fragment is its two nodes, a
+piece of a circle or arc is tessellated between its nodes at an authored arc's
+angular density, `sketchArcSegmentCount`); and the prisms go through the §7f
+chain exactly as regions do. Nothing derived is stored. A project containing
+one loads, and a body that does not regenerate is refused all-or-nothing.
+
+**Its faces, and its lineage.** Its face list is `CapPlane`, `CapFar`, then ONE
+`Side` per FRAGMENT of the union's boundary -- component by component in
+canonical order (by outer cycle), the outer cycle's fragments in its canonical
+walk, then each hole's. A curved fragment is one face however many facets its
+tessellation has, so no tessellation count reaches a lineage. A fragment that
+IS its whole source edge wears the whole-edge token (code 3, §7c code) byte for
+byte; a proper piece wears a fragment token, whose §7c token code is
+
+```
+0x03 << 56  |  ( FNV-1a 64 over the FACE bytes after faceKind:
+                 u32 edge entity, u32 edge local, CUT start, CUT end )  &  (2^56 - 1)
+```
+
+(offset basis `0xCBF29CE484222325`, prime `0x100000001B3`, byte by byte), a code
+no whole-edge token can have because its top byte is a face kind 0..2. A
+straight fragment's side is eligible to carry a sketch; a curved one never is;
+every face of a Cut is ineligible. The feature's signature is §7c's rule over
+this list with the selection anchor `0`. For a ONE-face selection the side list
+is the stored outer cycle fragment for fragment, so the lens of
+`cad_face_lens_v6` has the lineage `0x9873F7F20DED4004`
+(`cad_fragment_support_v6`).
+
 ## 8. Validation and compatibility
 
 Decoding happens entirely into temporary document structures. **No live project
@@ -890,7 +1152,7 @@ active mode or body, not the session history.
 | `SCNE` absent; `SCUL` absent for a Sculpt project | `MissingRequiredSection` |
 | A payload's own structure does not add up; a sculpt, batch, polyline or SCNE v2 body flags byte with a reserved bit; an imported record whose normals do not match its positions one for one, or whose batches do not tile its indices | `BadPayload` |
 | A count no project can have, or one whose byte size would overflow — refused **before any allocation**; a `CADB` body with no entities or more than 256, a polyline with no vertices or more than 256 | `ImpossibleCount` |
-| A value the live model refuses: a non-positive or non-finite dimension, a broken capsule relation, a non-finite position or rotation, a zero or negative scale, a duplicate or reserved `ObjectId`, an allocator that could mint a collision, an index out of range, an unknown primitive, feature, workplane, direction or entity-kind code, an imported normal that is not a unit direction, an imported name the domain's own sanitizer would not have produced, and any `CADB` record `validateCadBodyState` refuses — a bad coordinate, size, depth or entity id, or a sketch that does not close the profile the extrusion names | `InvalidSemanticValue` |
+| A value the live model refuses: a non-positive or non-finite dimension, a broken capsule relation, a non-finite position or rotation, a zero or negative scale, a duplicate or reserved `ObjectId`, an allocator that could mint a collision, an index out of range, an unknown primitive, feature, workplane, direction or entity-kind code, an imported normal that is not a unit direction, an imported name the domain's own sanitizer would not have produced, and any `CADB` record `validateCadBodyState` refuses — a bad coordinate, size, depth or entity id, a sketch that does not close the profile the extrusion names, and every `CADB` v6 refusal §7g names | `InvalidSemanticValue` |
 | An active body no section carries, a `CONS`/`SCUL`/`IMPT`/`CADB` body `SCNE` does not carry, a Sculpt project whose active body has no sculpt mesh, a body claimed by two of `CONS`, `IMPT` and `CADB`, a `SCUL` entry over a `CADB` body | `UnresolvedReference` |
 | A load attempted while a Construction edit is open (not a property of the file) | `RefusedEditInProgress` |
 
@@ -998,6 +1260,14 @@ nothing changed: all ten pre-`IMPORT-01B` fixtures' digests are unchanged, which
 is what `FSR1A-12` and `IMP01A-19` assert against the two new ones `IMP01B-11`
 and `IMP01B-12` add.
 
+`CADB` v6 (`CAD-V6-S1`) is the first section version whose reader MIGRATES in
+memory: a v1..v5 body's inline sketches become a sketch table (§7g), one sketch
+per feature, ids 1..n, high-water marks derived. The migration is real and
+tested — `CADV6_P02..P04` read a v5 chain into the table, prove two
+byte-identical legacy sketches stay two, and prove the migrated state writes
+the same v5 bytes back — and every file written before it decodes to exactly
+the body it always meant.
+
 ---
 
 ## 10a. One format, two files
@@ -1083,16 +1353,29 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `cad_bad_feature_ref_v5.forge` | 370 | `79436a25e7177fa818b7ac4dac1476254658c9e09f1c3a49b0f042f560b738cd` | The Add fixture whose support names feature **7**, which the body does not have — refused `InvalidSemanticValue` |
 | `cad_bad_feature_order_v5.forge` | 370 | `7d50931ddf3f7a734454beaed51576225aae0cc1d990b94ba5bc3ab8d7c4e951` | The Add fixture whose later feature id is **1**, which is not above the first feature's — refused `InvalidSemanticValue` |
 | `cad_bad_region_v5.forge` | 302 | `17d27c5c46b9b9f7d606d278d524aff6cfbc48647504497825c8438f2493f7a0` | The hole fixture storing the hole list `[7]` instead of the `[2]` the sketch derives — refused `InvalidSemanticValue` |
+| `cad_sketch_shared_v6.forge` | 384 | `9dedb935d190c8831e80c31798a21fc6ebb7f7325564e4e7d30c3f0fd80a8342` | **`CADB` v6.** ONE retained sketch — a 4 × 3 m rectangle (entity 1) around a 1 × 1 m square (entity 2) on XY — extruded by TWO features: the base selects the ring AND the square (their union, the whole block), One Side 1 m; feature 2 is an **Add of the square alone**, 0.5 m against the normal, naming the same `sketchId` 1. Loads and regenerates (volume 12.5 m³) |
+| `cad_face_lens_v6.forge` | 394 | `928f42163c3983f97c79cf408b5f00a5a4b990cc20e4001a2c8073bf43458e12` | The PF-S1-01 sketch (a 4 × 3 m rectangle and a 0.5 m circle centred on its right side) with the **lens inside the rectangle** selected as a planar face: `1.1[X(2.0#0)>X(2.0#1)] 2.0[X(1.1#0)>X(1.1#1)]` |
+| `cad_face_protrusion_v6.forge` | 474 | `f5602527a1bf228746016334ad030d02904c60d5c6fafe775a8d66ccdf087528` | The rectangle and three lines closing a 1 × 1 m square against its right side through two T-junctions; the **protrusion** face `~1.1[X(2.0#0)>X(4.0#0)] 2.0[S>E] 3.0[S>E] 4.0[S>E]` |
+| `cad_face_two_circles_v6.forge` | 386 | `41675dd1d5edbf40886c5cb73ecfab00801453ba5ba77d84f2d900123315c081` | Two 1 m circles at u = ±0.4 and the **lens** between them: `1.0[X(2.0#1)>X(2.0#0)] 2.0[X(1.0#0)>X(1.0#1)]` |
+| `cad_mixed_selection_v6.forge` | 497 | `4406c9f85a89481ace78a14591134dcfa8373a4b30b43908cf2fec608e3d27a5` | A **LoopRegions** base (the 2 × 2 m block, 1 m) and a **PlanarFaces** Add on its far cap: a second retained sketch (placement 3, feature 1 CapFar, lineage `0x958F78AF1C70BAA1`) of two 0.5 m circles at u = ±0.2, selecting their lens, 0.25 m |
+| `cad_bad_sketch_ref_v6.forge` | 384 | `cde2cab0a6230a6bb5f479874c4c6db0c36321ea3a17cbe77823651d32df66e7` | The shared fixture whose Add names sketch **7**, which the table does not carry — refused `InvalidSemanticValue` (`SketchNotFound`) |
+| `cad_duplicate_sketch_id_v6.forge` | 497 | `ead5488fc5cccdbe89f8d29d3e9c79cc0467de8447f7cf9930179b9bb77e6a1d` | The mixed fixture whose second sketch wears id **1** as well — refused `InvalidSemanticValue` (`DuplicateSketchId`) |
+| `cad_bad_selection_kind_v6.forge` | 394 | `cf3b0c64e066b6b809a5744e4b9d32d46864ae7d690b89c4bc5abd6785517e27` | The lens fixture with `selectionKind` **9** — refused `InvalidSemanticValue` by the code alone |
+| `cad_noncanonical_face_v6.forge` | 394 | `2aed2f15bb5437286906a3352af39d3d8dd29c40b876a18d65d14b0aac8ca2a3` | The lens fixture with its outer cycle **rotated** to start at the circle fragment — the same boundary, not the canonical encoding; refused `InvalidSemanticValue` (`PlanarFaceRefNotCanonical`), never re-rotated |
+| `cad_unresolved_face_v6.forge` | 394 | `9602fc4a281e4d6b7bf79fedf766d76ad2e2e2d142e9917d5b44635c65d05b4b` | The lens fixture whose circle fragment ends at crossing ordinal **2** of a side the circle crosses twice — well formed, canonical, and derived by no arrangement; refused `InvalidSemanticValue` (`PlanarFaceUnresolved`), no nearest face |
+| `cad_spline_face_v6.forge` | 451 | `d85f98db59968bbe6c47f1842f59bb2f93f167f61deba67f5f846e98651cd800` | The lens fixture with a three-point **Spline** (entity 3) added to its sketch, clear of both curves. Refused (`PlanarFaceUnsupportedCurve`) while a Spline disabled the arrangement; since `CAD-V6-S2-CORRECTION-FILL-HUD-R1` the **same bytes** are a VALID file — the spline bounds no face and the lens resolves |
+| `cad_overlap_face_v6.forge` | 376 | `313652c95c14d3ebfd5e451447b8b46d0890fbed35b7c680911fb94426e118f9` | The rectangle with a line lying **along** its bottom side, selecting the rectangle's whole boundary — refused `InvalidSemanticValue` (`PlanarFaceAmbiguousOverlap`) |
+| `cad_fragment_support_v6.forge` | 531 | `e1726cb5cbf0504ee0e50f457d8490ab410d12e41e426fdfe631dbb1e8c0acb6` | `CAD-V6-S2`: the `cad_face_lens_v6` body, and a second retained sketch on the lens's STRAIGHT side -- a fragment of the rectangle's right side, placement 3, FACE code 4 with cuts `X(2.0#0) > X(2.0#1)`, lineage `0x9873F7F20DED4004` -- holding a 0.3 m square Added 0.2 m out of it |
 
-The eleven corrupt fixtures written since `CADB` v2 — two each for `CADB` v2, v3
-and v4, four for `CADB` v5 and one for `SCNE` v2 — are **constructed** by the
-PowerShell builder with the bad value in place, never generated and then
-mutated; for the seven that predate `CADB` v5 the C++ self-test reaches the same
-bytes by patching the valid parent's one field and its CRC, and the digests
-agreeing is what proves the two routes describe one file (UNVERIFIED for the
-four v5 ones until a C++ self-test asserts them). The envelope fixtures and
-`cad_bad_plane_v1` predate the rule and are still derived from their canonical
-parent.
+The seventeen corrupt fixtures written since `CADB` v2 — two each for `CADB` v2,
+v3 and v4, four for `CADB` v5, six for `CADB` v6 and one for `SCNE` v2 — are
+**constructed** by the PowerShell builder with the bad value in place, never
+generated and then mutated; the C++ self-test reaches the same bytes by its own
+route (patching the valid parent's one field and its CRC, or — for five of the
+six v6 ones — writing the bad STATE through `encodeProjectV1Unchecked`), and
+the digests agreeing is what proves the two routes describe one file. The
+envelope fixtures and `cad_bad_plane_v1` predate the rule and are still derived
+from their canonical parent.
 
 Every fixture written before Stage 018A is **byte-for-byte unchanged** by the
 `SCNE` v2 bump, because none of them hides, locks or names a body and v2 is
@@ -1107,21 +1390,33 @@ the two matched could not tell a decoder that confused them apart. Every number
 is an exact binary fraction, so the two implementations agree byte for byte or
 not at all.
 
-No section version has moved an older fixture: `CADB` v2, v3, v4 and v5 are
+No section version has moved an older fixture: `CADB` v2, v3, v4, v5 and v6 are
 each written only when a body needs what they add — a face support, a curve, an
-extent that is not One Side, a hole or a later feature — so a world-only CAD
+extent that is not One Side, a hole or a later feature, a shared or retained
+sketch or a face selection — so a world-only CAD
 project still writes `CADB` v1, a curveless one v1 or v2, a One Side one v1..v3
 and a one-region single-feature one v1..v4. Each of these features costs a
 project that does not use it exactly nothing, exactly as the imported branch
 and the generalized `SCUL` cost the files before them nothing.
 
-**Forty-four fixtures in all.** The thirty-six that predate `CADB` v5 are
+**Fifty-six fixtures in all.** The thirty-six that predate `CADB` v5 are
 verified by `FSR1A-12`, `IMP01A-19`, `IMP01B-11/12`, `CADR0-33..36`,
 `CADA3-46..51`, `CADUXR1-38`, `CADEXT-10` and `OBJ018A-15/16`, and printed on
 every debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `…_IMPORTED`,
 `…_IMPORTED_SCULPT`, `…_CAD` and `…_CAD_V2`. The eight `CADB` v5 fixtures are
-written by the builder and held byte-identical by CI FAST's corpus parity step;
-a C++ self-test asserting their digests is UNVERIFIED.
+asserted by `CADVS_IO_22` and the twelve `CADB` v6 fixtures by `CADV6_P11`:
+the production encoder reaches every one of those digests from a state built in
+C++ — the five valid ones through the ordinary writer, deriving each planar face
+from its sketch's arrangement rather than copying it; the refusals through the
+same writer without its validation (`encodeProjectV1Unchecked`), and the one bad
+code by patching the valid parent's byte; `cad_fragment_support_v6`
+(`CAD-V6-S2`, `CADV6S2_P16`) through the ordinary writer, its fragment token and
+lineage derived by the production face enumeration while the builder computes
+both from the text above. CI FAST's corpus parity step holds all
+fifty-seven byte-identical between the builder and the repository. The thirteen v6
+fixtures are single-body Construction projects with the `SCNE` record of the
+v4/v5 ones, and every one of the forty-four before them is byte-for-byte
+unchanged: none needs what v6 adds.
 
 Regenerate and re-verify with:
 

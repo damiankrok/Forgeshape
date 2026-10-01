@@ -143,22 +143,30 @@ bool extrudeSelectionAnchorPoint(const SketchRegionExtraction& regions,
     if (out == nullptr) {
         return false;
     }
-    const SketchRegion* region = findSketchRegion(regions, extrude.profileEntityId);
-    if (region == nullptr) {
+    if (findSketchRegion(regions, extrude.profileEntityId) == nullptr) {
         return false;
     }
-    const std::vector<std::vector<SketchPoint>> loops = sketchRegionLoops(regions, *region);
+    // The FIRST union component (`CAD-FOUNDATION-C1`), which for any selection
+    // that does not choose a region beside its own hole is the first chosen
+    // region exactly -- so every earlier anchor stands where it stood.
+    const std::vector<SketchRegionComponent> components =
+            mergeSelectedRegions(regions, extrudeRegions(extrude));
+    if (components.empty()) {
+        return false;
+    }
+    const SketchRegionComponent& first = components.front();
+    const std::vector<std::vector<SketchPoint>> loops = sketchComponentLoops(regions, first);
     if (loops.empty()) {
         return false;
     }
-    if (region->holeLoops.empty()) {
+    if (first.holeLoops.empty()) {
         return sketchPolygonCentroid(loops[0], out);
     }
-    bool onMaterial = sketchPointStrictlyInside(region->centroid, loops[0]);
+    bool onMaterial = sketchPointStrictlyInside(first.centroid, loops[0]);
     for (size_t h = 1; onMaterial && h < loops.size(); ++h) {
-        onMaterial = !sketchPointStrictlyInside(region->centroid, loops[h]);
+        onMaterial = !sketchPointStrictlyInside(first.centroid, loops[h]);
     }
-    *out = onMaterial ? region->centroid : region->interiorPoint;
+    *out = onMaterial ? first.centroid : first.interiorPoint;
     return true;
 }
 
@@ -265,6 +273,145 @@ bool cadExtrudeControlScale(const CameraSnapshot& camera, const Vec3& anchor, in
     return cadExtrudeControlScaleFor(perPixel, out);
 }
 
+bool cadExtrudeManipulatorScale(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera,
+                                int viewportHeight, CadExtrudeControlScale* out) {
+    if (!anchors.valid) {
+        return false;
+    }
+    return cadExtrudeControlScale(camera, anchors.base, viewportHeight, out);
+}
+
+bool sameCadExtrudeViewFacts(const CadExtrudeViewFacts& a, const CadExtrudeViewFacts& b) {
+    if (a.valid != b.valid) {
+        return false;
+    }
+    if (!a.valid) {
+        return true;
+    }
+    return a.scale.metersPerPixel == b.scale.metersPerPixel && a.leaderValid == b.leaderValid
+           && (!a.leaderValid
+               || (a.leaderSide.x == b.leaderSide.x && a.leaderSide.y == b.leaderSide.y
+                   && a.leaderSide.z == b.leaderSide.z));
+}
+
+// ---------------------------------------------------------------------------
+// The technical-drawing leader
+// ---------------------------------------------------------------------------
+
+bool cadExtrudeLeaderSide(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera,
+                          int viewportWidth, int viewportHeight, Vec3* out) {
+    if (out == nullptr || !anchors.valid || viewportWidth <= 0 || viewportHeight <= 0) {
+        return false;
+    }
+    // The view direction AT the anchor: along the eye ray in perspective, the
+    // camera's own direction in orthographic.
+    const Vec3 toward = camera.projection == ProjectionMode::Perspective
+                                ? vec3Sub(anchors.base, camera.eye)
+                                : vec3Sub(camera.target, camera.eye);
+    const Vec3 view = vec3Normalize(toward);
+    Vec3 side = vec3Cross(anchors.normal, view);
+    if (!unitLength(view) || vec3Dot(side, side) < 1.0e-6f) {
+        // Looking straight down the axis: any perpendicular is as good as any
+        // other on screen, so take the deterministic one.
+        Vec3 q;
+        perpendicularBasis(anchors.normal, &side, &q);
+    } else {
+        side = vec3Normalize(side);
+    }
+    if (!unitLength(side)) {
+        return false;
+    }
+    // Sign it to the reading-up side of the projected shaft. The reading
+    // direction of a screen vector (dx, dy) is the one with dx > 0 (or, for a
+    // vertical line, dy < 0 -- read bottom to top), and "up" for upright text
+    // along it is (dy, -dx) in y-down screen coordinates. The Android value
+    // rotation follows the SAME rule, so the value above its leader is on the
+    // side away from the shaft.
+    float bx = 0.0f, by = 0.0f, nx = 0.0f, ny = 0.0f, sx = 0.0f, sy = 0.0f;
+    const Vec3 alongNormal = vec3Add(anchors.base, anchors.normal);
+    const Vec3 alongSide = vec3Add(anchors.base, side);
+    if (projectWorldToScreen(camera, anchors.base, viewportWidth, viewportHeight, &bx, &by)
+        && projectWorldToScreen(camera, alongNormal, viewportWidth, viewportHeight, &nx, &ny)
+        && projectWorldToScreen(camera, alongSide, viewportWidth, viewportHeight, &sx, &sy)) {
+        float dx = nx - bx;
+        float dy = ny - by;
+        if (dx < 0.0f || (dx == 0.0f && dy > 0.0f)) {
+            dx = -dx;
+            dy = -dy;
+        }
+        const float upX = dy;
+        const float upY = -dx;
+        if ((sx - bx) * upX + (sy - by) * upY < 0.0f) {
+            side = vec3Scale(side, -1.0f);
+        }
+    }
+    *out = side;
+    return true;
+}
+
+bool cadExtrudeLeaderFor(const CadExtrudeAnchors& anchors, const Vec3& side, double controlWorld,
+                         CadExtrudeLeader* out) {
+    if (out == nullptr || !anchors.valid || !unitLength(side) || !std::isfinite(controlWorld)
+        || controlWorld <= 0.0) {
+        return false;
+    }
+    CadExtrudeLeader built;
+    built.side = side;
+    const Vec3 offset = vec3Scale(side, static_cast<float>(controlWorld
+                                                          * kCadExtrudeLeaderOffsetFraction));
+    const CadExtrudeSideAnchor* sides[2] = {&anchors.positive, &anchors.negative};
+    CadExtrudeLeaderSide* leaders[2] = {&built.positive, &built.negative};
+    for (int i = 0; i < 2; ++i) {
+        leaders[i]->present = sides[i]->present;
+        leaders[i]->start = vec3Add(anchors.base, offset);
+        leaders[i]->end = vec3Add(sides[i]->tip, offset);
+        if (!vec3Finite(leaders[i]->start) || !vec3Finite(leaders[i]->end)) {
+            return false;
+        }
+    }
+    built.valid = true;
+    *out = built;
+    return true;
+}
+
+void appendCadExtrudeLeader(std::vector<GizmoVertex>* out, const CadExtrudeAnchors& anchors,
+                            const CadExtrudeLeader& leader, double controlWorld) {
+    if (out == nullptr || !anchors.valid || !leader.valid || !std::isfinite(controlWorld)
+        || controlWorld <= 0.0) {
+        return;
+    }
+    const float gap = static_cast<float>(controlWorld * kCadExtrudeLeaderGapFraction);
+    const float reach = static_cast<float>(
+            controlWorld * (kCadExtrudeLeaderOffsetFraction + kCadExtrudeLeaderOvershootFraction));
+    const float tick = static_cast<float>(controlWorld * kCadExtrudeLeaderTickFraction);
+    const CadExtrudeSideAnchor* sides[2] = {&anchors.positive, &anchors.negative};
+    const CadExtrudeLeaderSide* leaders[2] = {&leader.positive, &leader.negative};
+    bool baseExtensionDrawn = false;
+    for (int i = 0; i < 2; ++i) {
+        if (!leaders[i]->present) {
+            continue;
+        }
+        // Extension lines: clear of the geometry by a gap, past the dimension
+        // line by an overshoot -- the draughting convention. The base one is
+        // shared by both sides and drawn once.
+        if (!baseExtensionDrawn) {
+            pushLine(out, vec3Add(anchors.base, vec3Scale(leader.side, gap)),
+                     vec3Add(anchors.base, vec3Scale(leader.side, reach)), 1.0f);
+            baseExtensionDrawn = true;
+        }
+        pushLine(out, vec3Add(sides[i]->tip, vec3Scale(leader.side, gap)),
+                 vec3Add(sides[i]->tip, vec3Scale(leader.side, reach)), 1.0f);
+        // The dimension line, then a 45-degree tick at each end in the plane
+        // of the axis and the leader side.
+        pushLine(out, leaders[i]->start, leaders[i]->end, 1.0f);
+        const Vec3 slash = vec3Normalize(vec3Add(sides[i]->axis, leader.side));
+        for (const Vec3& at : {leaders[i]->start, leaders[i]->end}) {
+            pushLine(out, vec3Add(at, vec3Scale(slash, -tick)), vec3Add(at, vec3Scale(slash, tick)),
+                     1.0f);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The manipulator
 // ---------------------------------------------------------------------------
@@ -293,6 +440,29 @@ bool CadExtrudeManipulator::hitTest(const CadExtrudeAnchors& anchors, const Came
 bool CadExtrudeManipulator::hitTestSide(const CadExtrudeAnchors& anchors, bool positiveSide,
                                         const CameraSnapshot& camera, float x, float y,
                                         int viewportWidth, int viewportHeight) const {
+    return arrowWithin(anchors, positiveSide, camera, x, y, viewportWidth, viewportHeight,
+                       kCadExtrudeGrabRadiusUnits);
+}
+
+bool CadExtrudeManipulator::onDrawnArrow(const CadExtrudeAnchors& anchors,
+                                         const CameraSnapshot& camera, float x, float y,
+                                         int viewportWidth, int viewportHeight) const {
+    if (!anchors.valid) {
+        return false;
+    }
+    for (const bool positiveSide : {true, false}) {
+        if (arrowWithin(anchors, positiveSide, camera, x, y, viewportWidth, viewportHeight,
+                        kCadExtrudeTapOnArrowUnits)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CadExtrudeManipulator::arrowWithin(const CadExtrudeAnchors& anchors, bool positiveSide,
+                                        const CameraSnapshot& camera, float x, float y,
+                                        int viewportWidth, int viewportHeight,
+                                        float radiusUnits) const {
     if (!anchors.valid || viewportWidth <= 0 || viewportHeight <= 0) {
         return false;
     }
@@ -301,15 +471,12 @@ bool CadExtrudeManipulator::hitTestSide(const CadExtrudeAnchors& anchors, bool p
         return false;  // a side with no extent has no arrow to have been hit
     }
     CadExtrudeControlScale scale;
-    if (!cadExtrudeControlScale(camera, anchors.base, viewportHeight, &scale)) {
+    if (!cadExtrudeManipulatorScale(anchors, camera, viewportHeight, &scale)) {
         return false;
     }
     // The head is drawn past the tip at the SHARED scale, so the grabbable
     // extent past the tip is exactly what was drawn there.
-    const Vec3 headEnd = vec3Add(
-            side.tip,
-            vec3Scale(side.axis,
-                      static_cast<float>(scale.world * kCadExtrudeArrowHeadLengthFraction)));
+    const Vec3 headEnd = cadExtrudeArrowPoint(side, scale.world);
     float baseX = 0.0f;
     float baseY = 0.0f;
     float endX = 0.0f;
@@ -318,7 +485,7 @@ bool CadExtrudeManipulator::hitTestSide(const CadExtrudeAnchors& anchors, bool p
         || !projectWorldToScreen(camera, headEnd, viewportWidth, viewportHeight, &endX, &endY)) {
         return false;
     }
-    const float corridor = kCadExtrudeGrabRadiusUnits * gizmoPixelsPerReferenceUnit();
+    const float corridor = radiusUnits * gizmoPixelsPerReferenceUnit();
     float param = 0.0f;
     const float distance = distanceToSegment(x, y, baseX, baseY, endX, endY, &param);
     if (!std::isfinite(distance)) {
@@ -444,7 +611,7 @@ void appendOneArrow(std::vector<GizmoVertex>* out, const Vec3& base,
     // ring itself, so it reads as a cone rather than as a flat chevron.
     const Vec3 headBase =
             vec3Add(side.tip, vec3Scale(side.axis, -static_cast<float>(headLength)));
-    const Vec3 point = vec3Add(side.tip, vec3Scale(side.axis, static_cast<float>(headLength)));
+    const Vec3 point = cadExtrudeArrowPoint(side, controlWorld);
     Vec3 previous{};
     Vec3 first{};
     for (int i = 0; i < kCadExtrudeArrowBarbs; ++i) {
@@ -465,6 +632,12 @@ void appendOneArrow(std::vector<GizmoVertex>* out, const Vec3& base,
 }
 
 }  // namespace
+
+Vec3 cadExtrudeArrowPoint(const CadExtrudeSideAnchor& side, double controlWorld) {
+    return vec3Add(side.tip, vec3Scale(side.axis, static_cast<float>(
+                                                          controlWorld
+                                                          * kCadExtrudeArrowHeadLengthFraction)));
+}
 
 void appendCadExtrudeArrow(std::vector<GizmoVertex>* out, const CadExtrudeAnchors& anchors,
                            double controlWorld, bool grabbed, bool grabbedSide) {

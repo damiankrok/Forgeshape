@@ -77,6 +77,16 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_cad_cut_removes_body);
             case NativeViewport.CAD_KERNEL_FAILED:
                 return context.getString(R.string.status_cad_kernel_failed);
+            // `CAD-V6-S2-CORRECTION-FILL-HUD-R1`: why crossing curves could not
+            // be split into areas.
+            case NativeViewport.CAD_PLANAR_FACE_AMBIGUOUS_OVERLAP:
+                return context.getString(R.string.status_cad_curves_overlap);
+            case NativeViewport.CAD_PLANAR_FACE_CAP_EXCEEDED:
+                return context.getString(R.string.status_cad_too_many_crossings);
+            case NativeViewport.CAD_PLANAR_FACE_DEGENERATE:
+                return context.getString(R.string.status_cad_degenerate_area);
+            case NativeViewport.CAD_PLANAR_FACES_TOUCH_AT_POINT:
+                return context.getString(R.string.status_cad_areas_touch_at_point);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));

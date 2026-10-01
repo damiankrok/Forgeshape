@@ -1567,6 +1567,19 @@ final class NativeViewport {
     /** @return one of the {@code HISTORY_*} constants */
     static native int constructionUndo();
 
+    /**
+     * Which kind of selection the Ready sketch makes (`CAD-V6-S2`): 0 loop
+     * regions, 1 planar faces, -1 when no sketch is Ready. In planar-faces mode
+     * {@link #sketchProfiles} lists atomic faces by TRANSIENT row handle.
+     */
+    static native int sketchSelectionKind();
+
+    /**
+     * Which kind of selection feature {@code index} (0 = base) of a CAD body
+     * stores: 0 loop regions, 1 planar faces, -1 when there is none.
+     */
+    static native int cadFeatureSelectionKind(long bodyId, int index);
+
     /** @return one of the {@code HISTORY_*} constants */
     static native int constructionRedo();
 
@@ -2251,6 +2264,16 @@ final class NativeViewport {
     static final int CAD_CUT_NO_INTERSECTION = 42;
     static final int CAD_CUT_REMOVES_BODY = 43;
     static final int CAD_KERNEL_FAILED = 44;
+    /**
+     * `CAD-V6-S2-CORRECTION-FILL-HUD-R1`: the planar arrangement's refusals
+     * Finish can now return for a sketch whose curves cross, instead of handing
+     * it to the loop model.
+     */
+    static final int CAD_PLANAR_FACE_AMBIGUOUS_OVERLAP = 57;
+    static final int CAD_PLANAR_FACE_CAP_EXCEEDED = 58;
+    static final int CAD_PLANAR_FACE_DEGENERATE = 59;
+    /** Two chosen areas meet only at a point: their union cannot be extruded. */
+    static final int CAD_PLANAR_FACES_TOUCH_AT_POINT = 61;
 
     /**
      * What an extrusion does to material (`CAD-VERTICAL-SLICE-R1`), in the
@@ -2341,7 +2364,7 @@ final class NativeViewport {
      * land between two of them. Every slot is DERIVED below JNI on every read —
      * the shell stores no depth, no direction and no anchor.
      */
-    static final int CAD_EXTRUDE_SIZE = 32;
+    static final int CAD_EXTRUDE_SIZE = 45;
     /** 1 when the canvas manipulator is live; 0 is the whole reason it is absent. */
     static final int CAD_EXTRUDE_ACTIVE = 0;
     /** The PRIMARY side's distance: the whole depth of a One Side extrusion. */
@@ -2355,7 +2378,10 @@ final class NativeViewport {
     static final int CAD_EXTRUDE_LABEL_Y = 7;
     static final int CAD_EXTRUDE_TIP_X = 8;
     static final int CAD_EXTRUDE_TIP_Y = 9;
-    /** The camera-attached visual multiplier the cluster is drawn at. */
+    /**
+     * The camera-attached VISUAL multiplier (0.40..1.60) the glyphs and the
+     * value text are drawn at. Never a hit area.
+     */
     static final int CAD_EXTRUDE_SCALE = 10;
     /** 0 unclamped, 1 clamped at the minimum, 2 at the maximum. */
     static final int CAD_EXTRUDE_CLAMP = 11;
@@ -2404,6 +2430,29 @@ final class NativeViewport {
     /** The feature an edit session edits, or 0 for a new one. */
     static final int CAD_EXTRUDE_EDITING_FEATURE = 30;
     static final int CAD_EXTRUDE_CANDIDATE_REVISION = 31;
+
+    // `CAD-FOUNDATION-C1`. The technical-drawing leader each value stands
+    // beside: the dimension line the frame draws next to the shaft, projected
+    // below JNI. Start is beside the base, end beside the tip.
+    /** 1 when the PRIMARY leader projects; 0 means HIDE, never guess a spot. */
+    static final int CAD_EXTRUDE_LEADER_ON_SCREEN = 32;
+    static final int CAD_EXTRUDE_LEADER_START_X = 33;
+    static final int CAD_EXTRUDE_LEADER_START_Y = 34;
+    static final int CAD_EXTRUDE_LEADER_END_X = 35;
+    static final int CAD_EXTRUDE_LEADER_END_Y = 36;
+    /** 1 when the SECOND side's leader projects. */
+    static final int CAD_EXTRUDE_SECOND_LEADER_ON_SCREEN = 37;
+    static final int CAD_EXTRUDE_SECOND_LEADER_START_X = 38;
+    static final int CAD_EXTRUDE_SECOND_LEADER_START_Y = 39;
+    static final int CAD_EXTRUDE_SECOND_LEADER_END_X = 40;
+    static final int CAD_EXTRUDE_SECOND_LEADER_END_Y = 41;
+    // `CAD-FOUNDATION-C2`. The PRIMARY arrow's drawn point -- the far end of
+    // its head, from the same native function the drawing and the hit test
+    // end the head at. The action panel is anchored just past it.
+    /** 1 when the primary arrow exists and its point projects; 0 means HIDE the panel. */
+    static final int CAD_EXTRUDE_HEAD_ON_SCREEN = 42;
+    static final int CAD_EXTRUDE_HEAD_X = 43;
+    static final int CAD_EXTRUDE_HEAD_Y = 44;
 
     /** Extent modes, in the native enum's own order. */
     static final int EXTENT_ONE_SIDE = 0;

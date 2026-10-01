@@ -174,11 +174,73 @@ enum class CadStatus : uint8_t {
     CutRemovesBody,
     // The boolean kernel refused an input or produced no valid solid.
     KernelFailed,
+    // --- `CAD-V6-S1`: the sketch table and the selection variant. ---
+    // APPENDED, so every code above keeps its number across JNI and in Java.
+    // None of these is produced by a product path today: they are what a
+    // `CADB` v6 record, or a state a later stage builds, is refused by.
+    //
+    // A sketch id that is zero, or a sketch table that is not in strictly
+    // ascending id order.
+    SketchIdInvalid,
+    // Two sketches in one body wear the same id.
+    DuplicateSketchId,
+    // A feature names a sketch id the body's table does not carry, or the
+    // table carries no sketch at all.
+    SketchNotFound,
+    // A stored high-water mark (`nextSketchId`, `nextFeatureId`) is not above
+    // every id it has minted, so the next allocation could collide -- or an
+    // edit would LOWER one, handing a freed id on (`CadBody::applyState`).
+    HighWaterInvalid,
+    // More retained sketches than one body may carry.
+    TooManySketches,
+    // A sketch's placement contradicts how it is used: the base feature on a
+    // sketch that stands on one of the body's own features, a second sketch
+    // placed on a workplane or another body's face, or a later feature on such
+    // a sketch that is not the base's own.
+    SketchSupportInvalid,
+    // A selection kind outside LoopRegions / PlanarFaces, or a selection that
+    // carries the other kind's payload beside its own.
+    InvalidSelectionKind,
+    // A PlanarFaceRef whose structure no derivation can produce: an empty or
+    // over-long cycle, too many holes, a cut kind in the wrong position, an
+    // endpoint cut carrying a partner, an intersection naming no partner.
+    PlanarFaceRefMalformed,
+    // A PlanarFaceRef, or a selection of them, not in its ONE canonical form:
+    // a cycle not rotated to its smallest fragment, a fragment repeated in a
+    // cycle, holes or faces out of order. Refused, never re-sorted.
+    PlanarFaceRefNotCanonical,
+    // The same face listed twice in one selection.
+    DuplicatePlanarFace,
+    // A PlanarFaceRef that names no face of its sketch's arrangement. There is
+    // no nearest-face fallback.
+    PlanarFaceUnresolved,
+    // A planar-face selection over a sketch carrying a Spline, whose
+    // tessellation is not an identity (`ArrangementStatus::UnsupportedCurve`).
+    PlanarFaceUnsupportedCurve,
+    // The sketch's curves share a stretch, so it has no arrangement
+    // (`ArrangementStatus::AmbiguousOverlap`).
+    PlanarFaceAmbiguousOverlap,
+    // The sketch exceeds the arrangement's own caps
+    // (`ArrangementStatus::CapExceeded`).
+    PlanarFaceCapExceeded,
+    // The arrangement found a degenerate cycle (`ArrangementStatus::DegenerateFace`).
+    PlanarFaceDegenerate,
+    // Retired by `CAD-V6-S2`, which regenerates planar faces: no path returns
+    // it any more. Kept so every later code keeps its number across JNI.
+    PlanarFaceRegenerationUnavailable,
+    // --- `CAD-V6-S2-CORRECTION-FILL-HUD-R1`. APPENDED. ---
+    // Two chosen planar faces meet at a single point and nowhere else (the two
+    // crescents of crossing circles meet at the crossings), so their union is
+    // pinched there and no manifold solid extrudes it
+    // (`ArrangementStatus::PinchedSelection`). Its own name, because the loop
+    // model's `OverlappingRegions` describes a different thing: these faces do
+    // not overlap at all.
+    PlanarFacesTouchAtPoint,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 45;
+constexpr int kCadStatusCount = 62;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);
@@ -246,6 +308,12 @@ constexpr uint32_t kMaxArcSegments = 64;
 // bound the triangulation pass and every O(n^2) check here are held to.
 constexpr uint32_t kMaxProfileVertices = 1024;
 
+// How many straight segments a circular arc of this signed sweep becomes: the
+// SAME angular density a full circle gets, clamped to
+// [kMinArcSegments, kMaxArcSegments]. A pure function of the sweep, shared by
+// an authored Arc and a fragment of a circle or arc (`CAD-V6-S2`).
+uint32_t sketchArcSegmentCount(double sweep);
+
 // ---------------------------------------------------------------------------
 // Entities
 // ---------------------------------------------------------------------------
@@ -281,20 +349,67 @@ enum class CadFaceKind : uint8_t {
 
 const char* cadFaceKindName(CadFaceKind kind);
 
+// Where a fragment of a source edge starts or ends, by AUTHORED identity
+// (`CAD-PLANAR-FACE-PF-S1`; the planar arrangement, forgeshape_sketch_
+// arrangement.h, derives it). For an Intersection: the partner edge, and
+// `ordinal` = this contact's place among the contacts with that partner edge
+// that fall INSIDE this edge (its own ends are SourceStart/SourceEnd), counted
+// in this edge's own parameter order. No coordinate is part of it. It lives
+// here, beside the face token, because a side face standing on a fragment is
+// named by two of them.
+enum class ArrangementCutKind : uint8_t {
+    SourceStart = 0,
+    Intersection = 1,
+    SourceEnd = 2,
+};
+
+struct ArrangementCut {
+    ArrangementCutKind kind = ArrangementCutKind::SourceStart;
+    SketchEntityId partnerEntityId = kNoSketchEntity;
+    uint32_t partnerEdgeLocalIndex = 0;
+    uint32_t ordinal = 0;
+};
+
+bool sameArrangementCut(const ArrangementCut& a, const ArrangementCut& b);
+
 // A compact, stable identity of one face within a producer feature's topology.
 //
 // For a Side, `edgeEntityId` is the sketch entity that owns the profile edge
 // and `edgeLocalIndex` is which of that entity's edges it is (0..3 for a
 // rectangle, 0..n-1 for a polyline, 0 for a chained line). For a cap both are
 // zero. It is NEVER a triangle index.
+//
+// A FRAGMENT side (`CAD-V6-S2`). A feature that extrudes planar-arrangement
+// faces (`CadSelectionKind::PlanarFaces`) has side walls standing on PIECES of
+// source edges: a rectangle side a circle crosses twice is three pieces, and
+// two of them may bound one union. Such a side names its piece by the two cuts
+// that bound it, in the source edge's own parameter order -- the same semantic
+// tuple a `FragmentRef` carries, never a coordinate, a polygon or tessellation
+// index or a triangle. A piece that IS its whole source edge (both cuts at the
+// source's own ends) is not a fragment: it wears the whole-edge token, byte for
+// byte, so every whole-edge side keeps meaning what it always meant. A fragment
+// token exists only on a PlanarFaces feature and is written only by `CADB` v6.
 struct CadFaceToken {
     CadFaceKind kind = CadFaceKind::CapPlane;
     SketchEntityId edgeEntityId = kNoSketchEntity;
     uint32_t edgeLocalIndex = 0;
+    // Only for a Side: true when the face stands on a proper fragment of the
+    // source edge, bounded by the two cuts below.
+    bool fragment = false;
+    ArrangementCut fragmentStart{};
+    ArrangementCut fragmentEnd{};
 };
 
+// Field equality: the kind, the edge, and -- for a fragment -- both cuts. A
+// fragment token's identity does not fit a 64-bit code, so equality is never
+// judged by `cadFaceTokenCode`.
 bool sameCadFaceToken(const CadFaceToken& a, const CadFaceToken& b);
-// A stable u64 encoding, used to build a lineage signature and to compare.
+// A stable u64 encoding, used to build a lineage signature. For a whole-edge
+// token or a cap it is the packing every earlier build used, bit for bit
+// (`kind << 56 | entity << 16 | local`). For a fragment it is
+// `0x03 << 56 | (FNV-1a 64 of the token's CADB v6 bytes after its kind & 2^56-1)`
+// (DATA_PACKAGE_SPEC.md §7g), which no whole-edge code can equal because its
+// top byte is a kind (0..2).
 uint64_t cadFaceTokenCode(const CadFaceToken& token);
 
 // The v1 CAD feature id every CAD body's single Sketch+Extrude feature has,
@@ -467,6 +582,28 @@ CadStatus tessellateSketchCurve(const SketchEntity& entity, std::vector<SketchPo
 // start to end through mid, in radians, in (-2*pi, 2*pi) and never zero.
 CadStatus arcGeometry(const SketchArc& arc, SketchPoint* outCenter, double* outRadius,
                       double* outStartAngle, double* outSweep);
+
+// One span of a spline -- the curve between authored points `i` and `i + 1` --
+// as the cubic Bezier it IS (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`). `p0` and `p3`
+// are those two authored points exactly; `c1` and `c2` are the Catmull-Rom
+// tangents converted to Bezier handles, the end spans reflecting their one
+// neighbour. The ONE statement of a spline's geometry: the profile
+// tessellation samples it and the planar arrangement intersects it, so the
+// cells a spline cuts and the solid it bounds describe one curve.
+struct SketchBezierSpan {
+    SketchPoint p0;
+    SketchPoint c1;
+    SketchPoint c2;
+    SketchPoint p3;
+};
+
+// False, writing nothing, when `spanIndex` names no span (a spline of n points
+// has n - 1). Pure arithmetic over the authored points; no camera, no zoom.
+bool sketchSplineSpan(const SketchSpline& spline, uint32_t spanIndex, SketchBezierSpan* out);
+
+// The span at parameter t in [0, 1], in Bernstein form -- exactly the
+// arithmetic the tessellation has always used.
+SketchPoint sketchBezierPoint(const SketchBezierSpan& span, double t);
 
 // ---------------------------------------------------------------------------
 // The sketch

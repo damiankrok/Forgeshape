@@ -76,7 +76,8 @@ regeneration timings for its four sizes, and the sketch-UX suite prints
 `FORGESHAPE_SKETCH_UX_PERFORMANCE`, the arc and spline tessellation and
 curve-profile timings. The CAD-feature suite prints
 `FORGESHAPE_CAD_FEATURE_PERFORMANCE` (the region, Add, Add + Cut and codec
-round-trip timings of the acceptance model) and `FORGESHAPE_CAD_GOLDEN_SHA256_V5`
+round-trip timings of the acceptance model, and the planar arrangement's
+at-cap median/max over 20 derivations) and `FORGESHAPE_CAD_GOLDEN_SHA256_V5`
 (the eight `CADB` v5 fixture digests as this build encodes them).
 `bash scripts/host-native-selftests.sh [filter]` runs all twenty-three suites
 on the host, with no device, and is the fast native loop.
@@ -376,13 +377,23 @@ on the host, with no device, and is the fast native loop.
   distance, which is right for a placement instrument and the opposite of a
   control that belongs to the work. The cluster is a world object of reference
   size `W` whose screen size is clamped into a band —
-  `scale = clamp(W / metersPerPixel / S_ref, 0.80, 1.60)` — so it shrinks as
-  the camera pulls back and saturates at both ends, and that ONE `scale` sizes
-  the drawn arrowhead and the Android HUD's GLYPHS alike — and never a HIT
-  AREA (`CAD-VERTICAL-SLICE-R1`): a glyph is `clamp(28 dp × scale, 24, 32)`
-  while every control's touch rectangle stays at least 48 dp at every scale
-  and is never `setScale`d, so the interactive floor does not depend on the
-  band at all (`CadHudPresentationTest` pins both on the JVM). The hit
+  `scale = clamp(W / metersPerPixel / S_ref, 0.40, 1.60)` (OWNER-TUNABLE;
+  `CAD-FOUNDATION-C1` lowered the floor from 0.80) — so it shrinks as the
+  camera pulls back and saturates at both ends. `metersPerPixel` is read ONCE
+  per frame, at the manipulator's own BASE anchor (`cadExtrudeManipulatorScale`
+  through `SketchSession::extrudeViewFacts`), and that ONE fact sizes the drawn
+  arrowhead, the leader, the hit test's head extension and the Android action
+  panel and value text alike — never at the world origin, never read twice —
+  and never a HIT AREA: the panel's plate is its reference size ×
+  `clamp(scale, 0.40, 1.60)` and the value `clamp(14 sp × that, 9, 18)` while
+  every control is an INVISIBLE touch proxy of at least 48 dp that paints
+  nothing and is never `setScale`d, so the interactive floor does not depend on
+  the band at all (`CadHudPresentationTest` pins both on the JVM). The arrow's
+  drawn POINT is one function (`cadExtrudeArrowPoint`) shared by the drawing,
+  the hit test and the panel's anchor (tool-state slots 42..44). A camera-caused overlay
+  rebuild (another `worldPerUnit` or other view facts) advances the overlay
+  revision, so the renderer's revision-gated upload never keeps a previous
+  zoom's vertices. The hit
   CORRIDOR is 24 reference units and is deliberately NOT
   scaled, for the reason the gizmo's own corridors are not scaled by its visual
   size preference. **The drag is the gizmo's contract restated**: one captured
@@ -398,10 +409,9 @@ on the host, with no device, and is the fast native loop.
   no new style and no new pipeline; its SHAFT is the depth and only its head
   takes the control scale. The exact value, the extent control, the operation
   badge, Flip and the retained-sketch `Edit Sketch` control are Android chrome
-  positioned from a projected native anchor — the `bodyDimensionLabelPoint`
-  pattern a third time — with the VALUE's centre on the shaft's midpoint
-  anchor, and an anchor that does not project is HIDDEN, never placed at a
-  guess.
+  positioned from projected native points — the `bodyDimensionLabelPoint`
+  pattern a third time — and anything whose point does not project, or whose
+  own point falls off the viewport, is HIDDEN, never placed at a guess.
   **The sketch's view and the extrusion's are TWO views of one authored truth,
   and Finish Sketch is where the second begins** (`CAD-UX-S1-C1`, closing
   `OQ-CAD-UX-01`). A sketch is AUTHORED through the exact support-normal view —
@@ -500,16 +510,95 @@ on the host, with no device, and is the fast native loop.
   loop's anchor plus the hole anchors it was chosen with (`ProfileRegionRef`),
   never a triangle, tessellation or list index; stored holes that no longer
   equal the derived ones are refused (`ProfileRegionMismatch`), never re-read as
-  another area. Overlapping holes (`OverlappingHoles`), a selection whose
-  regions overlap, touch or share a loop (`OverlappingRegions`) and more than
-  `kMaxProfileRegions` (16) regions or `kMaxRegionHoles` (64) holes
-  (`TooManyRegions`) are refused by name. **Finish Sketch auto-selects ONLY
-  when exactly one region is selectable**; with more, nothing is chosen, there
-  is no arrow, the toolbar's Extrude is absent and a commit is refused
-  (`AmbiguousProfile`), and a Ready
-  tap toggles the region under the finger. A selected region is hatched and a
-  hole stays EMPTY. A single simple region still extrudes through the unchanged
-  R0 float path, bit-identical to every earlier build.
+  another area. **A selection is the UNION of the atomic regions it names**
+  (`CAD-FOUNDATION-C1`): a region beside its own direct hole (a ring and its
+  disk) is legal, and `mergeSelectedRegions` derives what is extruded by one
+  parity sentence over the nesting tree — a loop bounds the union exactly when
+  selection membership differs across it — into components (a real outer loop
+  and real hole loops), ONE prism per component so no shared wall is ever
+  emitted twice. Faces, the lineage token, the preview, the hatch, the arrow
+  anchor, New Body, Add and Cut all read the union; a selection that chooses no
+  region beside its own hole unions to exactly its own regions, so every
+  earlier face, token, mesh and fixture is unchanged. The stored form did NOT
+  change (still the atomic `ProfileRegionRef` list, still `CADB` v5, no new
+  version): a merged boundary is never stored. Overlapping holes
+  (`OverlappingHoles`), two chosen regions whose loops touch or cross or one of
+  which stands inside the other's material without being its own direct hole
+  (`OverlappingRegions`), and more than `kMaxProfileRegions` (16) regions or
+  `kMaxRegionHoles` (64) holes (`TooManyRegions`) are refused by name. **Finish
+  Sketch auto-selects ONLY when exactly one region exists**; with more, nothing
+  is chosen, there is no arrow, the toolbar's Extrude is absent and a commit is
+  refused (`AmbiguousProfile`). A Ready tap is a PURE toggle of the region
+  under the finger — no other region ever changes, and an addition that cannot
+  be merged is refused by name with the selection standing as it was. The
+  union is hatched; a hole it leaves open stays EMPTY. A single simple region
+  still extrudes through the unchanged R0 float path, bit-identical to every
+  earlier build. **The planar arrangement is DERIVED, and a sketch whose
+  curves cross is extruded by its atomic FACES** (`CAD-PLANAR-FACE-PF-S1`,
+  `CAD-V6-S2`): `forgeshape_sketch_arrangement` splits EVERY curve — line,
+  polyline, rectangle, circle, arc and, since
+  `CAD-V6-S2-CORRECTION-FILL-HUD-R1`, spline — at intersections and
+  T-junctions into atomic faces, the fill-bucket cells the user sees, named by
+  a canonical `PlanarFaceRef` built only from entity ids, edge-local indices
+  and per-pair intersection ordinals — never a coordinate, index, tessellation
+  or triangle — and resolved by exact equality with no fallback. **A spline is
+  one source edge per authored SPAN** (span `i` is edge-local index `i`), the
+  exact cubic Bezier `sketchSplineSpan` states — the ONE statement of spline
+  geometry the profile tessellation also samples — intersected on the curve
+  (polynomial roots against a line or circle, bounded subdivision plus Newton
+  against another span), never on its tessellation; a touch is never a node, a
+  shared stretch is `AmbiguousOverlap`, a span meeting itself
+  `SelfIntersectingCurve`, and no `CADB` layout changed. `decideSketchSelectionMode`
+  is the ONE decision at Finish: an Ok arrangement is PlanarFaces exactly when
+  `sketchRequiresPlanarFaces` holds (some face bounded by a proper fragment, and
+  the face count differs from the loop-region count) and otherwise `LoopRegions`,
+  bit-identical to every earlier build; a FAILED arrangement keeps `LoopRegions`
+  only when the loops are exact (`sketchLoopsAreExact`: no two touch or cross)
+  and is otherwise REFUSED by the arrangement's own name — never silently read
+  as whole overlapping loops. In PlanarFaces mode a tap toggles the face under
+  the finger — also inside the extrude arrow's grab corridor, where only a
+  still tap within `kCadExtrudeTapOnArrowUnits` of the DRAWN arrow is the
+  arrow's and a drag still takes it — rows are TRANSIENT handles (never
+  stored), and an exact loop region maps to its one identical face or is
+  refused (`PlanarFaceUnresolved`). `mergePlanarFaces` unions the chosen faces
+  on the arrangement's own half-edges — a shared fragment cancels, a node
+  reused across or within loops is `PinchedSelection`, refused as
+  `PlanarFacesTouchAtPoint` and never as the loop model's `OverlappingRegions`
+  — and the union is extruded by the same prism
+  generator, previewed as the candidate, hatched cell by cell, and fed to New
+  Body, Add or Cut. A union-boundary fragment is ONE side face: a fragment
+  that is its whole source edge keeps the legacy token, a proper piece wears a
+  FRAGMENT token (`CadFaceToken` with its two `ArrangementCut`s, file code 4,
+  `CADB` v6 only), and a curved one is never eligible. A topology edit that
+  loses a stored face is refused, never retargeted.
+- **A CAD Body's sketches are a TABLE, and a feature references one BY ID**
+  (`CAD-V6-S1`, `CADB` v6). `CadBodyState::sketches` holds every retained
+  sketch as a `CadSketchRecord` with a body-local, non-zero `CadSketchId`
+  minted from `nextSketchId`; the base names its sketch by `baseSketchId` and
+  every later feature by `sketchId`, and NO feature carries a sketch copy —
+  two features may extrude one sketch, and a sketch no feature extrudes may be
+  retained. Placement belongs to the sketch record: exactly one ROOT sketch
+  (the base's, on its workplane or `TopoRef`), every other on a face of one of
+  the body's own features. `nextFeatureId` is a stored high-water mark, so a
+  deleted feature's or sketch's id is never minted again. **An id is unique
+  along ONE FORWARD HISTORY BRANCH** (`CAD-V6-S1-C1`; the one definition is
+  the `CadSketchId` comment): `CadBody::applyState` refuses to lower either
+  mark, Undo restores them with the snapshot, and an edit after Undo may
+  re-mint an id only the redo step held — in the same commit that clears
+  redo. Nothing outside a snapshot may hold one of these ids across an Undo.
+  The base keeps its
+  implicit id 1 and New Body, the two facts every v1..v5 record implies. A
+  selection states its kind explicitly — `LoopRegions` or `PlanarFaces` — and
+  a `PlanarFaces` selection is VALIDATED (canonical form, then exact
+  resolution against the sketch's arrangement, no fallback) and, since
+  `CAD-V6-S2`, regenerated, created by the sketch session and loaded like any
+  other. The codec writes
+  `CADB` v6 ONLY when `cadBodyStateLegacyRepresentable` is false, reads
+  v1..v5 into the table as one sketch per feature (ids 1..n in chain order;
+  two identical inline sketches stay two), and the fingerprint mixes a v6
+  block only outside that predicate — so every legacy project keeps its bytes
+  and its fingerprint. **Not this stage:** creating, sharing, deleting or
+  browsing sketches from the UI (retained-sketch mobile UX, `CAD-V6-S3`).
 - **An Add or a Cut changes the SAME body, through a retained feature chain**
   (`CAD-VERTICAL-SLICE-R1`, `forgeshape_cad_body.{h,cpp}`,
   `forgeshape_cad_feature.{h,cpp}`). After its first New Body feature a CAD
@@ -555,15 +644,43 @@ on the host, with no device, and is the fast native loop.
   badge, and the toolbar's Extrude is WITHDRAWN (a control that cannot succeed
   is not drawn); the precision surface's pinned Extrude stays, because it
   submits a typed depth first, and native still refuses an invalid commit.
-- **The canvas CAD HUD is compact and icon-first, and Ready withdraws the
-  drawing chrome** (`CAD-VERTICAL-SLICE-R1`). One row at the arrow: the extent
-  control (opening a three-icon palette), the exact value whose CENTRE stands on
-  the shaft's midpoint anchor, the operation badge (opening New Body / Add /
-  Cut — only the operations native offers) and Flip (One Side only). Glyphs
-  are 24–32 dp; hit areas are ≥ 48 dp and never scaled; meaning is carried by
-  icon SHAPE, selected state and content description, with colour (Add
-  success, Cut error) only as a second carrier. Tool Labels adds 11 sp
-  captions without widening the row into pills. `SketchChromePolicy` is the one
+- **The canvas CAD HUD is a technical-drawing annotation plus ONE action
+  panel, and Ready withdraws the drawing chrome** (`CAD-VERTICAL-SLICE-R1`,
+  reshaped by `CAD-FOUNDATION-C1` and `CAD-FOUNDATION-C2`). The frame draws a
+  dimension LEADER beside the shaft — extension lines, a dimension line, 45°
+  ticks — in the overlay's existing `Dimension` range, standing on the
+  reading-up side of the shaft (`cadExtrudeLeaderSide`, camera-derived
+  presentation); native projects it (`cadExtrudeToolState` slots 32..41). The
+  exact value is text standing ABOVE its leader on the visible part of the
+  line, rotated to it and kept upright (`readingAngleDegrees`: `[-90°, 90°)`,
+  a vertical line reads bottom to top), written at the display precision
+  (`LengthUnit.formatWithUnit`: 3 decimals in the display unit, the rule the
+  area label already used — never the double's round-trip expansion; editors
+  keep every digit). Two Sides puts each value above its OWN leader. The
+  extent, the operation (New Body / Add / Cut) and Flip (One Side only) are ONE
+  compact ACTION PANEL (`CAD-FOUNDATION-C2`): a rigid plate laid out once at
+  its reference size and scaled as ONE unit, attached past the arrow's drawn
+  point ON the arrow's screen line with its proxy clear of the arrow's grab
+  corridor, and placed by ONE continuous function of the projected arrow
+  (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`): no candidate sides — at a viewport
+  edge it slides back along the SAME line by the least that fits, at most to
+  the shaft's base and never to the side of the shaft — and it turns modestly with the leader
+  (`panelRotationDegrees`: 0.35 × the reading angle, capped at 25°, tapered to
+  level before vertical so the wrap never flips it). It is shown WHOLE or not
+  at all — never an icon scattered, clamped away or hidden alone. The plate
+  takes no touch; ONE unscaled, unrotated ≥ 48 dp group proxy covers the
+  turned plate and opens ONE action palette (extent
+  choices, the operations native offers, Flip) of ordinary readable screen
+  chrome, because three 48 dp proxies on shrunken glyphs would overlap. The
+  whole annotation — values and panel together — collapses only when native
+  reports the scale clamped at its floor AND the value is wider than its
+  leader (`annotationCollapsed`). All placement arithmetic is the pure
+  `CadHudPresentation` (JVM-pinned); the view only places. Meaning is carried
+  by icon SHAPE, selected state and content description, with colour (Add
+  success, Cut error) only as a second carrier; Tool Labels captions the
+  palette — never a glyph on the plate. The typed-value editor opens
+  screen-aligned at the value's point. All sizes are OWNER-TUNABLE
+  presentation, decided on a physical device. `SketchChromePolicy` is the one
   statement of what a sketch shows: in Ready the Tool Rail, the orientation
   navigator and the Line dimension are ABSENT, Back to Sketch and Cancel stay,
   and Finish Sketch no longer opens the precision surface — the exact fields
@@ -775,8 +892,17 @@ on the host, with no device, and is the fast native loop.
   v5** fixtures (`cad_region_hole`, `cad_feature_add`, `cad_feature_cut`,
   `cad_feature_chain`, and the four the decoder must refuse,
   `cad_bad_operation`, `cad_bad_feature_ref`, `cad_bad_feature_order` and
-  `cad_bad_region`) — a **forty-four**-fixture corpus in which every older
-  fixture is byte-for-byte unchanged. Every corrupt fixture is CONSTRUCTED
+  `cad_bad_region`); `CAD-V6-S1` added the twelve **`CADB` v6** fixtures
+  (`cad_sketch_shared`, `cad_face_lens`, `cad_face_protrusion`,
+  `cad_face_two_circles`, `cad_mixed_selection`, `cad_spline_face` — refused
+  until `CAD-V6-S2-CORRECTION-FILL-HUD-R1` made splines intersectable, and
+  since then the same bytes decode as a valid file — and the six the decoder
+  must refuse, `cad_bad_sketch_ref`, `cad_duplicate_sketch_id`,
+  `cad_bad_selection_kind`, `cad_noncanonical_face`, `cad_unresolved_face` and
+  `cad_overlap_face`); `CAD-V6-S2` added
+  `cad_fragment_support` (a sketch on a FRAGMENT side, v6 FACE code 4) — a
+  **fifty-seven**-fixture corpus in
+  which every older fixture is byte-for-byte unchanged. Every corrupt fixture is CONSTRUCTED
   by the PowerShell builder with the bad value in place, never generated and
   then mutated.
   `DATA_PACKAGE_SPEC.md` owns the layout, and `scripts/build-forge-corpus.ps1`

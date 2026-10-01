@@ -10,12 +10,14 @@
 #include <numeric>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_face.h"
 #include "forgeshape_cad_feature.h"
 #include "forgeshape_cad_kernel.h"
+#include "forgeshape_cad_v6_selftest.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_history.h"
 #include "forgeshape_math.h"
@@ -25,8 +27,11 @@
 #include "forgeshape_project_state.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sketch.h"
+#include "forgeshape_sketch_arrangement_selftest.h"
+#include "forgeshape_sketch_fill_selftest.h"
 #include "forgeshape_sketch_region.h"
 #include "forgeshape_sketch_session.h"
+#include "forgeshape_support_chooser.h"
 
 namespace forgeshape {
 namespace {
@@ -478,8 +483,8 @@ ExtrudeFeature twoSidesExtent(double a, double b) {
 // circle of radius 0.8 (id 2), the RING chosen -- the rectangle with its hole.
 CadBodyState regionHoleState(ExtrudeFeature extrude = oneSide(1.0)) {
     CadBodyState state;
-    addRect(&state.sketch, 0.0, 0.0, 4.0, 3.0);
-    addCircle(&state.sketch, 0.0, 0.0, 0.8);
+    addRect(&cadBaseSketch(state), 0.0, 0.0, 4.0, 3.0);
+    addCircle(&cadBaseSketch(state), 0.0, 0.0, 0.8);
     state.extrude = extrude;
     setExtrudeRegions(&state.extrude, {regionRef(1, {2})});
     return state;
@@ -488,7 +493,7 @@ CadBodyState regionHoleState(ExtrudeFeature extrude = oneSide(1.0)) {
 // A 2 x 2 x depth block on XY, the chain cases' base.
 CadBodyState blockState(double depth = 1.0) {
     CadBodyState state;
-    addRect(&state.sketch, 0.0, 0.0, 2.0, 2.0);
+    addRect(&cadBaseSketch(state), 0.0, 0.0, 2.0, 2.0);
     state.extrude = oneSide(depth);
     return state;
 }
@@ -505,18 +510,22 @@ CadFeatureSupport capSupport(const CadBodyState& state, uint32_t featureId,
 }
 
 // Appends one later feature, standing on a cap of `supportFeatureId`, with the
-// next feature id.
+// next feature id -- a new retained sketch in the table and a feature naming it.
 CadBodyState withFeature(CadBodyState state, CadFeatureOperation operation,
                          uint32_t supportFeatureId, CadSketch sketch, ExtrudeFeature extrude,
                          CadFaceKind kind = CadFaceKind::CapFar) {
-    CadFeature feature;
-    feature.featureId = nextCadFeatureId(state);
-    feature.operation = operation;
-    feature.support = capSupport(state, supportFeatureId, kind);
-    feature.sketch = std::move(sketch);
-    feature.extrude = std::move(extrude);
-    state.laterFeatures.push_back(std::move(feature));
+    appendCadLaterFeatureWithSketch(&state, operation, capSupport(state, supportFeatureId, kind),
+                                    std::move(sketch), std::move(extrude));
     return state;
+}
+
+// The sketch record the i-th LATER feature extrudes (`CAD-V6-S1`): where its
+// support and its entities now live.
+CadSketchRecord& laterRecord(CadBodyState& state, size_t i) {
+    return *findCadSketchRecord(state, state.laterFeatures[i].sketchId);
+}
+const CadSketchRecord& laterRecord(const CadBodyState& state, size_t i) {
+    return *findCadSketchRecord(state, state.laterFeatures[i].sketchId);
 }
 
 // The three chain fixtures the codec cases also persist.
@@ -821,11 +830,17 @@ void testRegions(Recorder& r) {
         }
         r.check("CADVS_REG_05_ring_label_point_is_on_material_while_its_centroid_is_in_the_hole",
                 labelOnMaterial);
-        r.check("CADVS_REG_06_ring_or_disk_alone_is_valid_both_together_refused",
+        // `CAD-FOUNDATION-C1`: the ring and its own disk together are legal and
+        // mean their union -- one solid rectangle -- rather than a refusal.
+        const std::vector<SketchRegionComponent> both =
+                mergeSelectedRegions(x, {regionRef(1, {2}), regionRef(2)});
+        r.check("CADVS_REG_06_ring_or_disk_alone_is_valid_and_both_together_mean_their_union",
                 two && validateRegionSelection(x, {regionRef(1, {2})}) == CadStatus::Ok
                         && validateRegionSelection(x, {regionRef(2)}) == CadStatus::Ok
                         && validateRegionSelection(x, {regionRef(1, {2}), regionRef(2)})
-                                   == CadStatus::OverlappingRegions
+                                   == CadStatus::Ok
+                        && both.size() == 1u && both[0].outerAnchorId == 1u
+                        && both[0].holeLoops.empty() && nearRel(both[0].area, 12.0, 1e-12)
                         && validateRegionSelection(x, {}) == CadStatus::AmbiguousProfile);
         r.check("CADVS_REG_07_nested_loops_are_no_longer_refused_as_nested",
                 extractClosedProfiles(s).rejections.empty()
@@ -858,14 +873,33 @@ void testRegions(Recorder& r) {
                         && x.parent[1] == 0 && x.parent[2] == 1 && x.regions[2].depth == 2u
                         && nearRel(x.regions[0].area, 12.0 - circleArea(1.2), 1e-12)
                         && nearRel(x.regions[1].area, circleArea(1.2) - circleArea(0.5), 1e-12));
-        r.check("CADVS_REG_10_outer_ring_with_island_valid_ring_with_its_own_hole_refused",
+        // Even/odd through the union: the outer ring with the island is two
+        // components; the outer ring with its own middle ring is one ring
+        // whose hole is the innermost disk; the middle ring with its own disk
+        // is one solid disk.
+        const std::vector<SketchRegionComponent> island =
+                mergeSelectedRegions(x, {regionRef(1, {2}), regionRef(3)});
+        const std::vector<SketchRegionComponent> outerTwo =
+                mergeSelectedRegions(x, {regionRef(1, {2}), regionRef(2, {3})});
+        const std::vector<SketchRegionComponent> innerTwo =
+                mergeSelectedRegions(x, {regionRef(2, {3}), regionRef(3)});
+        r.check("CADVS_REG_10_nested_selections_union_by_even_odd_over_the_nesting_tree",
                 three
                         && validateRegionSelection(x, {regionRef(1, {2}), regionRef(3)})
                                    == CadStatus::Ok
                         && validateRegionSelection(x, {regionRef(1, {2}), regionRef(2, {3})})
-                                   == CadStatus::OverlappingRegions
+                                   == CadStatus::Ok
                         && validateRegionSelection(x, {regionRef(2, {3}), regionRef(3)})
-                                   == CadStatus::OverlappingRegions);
+                                   == CadStatus::Ok
+                        && island.size() == 2u && island[0].outerAnchorId == 1u
+                        && island[0].holeAnchorIds == std::vector<SketchEntityId>{2u}
+                        && island[1].outerAnchorId == 3u && island[1].holeLoops.empty()
+                        && outerTwo.size() == 1u && outerTwo[0].outerAnchorId == 1u
+                        && outerTwo[0].holeAnchorIds == std::vector<SketchEntityId>{3u}
+                        && nearRel(outerTwo[0].area, 12.0 - circleArea(0.5), 1e-12)
+                        && innerTwo.size() == 1u && innerTwo[0].outerAnchorId == 2u
+                        && innerTwo[0].holeLoops.empty()
+                        && nearRel(innerTwo[0].area, circleArea(1.2), 1e-12));
     }
     {
         const std::vector<SketchPoint> ccw = {{0.0, 0.0}, {2.0, 0.0}, {2.0, 1.0},
@@ -899,10 +933,10 @@ void testRegions(Recorder& r) {
         }
         r.check("CADVS_REG_11_clockwise_and_counter_clockwise_polylines_are_one_region", same);
         CadBodyState sa;
-        sa.sketch = a;
+        cadBaseSketch(sa) = a;
         sa.extrude = oneSide(1.0);
         CadBodyState sb;
-        sb.sketch = b;
+        cadBaseSketch(sb) = b;
         sb.extrude = oneSide(1.0);
         const Regen ga = regen(sa);
         const Regen gb = regen(sb);
@@ -999,7 +1033,7 @@ void testRegions(Recorder& r) {
         addCircle(&holes, 1.0, 0.0, 0.4);
         const SketchRegionExtraction xh = extractSketchRegions(holes);
         CadBodyState backwards;
-        backwards.sketch = pair;
+        cadBaseSketch(backwards) = pair;
         backwards.extrude = oneSide(1.0);
         backwards.extrude.profileEntityId = 2;
         backwards.extrude.additionalRegions = {regionRef(1)};
@@ -1152,12 +1186,12 @@ void testRegions(Recorder& r) {
         CadBodyState orphanHoles = regionHoleState();
         orphanHoles.extrude.profileEntityId = kNoSketchEntity;
         r.check("CADVS_REG_26_feature_rule_accepts_the_ring_and_names_what_is_missing",
-                validateCadFeatureGeometry(regionHoleState().sketch, regionHoleState().extrude, &out)
+                validateCadFeatureGeometry(cadBaseSketch(regionHoleState()), regionHoleState().extrude, &out)
                                 == CadStatus::Ok
                         && out.regions.size() == 2u
-                        && validateCadFeatureGeometry(unchosen.sketch, unchosen.extrude)
+                        && validateCadFeatureGeometry(cadBaseSketch(unchosen), unchosen.extrude)
                                    == CadStatus::ProfileNotFound
-                        && validateCadFeatureGeometry(orphanHoles.sketch, orphanHoles.extrude)
+                        && validateCadFeatureGeometry(cadBaseSketch(orphanHoles), orphanHoles.extrude)
                                    == CadStatus::ProfileRegionMismatch);
     }
 }
@@ -1324,7 +1358,7 @@ void testExtrusion(Recorder& r) {
         CadBodyState disk = regionHoleState();
         setExtrudeRegions(&disk.extrude, {regionRef(2)});
         CadBodyState lone;
-        addCircle(&lone.sketch, 0.0, 0.0, 0.8);
+        addCircle(&cadBaseSketch(lone), 0.0, 0.0, 0.8);
         lone.extrude = oneSide(1.0);
         const Regen gd = regen(disk);
         const Regen gl = regen(lone);
@@ -1337,8 +1371,8 @@ void testExtrusion(Recorder& r) {
     }
     {
         CadBodyState two;
-        addRect(&two.sketch, -2.0, 0.0, 1.0, 1.0);
-        addRect(&two.sketch, 2.0, 0.0, 1.0, 1.0);
+        addRect(&cadBaseSketch(two), -2.0, 0.0, 1.0, 1.0);
+        addRect(&cadBaseSketch(two), 2.0, 0.0, 1.0, 1.0);
         two.extrude = oneSide(1.0);
         setExtrudeRegions(&two.extrude, {regionRef(1), regionRef(2)});
         const Regen g = regen(two);
@@ -1449,9 +1483,9 @@ void testChain(Recorder& r) {
     }
     {
         CadBodyState seven = add;
-        seven.laterFeatures[0].support.featureId = 7;
+        laterRecord(seven, 0).featureSupport.featureId = 7;
         CadBodyState itself = add;
-        itself.laterFeatures[0].support.featureId = 2;
+        laterRecord(itself, 0).featureSupport.featureId = 2;
         r.check("CADVS_OPS_11_support_naming_no_earlier_feature_is_refused",
                 validateCadBodyState(seven) == CadStatus::FeatureSupportInvalid
                         && refusedBy(seven, CadStatus::FeatureSupportInvalid, 2u)
@@ -1459,30 +1493,30 @@ void testChain(Recorder& r) {
     }
     {
         CadBodyState stale = add;
-        stale.laterFeatures[0].support.lineageToken ^= 1u;
+        laterRecord(stale, 0).featureSupport.lineageToken ^= 1u;
         r.check("CADVS_OPS_12_stale_lineage_is_refused_never_retargeted",
                 validateCadBodyState(stale) == CadStatus::FeatureSupportInvalid
                         && refusedBy(stale, CadStatus::FeatureSupportInvalid, 2u));
     }
     {
         CadBodyState noSuchFace = add;
-        noSuchFace.laterFeatures[0].support.face = CadFaceToken{CadFaceKind::Side, 9u, 0u};
+        laterRecord(noSuchFace, 0).featureSupport.face = CadFaceToken{CadFaceKind::Side, 9u, 0u};
         CadBodyState cylinder;
-        addCircle(&cylinder.sketch, 0.0, 0.0, 1.0);
+        addCircle(&cadBaseSketch(cylinder), 0.0, 0.0, 1.0);
         cylinder.extrude = oneSide(1.0);
         CadBodyState onCurve = withFeature(cylinder, CadFeatureOperation::Add, 1u,
                                            rectSketch(0.0, 0.0, 0.1, 0.1), oneSide(0.1));
-        onCurve.laterFeatures[0].support.face = CadFaceToken{CadFaceKind::Side, 1u, 0u};
+        laterRecord(onCurve, 0).featureSupport.face = CadFaceToken{CadFaceKind::Side, 1u, 0u};
         r.check("CADVS_OPS_13_unknown_face_and_curved_side_supports_are_refused",
                 validateCadBodyState(noSuchFace) == CadStatus::FeatureSupportInvalid
                         && validateCadBodyState(onCurve) == CadStatus::FeatureSupportInvalid);
     }
     {
         CadBodyState tilted = add;
-        tilted.laterFeatures[0].sketch.plane = Workplane::XZ;
+        laterRecord(tilted, 0).sketch.plane = Workplane::XZ;
         CadBodyState crossBody = add;
-        crossBody.laterFeatures[0].sketch.hasFaceSupport = true;
-        crossBody.laterFeatures[0].sketch.faceSupport.producerObjectId = 5;
+        laterRecord(crossBody, 0).sketch.hasFaceSupport = true;
+        laterRecord(crossBody, 0).sketch.faceSupport.producerObjectId = 5;
         r.check("CADVS_OPS_14_a_later_sketch_is_canonical_xy_with_no_topo_ref",
                 validateCadBodyState(tilted) == CadStatus::FeatureSupportInvalid
                         && validateCadBodyState(crossBody) == CadStatus::FeatureSupportInvalid);
@@ -1526,7 +1560,7 @@ void testChain(Recorder& r) {
         CadBodyState deeper = add;
         deeper.extrude.depth = 2.0;
         CadBodyState wider = add;
-        const bool widened = replaceSketchEntity(&wider.sketch, 1, rectangleAt(0.0, 0.0, 3.0, 3.0))
+        const bool widened = replaceSketchEntity(&cadBaseSketch(wider), 1, rectangleAt(0.0, 0.0, 3.0, 3.0))
                              == CadStatus::Ok;
         const Regen g = regen(deeper);
         float lo[3];
@@ -1544,7 +1578,7 @@ void testChain(Recorder& r) {
     }
     {
         CadBodyState reshaped = add;
-        const bool replaced = replaceSketchEntity(&reshaped.sketch, 1, circleAt(0.0, 0.0, 1.0))
+        const bool replaced = replaceSketchEntity(&cadBaseSketch(reshaped), 1, circleAt(0.0, 0.0, 1.0))
                               == CadStatus::Ok;
         CadBody body(ObjectId{42});
         const bool applied = body.applyState(add) == CadStatus::Ok;
@@ -1572,7 +1606,7 @@ void testChain(Recorder& r) {
         const uint64_t updates = body.updateCount();
         const uint64_t rejected = body.rejectedUpdateCount();
         CadBodyState lump = add;
-        lump.laterFeatures[0].sketch = rectSketch(5.0, 0.0, 0.8, 0.8);
+        laterRecord(lump, 0).sketch = rectSketch(5.0, 0.0, 0.8, 0.8);
         bool lumpChanged = true;
         const CadStatus why = body.applyState(lump, &lumpChanged);
         std::shared_ptr<const CadBodyMesh> after;
@@ -1605,7 +1639,7 @@ void testChain(Recorder& r) {
         CadBodyState crowded = add;
         while (cadFeatureCount(crowded) <= kMaxCadFeatures) {
             CadFeature extra = crowded.laterFeatures[0];
-            extra.featureId = nextCadFeatureId(crowded);
+            extra.featureId = crowded.nextFeatureId++;
             crowded.laterFeatures.push_back(extra);
         }
         r.check("CADVS_OPS_25_more_than_the_feature_bound_is_too_many_features",
@@ -1768,6 +1802,450 @@ double bodyVolumeOf(const ConstructionScene& scene, ObjectId id) {
     return mesh->volume;
 }
 
+// ---------------------------------------------------------------------------
+// `CAD-FOUNDATION-C1`: a selection is the UNION of its atomic regions
+// ---------------------------------------------------------------------------
+
+// The owner's case: rectangle O (id 1) holding two disjoint circles A (id 2)
+// and B (id 3). Atomic regions: O minus A minus B, disk A, disk B.
+CadSketch unionSketch() {
+    CadSketch sketch;
+    addRect(&sketch, 0.0, 0.0, 4.0, 3.0);
+    addCircle(&sketch, -1.0, 0.0, 0.4);
+    addCircle(&sketch, 1.0, 0.0, 0.4);
+    return sketch;
+}
+
+std::vector<ProfileRegionRef> unionSelection(bool o, bool a, bool b) {
+    std::vector<ProfileRegionRef> selection;
+    if (o) selection.push_back(regionRef(1, {2, 3}));
+    if (a) selection.push_back(regionRef(2));
+    if (b) selection.push_back(regionRef(3));
+    return selection;
+}
+
+CadBodyState unionState(bool o, bool a, bool b, double depth = 1.0) {
+    CadBodyState state;
+    cadBaseSketch(state) = unionSketch();
+    state.extrude = oneSide(depth);
+    setExtrudeRegions(&state.extrude, unionSelection(o, a, b));
+    return state;
+}
+
+bool componentIs(const SketchRegionComponent& c, SketchEntityId outer,
+                 std::vector<SketchEntityId> holes) {
+    return c.outerAnchorId == outer && c.holeAnchorIds == holes
+           && c.holeLoops.size() == c.holeAnchorIds.size();
+}
+
+// Whether any face of the body is a wall of the loop anchored at `entity`.
+bool bodyHasSideOf(const CadBodyMesh& m, SketchEntityId entity) {
+    for (const CadMeshFace& face : m.faces) {
+        if (face.token.kind == CadFaceKind::Side && face.token.edgeEntityId == entity) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void testRegionUnion(Recorder& r) {
+    const double disk = circleArea(0.4);
+    const CadSketch sketch = unionSketch();
+    const SketchRegionExtraction x = extractSketchRegions(sketch);
+    const bool shaped = x.regions.size() == 3u && x.parent[0] == -1 && x.parent[1] == 0
+                        && x.parent[2] == 0
+                        && x.regions[0].holeAnchorIds == std::vector<SketchEntityId>({2u, 3u});
+    r.check("CADFC1_REG_00_rectangle_and_two_circles_are_three_atomic_regions", shaped);
+
+    // The whole truth table: every non-empty subset validates, and merges into
+    // exactly the canonical components, in ascending outer-anchor order.
+    struct Row {
+        const char* name;
+        bool o, a, b;
+        std::vector<std::pair<SketchEntityId, std::vector<SketchEntityId>>> expect;
+        double area;
+    };
+    const Row rows[] = {
+            {"CADFC1_REG_01_O_is_the_rectangle_with_holes_A_and_B", true, false, false,
+             {{1u, {2u, 3u}}}, 12.0 - 2.0 * disk},
+            {"CADFC1_REG_02_A_is_disk_A", false, true, false, {{2u, {}}}, disk},
+            {"CADFC1_REG_03_B_is_disk_B", false, false, true, {{3u, {}}}, disk},
+            {"CADFC1_REG_04_O_plus_A_is_the_rectangle_with_only_hole_B", true, true, false,
+             {{1u, {3u}}}, 12.0 - disk},
+            {"CADFC1_REG_05_O_plus_B_is_the_rectangle_with_only_hole_A", true, false, true,
+             {{1u, {2u}}}, 12.0 - disk},
+            {"CADFC1_REG_06_A_plus_B_is_two_disjoint_disks", false, true, true,
+             {{2u, {}}, {3u, {}}}, 2.0 * disk},
+            {"CADFC1_REG_07_O_plus_A_plus_B_is_the_solid_rectangle", true, true, true,
+             {{1u, {}}}, 12.0},
+    };
+    for (const Row& row : rows) {
+        const std::vector<ProfileRegionRef> selection = unionSelection(row.o, row.a, row.b);
+        const std::vector<SketchRegionComponent> merged = mergeSelectedRegions(x, selection);
+        bool same = shaped && validateRegionSelection(x, selection) == CadStatus::Ok
+                    && merged.size() == row.expect.size();
+        double area = 0.0;
+        for (size_t i = 0; same && i < merged.size(); ++i) {
+            same = componentIs(merged[i], row.expect[i].first, row.expect[i].second);
+            area += merged[i].area;
+        }
+        r.check(row.name, same && nearRel(area, row.area, 1e-12));
+    }
+
+    // Geometry: the merged components are what is extruded -- exact volumes,
+    // one closed shell per component, and no wall left on an absorbed loop.
+    {
+        const Regen oa = regen(unionState(true, true, false));
+        const Regen ob = regen(unionState(true, false, true));
+        const Regen all = regen(unionState(true, true, true));
+        const Regen ab = regen(unionState(false, true, true));
+        const Regen o = regen(unionState(true, false, false));
+        r.check("CADFC1_GEO_01_O_plus_A_extrudes_to_the_exact_volume_with_one_hole",
+                solidOk(oa, 12.0 - disk) && !bodyHasSideOf(oa.mesh, 2u)
+                        && bodyHasSideOf(oa.mesh, 3u) && oa.mesh.faces.size() == 2u + 4u + 32u);
+        r.check("CADFC1_GEO_02_O_plus_B_extrudes_to_the_exact_volume_with_one_hole",
+                solidOk(ob, 12.0 - disk) && !bodyHasSideOf(ob.mesh, 3u)
+                        && bodyHasSideOf(ob.mesh, 2u) && ob.mesh.faces.size() == 2u + 4u + 32u);
+        r.check("CADFC1_GEO_03_all_three_extrude_to_the_solid_rectangle_volume",
+                solidOk(all, 12.0) && !bodyHasSideOf(all.mesh, 2u) && !bodyHasSideOf(all.mesh, 3u)
+                        && all.mesh.faces.size() == 2u + 4u);
+        r.check("CADFC1_GEO_04_A_plus_B_stays_two_disjoint_components_in_one_body",
+                ab.why == CadStatus::Ok && ab.mesh.components == 2u
+                        && nearRel(ab.mesh.volume, 2.0 * disk) && watertight(ab.mesh.mesh)
+                        && meshComponents(ab.mesh.mesh) == 2u);
+        r.check("CADFC1_GEO_05_O_alone_is_unchanged_the_ring_with_two_holes",
+                solidOk(o, 12.0 - 2.0 * disk) && bodyHasSideOf(o.mesh, 2u)
+                        && bodyHasSideOf(o.mesh, 3u));
+        // The kernel sees ONE closed shell for a merged component: no internal
+        // double wall that a later boolean would have to reconcile.
+        CadFeatureGeometry g;
+        CadSolid solid;
+        CadSolidMeasure measure;
+        const CadBodyState oaState = unionState(true, true, false);
+        const bool built = buildCadFeatureGeometry(oaState, kCadFeatureId, &g) == CadStatus::Ok
+                           && appendCadFeatureSolid(g, 0u, &solid) == CadStatus::Ok;
+        r.check("CADFC1_GEO_06_a_merged_component_is_one_kernel_valid_shell_with_no_shared_wall",
+                built && g.components.size() == 1u && g.chosen.size() == 2u
+                        && cadKernelValidateSolid(solid, &measure) == CadKernelStatus::Ok
+                        && measure.components == 1u && nearRel(measure.volume, 12.0 - disk, 1e-9));
+    }
+
+    // Persistence: the durable form is unchanged -- the atomic list -- and it
+    // still refuses by name when the nesting under it changes.
+    {
+        CadBodyState edited = unionState(true, true, false);
+        addCircle(&cadBaseSketch(edited), 0.0, 1.0, 0.3);  // a new loop inside O
+        r.check("CADFC1_PER_01_a_nesting_edit_under_a_union_selection_is_ProfileRegionMismatch",
+                validateCadBodyState(unionState(true, true, false)) == CadStatus::Ok
+                        && validateCadBodyState(edited) == CadStatus::ProfileRegionMismatch);
+        const CadBodyState stored = unionState(true, true, false);
+        r.check("CADFC1_PER_02_the_stored_selection_is_the_atomic_list_not_a_merged_boundary",
+                stored.extrude.profileEntityId == 1u
+                        && stored.extrude.profileHoleIds == std::vector<SketchEntityId>({2u, 3u})
+                        && stored.extrude.additionalRegions.size() == 1u
+                        && stored.extrude.additionalRegions[0].outerAnchorId == 2u
+                        && stored.extrude.additionalRegions[0].holeAnchorIds.empty());
+    }
+
+    // Touching and crossing loops are still refused by the existing rule: a
+    // circle straddling the rectangle's edge is its own region, and choosing
+    // both cannot be merged without guessing.
+    {
+        CadSketch crossing;
+        addRect(&crossing, 0.0, 0.0, 4.0, 3.0);
+        addCircle(&crossing, 2.0, 0.0, 0.5);
+        const SketchRegionExtraction cx = extractSketchRegions(crossing);
+        r.check("CADFC1_REG_08_touching_or_crossing_loops_stay_refused_OverlappingRegions",
+                cx.regions.size() == 2u && cx.loopsConflict(0, 1)
+                        && validateRegionSelection(cx, {regionRef(1), regionRef(2)})
+                                   == CadStatus::OverlappingRegions);
+    }
+
+    // Add and Cut read the SAME merged semantics: a later feature whose sketch
+    // is a square around a circle, with the square AND the disk chosen, adds or
+    // removes the whole square.
+    {
+        CadSketch tool;
+        addRect(&tool, 0.0, 0.0, 0.8, 0.8);
+        addCircle(&tool, 0.0, 0.0, 0.2);
+        ExtrudeFeature merged = oneSide(0.5);
+        setExtrudeRegions(&merged, {regionRef(1, {2}), regionRef(2)});
+        ExtrudeFeature ringOnly = oneSide(0.5);
+        setExtrudeRegions(&ringOnly, {regionRef(1, {2})});
+        ExtrudeFeature mergedCut = oneSide(0.5, ExtrudeDirection::AgainstNormal);
+        setExtrudeRegions(&mergedCut, {regionRef(1, {2}), regionRef(2)});
+        const Regen add = regen(withFeature(blockState(), CadFeatureOperation::Add, kCadFeatureId,
+                                            tool, merged));
+        const Regen addRing = regen(withFeature(blockState(), CadFeatureOperation::Add,
+                                                kCadFeatureId, tool, ringOnly));
+        const Regen cut = regen(withFeature(blockState(), CadFeatureOperation::Cut, kCadFeatureId,
+                                            tool, mergedCut));
+        r.check("CADFC1_OPS_01_a_merged_selection_feeds_Add_the_whole_square",
+                solidOk(add, 4.0 + 0.64 * 0.5)
+                        && solidOk(addRing, 4.0 + (0.64 - circleArea(0.2)) * 0.5));
+        r.check("CADFC1_OPS_02_a_merged_selection_feeds_Cut_the_whole_square",
+                cut.why == CadStatus::Ok && nearRel(cut.mesh.volume, 4.0 - 0.64 * 0.5, 1e-9));
+    }
+
+    // The session: nothing is guessed, every tap toggles exactly the region
+    // under the finger, the preview IS the commit, and reopening the sketch
+    // finds the same atomic selection.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        SessionDriver s;
+        const bool began = s.beginWorld(Workplane::XY);
+        const SketchEntityId o =
+                began ? s.place(SketchTool::Rectangle, SketchPoint{0.0, 0.0}, SketchPoint{1.0, 1.0},
+                                rectangleAt(0.0, 0.0, 4.0, 3.0))
+                      : kNoSketchEntity;
+        const SketchEntityId a = s.place(SketchTool::Circle, SketchPoint{-1.0, 0.0},
+                                         SketchPoint{-0.6, 0.0}, circleAt(-1.0, 0.0, 0.4));
+        const SketchEntityId b = s.place(SketchTool::Circle, SketchPoint{1.0, 0.0},
+                                         SketchPoint{1.4, 0.0}, circleAt(1.0, 0.0, 0.4));
+        const bool finished = s.sketch.finish() == CadStatus::Ok;
+        r.check("CADFC1_SES_01_three_regions_and_nothing_chosen_when_ambiguous",
+                o == 1u && a == 2u && b == 3u && finished
+                        && s.sketch.regions().regions.size() == 3u
+                        && s.sketch.extrude().profileEntityId == kNoSketchEntity);
+        const bool tapO = s.toggleAt(SketchPoint{0.0, 1.0});
+        const bool onlyO = tapO && s.sketch.regionSelected(o) && !s.sketch.regionSelected(a)
+                           && !s.sketch.regionSelected(b);
+        const bool tapA = s.toggleAt(SketchPoint{-1.0, 0.0});
+        const bool oPlusA = tapA && s.sketch.regionSelected(o) && s.sketch.regionSelected(a)
+                            && !s.sketch.regionSelected(b);
+        r.check("CADFC1_SES_02_tap_O_then_tap_A_keeps_O_and_adds_A",
+                onlyO && oPlusA
+                        && s.sketch.extrude().profileHoleIds == std::vector<SketchEntityId>({a, b}));
+        const CadCandidateEvaluation preview = s.sketch.evaluateCandidate();
+        r.check("CADFC1_SES_03_the_preview_is_the_rectangle_with_only_hole_B",
+                preview.valid && preview.status == CadStatus::Ok && preview.mesh != nullptr
+                        && preview.mesh->components == 1u
+                        && nearRel(preview.mesh->volume, 12.0 - disk)
+                        && !bodyHasSideOf(*preview.mesh, a) && bodyHasSideOf(*preview.mesh, b));
+        // J3: a tap on A again removes A and ONLY A.
+        const bool tapAOff = s.toggleAt(SketchPoint{-1.0, 0.0});
+        const bool backToO = tapAOff && s.sketch.regionSelected(o) && !s.sketch.regionSelected(a);
+        const bool tapAOn = s.toggleAt(SketchPoint{-1.0, 0.0});
+        r.check("CADFC1_SES_04_deselect_then_reselect_changes_only_the_tapped_region",
+                backToO && tapAOn && s.sketch.regionSelected(o) && s.sketch.regionSelected(a));
+        const SketchFrame frame = s.sketch.frame();
+        const CadCandidateEvaluation before = s.sketch.evaluateCandidate();
+        ObjectId id = kNoObject;
+        const bool committed = s.sketch.commit(scene, history, &id) == CadStatus::Ok;
+        const CadBodyState stored = committed ? bodyStateOf(scene, id) : CadBodyState{};
+        const Regen again = regen(stored);
+        r.check("CADFC1_SES_05_commit_is_the_previewed_union_in_one_body_one_step",
+                committed && before.mesh != nullptr && again.why == CadStatus::Ok
+                        && sameBodyMesh(*before.mesh, again.mesh) && history.undoDepth() == 1u
+                        && nearRel(bodyVolumeOf(scene, id), 12.0 - disk)
+                        && stored.extrude.additionalRegions.size() == 1u
+                        && stored.extrude.additionalRegions[0].outerAnchorId == a);
+        SessionDriver reopened;
+        const bool reopenedOk = committed
+                                && reopened.sketch.beginEdit(id, stored, frame) == CadStatus::Ok
+                                && reopened.sketch.finish() == CadStatus::Ok;
+        r.check("CADFC1_SES_06_reopening_the_sketch_keeps_O_plus_A",
+                reopenedOk && reopened.sketch.regionSelected(o) && reopened.sketch.regionSelected(a)
+                        && !reopened.sketch.regionSelected(b));
+        reopened.sketch.cancel();
+    }
+    // A tap that cannot be merged is refused BY NAME and drops nothing.
+    {
+        SessionDriver s;
+        const bool began = s.beginWorld(Workplane::XY);
+        const SketchEntityId rect =
+                began ? s.place(SketchTool::Rectangle, SketchPoint{0.0, 0.0}, SketchPoint{1.0, 1.0},
+                                rectangleAt(0.0, 0.0, 4.0, 3.0))
+                      : kNoSketchEntity;
+        const SketchEntityId straddle = s.place(SketchTool::Circle, SketchPoint{2.0, 0.0},
+                                                SketchPoint{2.5, 0.0}, circleAt(2.0, 0.0, 0.5));
+        const bool finished = s.sketch.finish() == CadStatus::Ok;
+        const CadStatus first = s.sketch.toggleRegion(rect);
+        const CadStatus second = s.sketch.toggleRegion(straddle);
+        // `CAD-V6-S2`: a circle straddling the rectangle's edge CUTS both, so
+        // the sketch now selects planar faces, and a WHOLE split loop names no
+        // face: choosing either by its anchor is refused by name, nothing
+        // chosen. (The unmergeable planar tap -- a pinch -- is CADV6S2_SES_*.)
+        r.check("CADFC1_SES_07_S2_a_straddling_circle_puts_the_sketch_on_faces_split_loops_refuse",
+                finished && s.sketch.selectionKind() == CadSelectionKind::PlanarFaces
+                        && s.sketch.planarFaceCount() == 3u
+                        && first == CadStatus::PlanarFaceUnresolved
+                        && second == CadStatus::PlanarFaceUnresolved
+                        && s.sketch.lastStatus() == CadStatus::PlanarFaceUnresolved
+                        && s.sketch.selectedAreaCount() == 0u);
+        s.sketch.cancel();
+    }
+}
+
+// `CAD-V6-S2-CORRECTION-FILL-HUD-R1`: fill-bucket taps keep working once the
+// first cell is chosen and the extrude arrow stands on it. In the oblique
+// feature view the product installs, the arrow's grab corridor crosses the
+// neighbouring cell; a still tap there toggles THAT cell, a drag from the same
+// point still takes the arrow, and only a tap on the drawn arrow is the
+// arrow's.
+void testFillTaps(Recorder& r) {
+    SessionDriver s;
+    const bool began = s.beginWorld(Workplane::XY);
+    // A 4 x 3 rectangle crossed on its right side by a 0.5 m circle at
+    // (1.8, 0): the rest of the rectangle, the disk's part inside it, and the
+    // part outside -- three cells of three different sizes.
+    const bool drawn = began
+                       && s.place(SketchTool::Rectangle, SketchPoint{0.0, 0.0}, SketchPoint{1.0, 1.0},
+                                  rectangleAt(0.0, 0.0, 4.0, 3.0))
+                                  != kNoSketchEntity
+                       && s.place(SketchTool::Circle, SketchPoint{1.8, 0.0}, SketchPoint{2.3, 0.0},
+                                  circleAt(1.8, 0.0, 0.5))
+                                  != kNoSketchEntity;
+    const bool finished = drawn && s.sketch.finish() == CadStatus::Ok
+                          && s.sketch.selectionKind() == CadSelectionKind::PlanarFaces
+                          && s.sketch.planarFaceCount() == 3u;
+    // By area: rest (largest), inside part, outside part.
+    std::vector<size_t> byArea{0, 1, 2};
+    std::vector<double> area(3, 0.0);
+    std::vector<SketchPoint> interior(3);
+    for (size_t i = 0; finished && i < 3; ++i) s.sketch.planarFaceInfo(i, &interior[i], &area[i]);
+    std::sort(byArea.begin(), byArea.end(), [&](size_t a, size_t b) { return area[a] > area[b]; });
+    const size_t rest = byArea[0];
+    const size_t inside = byArea[1];
+    const size_t outside = byArea[2];
+    const auto tap = [&](float x, float y) {
+        s.at(TouchAction::Down, x, y);
+        s.at(TouchAction::Up, x, y);
+    };
+    // The first cell, by a real tap in the aligned view.
+    float x = 0.0f;
+    float y = 0.0f;
+    const bool first = finished && s.screenOf(interior[inside], &x, &y);
+    if (first) tap(x, y);
+    const bool insideChosen = first && s.sketch.planarFaceSelected(inside)
+                              && s.sketch.selectedAreaCount() == 1u;
+    // The oblique view Finish leads to: `cadFeatureViewPose`, the product rule.
+    CadExtrudeAnchors anchors;
+    CameraController::Pose pose;
+    const bool tilted = insideChosen && s.sketch.extrudeAnchors(&anchors)
+                        && cadFeatureViewPose(s.camera.capturePose(), nullptr, s.sketch.frame(),
+                                              anchors, &pose)
+                                   != CadFeatureViewSource::Unavailable;
+    if (tilted) s.camera.restorePose(pose);
+    // A point of each cell inside the arrow's grab corridor but off the drawn
+    // arrow, searched over the cell's own derived shape.
+    const CadExtrudeManipulator& arrow = s.sketch.extrudeManipulator();
+    const auto corridorPoint = [&](size_t face, bool inCorridor, float* outX, float* outY) {
+        std::vector<PlanarProfileComponent> shape;
+        if (mergePlanarFaceSelection(s.sketch.arrangement(), {face}, &shape) != CadStatus::Ok
+            || shape.size() != 1u) {
+            return false;
+        }
+        for (int i = 0; i <= 120; ++i) {
+            for (int j = 0; j <= 90; ++j) {
+                const SketchPoint p{-2.0 + 4.6 * i / 120.0, -1.5 + 3.0 * j / 90.0};
+                bool in = sketchPointStrictlyInside(p, shape[0].outer.polygon);
+                for (const PlanarProfileLoop& hole : shape[0].holes) {
+                    in = in && !sketchPointStrictlyInside(p, hole.polygon);
+                }
+                float px = 0.0f;
+                float py = 0.0f;
+                if (!in || !s.screenOf(p, &px, &py)) continue;
+                const CameraSnapshot camera = s.camera.snapshot();
+                const bool corridor = arrow.hitTest(anchors, camera, px, py, SessionDriver::kW,
+                                                    SessionDriver::kH);
+                const bool onArrow = arrow.onDrawnArrow(anchors, camera, px, py, SessionDriver::kW,
+                                                        SessionDriver::kH);
+                if (corridor == inCorridor && !onArrow) {
+                    *outX = px;
+                    *outY = py;
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    const Meters depth = s.sketch.extrude().depth;
+    float rx = 0.0f;
+    float ry = 0.0f;
+    const bool restInCorridor = tilted && corridorPoint(rest, true, &rx, &ry);
+    if (restInCorridor) tap(rx, ry);
+    r.check("S2CORR_TAP_01_a_still_tap_in_the_arrows_corridor_toggles_the_cell_under_it",
+            restInCorridor && s.sketch.planarFaceSelected(rest) && s.sketch.planarFaceSelected(inside)
+                    && s.sketch.selectedAreaCount() == 2u && s.sketch.extrude().depth == depth
+                    && !arrow.capturing()
+                    && s.sketch.evaluateCandidate().status == CadStatus::Ok);
+    // A drag from a corridor point still takes the arrow, and toggles nothing.
+    // The union moved the arrow, so the corridor is searched again.
+    bool dragged = false;
+    float cx = 0.0f;
+    float cy = 0.0f;
+    if (restInCorridor && s.sketch.extrudeAnchors(&anchors) && corridorPoint(rest, true, &cx, &cy)) {
+        float bx = 0.0f;
+        float by = 0.0f;
+        float tx = 0.0f;
+        float ty = 0.0f;
+        projectWorldToScreen(s.camera.snapshot(), anchors.base, SessionDriver::kW, SessionDriver::kH,
+                             &bx, &by);
+        projectWorldToScreen(s.camera.snapshot(), anchors.tip, SessionDriver::kW, SessionDriver::kH,
+                             &tx, &ty);
+        const float len = std::hypot(tx - bx, ty - by);
+        const float ux = len > 0.0f ? (tx - bx) / len : 0.0f;
+        const float uy = len > 0.0f ? (ty - by) / len : -1.0f;
+        s.at(TouchAction::Down, cx, cy);
+        const bool captured = arrow.capturing();
+        // Along the shaft's screen direction, well past the tap slop.
+        for (int k = 1; k <= 6; ++k) s.at(TouchAction::Move, cx + ux * 12.0f * k, cy + uy * 12.0f * k);
+        s.at(TouchAction::Up, cx + ux * 72.0f, cy + uy * 72.0f);
+        dragged = captured && s.sketch.extrude().depth != depth && !arrow.capturing()
+                  && s.sketch.selectedAreaCount() == 2u;
+    }
+    r.check("S2CORR_TAP_02_a_drag_from_a_corridor_point_still_takes_the_arrow_and_toggles_nothing",
+            dragged);
+    // A still tap ON the drawn arrow is the arrow's: no cell toggles.
+    const Meters afterDrag = s.sketch.extrude().depth;
+    bool onArrowKept = false;
+    if (s.sketch.extrudeAnchors(&anchors)) {
+        float mx = 0.0f;
+        float my = 0.0f;
+        const Vec3 mid = vec3Add(anchors.base, vec3Scale(anchors.axis,
+                                                         static_cast<float>(0.5 * anchors.depth)));
+        if (projectWorldToScreen(s.camera.snapshot(), mid, SessionDriver::kW, SessionDriver::kH, &mx,
+                                 &my)
+            && arrow.onDrawnArrow(anchors, s.camera.snapshot(), mx, my, SessionDriver::kW,
+                                  SessionDriver::kH)) {
+            tap(mx, my);
+            onArrowKept = s.sketch.selectedAreaCount() == 2u && s.sketch.extrude().depth == afterDrag;
+        }
+    }
+    r.check("S2CORR_TAP_03_a_still_tap_on_the_drawn_arrow_toggles_no_cell", onArrowKept);
+    // One real tap on a cell wherever the arrow now stands: off its corridor
+    // if the cell reaches there, else inside the corridor off the drawn arrow.
+    const auto tapCell = [&](size_t face) {
+        float px = 0.0f;
+        float py = 0.0f;
+        if (!s.sketch.extrudeAnchors(&anchors)
+            || !(corridorPoint(face, false, &px, &py) || corridorPoint(face, true, &px, &py))) {
+            return false;
+        }
+        tap(px, py);
+        return true;
+    };
+    // A, B, A: tapping the first cell again leaves only B.
+    const bool againA = tapCell(inside);
+    r.check("S2CORR_TAP_04_tapping_A_B_A_leaves_only_B",
+            againA && !s.sketch.planarFaceSelected(inside) && s.sketch.planarFaceSelected(rest)
+                    && s.sketch.selectedAreaCount() == 1u);
+    // B and the outside part meet only at the two crossings: the tap is
+    // refused by its OWN name and the selection stands.
+    const bool pinchTap = tapCell(outside);
+    r.check("S2CORR_TAP_05_two_cells_meeting_at_a_point_are_refused_by_their_own_name",
+            pinchTap && !s.sketch.planarFaceSelected(outside) && s.sketch.selectedAreaCount() == 1u
+                    && s.sketch.lastStatus() == CadStatus::PlanarFacesTouchAtPoint);
+    // Three consecutive real taps build A + B + C: the rectangle with its bump.
+    const bool built = tapCell(inside) && s.sketch.selectedAreaCount() == 2u && tapCell(outside);
+    r.check("S2CORR_TAP_06_real_taps_reach_all_three_cells_and_the_union_is_valid",
+            built && s.sketch.selectedAreaCount() == 3u && s.sketch.planarFaceSelected(outside)
+                    && s.sketch.evaluateCandidate().status == CadStatus::Ok);
+    s.sketch.cancel();
+}
+
 void testSession(Recorder& r) {
     const double ringArea = 12.0 - circleArea(0.8);
     const double pocket = circleArea(0.3);
@@ -1813,14 +2291,27 @@ void testSession(Recorder& r) {
                     && world.sketch.extrude().profileHoleIds == std::vector<SketchEntityId>{circleId}
                     && world.sketch.extrude().additionalRegions.empty()
                     && world.sketch.regionSelected(rectId) && !world.sketch.regionSelected(circleId));
+    // `CAD-FOUNDATION-C1`: the tap is a PURE toggle. The disk joins the ring
+    // and the ring stays; the candidate is their union, the solid rectangle.
     const CadStatus pickDisk = world.sketch.toggleRegion(circleId);
-    r.check("CADVS_SES_05_toggling_the_circle_switches_to_the_disk_and_drops_the_ring",
-            pickDisk == CadStatus::Ok && world.sketch.extrude().profileEntityId == circleId
-                    && world.sketch.extrude().profileHoleIds.empty()
-                    && world.sketch.extrude().additionalRegions.empty()
-                    && !world.sketch.regionSelected(rectId) && world.sketch.regionSelected(circleId));
-    const CadStatus drop = world.sketch.toggleRegion(circleId);
-    const bool cleared = drop == CadStatus::Ok
+    const CadCandidateEvaluation unionEval = world.sketch.evaluateCandidate();
+    r.check("CADVS_SES_05_toggling_the_circle_adds_the_disk_and_keeps_the_ring",
+            pickDisk == CadStatus::Ok && world.sketch.extrude().profileEntityId == rectId
+                    && world.sketch.extrude().profileHoleIds == std::vector<SketchEntityId>{circleId}
+                    && world.sketch.extrude().additionalRegions.size() == 1u
+                    && world.sketch.extrude().additionalRegions[0].outerAnchorId == circleId
+                    && world.sketch.regionSelected(rectId) && world.sketch.regionSelected(circleId)
+                    && unionEval.valid && unionEval.status == CadStatus::Ok
+                    && unionEval.mesh != nullptr && unionEval.mesh->components == 1u
+                    && nearRel(unionEval.mesh->volume, 12.0));
+    const CadStatus dropDisk = world.sketch.toggleRegion(circleId);
+    const bool ringOnly = dropDisk == CadStatus::Ok
+                          && world.sketch.extrude().profileEntityId == rectId
+                          && world.sketch.extrude().additionalRegions.empty()
+                          && world.sketch.regionSelected(rectId)
+                          && !world.sketch.regionSelected(circleId);
+    const CadStatus drop = world.sketch.toggleRegion(rectId);
+    const bool cleared = ringOnly && drop == CadStatus::Ok
                          && world.sketch.extrude().profileEntityId == kNoSketchEntity;
     const bool tappedRing = world.toggleAt(SketchPoint{1.5, 0.0});
     r.check("CADVS_SES_06_toggling_off_then_tapping_the_ring_in_the_canvas_selects_it",
@@ -1920,14 +2411,17 @@ void testSession(Recorder& r) {
     const CadBodyState afterAdd = bodyStateOf(scene, bodyId);
     CadBodyState baseOfAdd = afterAdd;
     baseOfAdd.laterFeatures.clear();
+    baseOfAdd.sketches.resize(1);
+    baseOfAdd.nextSketchId = kBaseCadSketchId + 1u;
+    baseOfAdd.nextFeatureId = kCadFeatureId + 1u;
     const bool addShape = afterAdd.laterFeatures.size() == 1u
                           && afterAdd.laterFeatures[0].featureId == 2u
                           && afterAdd.laterFeatures[0].operation == CadFeatureOperation::Add
-                          && afterAdd.laterFeatures[0].support.featureId == kCadFeatureId
-                          && afterAdd.laterFeatures[0].support.face.kind == CadFaceKind::CapFar
-                          && afterAdd.laterFeatures[0].support.lineageToken == capRef.lineageToken
-                          && afterAdd.laterFeatures[0].sketch.plane == Workplane::XY
-                          && !afterAdd.laterFeatures[0].sketch.hasFaceSupport
+                          && laterRecord(afterAdd, 0).featureSupport.featureId == kCadFeatureId
+                          && laterRecord(afterAdd, 0).featureSupport.face.kind == CadFaceKind::CapFar
+                          && laterRecord(afterAdd, 0).featureSupport.lineageToken == capRef.lineageToken
+                          && laterRecord(afterAdd, 0).sketch.plane == Workplane::XY
+                          && !laterRecord(afterAdd, 0).sketch.hasFaceSupport
                           && afterAdd.laterFeatures[0].extrude.depth == 0.5
                           && sameCadBodyState(baseOfAdd, ringState);
     r.check("CADVS_SES_16_the_add_commit_grows_the_same_body_in_place",
@@ -2361,6 +2855,22 @@ void testPersistence(Recorder& r) {
                     && legacyVersion == kCadSectionVersion && !diskBytes.empty()
                     && cadbSectionVersion(diskBytes, &diskVersion)
                     && diskVersion == kCadSectionVersion);
+    // `CAD-FOUNDATION-C1`: a union selection is the SAME v5 record the codec
+    // always wrote -- the atomic list -- and it round-trips byte-identically.
+    {
+        const CadBodyState unionBody = unionState(true, true, false);
+        uint16_t unionVersion = 0;
+        const std::vector<uint8_t> unionBytes = encodeProjectV1(cadDocumentFor(unionBody));
+        ProjectDocument back;
+        const bool decoded = !unionBytes.empty()
+                             && decodeProject(unionBytes.data(), unionBytes.size(), &back)
+                                        == ProjectCodecStatus::Ok
+                             && back.hasCad && back.cad.bodies.size() == 1u;
+        r.check("CADFC1_PER_03_a_union_selection_round_trips_as_the_unchanged_v5_record",
+                decoded && cadbSectionVersion(unionBytes, &unionVersion) && unionVersion == 5u
+                        && sameCadBodyState(back.cad.bodies[0].state, unionBody)
+                        && encodeProjectV1(back) == unionBytes);
+    }
     const uint64_t baseFingerprint = fingerprintOf(blockState());
     const uint64_t addFingerprint = fingerprintOf(featureAddState());
     r.check("CADVS_IO_20_a_later_feature_moves_the_project_fingerprint",
@@ -2450,6 +2960,1476 @@ void measurePerformance(Recorder& r) {
             ok && triangles > 0u && std::isfinite(medianOf(chainUs)) && medianOf(chainUs) >= 0.0);
 }
 
+// ---------------------------------------------------------------------------
+// `CAD-V6-S1-C1`: how long a CadFeatureId and a CadSketchId live
+// ---------------------------------------------------------------------------
+//
+// Every case drives the product's own paths -- a face sketch through the
+// session, one commit inside one `ScopedConstructionEdit`, and the one
+// `ConstructionHistory` -- over a scene of its own, opened the way Open opens
+// a project: one body and an EMPTY history.
+
+struct IdLifetimeRig {
+    ConstructionScene scene{NoProjectTag{}};
+    ConstructionHistory history{scene};
+    ObjectId bodyId = kNoObject;
+
+    bool open(const CadBodyState& state) {
+        SceneObject* body = scene.addCadBody(state);
+        if (body == nullptr) {
+            return false;
+        }
+        publishSceneObject(*body);
+        bodyId = body->objectId();
+        history.clear();
+        return true;
+    }
+    CadBodyState state() const { return bodyStateOf(scene, bodyId); }
+    uint64_t fingerprint() const {
+        return projectSemanticFingerprint(scene, ProjectKind::Construction);
+    }
+    std::vector<uint8_t> bytes() const {
+        return encodeProjectV1(captureProjectDocument(scene, ProjectKind::Construction));
+    }
+    // One later feature through the product path: a sketch on `onFeature`'s
+    // far cap, ONE entity typed exactly, Finish, the operation, the depth, one
+    // commit. `out` receives the session's candidate just before the commit.
+    CadStatus feature(uint32_t onFeature, CadFeatureOperation operation,
+                      SketchEntity::Payload exact, double depth, ExtrudeDirection direction,
+                      bool cancelInsteadOfCommit = false, CadBodyState* outCandidate = nullptr) {
+        SketchFrame frame;
+        TopoRef ref;
+        if (!worldCapFrame(scene, bodyId, onFeature, CadFaceKind::CapFar, &frame, &ref)) {
+            return CadStatus::ProfileNotFound;
+        }
+        const CadBodyState producer = state();
+        SessionDriver s;
+        if (!s.beginFace(frame, ref, &producer)) {
+            return CadStatus::NotSketching;
+        }
+        const SketchTool tool = std::holds_alternative<SketchCircle>(exact) ? SketchTool::Circle
+                                                                           : SketchTool::Rectangle;
+        const SketchEntityId id =
+                s.place(tool, SketchPoint{0.0, 0.0}, SketchPoint{0.5, 0.5}, std::move(exact));
+        CadStatus why = id == kNoSketchEntity ? CadStatus::ProfileNotFound : s.sketch.finish();
+        if (why == CadStatus::Ok) why = s.sketch.setOperation(operation);
+        if (why == CadStatus::Ok) why = s.sketch.setExtrude(depth, direction);
+        if (why == CadStatus::Ok && outCandidate != nullptr) {
+            *outCandidate = s.sketch.candidateState();
+        }
+        if (why == CadStatus::Ok && cancelInsteadOfCommit) {
+            s.sketch.cancel();
+            return s.sketch.active() ? CadStatus::NotSketching : CadStatus::Ok;
+        }
+        if (why == CadStatus::Ok) {
+            ObjectId out = kNoObject;
+            why = s.sketch.commit(scene, history, &out);
+        }
+        if (s.sketch.active()) {
+            s.sketch.cancel();
+        }
+        return why;
+    }
+    CadStatus add(uint32_t onFeature, SketchEntity::Payload exact, double depth = 0.25) {
+        return feature(onFeature, CadFeatureOperation::Add, std::move(exact), depth,
+                       ExtrudeDirection::AlongNormal);
+    }
+    CadStatus cut(uint32_t onFeature, SketchEntity::Payload exact, double depth = 0.5) {
+        return feature(onFeature, CadFeatureOperation::Cut, std::move(exact), depth,
+                       ExtrudeDirection::AgainstNormal);
+    }
+    // A domain edit as ONE transaction -- what `commitEdit` does with a
+    // staged candidate.
+    CadStatus apply(const CadBodyState& requested) {
+        SceneObject* object = scene.findBody(bodyId);
+        CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        if (body == nullptr) {
+            return CadStatus::NotCadBody;
+        }
+        CadStatus why = CadStatus::Ok;
+        {
+            ScopedConstructionEdit edit(history);
+            why = body->applyState(requested);
+            if (why == CadStatus::Ok) {
+                publishSceneObject(*object);
+            }
+        }
+        return why;
+    }
+};
+
+// The later feature `k` (0-based) of `state`, or a zero record.
+CadFeature laterAt(const CadBodyState& state, size_t k) {
+    return k < state.laterFeatures.size() ? state.laterFeatures[k] : CadFeature{};
+}
+
+void testIdLifetimeBefore(Recorder& r) {
+    // IDL-B01..B03 on one rig: Add, Undo, look at the redo side, new branch.
+    IdLifetimeRig rig;
+    const bool opened = rig.open(blockState());
+    const CadBodyState s0 = rig.state();
+    const size_t undo0 = rig.history.undoDepth();
+    const CadStatus added = opened ? rig.add(kCadFeatureId, rectangleAt(0.0, 0.0, 0.5, 0.5))
+                                   : CadStatus::NotCadBody;
+    const CadBodyState s1 = rig.state();
+    const bool addMinted2 = added == CadStatus::Ok && s1.laterFeatures.size() == 1u
+                            && laterAt(s1, 0).featureId == 2u && laterAt(s1, 0).sketchId == 2u
+                            && s1.nextFeatureId == 3u && s1.nextSketchId == 3u
+                            && rig.history.undoDepth() == undo0 + 1u;
+    const bool undone = rig.history.undo();
+    const CadBodyState afterUndo = rig.state();
+    const bool rewound = undone && sameCadBodyState(afterUndo, s0) && afterUndo.nextFeatureId == 2u
+                         && afterUndo.nextSketchId == 2u && afterUndo.laterFeatures.empty()
+                         && afterUndo.sketches.size() == 1u;
+    // IDL-B02: the redo side still holds feature 2 / sketch 2 -- a Redo puts
+    // back exactly that identity -- so "nothing can still point at the undone
+    // feature" was not true while the redo step stands.
+    const bool redoStands = rig.history.canRedo() && rig.history.redoDepth() == 1u;
+    const bool redone = rig.history.redo();
+    const bool redoIsTheSameIdentity = redone && sameCadBodyState(rig.state(), s1);
+    const bool undoneAgain = rig.history.undo() && sameCadBodyState(rig.state(), s0)
+                             && rig.history.redoDepth() == 1u;
+    r.check("CADV6C1_IDL_B02_BEFORE_after_undo_the_redo_step_still_holds_feature_2_and_sketch_2",
+            addMinted2 && redoStands && redoIsTheSameIdentity && undoneAgain);
+    // IDL-B01: a new edit after Undo is handed the SAME ids again.
+    const CadStatus branched = rig.cut(kCadFeatureId, circleAt(0.0, 0.0, 0.3));
+    const CadBodyState s2 = rig.state();
+    const bool reminted = branched == CadStatus::Ok && s2.laterFeatures.size() == 1u
+                          && laterAt(s2, 0).featureId == 2u && laterAt(s2, 0).sketchId == 2u
+                          && laterAt(s2, 0).operation == CadFeatureOperation::Cut
+                          && s2.nextFeatureId == 3u && s2.nextSketchId == 3u
+                          && !sameCadBodyState(s2, s1);
+    r.check("CADV6C1_IDL_B01_BEFORE_undo_rewinds_both_high_water_marks_and_the_next_feature_re_mints_2",
+            addMinted2 && rewound && reminted);
+    // IDL-B03: that commit empties the redo stack, and no walk of the history
+    // reaches the abandoned Add again.
+    const bool redoCleared = rig.history.redoDepth() == 0u && !rig.history.canRedo()
+                             && !rig.history.redo() && sameCadBodyState(rig.state(), s2);
+    bool abandonedUnreachable = true;
+    while (rig.history.undo()) {
+        abandonedUnreachable &= !sameCadBodyState(rig.state(), s1);
+    }
+    const bool backAtStart = sameCadBodyState(rig.state(), s0);
+    while (rig.history.redo()) {
+        abandonedUnreachable &= !sameCadBodyState(rig.state(), s1);
+    }
+    r.check("CADV6C1_IDL_B03_BEFORE_the_new_branch_commit_clears_redo_and_the_old_add_is_unreachable",
+            reminted && redoCleared && abandonedUnreachable && backAtStart
+                    && sameCadBodyState(rig.state(), s2));
+
+    // IDL-B04: a cancelled edit. The session's candidate mints ids of its own;
+    // cancelling it writes nothing to the body and records nothing. And an
+    // open Construction edit that applied a minted state and was cancelled
+    // puts the high-water marks back, leaving the redo side alone.
+    {
+        IdLifetimeRig c;
+        const bool cOpened = c.open(blockState());
+        const CadBodyState before = c.state();
+        CadBodyState candidate;
+        const CadStatus cancelled =
+                cOpened ? c.feature(kCadFeatureId, CadFeatureOperation::Add,
+                                    rectangleAt(0.0, 0.0, 0.5, 0.5), 0.25,
+                                    ExtrudeDirection::AlongNormal, /*cancel=*/true, &candidate)
+                        : CadStatus::NotCadBody;
+        const bool sessionCancel = cancelled == CadStatus::Ok
+                                   && laterAt(candidate, 0).featureId == 2u
+                                   && candidate.nextFeatureId == 3u && candidate.nextSketchId == 3u
+                                   && sameCadBodyState(c.state(), before)
+                                   && c.history.undoDepth() == 0u && c.history.redoDepth() == 0u;
+        // A redo step to protect, then an edit opened, used and cancelled.
+        const bool redoArmed = c.add(kCadFeatureId, rectangleAt(0.0, 0.0, 0.5, 0.5)) == CadStatus::Ok
+                               && c.history.undo() && c.history.redoDepth() == 1u;
+        CadBody* body = c.scene.findBody(c.bodyId)->cadOrNull();
+        const bool opened2 = c.history.beginEdit();
+        const bool applied = body->applyState(candidate) == CadStatus::Ok
+                             && body->state().nextFeatureId == 3u;
+        c.history.cancelEdit();
+        const bool editCancel = redoArmed && opened2 && applied
+                                && sameCadBodyState(c.state(), before)
+                                && c.state().nextFeatureId == 2u && c.state().nextSketchId == 2u
+                                && c.history.undoDepth() == 0u && c.history.redoDepth() == 1u;
+        r.check("CADV6C1_IDL_B04_BEFORE_a_cancelled_edit_burns_no_id_and_records_no_step",
+                sessionCancel && editCancel);
+    }
+
+    // IDL-B05: the saved bytes and the fingerprint after Add then Undo.
+    {
+        IdLifetimeRig f;
+        const bool fOpened = f.open(blockState());
+        const std::vector<uint8_t> saved = f.bytes();
+        const uint64_t savedFingerprint = f.fingerprint();
+        uint16_t savedVersion = 0;
+        const bool legacy = cadbSectionVersion(saved, &savedVersion) && savedVersion == 1u;
+        const bool addOk = fOpened && f.add(kCadFeatureId, rectangleAt(0.0, 0.0, 0.5, 0.5))
+                                              == CadStatus::Ok;
+        const bool moved = f.fingerprint() != savedFingerprint && f.bytes() != saved;
+        const bool undoOk = f.history.undo();
+        r.check("CADV6C1_IDL_B05_BEFORE_undo_back_to_the_saved_state_is_byte_and_fingerprint_equal",
+                legacy && addOk && moved && undoOk && f.fingerprint() == savedFingerprint
+                        && f.bytes() == saved);
+    }
+}
+
+// Walks the whole reachable history -- every Undo, then every Redo -- and
+// asks `ok` of the rig's body at each state. Ends where it began.
+template <typename Predicate>
+bool everyReachableState(IdLifetimeRig& rig, Predicate ok) {
+    const CadBodyState start = rig.state();
+    const size_t redoAtStart = rig.history.redoDepth();
+    bool all = ok(rig.state());
+    while (rig.history.undo()) {
+        all &= ok(rig.state());
+    }
+    while (rig.history.redo()) {
+        all &= ok(rig.state());
+    }
+    // Back to where the walk began: undo the redo steps that stood at start.
+    for (size_t i = 0; i < redoAtStart; ++i) {
+        rig.history.undo();
+    }
+    return all && rig.history.redoDepth() == redoAtStart && sameCadBodyState(rig.state(), start);
+}
+
+// How many features, and how many sketch records, carry `id`.
+size_t featuresWithId(const CadBodyState& s, uint32_t id) {
+    size_t n = id == kCadFeatureId ? 1u : 0u;
+    for (const CadFeature& f : s.laterFeatures) n += f.featureId == id ? 1u : 0u;
+    return n;
+}
+size_t sketchesWithId(const CadBodyState& s, CadSketchId id) {
+    size_t n = 0;
+    for (const CadSketchRecord& record : s.sketches) n += record.sketchId == id ? 1u : 0u;
+    return n;
+}
+
+// The pinned contract (`CAD-V6-S1-C1`, the `CadSketchId` comment): an id is
+// unique along ONE FORWARD HISTORY BRANCH. A committed edit never lowers a
+// high-water mark; Undo restores the snapshot, marks included; the edit that
+// re-mints an id only the redo side held is the commit that clears redo.
+void testIdLifetime(Recorder& r) {
+    const SketchEntity::Payload boss = rectangleAt(0.0, 0.0, 0.5, 0.5);
+
+    // --- IDL-01: a committed deletion never hands its ids on --------------
+    {
+        IdLifetimeRig d;
+        const bool built = d.open(blockState())
+                           && d.add(kCadFeatureId, rectangleAt(-0.5, -0.5, 0.5, 0.5)) == CadStatus::Ok
+                           && d.add(kCadFeatureId, rectangleAt(0.5, 0.5, 0.5, 0.5)) == CadStatus::Ok
+                           && d.state().nextFeatureId == 4u && d.state().nextSketchId == 4u;
+        // The deletion S2's command will make: the last feature and its
+        // sketch leave, the marks stay.
+        CadBodyState deleted = d.state();
+        deleted.laterFeatures.pop_back();
+        deleted.sketches.pop_back();
+        const size_t undoBefore = d.history.undoDepth();
+        const bool committed = d.apply(deleted) == CadStatus::Ok
+                               && d.history.undoDepth() == undoBefore + 1u
+                               && sameCadBodyState(d.state(), deleted);
+        // A deletion that hands the ids BACK is refused below every caller.
+        CadBodyState handsBack = deleted;
+        handsBack.nextFeatureId = 3u;
+        handsBack.nextSketchId = 3u;
+        const bool lowerRefused = validateCadBodyState(handsBack) == CadStatus::Ok
+                                  && d.apply(handsBack) == CadStatus::HighWaterInvalid
+                                  && sameCadBodyState(d.state(), deleted)
+                                  && d.history.undoDepth() == undoBefore + 1u;
+        CadBodyState onlySketchLower = deleted;
+        onlySketchLower.nextSketchId = 3u;
+        const bool sketchLowerRefused = d.apply(onlySketchLower) == CadStatus::HighWaterInvalid;
+        const bool next = d.add(kCadFeatureId, rectangleAt(0.5, -0.5, 0.5, 0.5)) == CadStatus::Ok
+                          && laterAt(d.state(), 1).featureId == 4u
+                          && laterAt(d.state(), 1).sketchId == 4u && featuresWithId(d.state(), 3u) == 0u
+                          && sketchesWithId(d.state(), 3u) == 0u;
+        r.check("CADV6C1_IDL_01_a_committed_deletion_never_hands_its_ids_on_and_lowering_a_mark_is_refused",
+                built && committed && lowerRefused && sketchLowerRefused && next);
+    }
+
+    // --- IDL-02 .. IDL-04 on one rig --------------------------------------
+    {
+        IdLifetimeRig u;
+        const bool opened = u.open(blockState());
+        const CadBodyState s0 = u.state();
+        const bool added = opened && u.add(kCadFeatureId, boss) == CadStatus::Ok;
+        const CadBodyState s1 = u.state();
+        const bool undone = u.history.undo();
+        const CadBodyState back = u.state();
+        r.check("CADV6C1_IDL_02_undo_restores_the_snapshot_bit_exactly_high_water_marks_included",
+                added && undone && sameCadBodyState(back, s0) && back.nextFeatureId == 2u
+                        && back.nextSketchId == 2u && cadBodyStateLegacyRepresentable(back));
+        // Redo: while undone, id 2 lives ONLY in the redo snapshot; Redo puts
+        // back exactly that identity, once, and the forward branch continues
+        // from its marks.
+        const bool absentWhileUndone = featuresWithId(back, 2u) == 0u && sketchesWithId(back, 2u) == 0u
+                                       && u.history.redoDepth() == 1u;
+        const bool redone = u.history.redo();
+        const CadBodyState again = u.state();
+        const bool exactOnce = redone && sameCadBodyState(again, s1) && featuresWithId(again, 2u) == 1u
+                               && sketchesWithId(again, 2u) == 1u
+                               && laterAt(again, 0).operation == CadFeatureOperation::Add;
+        r.check("CADV6C1_IDL_03_redo_restores_feature_2_and_sketch_2_exactly_and_never_beside_another_2",
+                absentWhileUndone && exactOnce && u.history.redoDepth() == 0u);
+        // Undo, then a DIFFERENT edit: it is handed 2 / 2, and the same call
+        // that mints them empties the redo stack.
+        const bool undoneAgain = u.history.undo() && u.history.redoDepth() == 1u;
+        const size_t undoBefore = u.history.undoDepth();
+        const bool branched = u.cut(kCadFeatureId, circleAt(0.0, 0.0, 0.3)) == CadStatus::Ok;
+        const CadBodyState s2 = u.state();
+        const bool newIdentity = branched && laterAt(s2, 0).featureId == 2u
+                                 && laterAt(s2, 0).sketchId == 2u
+                                 && laterAt(s2, 0).operation == CadFeatureOperation::Cut
+                                 && findCadSketchRecord(s2, 2u) != nullptr
+                                 && findCadSketchRecord(s2, 2u)->sketch.entities.size() == 1u
+                                 && findCadSketchRecord(s2, 2u)->sketch.entities[0].circle() != nullptr
+                                 && u.history.redoDepth() == 0u && !u.history.canRedo()
+                                 && u.history.undoDepth() == undoBefore + 1u;
+        const bool neverTheOldAdd = everyReachableState(u, [&s1](const CadBodyState& s) {
+            return !sameCadBodyState(s, s1)
+                   && (s.laterFeatures.empty()
+                       || laterAt(s, 0).operation == CadFeatureOperation::Cut);
+        });
+        r.check("CADV6C1_IDL_04_undo_then_a_new_edit_re_mints_2_in_the_call_that_clears_redo",
+                undoneAgain && newIdentity && neverTheOldAdd);
+    }
+
+    // --- IDL-05: two levels of Undo ---------------------------------------
+    {
+        IdLifetimeRig t;
+        const bool built = t.open(blockState())
+                           && t.add(kCadFeatureId, rectangleAt(0.0, 0.0, 1.0, 1.0)) == CadStatus::Ok
+                           && t.add(2u, rectangleAt(0.0, 0.0, 0.4, 0.4)) == CadStatus::Ok;
+        const CadBodyState s3 = t.state();
+        const bool chain = built && laterAt(s3, 1).featureId == 3u && laterAt(s3, 1).sketchId == 3u
+                           && findCadSketchRecord(s3, 3u)->featureSupport.featureId == 2u;
+        const bool twice = t.history.undo() && t.history.undo() && t.history.redoDepth() == 2u
+                           && t.state().nextFeatureId == 2u && t.state().nextSketchId == 2u;
+        const bool first = t.add(kCadFeatureId, rectangleAt(0.5, 0.5, 0.5, 0.5)) == CadStatus::Ok
+                           && laterAt(t.state(), 0).featureId == 2u
+                           && laterAt(t.state(), 0).sketchId == 2u && t.history.redoDepth() == 0u;
+        const bool second = t.add(kCadFeatureId, rectangleAt(-0.5, -0.5, 0.5, 0.5)) == CadStatus::Ok
+                            && laterAt(t.state(), 1).featureId == 3u
+                            && laterAt(t.state(), 1).sketchId == 3u
+                            && t.state().nextFeatureId == 4u && t.state().nextSketchId == 4u;
+        const bool neverTheOldChain = everyReachableState(t, [&s3](const CadBodyState& s) {
+            for (const CadSketchRecord& record : s.sketches) {
+                if (record.hasFeatureSupport && record.featureSupport.featureId == 2u) {
+                    return false;  // the abandoned feature 3 stood on feature 2
+                }
+            }
+            return !sameCadBodyState(s, s3);
+        });
+        r.check("CADV6C1_IDL_05_two_undos_rewind_to_2_and_the_new_branch_mints_2_then_3",
+                chain && twice && first && second && neverTheOldChain);
+    }
+
+    // --- IDL-06: cancelled and refused edits burn nothing -----------------
+    {
+        IdLifetimeRig c;
+        const bool opened = c.open(blockState());
+        const std::vector<uint8_t> saved = c.bytes();
+        const uint64_t savedFingerprint = c.fingerprint();
+        CadBodyState candidate;
+        const bool sessionCancelled =
+                opened
+                && c.feature(kCadFeatureId, CadFeatureOperation::Add, boss, 0.25,
+                             ExtrudeDirection::AlongNormal, /*cancel=*/true, &candidate)
+                           == CadStatus::Ok
+                && laterAt(candidate, 0).featureId == 2u;
+        // An Add pointed INTO the body gains nothing and is refused by name.
+        const CadStatus refused = c.feature(kCadFeatureId, CadFeatureOperation::Add, boss, 0.25,
+                                            ExtrudeDirection::AgainstNormal);
+        CadBody* body = c.scene.findBody(c.bodyId)->cadOrNull();
+        const bool editOpened = c.history.beginEdit();
+        const bool editApplied = body->applyState(candidate) == CadStatus::Ok;
+        c.history.cancelEdit();
+        const bool nothing = sameCadBodyState(c.state(), blockState()) && c.history.undoDepth() == 0u
+                             && c.history.redoDepth() == 0u && c.bytes() == saved
+                             && c.fingerprint() == savedFingerprint;
+        const bool next = c.add(kCadFeatureId, boss) == CadStatus::Ok
+                          && laterAt(c.state(), 0).featureId == 2u
+                          && laterAt(c.state(), 0).sketchId == 2u;
+        r.check("CADV6C1_IDL_06_cancelled_and_refused_edits_burn_no_id_and_change_no_byte",
+                sessionCancelled && refused == CadStatus::AddNoEffect && editOpened && editApplied
+                        && nothing && next);
+    }
+
+    // --- IDL-07: save and reopen ------------------------------------------
+    {
+        const auto reopen = [](const std::vector<uint8_t>& bytes, IdLifetimeRig* into) {
+            ProjectDocument document;
+            return !bytes.empty()
+                   && decodeProject(bytes.data(), bytes.size(), &document) == ProjectCodecStatus::Ok
+                   && document.cad.bodies.size() == 1u && into->open(document.cad.bodies[0].state);
+        };
+        // (a) saved after an Add: reopened, the next feature is 3.
+        IdLifetimeRig a;
+        const bool aBuilt = a.open(blockState()) && a.add(kCadFeatureId, boss) == CadStatus::Ok;
+        IdLifetimeRig aBack;
+        const bool aOk = aBuilt && reopen(a.bytes(), &aBack) && sameCadBodyState(aBack.state(), a.state())
+                         && aBack.add(2u, rectangleAt(0.0, 0.0, 0.2, 0.2)) == CadStatus::Ok
+                         && laterAt(aBack.state(), 1).featureId == 3u
+                         && laterAt(aBack.state(), 1).sketchId == 3u;
+        // (b) saved after Add + Undo: the file is the pre-Add file and carries
+        // no trace of the undone branch, so the reopened project mints 2.
+        IdLifetimeRig b;
+        const bool bBuilt = b.open(blockState());
+        const std::vector<uint8_t> preAdd = b.bytes();
+        const bool bUndone = bBuilt && b.add(kCadFeatureId, boss) == CadStatus::Ok && b.history.undo();
+        IdLifetimeRig bBack;
+        const bool bOk = bUndone && b.bytes() == preAdd && reopen(b.bytes(), &bBack)
+                         && bBack.add(kCadFeatureId, boss) == CadStatus::Ok
+                         && laterAt(bBack.state(), 0).featureId == 2u
+                         && laterAt(bBack.state(), 0).sketchId == 2u;
+        // (c) saved after a committed deletion: v6 carries the marks, so the
+        // reopened project still never re-mints the deleted ids.
+        IdLifetimeRig c;
+        bool cOk = c.open(blockState()) && c.add(kCadFeatureId, rectangleAt(-0.5, -0.5, 0.5, 0.5)) == CadStatus::Ok
+                   && c.add(kCadFeatureId, rectangleAt(0.5, 0.5, 0.5, 0.5)) == CadStatus::Ok;
+        CadBodyState deleted = c.state();
+        deleted.laterFeatures.pop_back();
+        deleted.sketches.pop_back();
+        cOk = cOk && c.apply(deleted) == CadStatus::Ok;
+        const std::vector<uint8_t> deletedBytes = c.bytes();
+        uint16_t version = 0;
+        IdLifetimeRig cBack;
+        cOk = cOk && cadbSectionVersion(deletedBytes, &version) && version == kCadSectionVersionV6
+              && reopen(deletedBytes, &cBack) && cBack.state().nextFeatureId == 4u
+              && cBack.state().nextSketchId == 4u
+              && cBack.add(kCadFeatureId, rectangleAt(0.5, -0.5, 0.5, 0.5)) == CadStatus::Ok
+              && laterAt(cBack.state(), 1).featureId == 4u && laterAt(cBack.state(), 1).sketchId == 4u;
+        r.check("CADV6C1_IDL_07_a_reopened_project_continues_from_the_marks_its_file_states", aOk && bOk && cOk);
+    }
+
+    // --- IDL-08: Undo back to the saved state is clean --------------------
+    {
+        IdLifetimeRig f;
+        const bool opened = f.open(blockState());
+        const std::vector<uint8_t> saved = f.bytes();
+        const uint64_t savedFingerprint = f.fingerprint();
+        const bool roundTrip = opened && f.add(kCadFeatureId, boss) == CadStatus::Ok
+                               && f.fingerprint() != savedFingerprint && f.history.undo();
+        const bool clean = roundTrip && f.fingerprint() == savedFingerprint && f.bytes() == saved;
+        // The rejected model, measured: the same state with the marks kept at
+        // 3 / 3 by a non-undoable floor is not legacy-shaped, so its file is
+        // CADB v6 and its fingerprint is not the saved one -- Undo to a saved
+        // project would read unsaved for invisible allocator metadata.
+        CadBodyState floored = blockState();
+        floored.nextFeatureId = 3u;
+        floored.nextSketchId = 3u;
+        IdLifetimeRig m;
+        uint16_t flooredVersion = 0;
+        const bool floorDirty = validateCadBodyState(floored) == CadStatus::Ok
+                                && !cadBodyStateLegacyRepresentable(floored) && m.open(floored)
+                                && cadbSectionVersion(m.bytes(), &flooredVersion)
+                                && flooredVersion == kCadSectionVersionV6
+                                && m.fingerprint() != savedFingerprint && m.bytes() != saved;
+        r.check("CADV6C1_IDL_08_add_then_undo_is_byte_and_fingerprint_equal_to_the_save_a_floor_would_not_be",
+                clean && floorDirty);
+    }
+
+    // --- IDL-09: a sketch two features share ------------------------------
+    {
+        // Sketch 2 on the block's far cap holds two squares, A (entity 1) and
+        // B (entity 2). Feature 2 adds A; the step under test makes feature 3
+        // CUT B out of the SAME sketch.
+        CadSketch pair;
+        addRect(&pair, -0.5, 0.0, 0.4, 0.4);
+        addRect(&pair, 0.5, 0.0, 0.4, 0.4);
+        CadBodyState start = withFeature(blockState(), CadFeatureOperation::Add, kCadFeatureId, pair,
+                                         oneSide(0.25));
+        CadBodyState sharing = start;
+        ExtrudeFeature cutB = oneSide(0.5, ExtrudeDirection::AgainstNormal);
+        cutB.profileEntityId = 2;
+        const uint32_t cutId = appendCadLaterFeature(&sharing, CadFeatureOperation::Cut, 2u, cutB);
+        IdLifetimeRig s;
+        const bool shared = s.open(start) && cutId == 3u && s.apply(sharing) == CadStatus::Ok
+                            && laterAt(s.state(), 1).sketchId == 2u
+                            && !cadBodyStateLegacyRepresentable(s.state());
+        const bool undoRedo = s.history.undo() && sameCadBodyState(s.state(), start)
+                              && s.history.redo() && sameCadBodyState(s.state(), sharing)
+                              && s.history.undo();
+        // The new branch re-mints feature 3 -- and a NEW sketch 3 for it. The
+        // re-used feature id inherits nothing of the shared reference.
+        const bool branched = s.add(kCadFeatureId, circleAt(0.0, 0.6, 0.2)) == CadStatus::Ok;
+        const CadBodyState now = s.state();
+        const CadSketchRecord* two = findCadSketchRecord(now, 2u);
+        const bool noRetarget = branched && laterAt(now, 1).featureId == 3u
+                                && laterAt(now, 1).sketchId == 3u
+                                && laterAt(now, 1).operation == CadFeatureOperation::Add
+                                && laterAt(now, 0).sketchId == 2u && two != nullptr
+                                && sameCadSketch(two->sketch, pair) && sketchesWithId(now, 2u) == 1u
+                                && s.history.redoDepth() == 0u
+                                && nearRel(bodyVolumeOf(s.scene, s.bodyId),
+                                           4.0 + 0.16 * 0.25 + circleArea(0.2) * 0.25);
+        const bool neverSharedAgain = everyReachableState(s, [](const CadBodyState& state) {
+            return state.laterFeatures.size() < 2u
+                   || laterAt(state, 1).sketchId != laterAt(state, 0).sketchId;
+        });
+        r.check("CADV6C1_IDL_09_a_shared_sketch_survives_undo_redo_and_a_re_minted_feature_never_inherits_it",
+                shared && undoRedo && noRetarget && neverSharedAgain);
+    }
+
+    // --- IDL-10: a feature-face support cannot be retargeted --------------
+    {
+        IdLifetimeRig k;
+        const bool opened = k.open(blockState());
+        // Feature 2: a 1 x 1 square boss. Feature 3 stands on ITS far cap.
+        // Body B, a New Body on the same cap, carries a TopoRef to it.
+        const bool chain = opened
+                           && k.add(kCadFeatureId, rectangleAt(0.0, 0.0, 1.0, 1.0)) == CadStatus::Ok
+                           && k.add(2u, rectangleAt(0.0, 0.0, 0.4, 0.4)) == CadStatus::Ok;
+        const CadBodyState s3 = k.state();
+        const CadSketchRecord onTwo = *findCadSketchRecord(s3, 3u);
+        const CadFeature three = laterAt(s3, 1);
+        const uint64_t squareLineage = cadFeatureTopologySignature(s3, 2u);
+        const bool dependent =
+                chain
+                && k.feature(2u, CadFeatureOperation::NewBody, rectangleAt(0.3, 0.3, 0.2, 0.2), 0.25,
+                             ExtrudeDirection::AlongNormal)
+                           == CadStatus::Ok
+                && k.scene.bodyCount() == 2u && onTwo.featureSupport.featureId == 2u
+                && onTwo.featureSupport.lineageToken == squareLineage;
+        const bool rewound = k.history.undo() && k.history.undo() && k.history.undo()
+                             && k.scene.bodyCount() == 1u && k.history.redoDepth() == 3u
+                             && k.state().laterFeatures.empty();
+        // The new branch's feature 2 is a CIRCLE boss: same id, other shape.
+        const bool branched = k.add(kCadFeatureId, circleAt(0.0, 0.0, 0.4)) == CadStatus::Ok;
+        const CadBodyState now = k.state();
+        const bool reminted = branched && laterAt(now, 0).featureId == 2u
+                              && cadFeatureTopologySignature(now, 2u) != squareLineage
+                              && k.history.redoDepth() == 0u && !k.history.redo()
+                              && k.scene.bodyCount() == 1u;
+        // Nothing reachable still stands on the abandoned square.
+        const bool noStaleSupport = everyReachableState(k, [squareLineage](const CadBodyState& s) {
+            for (const CadSketchRecord& record : s.sketches) {
+                if (record.hasFeatureSupport && record.featureSupport.featureId == 2u
+                    && record.featureSupport.lineageToken == squareLineage) {
+                    return false;
+                }
+            }
+            return validateCadBodyState(s) == CadStatus::Ok;
+        });
+        // Grafting the abandoned feature 3 onto the new branch -- which no
+        // product path can do -- is refused by its lineage for this shape.
+        CadBodyState graft = now;
+        CadSketchRecord graftedRecord = onTwo;
+        graftedRecord.sketchId = graft.nextSketchId++;
+        graft.sketches.push_back(graftedRecord);
+        CadFeature graftedFeature = three;
+        graftedFeature.featureId = graft.nextFeatureId++;
+        graftedFeature.sketchId = graftedRecord.sketchId;
+        graft.laterFeatures.push_back(graftedFeature);
+        const bool graftRefused = validateCadBodyState(graft) == CadStatus::FeatureSupportInvalid;
+        // For a SAME-shape re-mint the lineage token cannot tell the two
+        // features apart, which is why the guarantee is structural: the redo
+        // step that could have put feature 3 back is gone in the very call
+        // that minted the new feature 2 (asserted above), and no product path
+        // copies a record from one branch into another.
+        CadBodyState sameShape = withFeature(blockState(), CadFeatureOperation::Add, kCadFeatureId,
+                                             rectSketch(0.0, 0.0, 1.0, 1.0), oneSide(0.25));
+        const bool lineageBlind = cadFeatureTopologySignature(sameShape, 2u) == squareLineage;
+        r.check("CADV6C1_IDL_10_a_feature_face_support_is_never_retargeted_by_a_re_minted_feature_id",
+                dependent && rewound && reminted && noStaleSupport && graftRefused && lineageBlind);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `CAD-V6-S2`: planar faces at runtime
+// ---------------------------------------------------------------------------
+
+// PF-S1's reference sketches, entity ids 1.. in placement order.
+CadSketch lensSketchAt(double cu, double r) {
+    CadSketch s;
+    addRect(&s, 0.0, 0.0, 4.0, 3.0);
+    addCircle(&s, cu, 0.0, r);
+    return s;
+}
+
+CadSketch protrusionSketch() {
+    CadSketch s;
+    addRect(&s, 0.0, 0.0, 4.0, 3.0);
+    for (const auto& seg : {std::pair<SketchPoint, SketchPoint>{{2.0, -0.5}, {3.0, -0.5}},
+                            std::pair<SketchPoint, SketchPoint>{{3.0, -0.5}, {3.0, 0.5}},
+                            std::pair<SketchPoint, SketchPoint>{{3.0, 0.5}, {2.0, 0.5}}}) {
+        SketchLine line;
+        line.start = seg.first;
+        line.end = seg.second;
+        SketchEntityId id = kNoSketchEntity;
+        addSketchEntity(&s, line, &id);
+    }
+    return s;
+}
+
+// The derived face of `sketch` with this area (the lens, a crescent, ...).
+bool faceWithArea(const CadSketch& sketch, double area, PlanarFaceRef* out, size_t* outIndex = nullptr) {
+    const SketchArrangement a = deriveSketchArrangement(sketch);
+    for (size_t i = 0; i < a.faces.size(); ++i) {
+        if (std::fabs(a.faces[i].area - area) < 1e-6) {
+            *out = a.faces[i].ref;
+            if (outIndex != nullptr) *outIndex = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+// The derived face of `sketch` whose interior contains `point`.
+bool faceAtPoint(const CadSketch& sketch, SketchPoint point, PlanarFaceRef* out,
+                 size_t* outIndex = nullptr) {
+    const SketchArrangement a = deriveSketchArrangement(sketch);
+    for (size_t i = 0; i < a.faces.size(); ++i) {
+        std::vector<PlanarProfileComponent> shape;
+        if (mergePlanarFaceSelection(a, {i}, &shape) != CadStatus::Ok || shape.size() != 1u) continue;
+        bool inside = sketchPointStrictlyInside(point, shape[0].outer.polygon);
+        for (const PlanarProfileLoop& hole : shape[0].holes) {
+            inside = inside && !sketchPointStrictlyInside(point, hole.polygon);
+        }
+        if (inside) {
+            *out = a.faces[i].ref;
+            if (outIndex != nullptr) *outIndex = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+ExtrudeFeature facesExtrude(std::vector<PlanarFaceRef> faces, double depth,
+                            ExtrudeDirection direction = ExtrudeDirection::AlongNormal) {
+    ExtrudeFeature e = oneSide(depth, direction);
+    e.profileEntityId = kNoSketchEntity;
+    e.selection = CadSelectionKind::PlanarFaces;
+    std::sort(faces.begin(), faces.end(), [](const PlanarFaceRef& a, const PlanarFaceRef& b) {
+        return comparePlanarFaceRef(a, b) < 0;
+    });
+    e.planarFaces = std::move(faces);
+    return e;
+}
+
+constexpr double kS2Pi = 3.14159265358979323846;
+const double kLens = kS2Pi * 0.125;  // half of a 0.5 m disk: the lens of PF-S1-01
+
+// The polygon area the extruder sees: the tessellated lens.
+double polygonAreaOf(const PlanarProfileComponent& c) { return c.area; }
+
+std::vector<CadFeatureFace> sideFaces(const CadFeatureGeometry& g) {
+    return std::vector<CadFeatureFace>(g.faces.begin() + 2, g.faces.end());
+}
+
+void testPlanarRuntime(Recorder& r) {
+    const CadSketch lens = lensSketchAt(2.0, 0.5);
+    PlanarFaceRef lensRef;
+    const bool lensFound = faceAtPoint(lens, SketchPoint{1.8, 0.0}, &lensRef);
+    const CadBodyState lensBody = makeCadBodyState(lens, facesExtrude({lensRef}, 1.0));
+
+    // --- tokens ------------------------------------------------------------
+    {
+        // The protrusion sketch's big face: rectangle side 1.1 is split at the
+        // two T-junctions, and two of its three pieces bound this face.
+        const CadSketch sketch = protrusionSketch();
+        PlanarFaceRef big;
+        const bool found = faceWithArea(sketch, 12.0, &big);
+        CadFeatureGeometry g;
+        const CadStatus why = buildCadFeatureGeometry(
+                makeCadBodyState(sketch, facesExtrude({big}, 1.0)), kCadFeatureId, &g);
+        std::vector<CadFaceToken> side11;
+        bool wholeLegacy = true;
+        for (const CadFeatureFace& face : sideFaces(g)) {
+            if (face.token.edgeEntityId == 1u && face.token.edgeLocalIndex == 1u) {
+                side11.push_back(face.token);
+            } else if (face.token.edgeEntityId == 1u) {
+                // Sides 1.0, 1.2, 1.3 are whole: the legacy token, byte for byte.
+                CadFaceToken legacy;
+                legacy.kind = CadFaceKind::Side;
+                legacy.edgeEntityId = 1u;
+                legacy.edgeLocalIndex = face.token.edgeLocalIndex;
+                wholeLegacy = wholeLegacy && !face.token.fragment
+                              && cadFaceTokenCode(face.token)
+                                         == ((2ull << 56) | (1ull << 16) | face.token.edgeLocalIndex)
+                              && sameCadFaceToken(face.token, legacy);
+            }
+        }
+        // Side 1.1 is split into THREE pieces at the two T-junctions, and the
+        // rectangle's face is bounded by all three (the protrusion stands
+        // outside it): three sides, three distinct fragment tokens.
+        bool twoDistinct = side11.size() == 3u;
+        for (size_t i = 0; twoDistinct && i < side11.size(); ++i) {
+            twoDistinct = side11[i].fragment && (cadFaceTokenCode(side11[i]) >> 56) == 0x03u;
+            for (size_t j = i + 1; twoDistinct && j < side11.size(); ++j) {
+                twoDistinct = !sameCadFaceToken(side11[i], side11[j])
+                              && cadFaceTokenCode(side11[i]) != cadFaceTokenCode(side11[j]);
+            }
+        }
+        r.check("CADV6S2_TOK_01_the_pieces_of_one_rectangle_side_wear_distinct_fragment_tokens",
+                found && why == CadStatus::Ok && twoDistinct);
+        CadFaceToken wholeSide;
+        wholeSide.kind = CadFaceKind::Side;
+        wholeSide.edgeEntityId = 1u;
+        wholeSide.edgeLocalIndex = 1u;
+        r.check("CADV6S2_TOK_02_whole_edges_keep_the_legacy_token_and_a_piece_never_equals_the_whole",
+                wholeLegacy && side11.size() == 3u && !sameCadFaceToken(side11[0], wholeSide)
+                        && !sameCadFaceToken(wholeSide, side11[1])
+                        && !sameCadFaceToken(side11[2], wholeSide));
+        // Deterministic and canonical: a second derivation lists the same
+        // tokens in the same order.
+        CadFeatureGeometry again;
+        buildCadFeatureGeometry(makeCadBodyState(sketch, facesExtrude({big}, 1.0)), kCadFeatureId,
+                                &again);
+        bool same = again.faces.size() == g.faces.size() && again.signature == g.signature;
+        for (size_t i = 0; same && i < g.faces.size(); ++i) {
+            same = sameCadFaceToken(again.faces[i].token, g.faces[i].token);
+        }
+        r.check("CADV6S2_TOK_03_fragment_tokens_and_the_signature_are_deterministic", same);
+    }
+    {
+        // Straight piece eligible, curved piece never.
+        CadFeatureGeometry g;
+        const CadStatus why = buildCadFeatureGeometry(lensBody, kCadFeatureId, &g);
+        bool straightEligible = false;
+        bool curvedIneligible = false;
+        for (const CadFeatureFace& face : sideFaces(g)) {
+            if (face.token.edgeEntityId == 1u) straightEligible = face.eligible && face.token.fragment;
+            if (face.token.edgeEntityId == 2u) curvedIneligible = !face.eligible && face.token.fragment;
+        }
+        r.check("CADV6S2_FACE_05_a_straight_fragment_side_is_eligible_a_curved_one_never",
+                lensFound && why == CadStatus::Ok && g.faces.size() == 4u && straightEligible
+                        && curvedIneligible);
+    }
+
+    // --- fragment supports (S2-FACE-02 .. 04) --------------------------------
+    {
+        CadFeatureGeometry base;
+        buildCadFeatureGeometry(lensBody, kCadFeatureId, &base);
+        CadFaceToken straight;
+        for (const CadFeatureFace& face : sideFaces(base)) {
+            if (face.token.edgeEntityId == 1u) straight = face.token;
+        }
+        CadFeatureSupport support;
+        support.featureId = kCadFeatureId;
+        support.face = straight;
+        support.lineageToken = base.signature;
+        CadBodyState withAdd = lensBody;
+        const uint32_t added = appendCadLaterFeatureWithSketch(
+                &withAdd, CadFeatureOperation::Add, support, rectSketch(0.0, 0.0, 0.3, 0.3),
+                oneSide(0.2));
+        const Regen g = regen(withAdd);
+        const std::vector<uint8_t> bytes = encodeProjectV1(cadDocumentFor(withAdd));
+        ProjectDocument back;
+        const bool decoded = !bytes.empty()
+                             && decodeProject(bytes.data(), bytes.size(), &back) == ProjectCodecStatus::Ok
+                             && back.cad.bodies.size() == 1u;
+        uint16_t version = 0;
+        r.check("CADV6S2_FACE_02_a_sketch_on_a_straight_fragment_side_regenerates_and_round_trips",
+                added == 2u && validateCadBodyState(withAdd) == CadStatus::Ok && g.why == CadStatus::Ok
+                        && g.mesh.components == 1u && g.mesh.volume > 0.3 * 0.3 * 0.2
+                        && !cadBodyStateLegacyRepresentable(withAdd) && cadbSectionVersion(bytes, &version)
+                        && version == kCadSectionVersionV6 && decoded
+                        && sameCadBodyState(back.cad.bodies[0].state, withAdd)
+                        && encodeProjectV1(back) == bytes
+                        && regen(back.cad.bodies[0].state).why == CadStatus::Ok);
+        // Topology-preserving: the circle slides and still crosses the same
+        // side twice -- same token, same lineage, still attached.
+        CadBodyState moved = withAdd;
+        CadSketch& movedBase = cadBaseSketch(moved);
+        const bool replaced =
+                replaceSketchEntity(&movedBase, 2u, circleAt(1.95, 0.1, 0.55)) == CadStatus::Ok;
+        CadFeatureGeometry movedBaseGeometry;
+        const CadStatus movedWhy = buildCadFeatureGeometry(moved, kCadFeatureId, &movedBaseGeometry);
+        bool sameStraight = false;
+        for (const CadFeatureFace& face : sideFaces(movedBaseGeometry)) {
+            if (face.token.edgeEntityId == 1u) sameStraight = sameCadFaceToken(face.token, straight);
+        }
+        r.check("CADV6S2_FACE_03_a_topology_preserving_move_keeps_the_fragment_token_and_support",
+                replaced && movedWhy == CadStatus::Ok && sameStraight
+                        && movedBaseGeometry.signature == base.signature
+                        && validateCadBodyState(moved) == CadStatus::Ok
+                        && regen(moved).why == CadStatus::Ok);
+        // Topology-changing: a line cutting the lens side between the circle's
+        // two crossings -- the lens no longer exists, nothing is re-bound.
+        CadBodyState split = withAdd;
+        SketchLine cutLine;
+        cutLine.start = SketchPoint{1.0, 0.0};
+        cutLine.end = SketchPoint{3.0, 0.0};
+        SketchEntityId lineId = kNoSketchEntity;
+        addSketchEntity(&cadBaseSketch(split), cutLine, &lineId);
+        CadBody body(1);
+        const CadStatus applied = body.applyState(withAdd);
+        const CadStatus refused = body.applyState(split);
+        r.check("CADV6S2_FACE_04_a_topology_changing_edit_fails_closed_and_the_body_stands",
+                applied == CadStatus::Ok && refused == CadStatus::PlanarFaceUnresolved
+                        && sameCadBodyState(body.state(), withAdd));
+        // The SAME fragment on another face: the outer-circle cell also runs
+        // along side 1.1 between the crossings (the other way). Re-selecting
+        // the base to that cell keeps the token but changes the lineage: the
+        // support refuses, never retargets.
+        PlanarFaceRef cap;
+        const SketchArrangement arrangement = deriveSketchArrangement(lens);
+        for (const AtomicPlanarFace& face : arrangement.faces) {
+            if (!samePlanarFaceRef(face.ref, lensRef) && face.area < 1.0) cap = face.ref;
+        }
+        CadBodyState other = withAdd;
+        other.extrude = facesExtrude({cap}, 1.0);
+        r.check("CADV6S2_FACE_06_the_same_fragment_on_another_face_is_a_new_lineage_and_refuses",
+                !cap.outer.empty() && validateCadBodyState(other) == CadStatus::FeatureSupportInvalid);
+    }
+
+    // --- regeneration: New Body, union, disjoint, pinch -----------------------
+    {
+        const Regen lensSolid = regen(lensBody);
+        std::vector<PlanarProfileComponent> components;
+        size_t lensIndex = 0;
+        faceAtPoint(lens, SketchPoint{1.8, 0.0}, &lensRef, &lensIndex);
+        const SketchArrangement a = deriveSketchArrangement(lens);
+        mergePlanarFaceSelection(a, {lensIndex}, &components);
+        r.check("CADV6S2_REG_01_the_lens_extrudes_as_a_new_body_to_its_tessellated_area",
+                lensSolid.why == CadStatus::Ok && lensSolid.mesh.components == 1u
+                        && components.size() == 1u
+                        && nearRel(lensSolid.mesh.volume, polygonAreaOf(components[0]) * 1.0, 1e-9)
+                        && lensSolid.mesh.volume < kLens && lensSolid.mesh.volume > 0.99 * kLens
+                        && watertight(lensSolid.mesh.mesh));
+        // Adjacent: lens + the rectangle's other cell share the arc; their
+        // union is the whole rectangle, exactly, with no wall on the arc.
+        std::vector<size_t> both;
+        for (size_t i = 0; i < a.faces.size(); ++i) {
+            if (a.faces[i].area > 1.0 || i == lensIndex) both.push_back(i);
+        }
+        std::vector<PlanarFaceRef> refs;
+        for (size_t i : both) refs.push_back(a.faces[i].ref);
+        const CadBodyState united = makeCadBodyState(lens, facesExtrude(refs, 1.0));
+        const Regen unitedSolid = regen(united);
+        CadFeatureGeometry g;
+        buildCadFeatureGeometry(united, kCadFeatureId, &g);
+        bool noArc = true;
+        for (const CadFeatureFace& face : sideFaces(g)) noArc = noArc && face.token.edgeEntityId != 2u;
+        r.check("CADV6S2_REG_02_adjacent_faces_merge_into_one_component_with_no_internal_wall",
+                both.size() == 2u && solidOk(unitedSolid, 12.0) && g.planarComponents.size() == 1u
+                        && noArc && g.faces.size() == 2u + 6u);
+        // Disjoint: two separate lenses on opposite sides of the rectangle.
+        CadSketch twoLenses;
+        addRect(&twoLenses, 0.0, 0.0, 4.0, 3.0);
+        addCircle(&twoLenses, 2.0, 0.0, 0.5);
+        addCircle(&twoLenses, -2.0, 0.0, 0.5);
+        const SketchArrangement t = deriveSketchArrangement(twoLenses);
+        std::vector<PlanarFaceRef> lenses;
+        PlanarFaceRef left;
+        PlanarFaceRef right;
+        if (faceAtPoint(twoLenses, SketchPoint{-1.8, 0.0}, &left)
+            && faceAtPoint(twoLenses, SketchPoint{1.8, 0.0}, &right)) {
+            lenses = {left, right};
+        }
+        const CadBodyState disjoint = makeCadBodyState(twoLenses, facesExtrude(lenses, 1.0));
+        const Regen disjointSolid = regen(disjoint);
+        CadFeatureGeometry dg;
+        buildCadFeatureGeometry(disjoint, kCadFeatureId, &dg);
+        CadFeatureGeometry dg2;
+        buildCadFeatureGeometry(disjoint, kCadFeatureId, &dg2);
+        const bool ordered = dg.planarComponents.size() == 2u
+                             && compareFragmentRef(dg.planarComponents[0].outer.fragments[0],
+                                                   dg.planarComponents[1].outer.fragments[0]) < 0
+                             && dg.signature == dg2.signature;
+        r.check("CADV6S2_REG_03_disjoint_faces_are_two_components_in_canonical_order",
+                lenses.size() == 2u && disjointSolid.why == CadStatus::Ok
+                        && disjointSolid.mesh.components == 2u && ordered);
+        // A pinch: two cells meeting at one corner only.
+        CadSketch pinch;
+        addRect(&pinch, 0.5, 0.5, 1.0, 1.0);
+        addRect(&pinch, 1.5, 1.5, 1.0, 1.0);
+        SketchLine through;
+        through.start = SketchPoint{0.5, -0.5};
+        through.end = SketchPoint{0.5, 1.5};
+        SketchEntityId throughId = kNoSketchEntity;
+        addSketchEntity(&pinch, through, &throughId);
+        const SketchArrangement pa = deriveSketchArrangement(pinch);
+        std::vector<PlanarFaceRef> corner;
+        for (const AtomicPlanarFace& face : pa.faces) {
+            if (std::fabs(face.area - 0.5) < 1e-9) {
+                // The right half of the first square touches the second at (1, 1).
+                std::vector<PlanarProfileComponent> shape;
+                size_t i = static_cast<size_t>(&face - pa.faces.data());
+                mergePlanarFaceSelection(pa, {i}, &shape);
+                bool right = false;
+                for (const SketchPoint& p : shape[0].outer.polygon) right = right || p.u > 0.99;
+                if (right) corner.push_back(face.ref);
+            }
+            if (std::fabs(face.area - 1.0) < 1e-9) corner.push_back(face.ref);
+        }
+        const CadBodyState pinched = makeCadBodyState(pinch, facesExtrude(corner, 1.0));
+        r.check("CADV6S2_REG_04_a_pinched_union_is_refused_by_name",
+                corner.size() == 2u
+                        && validateCadBodyState(pinched) == CadStatus::PlanarFacesTouchAtPoint
+                        && regen(pinched).why == CadStatus::PlanarFacesTouchAtPoint);
+        // Every arrangement refusal maps to its own v6 name, and a pinch is no
+        // longer read as the loop model's overlap
+        // (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`).
+        r.check("CADV6S2_REG_05_the_arrangement_refusals_map_to_their_v6_names",
+                cadStatusForArrangement(ArrangementStatus::UnsupportedCurve)
+                                == CadStatus::PlanarFaceUnsupportedCurve
+                        && cadStatusForArrangement(ArrangementStatus::AmbiguousOverlap)
+                                   == CadStatus::PlanarFaceAmbiguousOverlap
+                        && cadStatusForArrangement(ArrangementStatus::CapExceeded)
+                                   == CadStatus::PlanarFaceCapExceeded
+                        && cadStatusForArrangement(ArrangementStatus::PinchedSelection)
+                                   == CadStatus::PlanarFacesTouchAtPoint
+                        && cadStatusForArrangement(ArrangementStatus::SelfIntersectingCurve)
+                                   == CadStatus::SelfIntersectingProfile);
+    }
+
+    // --- the requires-PlanarFaces predicate ------------------------------------
+    {
+        CadSketch nested;
+        addRect(&nested, 0.0, 0.0, 4.0, 3.0);
+        addCircle(&nested, -1.0, 0.0, 0.5);
+        addCircle(&nested, 1.0, 0.0, 0.5);
+        CadSketch dangling;
+        addRect(&dangling, 0.0, 0.0, 4.0, 3.0);
+        SketchLine stub;
+        stub.start = SketchPoint{2.0, 0.0};
+        stub.end = SketchPoint{3.0, 0.0};
+        SketchEntityId stubId = kNoSketchEntity;
+        addSketchEntity(&dangling, stub, &stubId);
+        const auto requires = [](const CadSketch& sketch) {
+            return sketchRequiresPlanarFaces(deriveSketchArrangement(sketch),
+                                             extractSketchRegions(sketch));
+        };
+        r.check("CADV6S2_SES_00_faces_are_required_exactly_where_a_crossing_cuts_an_area",
+                requires(lens) && requires(protrusionSketch()) && !requires(nested)
+                        && !requires(dangling) && !requires(rectSketch(0.0, 0.0, 2.0, 2.0)));
+    }
+
+    // --- the session (S2-01 .. S2-10) -----------------------------------------
+    const auto finishedOn = [](SessionDriver& s, const CadSketch& sketch) {
+        if (!s.beginWorld(Workplane::XY)) return false;
+        for (const SketchEntity& entity : sketch.entities) {
+            SketchTool tool = SketchTool::Line;
+            if (entity.rectangle() != nullptr) tool = SketchTool::Rectangle;
+            if (entity.circle() != nullptr) tool = SketchTool::Circle;
+            if (s.place(tool, SketchPoint{0.0, 0.0}, SketchPoint{0.5, 0.5}, entity.payload())
+                == kNoSketchEntity) {
+                return false;
+            }
+        }
+        return s.sketch.finish() == CadStatus::Ok;
+    };
+    const auto faceIndexAt = [](SessionDriver& s, double area) {
+        for (size_t i = 0; i < s.sketch.planarFaceCount(); ++i) {
+            double a = 0.0;
+            if (s.sketch.planarFaceInfo(i, nullptr, &a) && std::fabs(a - area) < 1e-6) return i;
+        }
+        return s.sketch.planarFaceCount();
+    };
+    const auto tapFace = [](SessionDriver& s, size_t index) {
+        SketchPoint p;
+        return index < s.sketch.planarFaceCount() && s.sketch.planarFaceInfo(index, &p, nullptr)
+               && s.toggleAt(p);
+    };
+    {
+        ConstructionScene scene((NoProjectTag()));
+        ConstructionHistory history(scene);
+        SessionDriver s;
+        const bool finished = finishedOn(s, lens);
+        const size_t li = faceIndexAt(s, kLens);
+        bool each = s.sketch.selectionKind() == CadSelectionKind::PlanarFaces
+                    && s.sketch.planarFaceCount() == 3u
+                    && s.sketch.evaluateCandidate().status == CadStatus::AmbiguousProfile;
+        // Every cell is selectable on its own, and a tap is a pure toggle.
+        for (size_t i = 0; each && i < 3u; ++i) {
+            each = tapFace(s, i) && s.sketch.selectedAreaCount() == 1u && s.sketch.planarFaceSelected(i)
+                   && tapFace(s, i) && s.sketch.selectedAreaCount() == 0u;
+        }
+        const bool lensTapped = tapFace(s, li) && s.sketch.selectedAreaCount() == 1u;
+        const CadCandidateEvaluation preview = s.sketch.evaluateCandidate();
+        ObjectId id = kNoObject;
+        const CadStatus committed = s.sketch.commit(scene, history, &id);
+        const CadBodyState stored = bodyStateOf(scene, id);
+        r.check("CADV6S2_SES_01_circle_crossing_rectangle_three_cells_each_selectable_lens_new_body",
+                finished && each && lensTapped && preview.status == CadStatus::Ok
+                        && committed == CadStatus::Ok && id != kNoObject
+                        && stored.extrude.selection == CadSelectionKind::PlanarFaces
+                        && stored.extrude.planarFaces.size() == 1u
+                        && samePlanarFaceRef(stored.extrude.planarFaces[0], lensRef)
+                        && preview.mesh != nullptr
+                        && nearRel(bodyVolumeOf(scene, id), preview.mesh->volume)
+                        && history.undoDepth() == 1u);
+        // S2-08: reopening the feature finds the exact refs and previews the
+        // committed solid until edited.
+        SessionDriver reopened;
+        const bool began = reopened.sketch.beginEdit(id, stored, s.sketch.frame()) == CadStatus::Ok
+                           && reopened.sketch.finish() == CadStatus::Ok;
+        const CadCandidateEvaluation again = reopened.sketch.evaluateCandidate();
+        r.check("CADV6S2_SES_08_reopening_keeps_the_exact_face_refs_and_previews_the_committed_solid",
+                began && reopened.sketch.selectionKind() == CadSelectionKind::PlanarFaces
+                        && reopened.sketch.selectedAreaCount() == 1u
+                        && samePlanarFaceRef(reopened.sketch.extrude().planarFaces[0], lensRef)
+                        && again.status == CadStatus::Ok && again.mesh != nullptr
+                        && nearRel(again.mesh->volume, bodyVolumeOf(scene, id)));
+        // S2-09: a topology-preserving edit keeps the refs and regenerates.
+        const bool edited =
+                reopened.sketch.state() == SketchSessionState::Ready
+                && (reopened.sketch.backToEditing(), true)
+                && reopened.sketch.replaceEntity(2u, circleAt(1.95, 0.1, 0.55)) == CadStatus::Ok
+                && reopened.sketch.finish() == CadStatus::Ok && reopened.sketch.selectedAreaCount() == 1u
+                && !reopened.sketch.selectionLost();
+        const double before = bodyVolumeOf(scene, id);
+        const CadStatus editCommitted = edited ? reopened.sketch.commitEdit(scene, history)
+                                               : CadStatus::NotSketching;
+        r.check("CADV6S2_SES_09_a_topology_preserving_edit_keeps_the_selection_and_regenerates",
+                edited && editCommitted == CadStatus::Ok && bodyVolumeOf(scene, id) > before
+                        && history.undoDepth() == 2u);
+        // S2-10: a topology-changing edit loses the ref by name; nothing is
+        // re-bound and the body stands at its last valid state.
+        const CadBodyState standing = bodyStateOf(scene, id);
+        SessionDriver lost;
+        const bool reopenedLost =
+                lost.sketch.beginEdit(id, standing, s.sketch.frame()) == CadStatus::Ok
+                && lost.sketch.replaceEntity(2u, circleAt(0.0, 0.0, 0.5)) == CadStatus::Ok
+                && lost.sketch.finish() == CadStatus::Ok;
+        r.check("CADV6S2_SES_10_a_topology_changing_edit_loses_the_ref_by_name_and_changes_nothing",
+                reopenedLost && lost.sketch.selectionLost() && !lost.sketch.selectionChosen()
+                        && lost.sketch.evaluateCandidate().status == CadStatus::PlanarFaceUnresolved
+                        && lost.sketch.commitEdit(scene, history) == CadStatus::PlanarFaceUnresolved
+                        && sameCadBodyState(bodyStateOf(scene, id), standing)
+                        && history.undoDepth() == 2u);
+        lost.sketch.cancel();
+    }
+    {
+        // S2-02: the T-junction protrusion extrudes as a New Body.
+        ConstructionScene scene((NoProjectTag()));
+        ConstructionHistory history(scene);
+        SessionDriver s;
+        const bool finished = finishedOn(s, protrusionSketch());
+        const bool tapped = tapFace(s, faceIndexAt(s, 1.0));
+        ObjectId id = kNoObject;
+        const CadStatus committed = s.sketch.setExtrude(0.5, ExtrudeDirection::AlongNormal) == CadStatus::Ok
+                                            ? s.sketch.commit(scene, history, &id)
+                                            : CadStatus::NotSketching;
+        r.check("CADV6S2_SES_02_the_t_junction_protrusion_is_selectable_and_extrudes",
+                finished && s.sketch.planarFaceCount() == 0u && tapped && committed == CadStatus::Ok
+                        && nearRel(bodyVolumeOf(scene, id), 0.5));
+    }
+    {
+        // S2-03: two crossing circles, three faces, the lens alone.
+        CadSketch circles;
+        addCircle(&circles, -0.4, 0.0, 1.0);
+        addCircle(&circles, 0.4, 0.0, 1.0);
+        SessionDriver s;
+        const bool finished = finishedOn(s, circles);
+        const bool lensOnly = s.toggleAt(SketchPoint{0.0, 0.0}) && s.sketch.selectedAreaCount() == 1u;
+        double area = 0.0;
+        for (size_t i = 0; i < s.sketch.planarFaceCount(); ++i) {
+            if (s.sketch.planarFaceSelected(i)) s.sketch.planarFaceInfo(i, nullptr, &area);
+        }
+        const bool crescents = s.toggleAt(SketchPoint{-1.2, 0.0}) && s.toggleAt(SketchPoint{1.2, 0.0})
+                               && s.sketch.selectedAreaCount() == 3u
+                               && s.sketch.evaluateCandidate().status == CadStatus::Ok;
+        r.check("CADV6S2_SES_03_two_crossing_circles_three_faces_lens_and_crescents_independent",
+                finished && s.sketch.planarFaceCount() == 3u && lensOnly
+                        && std::fabs(area - 1.585347) < 1e-5 && crescents);
+        s.sketch.cancel();
+    }
+    {
+        // S2-06 / S2-07: a crossing sketch on the block's own cap drives Add
+        // and Cut into the SAME body.
+        IdLifetimeRig rig;
+        const bool opened = rig.open(blockState(1.0));
+        const auto onCap = [&](CadFeatureOperation op, double depth, ExtrudeDirection dir,
+                               CadStatus* outWhy) {
+            SketchFrame f;
+            TopoRef t;
+            if (!worldCapFrame(rig.scene, rig.bodyId, kCadFeatureId, CadFaceKind::CapFar, &f, &t)) {
+                return false;
+            }
+            const CadBodyState producer = rig.state();
+            SessionDriver s;
+            if (!s.beginFace(f, t, &producer)) return false;
+            // A 1 x 1 square crossed by a 0.3 circle on its right side.
+            if (s.place(SketchTool::Rectangle, {0.0, 0.0}, {0.5, 0.5}, rectangleAt(0.0, 0.0, 1.0, 1.0))
+                        == kNoSketchEntity
+                || s.place(SketchTool::Circle, {-0.2, 0.2}, {0.3, 0.2}, circleAt(0.5, 0.0, 0.3))
+                           == kNoSketchEntity
+                || s.sketch.finish() != CadStatus::Ok || s.sketch.planarFaceCount() != 3u) {
+                return false;
+            }
+            // Merge the lens with the square's other cell: the whole square.
+            for (size_t i = 0; i < s.sketch.planarFaceCount(); ++i) {
+                double a = 0.0;
+                SketchPoint p;
+                s.sketch.planarFaceInfo(i, &p, &a);
+                if (p.u < 0.5 + 1e-9 && std::fabs(p.v) < 0.5) {
+                    if (s.sketch.togglePlanarFace(i) != CadStatus::Ok) return false;
+                }
+            }
+            *outWhy = s.sketch.setOperation(op);
+            if (*outWhy == CadStatus::Ok) *outWhy = s.sketch.setExtrude(depth, dir);
+            ObjectId out = kNoObject;
+            if (*outWhy == CadStatus::Ok) *outWhy = s.sketch.commit(rig.scene, rig.history, &out);
+            if (s.sketch.active()) s.sketch.cancel();
+            return true;
+        };
+        CadStatus addWhy = CadStatus::NotSketching;
+        const bool addRan = opened && onCap(CadFeatureOperation::Add, 0.5, ExtrudeDirection::AlongNormal,
+                                            &addWhy);
+        const double afterAdd = bodyVolumeOf(rig.scene, rig.bodyId);
+        r.check("CADV6S2_SES_06_a_merged_face_selection_adds_into_the_same_body",
+                addRan && addWhy == CadStatus::Ok && rig.scene.bodyCount() == 1u
+                        && rig.state().laterFeatures.size() == 1u
+                        && rig.state().laterFeatures[0].extrude.selection == CadSelectionKind::PlanarFaces
+                        && rig.state().laterFeatures[0].extrude.planarFaces.size() == 2u
+                        && nearRel(afterAdd, 4.0 + 1.0 * 0.5));
+        CadStatus cutWhy = CadStatus::NotSketching;
+        const bool cutRan = onCap(CadFeatureOperation::Cut, 0.25, ExtrudeDirection::AgainstNormal,
+                                  &cutWhy);
+        r.check("CADV6S2_SES_07_a_merged_face_selection_cuts_the_same_body",
+                cutRan && cutWhy == CadStatus::Ok && rig.scene.bodyCount() == 1u
+                        && rig.state().laterFeatures.size() == 2u
+                        && rig.state().laterFeatures[1].operation == CadFeatureOperation::Cut
+                        && bodyVolumeOf(rig.scene, rig.bodyId) < afterAdd);
+    }
+    {
+        // Legacy stays legacy: a rectangle around two circles finishes on
+        // loop regions and writes its legacy CADB version.
+        SessionDriver s;
+        CadSketch nested;
+        addRect(&nested, 0.0, 0.0, 4.0, 3.0);
+        addCircle(&nested, -1.0, 0.0, 0.5);
+        const bool finished = finishedOn(s, nested);
+        r.check("CADV6S2_SES_11_a_nested_sketch_stays_on_loop_regions",
+                finished && s.sketch.selectionKind() == CadSelectionKind::LoopRegions
+                        && s.sketch.planarFaceCount() == 0u && s.sketch.regions().regions.size() == 2u);
+        s.sketch.cancel();
+    }
+
+    // --- a shared sketch validates atomically ----------------------------------
+    {
+        // Sketch 2 on the block's cap: a square crossed by a circle. Feature 2
+        // ADDS the lens; feature 3 CUTS the square's other cell -- one sketch.
+        CadSketch shared;
+        addRect(&shared, 0.0, 0.0, 1.0, 1.0);
+        addCircle(&shared, 0.5, 0.0, 0.3);
+        const SketchArrangement a = deriveSketchArrangement(shared);
+        PlanarFaceRef lensCell;
+        PlanarFaceRef squareCell;
+        for (const AtomicPlanarFace& face : a.faces) {
+            if (face.area < 0.2 && face.area > 0.1) lensCell = face.ref;
+            if (face.area > 0.8) squareCell = face.ref;
+        }
+        CadBodyState state = withFeature(blockState(1.0), CadFeatureOperation::Add, kCadFeatureId,
+                                         shared, facesExtrude({lensCell}, 0.25));
+        appendCadLaterFeature(&state, CadFeatureOperation::Cut, 2u,
+                              facesExtrude({squareCell}, 0.25, ExtrudeDirection::AgainstNormal));
+        CadBody body(1);
+        const CadStatus built = body.applyState(state);
+        // An edit that keeps the lens but merges the square's cell away (a
+        // second circle that crosses only the square) loses feature 3's face.
+        CadBodyState edited = state;
+        addCircle(&findCadSketchRecord(edited, 2u)->sketch, -0.5, 0.0, 0.2);
+        CadRegenerationReport report;
+        CadBodyMesh mesh;
+        const CadStatus editWhy = regenerateCadBody(edited, &mesh, &report);
+        const CadStatus refused = body.applyState(edited);
+        r.check("CADV6S2_SHR_01_a_shared_sketch_edit_that_loses_one_feature_s_face_refuses_whole",
+                built == CadStatus::Ok && editWhy == CadStatus::PlanarFaceUnresolved
+                        && report.failedFeatureId == 3u && refused == CadStatus::PlanarFaceUnresolved
+                        && sameCadBodyState(body.state(), state));
+    }
+
+    // --- the stale support chooser ------------------------------------------
+    {
+        IdLifetimeRig rig;
+        const bool opened = rig.open(blockState(1.0))
+                            && rig.add(kCadFeatureId, rectangleAt(0.0, 0.0, 0.5, 0.5)) == CadStatus::Ok;
+        ChosenSupport chosen;
+        chosen.kind = ChosenSupport::Kind::Face;
+        SketchFrame tapFrame;
+        const bool framed = opened
+                            && worldCapFrame(rig.scene, rig.bodyId, 2u, CadFaceKind::CapFar, &tapFrame,
+                                             &chosen.faceRef);
+        chosen.worldFrame = tapFrame;
+        ChosenSupport fresh;
+        const CadStatus now = refreshChosenSupport(rig.scene, chosen, &fresh);
+        // Undo removes feature 2: the stored selection must not begin a sketch.
+        const bool undone = rig.history.undo();
+        ChosenSupport stale;
+        const CadStatus afterUndo = refreshChosenSupport(rig.scene, chosen, &stale);
+        // Redo brings it back: valid again. Moving the producer: the frame is
+        // recomputed from where the face is NOW, never the tap's.
+        const bool redone = rig.history.redo();
+        TransformValues shifted;
+        shifted.positionX = 3.0;
+        rig.scene.findBody(rig.bodyId)->transform().setValues(shifted);
+        ChosenSupport movedFresh;
+        const CadStatus afterMove = refreshChosenSupport(rig.scene, chosen, &movedFresh);
+        r.check("CADV6S2_CHOOSER_01_a_stale_support_refuses_and_a_moved_one_is_re_framed",
+                framed && now == CadStatus::Ok && undone && afterUndo != CadStatus::Ok && redone
+                        && afterMove == CadStatus::Ok
+                        && std::fabs(movedFresh.worldFrame.origin.x - (tapFrame.origin.x + 3.0f)) < 1e-4f);
+    }
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// CAD-FOUNDATION-C2 planar-face preflight: BEFORE reproductions
+// ---------------------------------------------------------------------------
+//
+// These cases ENCODE THE CURRENT BEHAVIOUR of the region model for the OWNER's
+// two sketches -- a circle crossing a rectangle, and a line-built protrusion
+// closed against a rectangle's edge -- plus two crossing circles and the
+// supported nested case. They are labelled BEFORE on purpose: the region model
+// is loop NESTING, not a planar arrangement (`forgeshape_sketch_region.h`), so
+// a crossing never splits a loop and a bounded cell whose boundary is made of
+// pieces of two source curves is not a region at all. A later planar-face
+// stage (artifacts/cad-foundation-c2/PLANAR_FACE_MODEL_PROPOSAL.md) is
+// expected to flip the BEFORE checks it supersedes -- deliberately, by name --
+// and keep PF-04 exactly as it is.
+
+namespace {
+
+SketchEntityId addLine(CadSketch* sketch, SketchPoint a, SketchPoint b) {
+    SketchLine line;
+    line.start = a;
+    line.end = b;
+    SketchEntityId id = kNoSketchEntity;
+    addSketchEntity(sketch, line, &id);
+    return id;
+}
+
+// Every edge of the loop comes from its own anchor entity: the loop is ONE
+// source curve, never pieces of two.
+bool loopIsOneSourceCurve(const ClosedProfile& loop) {
+    for (SketchEntityId owner : loop.edgeEntityId) {
+        if (owner != loop.anchorEntityId) {
+            return false;
+        }
+    }
+    return !loop.edgeEntityId.empty();
+}
+
+const ClosedProfile* loopOf(const SketchRegionExtraction& x, SketchEntityId anchor) {
+    for (const ClosedProfile& loop : x.loops.profiles) {
+        if (loop.anchorEntityId == anchor) {
+            return &loop;
+        }
+    }
+    return nullptr;
+}
+
+SketchEntityId regionAt(const SketchRegionExtraction& x, double u, double v) {
+    SketchEntityId id = kNoSketchEntity;
+    return sketchRegionAt(x, SketchPoint{u, v}, &id) ? id : kNoSketchEntity;
+}
+
+bool hasRejection(const SketchRegionExtraction& x, SketchEntityId anchor, CadStatus why) {
+    for (const ProfileRejection& rejection : x.loops.rejections) {
+        if (rejection.anchorEntityId == anchor && rejection.why == why) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void testPlanarFaceBefore(Recorder& r) {
+    // --- PF-01: a rectangle crossed by one circle ------------------------
+    // Rectangle 4 x 3 about the origin; circle r = 0.5 at (2, 0) straddles the
+    // right edge x = 2 at (2, +-0.5). A planar arrangement has THREE bounded
+    // faces: the rectangle minus the lens, the lens, the cap outside.
+    {
+        CadSketch sketch;
+        const SketchEntityId rect = addRect(&sketch, 0.0, 0.0, 4.0, 3.0);
+        const SketchEntityId circle = addCircle(&sketch, 2.0, 0.0, 0.5);
+        const SketchRegionExtraction x = extractSketchRegions(sketch);
+        const bool eachValidAlone =
+                validateCadSketch(sketch) == CadStatus::Ok
+                && extractSketchRegions(rectSketch(0.0, 0.0, 4.0, 3.0)).regions.size() == 1u
+                && extractSketchRegions(circleSketch(2.0, 0.0, 0.5)).regions.size() == 1u;
+        r.check("CADFC2_PF_01a_BEFORE_rectangle_and_crossing_circle_are_each_valid", eachValidAlone);
+        // The crossings are derivable (x = 2, y = +-sqrt(0.5^2 - 0^2)) but never
+        // computed: the rectangle is still its 4 corners, the circle its own
+        // 32-gon, and each loop is ONE source curve.
+        const ClosedProfile* rl = loopOf(x, rect);
+        const ClosedProfile* cl = loopOf(x, circle);
+        const bool unsplit = rl != nullptr && cl != nullptr && rl->polygon.size() == 4u
+                             && cl->polygon.size() == static_cast<size_t>(kSketchCircleSegments)
+                             && loopIsOneSourceCurve(*rl) && loopIsOneSourceCurve(*cl);
+        r.check("CADFC2_PF_01b_BEFORE_no_intersection_splits_either_loop", unsplit);
+        const bool twoRegions = x.regions.size() == 2u && x.loopsConflict(0, 1)
+                                && x.regions[0].status == CadStatus::Ok
+                                && x.regions[1].status == CadStatus::Ok
+                                && x.regions[0].holeAnchorIds.empty()
+                                && x.regions[1].holeAnchorIds.empty();
+        r.check("CADFC2_PF_01c_BEFORE_two_whole_loop_regions_not_three_faces", twoRegions);
+        // A tap resolves to the smallest WHOLE loop around the point: the lens
+        // and the cap outside the rectangle are both "the circle", so neither
+        // cell can be chosen on its own.
+        const bool taps = regionAt(x, -1.0, 0.0) == rect && regionAt(x, 1.8, 0.0) == circle
+                          && regionAt(x, 2.3, 0.0) == circle;
+        r.check("CADFC2_PF_01d_BEFORE_lens_and_outer_cap_both_tap_to_the_whole_circle", taps);
+        const bool refusal = validateRegionSelection(x, {regionRef(rect), regionRef(circle)})
+                                     == CadStatus::OverlappingRegions
+                             && validateRegionSelection(x, {regionRef(rect)}) == CadStatus::Ok
+                             && std::fabs(x.regions[0].area - 12.0) < 1e-9;
+        r.check("CADFC2_PF_01e_BEFORE_both_is_OverlappingRegions_rectangle_alone_ignores_circle",
+                refusal);
+        // Through the session: Finish succeeds, nothing is chosen (two
+        // regions), a lens tap selects the whole circle.
+        SessionDriver s;
+        const bool began = s.beginWorld(Workplane::XY);
+        const SketchEntityId sr =
+                began ? s.place(SketchTool::Rectangle, SketchPoint{0.0, 0.0}, SketchPoint{1.0, 1.0},
+                                rectangleAt(0.0, 0.0, 4.0, 3.0))
+                      : kNoSketchEntity;
+        const SketchEntityId sc = s.place(SketchTool::Circle, SketchPoint{2.0, 0.0},
+                                          SketchPoint{2.5, 0.0}, circleAt(2.0, 0.0, 0.5));
+        const bool finished = s.sketch.finish() == CadStatus::Ok;
+        const bool ambiguous = s.sketch.evaluateCandidate().status == CadStatus::AmbiguousProfile;
+        s.toggleAt(SketchPoint{1.8, 0.0});
+        // FLIPPED by `CAD-V6-S2`, as this stage said it would be: the session
+        // now finishes on the THREE atomic faces, and a tap inside the lens
+        // chooses the lens alone -- never the whole circle.
+        double lensArea = 0.0;
+        for (size_t i = 0; i < s.sketch.planarFaceCount(); ++i) {
+            double area = 0.0;
+            if (s.sketch.planarFaceSelected(i) && s.sketch.planarFaceInfo(i, nullptr, &area)) {
+                lensArea = area;
+            }
+        }
+        r.check("CADFC2_PF_01f_S2_session_finishes_on_three_faces_and_a_lens_tap_takes_the_lens",
+                sr != kNoSketchEntity && sc != kNoSketchEntity && finished && ambiguous
+                        && s.sketch.selectionKind() == CadSelectionKind::PlanarFaces
+                        && s.sketch.planarFaceCount() == 3u && s.sketch.selectedAreaCount() == 1u
+                        && std::fabs(lensArea - 3.14159265358979 * 0.125) < 1e-9);
+        s.sketch.cancel();
+    }
+
+    // --- PF-02: a line-built protrusion closed against the rectangle ------
+    // Three lines (2,-0.5)->(3,-0.5)->(3,0.5)->(2,0.5) whose ends lie ON the
+    // rectangle's right edge, mid-edge. A planar arrangement has TWO faces:
+    // the rectangle and the 1 x 1 protrusion.
+    {
+        CadSketch sketch;
+        const SketchEntityId rect = addRect(&sketch, 0.0, 0.0, 4.0, 3.0);
+        const SketchEntityId l0 = addLine(&sketch, SketchPoint{2.0, -0.5}, SketchPoint{3.0, -0.5});
+        addLine(&sketch, SketchPoint{3.0, -0.5}, SketchPoint{3.0, 0.5});
+        addLine(&sketch, SketchPoint{3.0, 0.5}, SketchPoint{2.0, 0.5});
+        const SketchRegionExtraction x = extractSketchRegions(sketch);
+        // A rectangle edge is never a chain node, so the chain's two ends have
+        // degree 1: OpenProfile, anchored by its smallest line.
+        r.check("CADFC2_PF_02a_BEFORE_protrusion_chain_is_OpenProfile_T_junction_not_a_node",
+                validateCadSketch(sketch) == CadStatus::Ok && x.regions.size() == 1u
+                        && x.regions[0].outerAnchorId == rect
+                        && hasRejection(x, l0, CadStatus::OpenProfile));
+        r.check("CADFC2_PF_02b_BEFORE_protrusion_is_not_tappable",
+                regionAt(x, 2.5, 0.0) == kNoSketchEntity && regionAt(x, 1.0, 0.0) == rect);
+        // The variant whose end segments CROSS the edge is open the same way.
+        CadSketch crossing;
+        addRect(&crossing, 0.0, 0.0, 4.0, 3.0);
+        const SketchEntityId c0 =
+                addLine(&crossing, SketchPoint{1.5, -0.5}, SketchPoint{3.0, -0.5});
+        addLine(&crossing, SketchPoint{3.0, -0.5}, SketchPoint{3.0, 0.5});
+        addLine(&crossing, SketchPoint{3.0, 0.5}, SketchPoint{1.5, 0.5});
+        const SketchRegionExtraction cx = extractSketchRegions(crossing);
+        r.check("CADFC2_PF_02c_BEFORE_crossing_protrusion_chain_is_OpenProfile_too",
+                cx.regions.size() == 1u && hasRejection(cx, c0, CadStatus::OpenProfile));
+        // Drawn CLOSED as one polyline through the edge, it is a whole loop
+        // that conflicts with the rectangle: PF-01's behaviour, not a face.
+        CadSketch closed;
+        const SketchEntityId cr = addRect(&closed, 0.0, 0.0, 4.0, 3.0);
+        const SketchEntityId cp = addClosedPolyline(
+                &closed, {SketchPoint{1.5, -0.5}, SketchPoint{3.0, -0.5}, SketchPoint{3.0, 0.5},
+                          SketchPoint{1.5, 0.5}});
+        const SketchRegionExtraction px = extractSketchRegions(closed);
+        r.check("CADFC2_PF_02d_BEFORE_a_closed_crossing_polyline_is_a_conflicting_whole_loop",
+                px.regions.size() == 2u && px.loopsConflict(0, 1)
+                        && regionAt(px, 1.8, 0.0) == cp
+                        && validateRegionSelection(px, {regionRef(cr), regionRef(cp)})
+                                   == CadStatus::OverlappingRegions);
+        // Through the session: Finish succeeds on the rectangle ALONE and
+        // auto-selects it; the open protrusion is reported only as a
+        // rejection, so the user sees one region and no reason.
+        SessionDriver s;
+        const bool began = s.beginWorld(Workplane::XY);
+        const SketchEntityId sr =
+                began ? s.place(SketchTool::Rectangle, SketchPoint{0.0, 0.0}, SketchPoint{1.0, 1.0},
+                                rectangleAt(0.0, 0.0, 4.0, 3.0))
+                      : kNoSketchEntity;
+        SketchLine a;
+        a.start = SketchPoint{2.0, -0.5};
+        a.end = SketchPoint{3.0, -0.5};
+        SketchLine b;
+        b.start = SketchPoint{3.0, -0.5};
+        b.end = SketchPoint{3.0, 0.5};
+        SketchLine c;
+        c.start = SketchPoint{3.0, 0.5};
+        c.end = SketchPoint{2.0, 0.5};
+        const bool lines =
+                s.place(SketchTool::Line, SketchPoint{2.2, -0.5}, SketchPoint{2.8, -0.5}, a)
+                        != kNoSketchEntity
+                && s.place(SketchTool::Line, SketchPoint{3.0, -0.3}, SketchPoint{3.0, 0.3}, b)
+                           != kNoSketchEntity
+                && s.place(SketchTool::Line, SketchPoint{2.8, 0.5}, SketchPoint{2.2, 0.5}, c)
+                           != kNoSketchEntity;
+        const bool finished = s.sketch.finish() == CadStatus::Ok;
+        const size_t regions = s.sketch.regions().regions.size();
+        const bool tapped = s.toggleAt(SketchPoint{2.5, 0.0});
+        // FLIPPED by `CAD-V6-S2`: the protrusion closed by T-junctions is a
+        // face, the session finishes on TWO faces (the region model still sees
+        // one loop), nothing is guessed, and the protrusion is selectable.
+        double protrusionArea = 0.0;
+        for (size_t i = 0; i < s.sketch.planarFaceCount(); ++i) {
+            double area = 0.0;
+            if (s.sketch.planarFaceSelected(i) && s.sketch.planarFaceInfo(i, nullptr, &area)) {
+                protrusionArea = area;
+            }
+        }
+        r.check("CADFC2_PF_02e_S2_session_finishes_on_two_faces_and_the_protrusion_is_selectable",
+                sr != kNoSketchEntity && lines && s.sketch.sketch().entities.size() == 4u
+                        && finished && regions == 1u
+                        && s.sketch.selectionKind() == CadSelectionKind::PlanarFaces
+                        && s.sketch.planarFaceCount() == 2u && tapped
+                        && s.sketch.selectedAreaCount() == 1u && std::fabs(protrusionArea - 1.0) < 1e-9);
+        s.sketch.cancel();
+    }
+
+    // --- PF-03: two crossing circles ---------------------------------------
+    // r = 1 at (-0.4, 0) and (0.4, 0). A planar arrangement has THREE bounded
+    // faces: two crescents and the lens.
+    {
+        CadSketch sketch;
+        const SketchEntityId a = addCircle(&sketch, -0.4, 0.0, 1.0);
+        const SketchEntityId b = addCircle(&sketch, 0.4, 0.0, 1.0);
+        const SketchRegionExtraction x = extractSketchRegions(sketch);
+        r.check("CADFC2_PF_03a_BEFORE_two_crossing_circles_are_two_conflicting_loops",
+                x.regions.size() == 2u && x.loopsConflict(0, 1)
+                        && loopIsOneSourceCurve(*loopOf(x, a))
+                        && loopIsOneSourceCurve(*loopOf(x, b)));
+        // Equal areas: the lens resolves to the first loop by anchor order --
+        // an ordering accident, not a face.
+        r.check("CADFC2_PF_03b_BEFORE_the_lens_taps_to_a_whole_circle_by_anchor_order",
+                regionAt(x, 0.0, 0.0) == a && regionAt(x, -1.2, 0.0) == a
+                        && regionAt(x, 1.2, 0.0) == b);
+        r.check("CADFC2_PF_03c_BEFORE_both_circles_is_OverlappingRegions",
+                validateRegionSelection(x, {regionRef(a), regionRef(b)})
+                        == CadStatus::OverlappingRegions);
+    }
+
+    // --- PF-04: the supported nested case stays exactly as it is ------------
+    {
+        CadSketch sketch;
+        const SketchEntityId o = addRect(&sketch, 0.0, 0.0, 4.0, 3.0);
+        const SketchEntityId a = addCircle(&sketch, -1.0, 0.0, 0.5);
+        const SketchEntityId b = addCircle(&sketch, 1.0, 0.0, 0.5);
+        const SketchRegionExtraction x = extractSketchRegions(sketch);
+        const SketchRegion* outer = findSketchRegion(x, o);
+        const bool nested = x.regions.size() == 3u && outer != nullptr
+                            && outer->holeAnchorIds == std::vector<SketchEntityId>{a, b}
+                            && !x.loopsConflict(0, 1) && !x.loopsConflict(0, 2)
+                            && regionAt(x, 0.0, 0.0) == o && regionAt(x, -1.0, 0.0) == a
+                            && regionAt(x, 1.0, 0.0) == b;
+        r.check("CADFC2_PF_04a_nested_rectangle_and_two_circles_is_three_regions", nested);
+        const bool union3 =
+                validateRegionSelection(x, {regionRef(o, {a, b}), regionRef(a), regionRef(b)})
+                == CadStatus::Ok;
+        r.check("CADFC2_PF_04b_nested_union_of_all_three_is_still_valid", union3);
+    }
+}
+
 }  // namespace
 
 int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
@@ -2457,11 +4437,47 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
     // The kernel gate first: nothing below may rely on the seam before it passed.
     runKernelGate(r);
     testRegions(r);
+    testRegionUnion(r);
+    testPlanarFaceBefore(r);
     testExtrusion(r);
     testChain(r);
     testSession(r);
     testPersistence(r);
+    testIdLifetimeBefore(r);
+    testIdLifetime(r);
+    testPlanarRuntime(r);
+    testFillTaps(r);
     measurePerformance(r);
+    // The planar arrangement (`CAD-PLANAR-FACE-PF-S1`): derived-only, wired to
+    // nothing yet, so it rides in this suite rather than a startup token of
+    // its own. Its cap-sketch timing joins this suite's performance line.
+    std::vector<ArrangementSelfTestCheck> arrangement;
+    std::string arrangementPerformance;
+    runSketchArrangementSelfTests(&arrangement, &arrangementPerformance);
+    for (const ArrangementSelfTestCheck& check : arrangement) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + arrangementPerformance;
+    // The fill-bucket correction (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`): spline
+    // cells, the mode decision and their bounded timing, beside the
+    // arrangement's own checks.
+    std::vector<ArrangementSelfTestCheck> fill;
+    std::string fillPerformance;
+    runSketchFillSelfTests(&fill, &fillPerformance);
+    for (const ArrangementSelfTestCheck& check : fill) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + fillPerformance;
+    // The retained sketch table, the selection variant and `CADB` v6
+    // (`CAD-V6-S1`): model and persistence only, wired to no session, JNI or
+    // UI path, so -- like the arrangement -- they ride in this suite.
+    std::vector<CadV6SelfTestCheck> v6;
+    std::string v6Digests;
+    runCadV6SelfTests(&v6, &v6Digests);
+    for (const CadV6SelfTestCheck& check : v6) {
+        r.check(check.name, check.passed);
+    }
+    g_digests += " " + v6Digests;
     return r.n;
 }
 

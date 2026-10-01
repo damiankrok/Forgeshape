@@ -12,7 +12,7 @@ namespace forgeshape {
 
 // The count is a literal in the header so Java can mirror it; this is what
 // keeps the literal honest when an enumerator is appended.
-static_assert(static_cast<int>(CadStatus::KernelFailed) + 1 == kCadStatusCount,
+static_assert(static_cast<int>(CadStatus::PlanarFacesTouchAtPoint) + 1 == kCadStatusCount,
               "kCadStatusCount must equal the number of CadStatus enumerators");
 
 const char* cadStatusName(CadStatus status) {
@@ -62,6 +62,23 @@ const char* cadStatusName(CadStatus status) {
         case CadStatus::CutNoIntersection: return "CutNoIntersection";
         case CadStatus::CutRemovesBody: return "CutRemovesBody";
         case CadStatus::KernelFailed: return "KernelFailed";
+        case CadStatus::SketchIdInvalid: return "SketchIdInvalid";
+        case CadStatus::DuplicateSketchId: return "DuplicateSketchId";
+        case CadStatus::SketchNotFound: return "SketchNotFound";
+        case CadStatus::HighWaterInvalid: return "HighWaterInvalid";
+        case CadStatus::TooManySketches: return "TooManySketches";
+        case CadStatus::SketchSupportInvalid: return "SketchSupportInvalid";
+        case CadStatus::InvalidSelectionKind: return "InvalidSelectionKind";
+        case CadStatus::PlanarFaceRefMalformed: return "PlanarFaceRefMalformed";
+        case CadStatus::PlanarFaceRefNotCanonical: return "PlanarFaceRefNotCanonical";
+        case CadStatus::DuplicatePlanarFace: return "DuplicatePlanarFace";
+        case CadStatus::PlanarFaceUnresolved: return "PlanarFaceUnresolved";
+        case CadStatus::PlanarFaceUnsupportedCurve: return "PlanarFaceUnsupportedCurve";
+        case CadStatus::PlanarFaceAmbiguousOverlap: return "PlanarFaceAmbiguousOverlap";
+        case CadStatus::PlanarFaceCapExceeded: return "PlanarFaceCapExceeded";
+        case CadStatus::PlanarFaceDegenerate: return "PlanarFaceDegenerate";
+        case CadStatus::PlanarFaceRegenerationUnavailable: return "PlanarFaceRegenerationUnavailable";
+        case CadStatus::PlanarFacesTouchAtPoint: return "PlanarFacesTouchAtPoint";
     }
     return "unknown";
 }
@@ -500,6 +517,36 @@ SketchPoint bezierAt(const SketchPoint& p0, const SketchPoint& p1, const SketchP
 
 }  // namespace
 
+uint32_t sketchArcSegmentCount(double sweep) {
+    return arcSegmentCount(sweep);
+}
+
+bool sketchSplineSpan(const SketchSpline& spline, uint32_t spanIndex, SketchBezierSpan* out) {
+    const std::vector<SketchPoint>& p = spline.points;
+    const size_t n = p.size();
+    if (out == nullptr || n < 2 || static_cast<size_t>(spanIndex) + 1u >= n) {
+        return false;
+    }
+    const size_t i = spanIndex;
+    // Catmull-Rom tangents, with the end spans reflecting their one neighbour
+    // so the curve still passes through the endpoint with a defined direction.
+    // Converted to the equivalent cubic Bezier: the curve INTERPOLATES p[i] and
+    // p[i+1] exactly.
+    const SketchPoint& p1 = p[i];
+    const SketchPoint& p2 = p[i + 1];
+    const SketchPoint p0 = (i == 0) ? SketchPoint{2.0 * p1.u - p2.u, 2.0 * p1.v - p2.v} : p[i - 1];
+    const SketchPoint p3 = (i + 2 < n) ? p[i + 2] : SketchPoint{2.0 * p2.u - p1.u, 2.0 * p2.v - p1.v};
+    out->p0 = p1;
+    out->c1 = SketchPoint{p1.u + (p2.u - p0.u) / 6.0, p1.v + (p2.v - p0.v) / 6.0};
+    out->c2 = SketchPoint{p2.u - (p3.u - p1.u) / 6.0, p2.v - (p3.v - p1.v) / 6.0};
+    out->p3 = p2;
+    return true;
+}
+
+SketchPoint sketchBezierPoint(const SketchBezierSpan& span, double t) {
+    return bezierAt(span.p0, span.c1, span.c2, span.p3, t);
+}
+
 CadStatus tessellateSketchCurve(const SketchEntity& entity, std::vector<SketchPoint>* out) {
     if (out == nullptr) {
         return CadStatus::UnknownEntity;
@@ -544,27 +591,19 @@ CadStatus tessellateSketchCurve(const SketchEntity& entity, std::vector<SketchPo
         out->reserve((n - 1) * kSplineSegmentsPerSpan + 1u);
         out->push_back(p.front());
         for (size_t i = 0; i + 1 < n; ++i) {
-            // Catmull-Rom tangents, with the end spans reflecting their one
-            // neighbour so the curve still passes through the endpoint with a
-            // defined direction. Converted to the equivalent cubic Bezier: the
-            // curve INTERPOLATES p[i] and p[i+1] exactly.
-            const SketchPoint& p1 = p[i];
-            const SketchPoint& p2 = p[i + 1];
-            const SketchPoint p0 = (i == 0) ? SketchPoint{2.0 * p1.u - p2.u, 2.0 * p1.v - p2.v}
-                                            : p[i - 1];
-            const SketchPoint p3 = (i + 2 < n) ? p[i + 2]
-                                               : SketchPoint{2.0 * p2.u - p1.u, 2.0 * p2.v - p1.v};
-            const SketchPoint c1{p1.u + (p2.u - p0.u) / 6.0, p1.v + (p2.v - p0.v) / 6.0};
-            const SketchPoint c2{p2.u - (p3.u - p1.u) / 6.0, p2.v - (p3.v - p1.v) / 6.0};
+            // The span's geometry has ONE statement (`sketchSplineSpan`), which
+            // the planar arrangement intersects too.
+            SketchBezierSpan span;
+            sketchSplineSpan(*spline, static_cast<uint32_t>(i), &span);
             for (uint32_t s = 1; s <= kSplineSegmentsPerSpan; ++s) {
                 if (s == kSplineSegmentsPerSpan) {
                     // The span's last point is the authored point itself, for
                     // the same reason an arc's ends are: exact, not evaluated.
-                    out->push_back(p2);
+                    out->push_back(span.p3);
                     break;
                 }
                 const double t = static_cast<double>(s) / static_cast<double>(kSplineSegmentsPerSpan);
-                out->push_back(bezierAt(p1, c1, c2, p2, t));
+                out->push_back(sketchBezierPoint(span, t));
             }
         }
         return CadStatus::Ok;
@@ -585,17 +624,70 @@ const char* cadFaceKindName(CadFaceKind kind) {
     return "unknown";
 }
 
+bool sameArrangementCut(const ArrangementCut& a, const ArrangementCut& b) {
+    return a.kind == b.kind && a.partnerEntityId == b.partnerEntityId
+           && a.partnerEdgeLocalIndex == b.partnerEdgeLocalIndex && a.ordinal == b.ordinal;
+}
+
+namespace {
+
+void fnvByte(uint64_t& h, uint8_t byte) {
+    h ^= byte;
+    h *= 1099511628211ull;
+}
+
+void fnvU32(uint64_t& h, uint32_t v) {
+    for (int i = 0; i < 4; ++i) fnvByte(h, static_cast<uint8_t>((v >> (i * 8)) & 0xFFu));
+}
+
+// One cut exactly as `CADB` v6 writes it (§7g `CUT`): its kind code, and for
+// an intersection the partner edge and the ordinal.
+void fnvCut(uint64_t& h, const ArrangementCut& cut) {
+    fnvByte(h, static_cast<uint8_t>(static_cast<uint8_t>(cut.kind) + 1u));
+    if (cut.kind == ArrangementCutKind::Intersection) {
+        fnvU32(h, cut.partnerEntityId);
+        fnvU32(h, cut.partnerEdgeLocalIndex);
+        fnvU32(h, cut.ordinal);
+    }
+}
+
+}  // namespace
+
 uint64_t cadFaceTokenCode(const CadFaceToken& token) {
+    if (token.kind == CadFaceKind::Side && token.fragment) {
+        // The fragment side's v6 bytes after its kind, hashed: a code that
+        // folds in both cuts, under a top byte no whole-edge code has.
+        uint64_t h = 14695981039346656037ull;
+        fnvU32(h, token.edgeEntityId);
+        fnvU32(h, token.edgeLocalIndex);
+        fnvCut(h, token.fragmentStart);
+        fnvCut(h, token.fragmentEnd);
+        return (0x03ull << 56) | (h & 0x00FFFFFFFFFFFFFFull);
+    }
     // kind in the high byte, entity id in the middle, local index in the low
     // bits: a stable, order-independent code that two equal tokens share and
-    // two different ones do not, for the lineage signature and for comparison.
+    // two different ones do not, for the lineage signature.
     return (static_cast<uint64_t>(token.kind) << 56)
            | (static_cast<uint64_t>(token.edgeEntityId) << 16)
            | static_cast<uint64_t>(token.edgeLocalIndex & 0xFFFFu);
 }
 
 bool sameCadFaceToken(const CadFaceToken& a, const CadFaceToken& b) {
-    return cadFaceTokenCode(a) == cadFaceTokenCode(b);
+    // The whole-edge comparison keeps its historical meaning: what the packed
+    // code compared (the local index's low 16 bits), and nothing more.
+    if (a.kind != b.kind || a.edgeEntityId != b.edgeEntityId
+        || (a.edgeLocalIndex & 0xFFFFu) != (b.edgeLocalIndex & 0xFFFFu)) {
+        return false;
+    }
+    const bool aFragment = a.kind == CadFaceKind::Side && a.fragment;
+    const bool bFragment = b.kind == CadFaceKind::Side && b.fragment;
+    if (aFragment != bFragment) {
+        return false;
+    }
+    return !aFragment
+           || (a.edgeLocalIndex == b.edgeLocalIndex
+               && sameArrangementCut(a.fragmentStart, b.fragmentStart)
+               && sameArrangementCut(a.fragmentEnd, b.fragmentEnd));
 }
 
 bool sameTopoRef(const TopoRef& a, const TopoRef& b) {

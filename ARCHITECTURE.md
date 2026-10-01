@@ -161,7 +161,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | The sketch edit session: the entity being placed, the selection, snapping, the pointer it owns, the profile choice and the depth BEFORE the one commit | `SketchSession` (`forgeshape_sketch_session.{h,cpp}`) | volatile: nothing in it is project truth, the scene, the history, the fingerprint and the codec never see it, and `commit` is ONE `ScopedConstructionEdit` around ONE `addCadBody`. Java holds no sketch: not an entity, not a profile, not a depth |
 | The sketch overlay the renderer draws: the plane grid, the axes, the entities, the drag and the extrude preview, as world-space lines | `SketchOverlay` (`forgeshape_sketch_overlay.h`), built by `SketchSession::overlay` | presentation on the gizmo's terms: no `ObjectId`, no revision, never published, never picked, never exported, never a `.forge` byte. The renderer re-uploads it only when its revision changes and draws it through the gizmo's line pipeline |
 | How ONE overlay style is weighted — the grey a hue-less vertex takes and the alpha the whole range draws at | `sketchOverlayStyleWeights` (`forgeshape_sketch_overlay.{h,cpp}`) | a pure function over values (`UI-3D-STATE-C2`): no renderer, no device, no frame, so "is this style drawn at all" is a self-test rather than a screenshot. Extracted from the renderer's switch because a style with no case draws at alpha 0 — invisible, with nothing failing, which is what `UI3D-F-005` was. Its own switch has no `default:`, and it refuses a code outside the enum rather than inventing a weight for it. The renderer still owns everything a range does NOT vary: the matrix, the three axis hues, the highlight colour and the emphasis tag |
-| Where the extrude manipulator stands in world space, how big it is drawn and grabbed, what a drag along the extrusion axis means, and which view that axis can be dragged in | `forgeshape_cad_extrude_tool.{h,cpp}` (`CadExtrudeAnchors`, `CadExtrudeControlScale`, `CadExtrudeManipulator`, `cadFeatureViewPose`) | **not** a second model of the extrusion: `SketchSession` still owns the profile, the depth and the direction and is still the only writer, and a dragged distance lands through `setExtrudeSide`, the one door a typed value already used. Since `CAD-EXT-R1` the anchors carry one `CadExtrudeSideAnchor` per side and the manipulator freezes WHICH side at pointer-down with the basis. The anchors carry no camera; the size rule is a new function BESIDE `gizmoWorldScale` (which holds a constant pixel size) and produces the ONE number drawing and hit testing share; the drag is the gizmo's contract verbatim; the view policy is a pure function over a pose, a frame and the anchors that answers another pose. Nothing here is serialized or reaches a history step |
+| Where the extrude manipulator stands in world space, how big it is drawn and grabbed, what a drag along the extrusion axis means, and which view that axis can be dragged in | `forgeshape_cad_extrude_tool.{h,cpp}` (`CadExtrudeAnchors`, `CadExtrudeControlScale`, `CadExtrudeManipulator`, `cadFeatureViewPose`) | **not** a second model of the extrusion: `SketchSession` still owns the profile, the depth and the direction and is still the only writer, and a dragged distance lands through `setExtrudeSide`, the one door a typed value already used. Since `CAD-EXT-R1` the anchors carry one `CadExtrudeSideAnchor` per side and the manipulator freezes WHICH side at pointer-down with the basis. The anchors carry no camera; the size rule is a new function BESIDE `gizmoWorldScale` (which holds a constant pixel size) and, read once per frame at the manipulator's BASE through `cadExtrudeManipulatorScale` / `SketchSession::extrudeViewFacts` (`CAD-FOUNDATION-C1`), produces the ONE number the drawn head and leader, the hit test and the Android glyphs share; the technical-drawing leader (`cadExtrudeLeaderSide`, `cadExtrudeLeaderFor`, `appendCadExtrudeLeader`) is drawn in the overlay's `Dimension` range; a camera-caused overlay rebuild advances the overlay revision; the drag is the gizmo's contract verbatim; the view policy is a pure function over a pose, a frame and the anchors that answers another pose. Nothing here is serialized or reaches a history step |
 | The views a sketch borrows — the exact support-normal one it is AUTHORED through, the feature-preview one the staged extrusion is adjusted through, and the user's own pose kept for the way back | `beginSketchView` / `beginExtrudeFeatureView` / `endSketchView` in `forgeshape_jni.cpp` over `CameraController::frameSketchView` / `capturePose` / `restorePose`, with `cadFeatureViewPose` deciding the second | the sketch stores no camera. The authoring view comes from the frame's own axes; the preview is installed on the `finish()` that reaches `Ready` and withdrawn by every path back to Editing; `g_sketchSavedPose` is the pre-sketch view and is restored on commit and on cancel alike, unconsumed by the preview |
 | Whether a one-finger gesture while sketching draws, selects, is swallowed, or navigates — and that two fingers always pan and pinch | the sketch arbitration block in `forgeshape_jni.cpp`, using `SketchSession::onTouch` and `state()` | a single finger never orbits while the sketch is being DRAWN; in `Ready` one that misses the arrow navigates, because the drawing is done and there is no aligned view left to protect. The gizmo and the sculpt arbitration are already out of the picture, because the gizmo is withdrawn at begin and a sketch cannot start in Sculpt |
 | Removing one body from the project | `forgeshape_body_delete.{h,cpp}` | one representation-neutral operation over the scene and the history. One Delete is one transaction; the removed body is HELD by the history rather than destroyed, so an Undo restores that object with its Imported Mesh and its Frozen Sculpt Mesh intact; the replacement selection and the last-body refusal are stated here and nowhere else |
@@ -692,22 +692,42 @@ still reports position 0, so there is nothing better to read at that instant;
 the repeat is capped and reset by any settled pass, which is what keeps it layout
 readiness rather than a poll.
 
-**The canvas CAD HUD** (`CadExtrudeCanvasView`, `CAD-VERTICAL-SLICE-R1`) is
-one compact row — the extent control, the exact value, the operation badge and
-Flip — with the extent and operation palettes opening directly beneath it, the
-Two Sides value at its own anchor, and the retained-sketch Edit Sketch control
-at `cadBodySketchAnchor`. Every icon control is a `LinearLayout` holding a glyph
-`ImageView` and an optional caption; the container carries the id, the click,
-the selected/activated state and the content description. `CadHudPresentation`
-is its pure-Java arithmetic, proven on the JVM: the glyph is
-`clamp(28 dp × CAD_EXTRUDE_SCALE, 24, 32)`, the hit area is never below 48 dp
-and is never `setScale`d, which extent and operation icon and caption belong to
-which mode, and which operations a bitmask offers. The cluster is measured
-first and then placed so the VALUE's centre lands on the shaft-midpoint anchor
-(`ViewportAnchorSpace.measureUnderParent` + `measureAndPlace`), still clamped
-into the viewport. An open palette is centred under the control that opened it;
-a closed one is `INVISIBLE`, so it is already laid out when it opens, and takes
-no touch.
+**The canvas CAD HUD** (`CadExtrudeCanvasView`, `CAD-VERTICAL-SLICE-R1`,
+reshaped by `CAD-FOUNDATION-C1` and `CAD-FOUNDATION-C2`) is two things over
+the viewport. The VALUE is a transparent 48 dp `TextView` rotated to the
+leader native draws and projects (`cadExtrudeToolState` slots 32..41), written
+by `LengthUnit.formatWithUnit` at the display precision. The ACTION PANEL is
+one plate (`cad_extrude_panel_plate`, `bg_hud_panel`) holding the extent,
+operation and (One Side) Flip glyphs at their REFERENCE size, scaled and turned
+as one unit about its OWN CENTRE and never clickable, plus one invisible,
+unscaled, unrotated group proxy (`cad_extrude_panel`, ≥ 48 dp, covering the
+turned plate's box) that opens one
+action palette (`cad_extrude_actions_palette`: the extent row, the operation
+row of what native offers, Flip). The panel is anchored to the arrow's drawn
+point (slots 42..44, from `cadExtrudeArrowPoint` — the same point the drawing
+ends the head at and the hit test grabs to). `CadHudPresentation` is the
+pure-Java policy, proven on the JVM: `visualScale` is the one multiplier
+(0.40..1.60); `panelReferenceWidthDp`/`panelIconOffsetDp` fix the plate's
+internal layout; `layoutPanel` is ONE continuous function of the projected
+arrow (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`, replacing the discrete
+past/beside-away/beside-toward candidates whose switching made the panel jump
+during an orbit): the centre stands ON the arrow's screen line one corridor
+(24 dp + 4 dp) plus half the proxy's extent past the point, slides back along
+that same line by the least that fits at a viewport edge (`slideRange`, at most
+to the shaft's base, so it stays on the arrow), and is otherwise hidden whole; `panelRotationDegrees`
+turns it by 0.35 of the leader's reading angle, capped at 25° and tapered to
+level over the last 20° before vertical so the reading angle's wrap never flips
+it (all OWNER-TUNABLE); `panelOwnsTouch` states that the one
+proxy owns every glyph; `valueTextSp` is `clamp(14 sp × visualScale, 9, 18)`;
+`annotationCollapsed` hides values and panel together at the scale floor when
+the value outgrows its leader; `readingAngleDegrees`, `clipToViewport` and
+`layoutLeader` stand the value above the VISIBLE part of its leader;
+`captionShown` gives Tool Labels captions to palette choices only. The view
+measures, asks, and places through `ViewportAnchorSpace`; it projects nothing.
+The retained-sketch Edit Sketch control stays a lone capsule at
+`cadBodySketchAnchor` with its compact 24..32 dp glyph (`loneGlyphDp`). The
+open palette is centred under the panel; a closed one is `INVISIBLE`, so it is
+already laid out when it opens, and takes no touch.
 
 **What a sketch shows is one statement** (`SketchChromePolicy`,
 `CAD-VERTICAL-SLICE-R1`): in Editing the Tool Rail carries the drawing tools and
@@ -2414,13 +2434,19 @@ forgeshape_sketch         entities, ids, validation, closed loops, triangulation
         ^
 forgeshape_sketch_region  loops -> regions (outer minus direct children), the
         ^                 semantic selection, hatch, tap resolution
+        |  forgeshape_sketch_arrangement  (beside it, reading forgeshape_sketch
+        |                 only) curves -> planar arrangement -> atomic faces
+        |                 and their canonical PlanarFaceRef; DERIVED; read
+        |                 only by CAD validation of a stored face selection
+        |                 (CAD-V6-S1), never by the session, JNI or UI
 forgeshape_cad_kernel     THE boolean seam: CadSolid (binary64, one face tag per
         ^                 triangle) -> Union / Difference; the only TU that
         |                 includes vendored Manifold (third_party/manifold)
 forgeshape_cad_feature    one feature's geometry: support frame, faces, prism,
         ^                 lineage signature; builds the chain's geometry
-forgeshape_cad_body       CadBodyState = base (sketch + ExtrudeFeature) +
-        ^                 laterFeatures[]; regenerateCadBody / generateCadMesh
+forgeshape_cad_body       CadBodyState = sketch TABLE (CadSketchRecord by id) +
+        ^                 base (baseSketchId + ExtrudeFeature) + laterFeatures[]
+        |                 (sketchId + ExtrudeFeature); regenerateCadBody
 forgeshape_cad_face       semantic faces of any feature, from the regenerated
         ^                 mesh's face table; resolve, signature, carries-face
         ^
@@ -2428,7 +2454,9 @@ forgeshape_scene          SceneObject owns a CadBody; addCadBody; publishSceneOb
         ^                                                    ^
 forgeshape_history        a step copies CadBodyState;         |
                           rebuilds a CAD body it never held    |
-forgeshape_project_*      CADB record <-> CadBodyState; regenerate on load
+forgeshape_project_*      CADB record <-> CadBodyState (v1..v5 read into the
+                          sketch table; v6 only when legacy cannot say it);
+                          regenerate on load
 forgeshape_gltf_export    re-evaluates generateCadMesh, never a buffer
         ^
 forgeshape_sketch_session the volatile edit session; touch -> entities; overlay
@@ -2641,23 +2669,174 @@ regions by `ProfileRegionRef` (outer anchor plus the hole anchors it was chosen
 with): the first region's outer anchor stays in `profileEntityId`, its holes in
 `profileHoleIds`, and further disjoint regions in `additionalRegions`, so a
 one-region, no-hole selection is the R0 field set, bit for bit.
-`validateRegionSelection` refuses a mismatch against the derived holes, overlap
-or a shared loop, and the caps, by name; `sketchRegionAt` resolves a tap to the
-innermost region under it; `sketchRegionHatch` is the bounded even/odd hatch
-that leaves a hole empty.
+`validateRegionSelection` refuses a mismatch against the derived holes,
+touching or crossing loops, a region standing inside another's material
+without being its own direct hole, and the caps, by name; `sketchRegionAt`
+resolves a tap to the innermost region under it, and
+`SketchSession::toggleRegion` is a PURE toggle of exactly that region
+(`CAD-FOUNDATION-C1`), refusing an unmergeable addition by name rather than
+dropping anything.
+
+**A selection is the union of its atomic regions** (`CAD-FOUNDATION-C1`).
+`mergeSelectedRegions` derives it from the stored list by one parity rule over
+the parent tree — a loop bounds the union exactly when selection membership
+differs across it — as `SketchRegionComponent`s (a real outer loop plus real
+hole loops, ascending anchors), with no 2D boolean and no arrangement, because
+nesting regions are disjoint by construction. `CadFeatureGeometry::components`
+carries it; the face table, the lineage token, `appendCadFeatureSolid` (one
+prism per component, so no shared wall), the body's component count, the
+preview hatch and edges (`sketchComponentHatch`, `sketchComponentLoops`) and
+`extrudeSelectionAnchorPoint` all read components, never the raw regions. A
+selection with no region beside its own hole unions to exactly its regions, in
+order, so every earlier face, token and mesh is unchanged; the stored form is
+unchanged too (`CADB` v5, no new version).
+
+### The planar arrangement (`CAD-PLANAR-FACE-PF-S1`)
+
+`deriveSketchArrangement` (`forgeshape_sketch_arrangement`) is the engine
+planar-face selections stand on. Since `CAD-V6-S1` its ONE caller is
+`validatePlanarFaceSelection` (a stored `PlanarFaces` selection resolves against
+it); no session, JNI, Android, render or regeneration path calls it. It
+reads a `CadSketch` and returns derived values only. Supported source edges are
+analytic — a line, a polyline segment `k`, a rectangle side `0..3` in
+`rectangleProfilePolygon` order, a whole circle (edge 0, parameter = angle from
+its own `+u`, counter-clockwise, closed) and an arc (edge 0, `arcGeometry`'s
+centre, start and signed sweep, authored endpoints exact) — and, since
+`CAD-V6-S2-CORRECTION-FILL-HUD-R1`, a spline SPAN `i` (edge `i`, the exact cubic
+Bezier `sketchSplineSpan` states between authored points `i` and `i + 1`, the
+same function `tessellateSketchCurve` samples, so the cells a spline cuts and
+the solid it bounds describe one curve). Pairwise contacts are analytic
+(segment/segment, segment/circle-or-arc, circle-or-arc/circle-or-arc) with
+sweep filtering; a span against a line or a circle is a polynomial in the
+span's parameter (degree 3 / 6) whose roots are isolated between its
+derivative's and bisected, and a span against a span is a bounded de Casteljau
+subdivision to flat chords refined by Newton on the two exact curves, classified
+crossing or touch by the side each curve takes a few tolerances either way (a
+span meeting itself is `SelfIntersectingCurve`; spline winding is the chord's
+angle corrected by signed ray crossings, area is exact Gauss-Legendre). Plus endpoint
+proximity at `kSketchCoincidenceMeters` (a T-junction splits the touched curve;
+an endpoint on an endpoint splits nothing). Tangency makes NO node, so a tangent
+circle never grows a zero-area lens; a shared stretch longer than the tolerance
+is `AmbiguousOverlap`. Points within the tolerance are one node (connected
+components of the relation, order-free). Each source edge is cut at its interior
+contacts — a cut named by `(partner entity, partner edge, ordinal along THIS
+edge)`, the smallest name winning where several curves meet — into fragments;
+a closed circle with no cut is one fragment from its origin to itself. Two
+half-edges per fragment, sorted counter-clockwise at each node by tangent angle
+(quantized), then signed curvature, then semantic identity; `next` is the
+half-edge immediately clockwise of the twin, so every face lies on the LEFT.
+Dangling fragments and bridges are pruned until neither remains. A cycle's
+exact signed area (arcs by Green's theorem) separates bounded faces (positive)
+from component outlines (negative); an outline is a hole of the smallest
+positive cycle of ANOTHER component whose winding number contains a sample on
+it (winding exact for arcs, samples at golden-ratio fractions so a tangency
+cannot hide them all), else of the unbounded exterior, which is never emitted.
+A face's identity is its `PlanarFaceRef` — outer cycle CCW, holes CW, each
+rotated to its smallest `FragmentRef`, holes sorted — and `resolvePlanarFaceRef`
+is exact tuple equality with no nearest-face fallback. Caps of its own
+(`kMaxArrangementSourceEdges` 1024, `kMaxArrangementContacts` 4096) bound the
+quadratic work the sketch caps would otherwise allow, refused as `CapExceeded`.
+Its status enum is module-local and never crosses JNI.
 
 ### The feature chain and the boolean kernel (`CAD-VERTICAL-SLICE-R1`)
 
-`CadBodyState` is the base (`sketch` + `extrude`, feature id 1, always New
-Body) plus `laterFeatures`, each `{featureId, operation (Add|Cut), support,
-sketch, extrude}` with `featureId` strictly ascending and at most
-`kMaxCadFeatures` (16) in all. A later feature's `support` names a planar face
-of an EARLIER feature of the same body by `(featureId, CadFaceToken,
-lineageToken)` — deliberately not a `TopoRef`, which places ANOTHER body in the
-world; this places one feature's sketch inside its own body. Its sketch is
-canonical XY with no support block, and its placement is the named face's frame
-from `buildCadChainGeometry`, computed from the earlier feature's OWN prism in
-binary64 and never from a boolean result.
+`CadBodyState` is a retained SKETCH TABLE (`CAD-V6-S1`, below), the base
+(`baseSketchId` + `extrude`, feature id 1, always New Body) and
+`laterFeatures`, each `{featureId, operation (Add|Cut), sketchId, extrude}` with
+`featureId` strictly ascending and at most `kMaxCadFeatures` (16) in all. A
+feature's placement is its SKETCH's: the root sketch stands on its workplane
+(and, for the whole body, its `TopoRef`); every other sketch record carries a
+`CadFeatureSupport` naming a planar face of an EARLIER feature of the same body
+by `(featureId, CadFaceToken, lineageToken)` — deliberately not a `TopoRef`,
+which places ANOTHER body in the world; this places one sketch inside its own
+body. Such a sketch is canonical XY with no support block, and its placement is
+the named face's frame from `buildCadChainGeometry`, computed from the earlier
+feature's OWN prism in binary64 and never from a boolean result.
+
+### The retained sketch table and the selection kind (`CAD-V6-S1`)
+
+A sketch is a RECORD in its body's table, `CadSketchRecord {sketchId,
+hasFeatureSupport, featureSupport, sketch}`, strictly ascending by a body-local,
+non-zero `CadSketchId` minted from `nextSketchId`; features name it and never
+carry a copy, so two features may extrude one sketch (an edit to it is what
+both read) and a sketch no feature extrudes may be retained (held to its own
+rule and its support against the whole chain). Exactly one sketch is the ROOT —
+the base's — and every other stands on a face of one of the body's own
+features. `nextFeatureId` is a stored high-water mark beside it.
+
+**Id lifetime (`CAD-V6-S1-C1`; the one definition is the `CadSketchId`
+comment in `forgeshape_cad_body.h`).** A feature id and a sketch id are unique
+along ONE FORWARD HISTORY BRANCH. `CadBody::applyState` — the one door every
+committed edit takes — refuses to LOWER either mark (`HighWaterInvalid`), so an
+id a committed deletion freed is never minted again. Undo restores the whole
+snapshot, marks included, so the next edit after an Undo may mint an id that
+only the redo step held; that edit's `commitEdit` is the same call that clears
+the redo stack, and every Undo-reachable state holds only ids below the current
+marks. Cancelled and refused edits burn nothing. It is deliberately not "for
+the body's lifetime": the marks live in the snapshot, so Undo to a saved
+project is byte- and fingerprint-equal to the save, where a floor outside the
+snapshot would make it read unsaved and write `CADB` v6 for invisible
+metadata. It is safe because nothing outside a snapshot holds one of these ids
+across an Undo — the sketch session is exclusive with Undo/Redo, the feature
+list re-reads on every refresh, no renderer or picking state names one, and no
+`CadSketchId` crosses JNI.
+`cadBaseSketch`, `findCadSketchRecord`, `cadFeatureSketchRecord`,
+`makeCadBodyState`, `addCadSketchRecord` and `appendCadLaterFeature[WithSketch]`
+are the doors; `CadFeatureView` points INTO the table. `ExtrudeFeature` carries
+an explicit `CadSelectionKind`: `LoopRegions` (the v5 region fields) or
+`PlanarFaces` (canonical `PlanarFaceRef`s). `validatePlanarFaceSelection`
+checks the canonical form structurally and resolves every face by exact
+equality against `deriveSketchArrangement` of the named sketch, then merges
+the chosen faces (below). `validateCadChain` is the chain walk in validating
+mode.
+
+**Planar-face runtime (`CAD-V6-S2`).** A PlanarFaces feature is derived and
+regenerated like a LoopRegions one; nothing refuses it any more
+(`PlanarFaceRegenerationUnavailable` is retired but keeps its number).
+- *Mode.* `decideSketchSelectionMode` (`forgeshape_cad_body`) is the one
+  decision `SketchSession::finish` asks (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`): an
+  Ok arrangement is PlanarFaces exactly when `sketchRequiresPlanarFaces` holds
+  (some face bounded by a proper fragment, and the face count differs from the
+  loop-region count) and LoopRegions otherwise, bit-identical to before; a
+  FAILED arrangement stays LoopRegions only over exact loops
+  (`sketchLoopsAreExact`: no two touch or cross, no crossing or forked chain)
+  and is otherwise refused by the arrangement's own `CadStatus`, never handed
+  to the loop model as whole overlapping loops. A Ready tap inside the extrude
+  arrow's grab corridor but off the DRAWN arrow (`kCadExtrudeTapOnArrowUnits`)
+  is captured as a possible drag that holds the depth until it travels past the
+  tap slop; lifted still, it releases the capture with nothing written and
+  toggles the cell under it.
+  In PlanarFaces mode the session holds the arrangement (`arrangement_`) and
+  each face's polygon (`faceShapes_`); a tap hit-tests those, JNI lists faces
+  by TRANSIENT handle (`index + 1`, never stored), and a loop region maps to
+  its one identical face (`regionAsPlanarFace`) or is refused
+  (`PlanarFaceUnresolved`). A reopen or an edit re-resolves the stored refs
+  exactly; one that no longer resolves clears the selection and says so
+  (`selectionLost`), never retargets.
+- *Union.* `mergePlanarFaces` (`forgeshape_sketch_arrangement`) walks the
+  arrangement's own half-edges: a half-edge whose twin is also chosen is
+  interior and cancels, the rest chain by successor into loops, holes are
+  re-oriented and owned by the smallest containing outer loop, and a node
+  reused across or within loops is `PinchedSelection` (refused as
+  `PlanarFacesTouchAtPoint`). Each loop keeps the fragments it stands on.
+- *Faces and lineage.* `derivePlanarFeature` (`forgeshape_cad_feature`) emits
+  CapPlane, CapFar, then ONE Side per union-boundary FRAGMENT — never per
+  facet, so a tessellation count never enters a lineage. A fragment that is its
+  whole source edge keeps the legacy token; a proper piece wears a fragment
+  token (`CadFaceToken::fragment` with its two `ArrangementCut`s; code
+  `0x03 << 56 | FNV-1a64(...)`, file code 4, `CADB` v6 only — so a fragment
+  token anywhere makes a state not legacy-representable). A curved fragment
+  and every face of a Cut are ineligible. `appendPrism` builds the solid for
+  both kinds of selection.
+- *Chooser.* `refreshChosenSupport` (`forgeshape_support_chooser`) re-validates
+  an aimed support against the scene at confirm time and recomputes its frame;
+  a support that went stale is refused (`FORGESHAPE_SUPPORT_CHOOSER_STALE`),
+  and a Construction Undo/Redo that changed the scene cancels the chooser.
+`cadBodyStateLegacyRepresentable` is the ONE statement of which states a
+`CADB` v1..v5 record can hold; the codec writes v6 only outside it, reads
+v1..v5 into the table as one sketch per feature (ids 1..n), and the fingerprint
+mixes a v6 block only outside it, so every legacy project keeps its bytes and
+its fingerprint (`DATA_PACKAGE_SPEC.md` §7g).
 
 `regenerateCadBody` is THE regeneration path, with three branches chosen by the
 state alone: a base-only, single-simple-region body takes the unchanged R0

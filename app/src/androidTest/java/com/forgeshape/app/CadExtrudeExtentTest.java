@@ -10,6 +10,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.os.SystemClock;
@@ -111,15 +112,15 @@ public final class CadExtrudeExtentTest {
             assertEquals("and Flip is offered, because there is a side to choose", View.VISIBLE,
                     canvas.findViewById(R.id.cad_extrude_flip).getVisibility());
             // The 48 dp interactive floor holds for the new controls too. Since
-            // `CAD-VERTICAL-SLICE-R1` the three choices stand in a palette the
-            // ONE extent control opens, so that control is the target drawn at
+            // `CAD-FOUNDATION-C2` the three choices stand in the action palette
+            // the ONE panel opens, so the panel's proxy is the target drawn at
             // rest; the choices' own floor is asserted with the palette open by
             // CadVerticalSliceTest.compact_extrude_hud.
             final float density = activity.getResources().getDisplayMetrics().density;
             final int floor = Math.round(48f * density);
-            final View extent = canvas.findViewById(R.id.cad_extrude_extent);
-            assertTrue("the extent control is a real target",
-                    extent.getHeight() >= floor - 1 && extent.getWidth() >= floor - 1);
+            final View panel = canvas.findViewById(R.id.cad_extrude_panel);
+            assertTrue("the panel is a real target",
+                    panel.getHeight() >= floor - 1 && panel.getWidth() >= floor - 1);
             return null;
         });
 
@@ -157,12 +158,23 @@ public final class CadExtrudeExtentTest {
                 (int) state[NativeViewport.CAD_EXTRUDE_EXTENT]);
         assertEquals("A carries across", depth, state[NativeViewport.CAD_EXTRUDE_POSITIVE], 1e-9);
         assertEquals("and so does B", depth, state[NativeViewport.CAD_EXTRUDE_NEGATIVE], 1e-9);
+        final double[] twoSides = state;
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View canvas = workspace.cadExtrudeCanvas();
             assertTrue("Two Sides states BOTH distances",
                     canvas.findViewById(R.id.cad_extrude_second_value).isShown());
             assertEquals("and still offers no Flip", View.GONE,
                     canvas.findViewById(R.id.cad_extrude_flip).getVisibility());
+            // `CAD-FOUNDATION-C1` E7: each value stands above its OWN side's
+            // leader, so neither number is ambiguous about which side it states.
+            final float density = activity.getResources().getDisplayMetrics().density;
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final String a = CadLeaderHudChecks.valueOnLeader(twoSides,
+                    canvas.findViewById(R.id.cad_extrude_depth_value), viewport, density, false);
+            final String b = CadLeaderHudChecks.valueOnLeader(twoSides,
+                    canvas.findViewById(R.id.cad_extrude_second_value), viewport, density, true);
+            assertNull("Side A on the +N leader: " + a, a);
+            assertNull("Side B on the -N leader: " + b, b);
             return null;
         });
 
