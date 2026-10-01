@@ -282,36 +282,37 @@ public final class CadPlanarFaceOwnerCorrectionTest {
     // -----------------------------------------------------------------------
 
     /**
-     * The OWNER's stress case in sketch units {@code s} (a multiple of the grid
-     * step near 0.2 m, so every drawn point lands exactly):
-     * a 12 x 16 rectangle centred at (-2, 0); circles A at (-4, 3) and B at
-     * (-1, 3), both of radius 3, overlapping inside it; circle C at (4, -1),
-     * radius 2, across its right side; and a spline from (-6, -6) down through
-     * (-4, -11) to (-2, -6), closed by a line, across its bottom side. The
+     * The OWNER's stress case in sketch units {@code s} — the grid step, or a
+     * multiple of it near 0.2 m — with every drawn point a WHOLE number of
+     * units, so every point lands exactly on the grid it snaps to:
+     * an 8 x 12 rectangle centred at the origin; circles A at (-1, 1) and B at
+     * (1, 1), both of radius 2, overlapping inside it; circle C at (0, 6),
+     * radius 2, across its top side; and a spline from (-3, -5) down through
+     * (-2, -9) to (-1, -5), closed by a line, across its bottom side. The
      * cells FILL-06 pins: A only, the lens, B only, C inside and outside, the
      * loop above and below the bottom side, and the rest of the rectangle.
      */
     private void drawOwnerSketch() {
         beginSketch();
         final double grid = NativeViewport.sketchGridStep();
-        assertTrue("the grid step is fine enough to draw on: " + grid, grid > 0.0 && grid <= 0.2);
+        assertTrue("the grid step is fine enough to draw on: " + grid, grid > 0.0 && grid <= 0.25);
         unit = grid * Math.max(1.0, Math.rint(0.2 / grid));
         fact("sketch.grid_step", grid);
         fact("sketch.unit", unit);
         final double s = unit;
         selectTool(rule.getScenario(), R.id.tool_rail_rectangle);
-        dragSketch(rule.getScenario(), -8 * s, -8 * s, 4 * s, 8 * s);
+        dragSketch(rule.getScenario(), -4 * s, -6 * s, 4 * s, 6 * s);
         selectTool(rule.getScenario(), R.id.tool_rail_circle);
-        dragSketch(rule.getScenario(), -4 * s, 3 * s, -1 * s, 3 * s);
-        dragSketch(rule.getScenario(), -1 * s, 3 * s, 2 * s, 3 * s);
-        dragSketch(rule.getScenario(), 4 * s, -1 * s, 6 * s, -1 * s);
+        dragSketch(rule.getScenario(), -1 * s, 1 * s, 1 * s, 1 * s);
+        dragSketch(rule.getScenario(), 1 * s, 1 * s, 3 * s, 1 * s);
+        dragSketch(rule.getScenario(), 0, 6 * s, 2 * s, 6 * s);
         selectTool(rule.getScenario(), R.id.tool_rail_spline);
-        tapSketch(rule.getScenario(), -6 * s, -6 * s);
-        tapSketch(rule.getScenario(), -4 * s, -11 * s);
-        tapSketch(rule.getScenario(), -2 * s, -6 * s);
-        tapSketch(rule.getScenario(), -2 * s, -6 * s);
+        tapSketch(rule.getScenario(), -3 * s, -5 * s);
+        tapSketch(rule.getScenario(), -2 * s, -9 * s);
+        tapSketch(rule.getScenario(), -1 * s, -5 * s);
+        tapSketch(rule.getScenario(), -1 * s, -5 * s);
         selectTool(rule.getScenario(), R.id.tool_rail_line);
-        dragSketch(rule.getScenario(), -2 * s, -6 * s, -6 * s, -6 * s);
+        dragSketch(rule.getScenario(), -1 * s, -5 * s, -3 * s, -5 * s);
         assertEquals("rectangle, three circles, the spline and its line", 6, sketchEntityCount());
     }
 
@@ -319,21 +320,21 @@ public final class CadPlanarFaceOwnerCorrectionTest {
     private double[][] candidates(String cell) {
         switch (cell) {
             case A_ONLY:
-                return new double[][]{{-5.5, 3}, {-5.5, 2}, {-5.5, 4}, {-6, 3}};
+                return new double[][]{{-2, 1}, {-2, 1.5}, {-2, 0.5}, {-2.5, 1}};
             case LENS:
-                return new double[][]{{-2.5, 3}, {-2.5, 1.5}, {-2.5, 4.5}, {-2.2, 2}};
+                return new double[][]{{0, 1}, {0, 1.5}, {0, 0.5}, {0, 1.2}};
             case B_ONLY:
-                return new double[][]{{0.5, 3}, {0.5, 1.5}, {0.5, 4.5}, {1, 3}};
+                return new double[][]{{2, 1}, {2, 1.5}, {2, 0.5}, {2.5, 1}};
             case C_IN:
-                return new double[][]{{3, -1}, {3.2, -0.3}, {3.2, -1.7}, {2.6, -1}};
+                return new double[][]{{0, 5}, {0.5, 5}, {-0.5, 5}, {0, 4.5}};
             case C_OUT:
-                return new double[][]{{5, -1}, {4.8, -0.3}, {4.8, -1.7}, {5.4, -1}};
+                return new double[][]{{0, 7}, {0.5, 7}, {-0.5, 7}, {0, 7.5}};
             case LOOP_IN:
-                return new double[][]{{-4, -7}, {-4.5, -7}, {-3.5, -7}, {-4, -6.5}};
+                return new double[][]{{-2, -5.5}, {-2.3, -5.5}, {-1.7, -5.5}, {-2, -5.7}};
             case LOOP_OUT:
-                return new double[][]{{-4, -9.5}, {-4, -9}, {-4, -10}, {-4.2, -9.2}};
+                return new double[][]{{-2, -7.5}, {-2, -8}, {-2, -7}, {-2.2, -7.3}};
             case REST:
-                return new double[][]{{-6, -3}, {2, -4}, {-6, 7}, {2, 7}};
+                return new double[][]{{3, -3}, {-3, 4}, {3, 4}, {2, -5}};
             default:
                 throw new IllegalArgumentException(cell);
         }

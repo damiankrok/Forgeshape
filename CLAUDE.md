@@ -663,8 +663,8 @@ on the host, with no device, and is the fast native loop.
   point ON the arrow's screen line with its proxy clear of the arrow's grab
   corridor, and placed by ONE continuous function of the projected arrow
   (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`): no candidate sides — at a viewport
-  edge it slides back along the SAME line by the least that fits, never to the
-  side of the shaft — and it turns modestly with the leader
+  edge it slides back along the SAME line by the least that fits, at most to
+  the shaft's base and never to the side of the shaft — and it turns modestly with the leader
   (`panelRotationDegrees`: 0.35 × the reading angle, capped at 25°, tapered to
   level before vertical so the wrap never flips it). It is shown WHOLE or not
   at all — never an icon scattered, clamped away or hidden alone. The plate

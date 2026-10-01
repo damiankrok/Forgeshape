@@ -714,7 +714,7 @@ past/beside-away/beside-toward candidates whose switching made the panel jump
 during an orbit): the centre stands ON the arrow's screen line one corridor
 (24 dp + 4 dp) plus half the proxy's extent past the point, slides back along
 that same line by the least that fits at a viewport edge (`slideRange`, at most
-to the point itself), and is otherwise hidden whole; `panelRotationDegrees`
+to the shaft's base, so it stays on the arrow), and is otherwise hidden whole; `panelRotationDegrees`
 turns it by 0.35 of the leader's reading angle, capped at 25° and tapered to
 level over the last 20° before vertical so the reading angle's wrap never flips
 it (all OWNER-TUNABLE); `panelOwnsTouch` states that the one

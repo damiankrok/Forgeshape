@@ -325,7 +325,10 @@ public final class CadHudPresentationTest {
                 final float r = (float) Math.sqrt(0.5);
                 assertEquals(0.0f, -(p.centreX - x) * r + (p.centreY - y) * r, 1e-2f);
                 final float along = (p.centreX - x) * r + (p.centreY - y) * r;
-                assertTrue("never behind the point: " + along, along >= -1e-3f);
+                // The axis (60, 60) is the shaft's middle to its point, so the
+                // base stands 2 x 84.85 px behind the point.
+                assertTrue("never behind the shaft's base: " + along,
+                        along >= -2.0f * (float) Math.hypot(60, 60) - 1e-2f);
             }
         }
     }
@@ -391,12 +394,23 @@ public final class CadHudPresentationTest {
                 final float hy = 1000.0f + u[1] * 999.0f * t;
                 final CadHudPresentation.PanelLayout p = panel(hx, hy, u[0] * 80, u[1] * 80, 3, 1.0);
                 if (!p.visible) {
-                    // Hidden only when even the panel centred ON the point
-                    // (the farthest slide) does not fit.
-                    final boolean centredFits = hx - p.hitWidth * 0.5f >= 0
-                            && hy - p.hitHeight * 0.5f >= 0
-                            && hx + p.hitWidth * 0.5f <= 1080 && hy + p.hitHeight * 0.5f <= 2000;
-                    assertFalse("hidden although a slide fits at " + hx + "," + hy, centredFits);
+                    // Hidden only when NO centre on the arrow's line, from the
+                    // attached offset past the point back to the shaft's base
+                    // (160 px behind it), fits.
+                    final float clear = (CadHudPresentation.ARROW_CORRIDOR_DP
+                            + CadHudPresentation.PANEL_CLEAR_DP) * DENSITY;
+                    final float n = norm(u);
+                    final float ux = u[0] / n;
+                    final float uy = u[1] / n;
+                    final float half = 0.5f * (p.hitWidth * Math.abs(ux) + p.hitHeight * Math.abs(uy));
+                    boolean fits = false;
+                    for (float along = clear + half; along >= -160.0f; along -= 0.5f) {
+                        final float cx = hx + ux * along;
+                        final float cy = hy + uy * along;
+                        fits = fits || (cx - p.hitWidth * 0.5f >= 0 && cy - p.hitHeight * 0.5f >= 0
+                                && cx + p.hitWidth * 0.5f <= 1080 && cy + p.hitHeight * 0.5f <= 2000);
+                    }
+                    assertFalse("hidden although a slide fits at " + hx + "," + hy, fits);
                     hidden = true;
                     continue;
                 }

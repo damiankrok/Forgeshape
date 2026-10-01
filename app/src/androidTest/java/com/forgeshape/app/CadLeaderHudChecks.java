@@ -242,9 +242,12 @@ final class CadLeaderHudChecks {
         final float attached = (CadHudPresentation.ARROW_CORRIDOR_DP
                 + CadHudPresentation.PANEL_CLEAR_DP) * density
                 + 0.5f * (proxy.getWidth() * Math.abs(ax) + proxy.getHeight() * Math.abs(ay));
-        if (along < -TOLERANCE_DP * density || along > attached + TOLERANCE_DP * density) {
+        // From the attached offset past the point back to the shaft's base,
+        // twice the middle-to-point vector behind the point.
+        final float base = axisLength > 1.0f ? 2.0f * axisLength : 0.0f;
+        if (along < -base - TOLERANCE_DP * density || along > attached + TOLERANCE_DP * density) {
             return "the panel stands " + along / density + " dp along the arrow from its point, "
-                    + "outside [0, " + attached / density + "]";
+                    + "outside [" + (-base / density) + ", " + attached / density + "]";
         }
         // Clear of the corridor unless an edge made it slide back.
         final float dx = Math.max(0.0f, Math.abs(hx - c[0]) - proxy.getWidth() * 0.5f);

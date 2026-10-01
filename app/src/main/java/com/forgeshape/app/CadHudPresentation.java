@@ -621,15 +621,18 @@ final class CadHudPresentation {
      * point ({@code half} is the proxy's own extent along the arrow, so this is
      * continuous as the arrow turns). If that box leaves the viewport it slides
      * BACK along the same line by the least distance that fits — continuously,
-     * never stepping and never to the side — and at most until its centre
-     * reaches the point, so it always stands on the tip. If no slide fits, the
-     * panel is hidden WHOLE; it never loses an icon to an edge.
+     * never stepping and never to the side — at most until its centre reaches
+     * the shaft's base, so it always stands on the arrow (over the shaft near an
+     * edge, where nothing else fits). If no slide fits, the panel is hidden
+     * WHOLE; it never loses an icon to an edge.
      *
      * @param headOnScreen whether native projected the arrow's point
      * @param headX        the arrow's drawn point, viewport px
      * @param headY        the same, vertically
-     * @param axisX        the arrow's screen direction (any length), x
-     * @param axisY        the same, y; a near-zero direction reads as screen right
+     * @param axisX        the arrow's screen vector from the shaft's middle to
+     *                     its point, x — its direction places the panel and its
+     *                     length bounds the slide back (to the shaft's base)
+     * @param axisY        the same, y; under a pixel it reads as screen right
      * @param plateWidth   the plate's MEASURED width at scale 1.0, px
      * @param plateHeight  the same, vertically
      * @param scale        native's camera-attached multiplier
@@ -648,6 +651,10 @@ final class CadHudPresentation {
         float dx = axisX;
         float dy = axisY;
         final float length = (float) Math.hypot(dx, dy);
+        // How far back along the shaft the panel may slide: to its base. The
+        // axis is the shaft's middle to its point, so the base is twice that
+        // behind the point.
+        final float shaft = length > 1.0f ? 2.0f * length : 0.0f;
         // Under a pixel the projected arrow has no direction worth following
         // (it points at the eye): read it as screen right, deterministically.
         if (!(length > 1.0f)) {
@@ -678,9 +685,11 @@ final class CadHudPresentation {
         final float attached = clear + half;
         final float nominalX = headX + dx * attached;
         final float nominalY = headY + dy * attached;
-        // The slide b moves the centre to nominal - axis * b, b in [0, attached].
+        // The slide b moves the centre to nominal - axis * b, b in
+        // [0, attached + shaft]: past the point, then back along the shaft as far
+        // as its base -- always ON the arrow, never beside it.
         float lo = 0.0f;
-        float hi = attached;
+        float hi = attached + shaft;
         final float[] range = slideRange(nominalX, dx, out.hitWidth * 0.5f, viewportW);
         lo = Math.max(lo, range[0]);
         hi = Math.min(hi, range[1]);
