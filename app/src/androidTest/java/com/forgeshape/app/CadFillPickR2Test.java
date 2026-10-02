@@ -230,82 +230,265 @@ public final class CadFillPickR2Test {
     public void devR2_04_a_still_shaft_tap_selects_a_head_tap_does_not_a_shaft_drag_extrudes() {
         drawOwnerSketch();
         finishSketch();
-        tapCellStill(REST);
-        tapCellStill(LENS);
+        // Every cell a shaft pixel may stand over, learned by a real still tap
+        // each (and turned off again), so the expected face is a handle and
+        // never an inference from where a pixel happens to land.
+        final String[] reachable = {A_ONLY, LENS, B_ONLY, C_IN, C_OUT, REST};
+        final Map<String, Long> handleOf = new HashMap<>();
+        for (String cell : reachable) {
+            final long handle = tapCellStill(cell);
+            handleOf.put(cell, handle);
+            nativeToggle(handle);
+        }
+        assertEquals("nothing chosen after learning the cells", 0, selected().length);
+        nativeToggle(handleOf.get(REST));
+        nativeToggle(handleOf.get(LENS));
         final int direction = (int) toolState()[NativeViewport.CAD_EXTRUDE_DIRECTION];
         assertEquals(NativeViewport.CAD_OK, NativeViewport.sketchSetExtrude(1.5, direction));
-        // The first oblique pose in which a finger can reach both the drawn
-        // head and the lower shaft (HUD chrome may stand over either).
-        final float[][] poses = {{0.6f, 0.55f, 7.0f}, {-0.6f, 0.55f, 7.0f}, {0.6f, 0.35f, 9.0f},
-                {2.4f, 0.5f, 8.0f}, {-2.4f, 0.45f, 8.0f}, {1.2f, 0.7f, 9.0f}};
+        settleLayout();
+        final float density = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> activity.getResources().getDisplayMetrics().density);
+
+        // The search is INVERTED (`CAD-V6-S2-OWNER-CORRECTION-E2E-R1`): it starts
+        // from known interiors of bounded cells, projects them, and keeps only a
+        // pixel that also lies ON the drawn shaft, clear of the drawn head and of
+        // every clickable view. A shaft fraction alone proves nothing about what
+        // is under the finger -- attempt 36987358382 tapped empty space there.
+        ShaftPick pick = null;
         double[] tool = null;
         float[] head = null;
-        float[] shaft = null;
+        float[] pose = null;
         final StringBuilder tried = new StringBuilder();
-        for (float[] pose : poses) {
-            setCamera(pose[0], pose[1], pose[2]);
-            tool = toolState();
-            if (tool[NativeViewport.CAD_EXTRUDE_ON_SCREEN] == 0.0
-                    || tool[NativeViewport.CAD_EXTRUDE_HEAD_ON_SCREEN] == 0.0) {
-                tried.append(Arrays.toString(pose)).append(" off screen; ");
-                continue;
+        search:
+        for (float distance : new float[]{7.0f, 9.0f}) {
+            for (float pitch : new float[]{0.55f, 0.35f, 0.75f}) {
+                for (float yaw : new float[]{0.6f, -0.6f, 2.4f, -2.4f, 1.2f, -1.2f, 0.0f,
+                        (float) Math.PI}) {
+                    setCamera(yaw, pitch, distance);
+                    tool = toolState();
+                    final String where = yaw + "/" + pitch + "/" + distance;
+                    if (tool[NativeViewport.CAD_EXTRUDE_ON_SCREEN] == 0.0
+                            || tool[NativeViewport.CAD_EXTRUDE_HEAD_ON_SCREEN] == 0.0) {
+                        tried.append(where).append(" arrow off screen; ");
+                        continue;
+                    }
+                    head = firstViewportPoint(headCandidates(tool));
+                    if (head == null) {
+                        tried.append(where).append(" head ").append(lastBlock).append("; ");
+                        continue;
+                    }
+                    pick = shaftOverCell(tool, density, handleOf, tried, where);
+                    if (pick != null) {
+                        pose = new float[]{yaw, pitch, distance};
+                        break search;
+                    }
+                }
             }
-            head = firstViewportPoint(headCandidates(tool));
-            final String headBlock = lastBlock;
-            shaft = firstViewportPoint(shaftCandidates(tool));
-            if (head != null && shaft != null) {
-                fact("r2_04.pose", Arrays.toString(pose));
-                break;
-            }
-            tried.append(Arrays.toString(pose)).append(" head=").append(headBlock)
-                    .append(" shaft=").append(lastBlock).append("; ");
-            head = null;
-            shaft = null;
         }
-        assertNotNull("a pose with a reachable head and shaft: " + tried, head);
+        assertNotNull("a pose with a reachable head and a shaft pixel over a known cell: "
+                + tried, pick);
         final double depth = tool[NativeViewport.CAD_EXTRUDE_DEPTH];
         final long[] chosen = selected();
+        final long expected = handleOf.get(pick.cell);
+        // Recorded BEFORE anything is dispatched.
+        fact("r2_04.pose_yaw_pitch_distance", Arrays.toString(pose));
+        fact("r2_04.depth_m", depth);
+        fact("r2_04.shaft_cell", pick.cell + " handle=" + expected);
+        fact("r2_04.shaft_uv_units", pick.u + "," + pick.v);
+        fact("r2_04.shaft_screen", pick.x + "," + pick.y);
+        fact("r2_04.shaft_distance_px", pick.shaftDistance);
+        fact("r2_04.shaft_fraction", pick.fraction);
+        fact("r2_04.head_clearance_px", pick.headClearance);
+        fact("r2_04.shaft_covering_view", pick.covering.isEmpty() ? "none" : pick.covering);
+        fact("r2_04.head_screen", head[0] + "," + head[1]);
+        fact("r2_04.search", tried.toString());
+
+        // 1. A still tap -- with a finger's sub-slop jitter -- on the SHAFT
+        //    toggles exactly the cell under it and leaves the depth.
+        final String shaftMark = mark();
+        realGesture(new float[][]{{pick.x, pick.y}, {pick.x + 3.0f, pick.y - 2.0f},
+                {pick.x + 4.0f, pick.y + 3.0f}});
+        final long[] afterShaft = selected();
+        final List<String> shaftTokens = tokensSince(shaftMark);
+        fact("r2_04.shaft_tap_tokens", shaftTokens);
+        assertArrayEquals("a still shaft tap toggles exactly the cell under it: " + shaftTokens,
+                new long[]{expected}, symmetricDifference(chosen, afterShaft));
+        assertEquals("and leaves the depth", depth, toolState()[NativeViewport.CAD_EXTRUDE_DEPTH],
+                0.0);
+        assertTrue("resolved: " + shaftTokens,
+                shaftTokens.contains("FORGESHAPE_SKETCH_TAP:resolved"));
+        assertTrue("never exterior: " + shaftTokens,
+                !shaftTokens.contains("FORGESHAPE_SKETCH_TAP:exterior"));
+        // Put the selection back exactly, so the arrow stands where it stood.
+        nativeToggle(expected);
+        assertArrayEquals(chosen, selected());
+
+        // 2. A still tap on the drawn HEAD is the arrow's: no cell, no depth.
         final String headMark = mark();
         realGesture(new float[][]{{head[0], head[1]}});
+        final List<String> headTokens = tokensSince(headMark);
+        fact("r2_04.head_tap_tokens", headTokens);
         assertArrayEquals("a still head tap toggles no cell", chosen, selected());
         assertEquals("and leaves the depth", depth, toolState()[NativeViewport.CAD_EXTRUDE_DEPTH],
                 0.0);
-        assertTrue("attributed to the head: " + tokensSince(headMark),
-                tokensSince(headMark).contains("FORGESHAPE_SKETCH_TAP:arrow_head"));
+        assertTrue("attributed to the head: " + headTokens,
+                headTokens.contains("FORGESHAPE_SKETCH_TAP:arrow_head"));
 
-        // The SHAFT, away from the head: low on the base-to-tip segment.
-        final float tx = (float) tool[NativeViewport.CAD_EXTRUDE_TIP_X];
-        final float ty = (float) tool[NativeViewport.CAD_EXTRUDE_TIP_Y];
-        final float bx = 2.0f * (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X] - tx;
-        final float by = 2.0f * (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y] - ty;
-        final String shaftMark = mark();
-        realGesture(new float[][]{{shaft[0], shaft[1]}, {shaft[0] + 3.0f, shaft[1] + 2.0f}});
-        final long[] afterShaft = selected();
-        assertTrue("a still shaft tap toggles the cell under it: " + tokensSince(shaftMark),
-                !Arrays.equals(chosen, afterShaft));
-        assertEquals("and leaves the depth", depth, toolState()[NativeViewport.CAD_EXTRUDE_DEPTH],
-                0.0);
-        assertTrue(tokensSince(shaftMark).contains("FORGESHAPE_SKETCH_TAP:resolved"));
-        // Put the selection back natively, so the drag starts on the same arrow.
-        for (long handle : symmetricDifference(chosen, afterShaft)) {
-            nativeToggle(handle);
-        }
-        settleLayout();
-        assertArrayEquals(chosen, selected());
-
-        // A DRAG from the same shaft point still takes the arrow.
+        // 3. A DRAG from the SAME shaft pixel, in the same pose, takes the arrow.
+        final double[] now = toolState();
+        final float tx = (float) now[NativeViewport.CAD_EXTRUDE_TIP_X];
+        final float ty = (float) now[NativeViewport.CAD_EXTRUDE_TIP_Y];
+        final float bx = 2.0f * (float) now[NativeViewport.CAD_EXTRUDE_LABEL_X] - tx;
+        final float by = 2.0f * (float) now[NativeViewport.CAD_EXTRUDE_LABEL_Y] - ty;
         final float len = (float) Math.hypot(tx - bx, ty - by);
         final float ux = (tx - bx) / len;
         final float uy = (ty - by) / len;
         final float[][] drag = new float[8][];
         for (int k = 0; k < drag.length; k++) {
-            drag[k] = new float[]{shaft[0] + ux * 12.0f * k, shaft[1] + uy * 12.0f * k};
+            drag[k] = new float[]{pick.x + ux * 12.0f * k, pick.y + uy * 12.0f * k};
         }
+        final String dragMark = mark();
         realGesture(drag);
+        fact("r2_04.drag_tokens", tokensSince(dragMark));
         assertNotEquals("a shaft drag changes the depth", depth,
                 toolState()[NativeViewport.CAD_EXTRUDE_DEPTH], 0.0);
         assertArrayEquals("and toggles no cell", chosen, selected());
         fact("r2_04.depth_after_drag", toolState()[NativeViewport.CAD_EXTRUDE_DEPTH]);
+    }
+
+    /** A pixel on the drawn shaft, over a known bounded cell, and what proves it. */
+    private static final class ShaftPick {
+        String cell;
+        double u;
+        double v;
+        float x;
+        float y;
+        float shaftDistance;
+        float fraction;
+        float headClearance;
+        String covering = "";
+    }
+
+    /** px a pixel may stand off the projected shaft line and still be ON it. */
+    private static final float SHAFT_TOLERANCE_PX = 3.0f;
+    /** The sketch-unit margin a sampled point keeps from every cell boundary. */
+    private static final double CELL_MARGIN_UNITS = 0.3;
+    private static final double SAMPLE_STEP_UNITS = 0.05;
+
+    /**
+     * The best pixel of this pose that stands on the drawn shaft (within
+     * {@link #SHAFT_TOLERANCE_PX}, between 8% and 75% of base to tip), at least
+     * 12 dp clear of the head's own tap claim, inside a known cell with
+     * {@link #CELL_MARGIN_UNITS} to spare, on the viewport and under no
+     * clickable view; null when there is none.
+     */
+    private ShaftPick shaftOverCell(double[] tool, float density, Map<String, Long> handleOf,
+                                    StringBuilder tried, String where) {
+        final float tx = (float) tool[NativeViewport.CAD_EXTRUDE_TIP_X];
+        final float ty = (float) tool[NativeViewport.CAD_EXTRUDE_TIP_Y];
+        final float bx = 2.0f * (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X] - tx;
+        final float by = 2.0f * (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y] - ty;
+        final float hx = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_X];
+        final float hy = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_Y];
+        // The head cone runs from its ring (tip - axis*h) to its point
+        // (tip + axis*h); on screen that is about 2*tip - point .. point.
+        final float rx = 2.0f * tx - hx;
+        final float ry = 2.0f * ty - hy;
+        // The head's still-tap claim: max(10 reference units, the cone's drawn
+        // half-width) -- taken generously, the larger of the two bounds.
+        final float headHalf = (float) tool[NativeViewport.CAD_EXTRUDE_SCALE]
+                * 120.0f * 0.16f;
+        final float headClaim = Math.max(10.0f * density, headHalf) + 4.0f * density;
+        final float shaftLen = (float) Math.hypot(tx - bx, ty - by);
+        if (!(shaftLen > 40.0f * density)) {
+            tried.append(where).append(" shaft ").append(shaftLen).append("px too short; ");
+            return null;
+        }
+        final List<ShaftPick> found = new ArrayList<>();
+        final float[] at = new float[2];
+        for (double u = -4.7; u <= 4.7; u += SAMPLE_STEP_UNITS) {
+            for (double v = -8.0; v <= 8.0; v += SAMPLE_STEP_UNITS) {
+                final String cell = ownerCellAt(u, v, CELL_MARGIN_UNITS);
+                if (cell == null || !handleOf.containsKey(cell)) {
+                    continue;
+                }
+                if (!NativeViewport.sketchScreenPoint(u * unit, v * unit, at)) {
+                    continue;
+                }
+                final float[] seg = segment(at[0], at[1], bx, by, tx, ty);
+                if (seg[0] > SHAFT_TOLERANCE_PX || seg[1] < 0.08f || seg[1] > 0.75f) {
+                    continue;
+                }
+                final float clearance = segment(at[0], at[1], rx, ry, hx, hy)[0] - headClaim;
+                if (clearance < 12.0f * density) {
+                    continue;
+                }
+                final ShaftPick candidate = new ShaftPick();
+                candidate.cell = cell;
+                candidate.u = u;
+                candidate.v = v;
+                candidate.x = at[0];
+                candidate.y = at[1];
+                candidate.shaftDistance = seg[0];
+                candidate.fraction = seg[1];
+                candidate.headClearance = clearance;
+                found.add(candidate);
+            }
+        }
+        // Nearest the drawn line first; then the most head clearance.
+        found.sort((a, b) -> a.shaftDistance != b.shaftDistance
+                ? Float.compare(a.shaftDistance, b.shaftDistance)
+                : Float.compare(b.headClearance, a.headClearance));
+        final StringBuilder blocked = new StringBuilder();
+        for (int i = 0; i < found.size() && i < 60; i++) {
+            final ShaftPick candidate = found.get(i);
+            if (firstViewportPoint(new float[][]{{candidate.x, candidate.y}}) != null) {
+                candidate.covering = blocked.toString();
+                return candidate;
+            }
+            blocked.append(candidate.cell).append(lastBlock).append(' ');
+        }
+        tried.append(where).append(' ').append(found.size()).append(" shaft-over-cell pixels")
+                .append(blocked.length() > 0 ? " all covered: " + blocked : "").append("; ");
+        return null;
+    }
+
+    /** {distance, clamped parameter} from (x, y) to the segment a..b, in px. */
+    private static float[] segment(float x, float y, float ax, float ay, float bx, float by) {
+        final float dx = bx - ax;
+        final float dy = by - ay;
+        final float len2 = dx * dx + dy * dy;
+        float t = len2 > 0.0f ? ((x - ax) * dx + (y - ay) * dy) / len2 : 0.0f;
+        t = Math.max(0.0f, Math.min(1.0f, t));
+        return new float[]{(float) Math.hypot(x - (ax + dx * t), y - (ay + dy * t)), t};
+    }
+
+    /**
+     * Which OWNER-sketch cell holds (u, v) -- in sketch units -- with
+     * `margin` to spare from every boundary, or null when the point is near a
+     * boundary, outside every bounded cell, or anywhere near the spline loop
+     * (whose interpolated curve this test does not model).
+     */
+    private static String ownerCellAt(double u, double v, double margin) {
+        if (u > -3.9 && u < -0.1 && v > -9.9 && v < -4.5) {
+            return null;  // the spline loop and the line closing it
+        }
+        final double inRect = Math.min(4.0 - Math.abs(u), 6.0 - Math.abs(v));
+        final double a = 2.0 - Math.hypot(u + 1.0, v - 1.0);
+        final double b = 2.0 - Math.hypot(u - 1.0, v - 1.0);
+        final double c = 2.0 - Math.hypot(u, v - 6.0);
+        if (Math.abs(inRect) < margin || Math.abs(a) < margin || Math.abs(b) < margin
+                || Math.abs(c) < margin) {
+            return null;
+        }
+        if (inRect < 0.0) {
+            return c > 0.0 ? C_OUT : null;
+        }
+        if (a > 0.0 && b > 0.0) return LENS;
+        if (a > 0.0) return A_ONLY;
+        if (b > 0.0) return B_ONLY;
+        if (c > 0.0) return C_IN;
+        return REST;
     }
 
     // =======================================================================
@@ -481,20 +664,6 @@ public final class CadFillPickR2Test {
         final float[][] out = new float[fractions.length][];
         for (int i = 0; i < fractions.length; i++) {
             out[i] = new float[]{hx + (tx - hx) * fractions[i], hy + (ty - hy) * fractions[i]};
-        }
-        return out;
-    }
-
-    /** Points low on the drawn shaft, clear of the head. */
-    private static float[][] shaftCandidates(double[] tool) {
-        final float tx = (float) tool[NativeViewport.CAD_EXTRUDE_TIP_X];
-        final float ty = (float) tool[NativeViewport.CAD_EXTRUDE_TIP_Y];
-        final float bx = 2.0f * (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X] - tx;
-        final float by = 2.0f * (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y] - ty;
-        final float[] fractions = {0.25f, 0.2f, 0.3f, 0.15f, 0.35f};
-        final float[][] out = new float[fractions.length][];
-        for (int i = 0; i < fractions.length; i++) {
-            out[i] = new float[]{bx + (tx - bx) * fractions[i], by + (ty - by) * fractions[i]};
         }
         return out;
     }
