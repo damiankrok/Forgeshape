@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.view.MotionEvent;
 import android.view.View;
@@ -32,8 +34,21 @@ import android.view.View;
  */
 final class CadExtrudeDockView extends View {
 
+    /**
+     * The plate's corner, as a fraction of its side: a rounded TECHNICAL plate
+     * rather than a disc, so its foreshortening and turn read as the 3D frame
+     * they are. OWNER-TUNABLE.
+     */
+    static final float PLATE_CORNER_FRACTION = 0.22f;
+    /** The glyph's inset from the plate's edge, as a fraction of its side. */
+    static final float GLYPH_INSET_FRACTION = 0.20f;
+
     private final float floorPx;
-    private final Drawable plate;
+    private final Paint plateFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint plateEdge = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final int restingFill;
+    private final int activeFill;
+    private final RectF box = new RectF();
     private final Drawable refusalRing;
     private Drawable glyph;
     private int glyphRes;
@@ -49,7 +64,10 @@ final class CadExtrudeDockView extends View {
     CadExtrudeDockView(Context context, float floorPx) {
         super(context);
         this.floorPx = floorPx;
-        plate = context.getDrawable(R.drawable.bg_hud_panel).mutate();
+        restingFill = EditorControlStyles.themeColor(context, R.attr.fsSurfaceFloating);
+        activeFill = EditorControlStyles.themeColor(context, R.attr.fsAccentFill);
+        plateFill.setStyle(Paint.Style.FILL);
+        plateEdge.setStyle(Paint.Style.STROKE);
         refusalRing = context.getDrawable(R.drawable.bg_hud_glyph_invalid).mutate();
         setClickable(true);
         setFocusable(true);
@@ -72,6 +90,10 @@ final class CadExtrudeDockView extends View {
         if (tint != glyphTint) {
             glyph.setTintList(tint);
             glyphTint = tint;
+            // The plate's edge wears the operation's colour too -- a second
+            // carrier beside the glyph's shape, never the only one.
+            plateEdge.setColor(tint == null ? restingFill : tint.getDefaultColor());
+            plateEdge.setAlpha(170);
         }
         refused = candidateRefused;
         if (!frame.visible) {
@@ -104,7 +126,6 @@ final class CadExtrudeDockView extends View {
     protected void drawableStateChanged() {
         super.drawableStateChanged();
         final int[] state = getDrawableState();
-        plate.setState(state);
         refusalRing.setState(state);
         if (glyph != null) {
             glyph.setState(state);
@@ -120,9 +141,14 @@ final class CadExtrudeDockView extends View {
         final int s = Math.max(1, Math.round(side));
         canvas.save();
         canvas.concat(matrix);
-        plate.setBounds(0, 0, s, s);
-        plate.draw(canvas);
-        final int inset = Math.round(s * 0.18f);
+        plateFill.setColor(isActivated() ? activeFill : restingFill);
+        plateEdge.setStrokeWidth(Math.max(1.0f, s * 0.035f));
+        final float half = plateEdge.getStrokeWidth() * 0.5f;
+        box.set(half, half, s - half, s - half);
+        final float corner = s * PLATE_CORNER_FRACTION;
+        canvas.drawRoundRect(box, corner, corner, plateFill);
+        canvas.drawRoundRect(box, corner, corner, plateEdge);
+        final int inset = Math.round(s * GLYPH_INSET_FRACTION);
         if (refused) {
             final int ring = Math.round(s * 0.10f);
             refusalRing.setBounds(ring, ring, s - ring, s - ring);

@@ -349,8 +349,10 @@ public final class CadHud3dOwnerTest {
         final float[] at = new float[2];
         String claimedBy = "";
         search:
-        for (double u = -1.8; u <= 1.8; u += 0.02) {
-            for (double v = -1.8; v <= 1.8; v += 0.02) {
+        // Strictly inside the drawn square: 0.3 m clear of every edge, whatever
+        // the grid snapped the drag's corners to.
+        for (double u = -1.4; u <= 1.4; u += 0.02) {
+            for (double v = -1.4; v <= 1.4; v += 0.02) {
                 if (!NativeViewport.sketchScreenPoint(u, v, at)) continue;
                 if (CadHud3dPresentation.claims(f.dock, at[0], at[1], floor)) continue;
                 final float dx = Math.max(Math.abs(at[0] - f.dock.centreX) - floor / 2, 0.0f);

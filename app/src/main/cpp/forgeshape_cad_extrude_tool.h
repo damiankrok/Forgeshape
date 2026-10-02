@@ -398,9 +398,9 @@ void appendCadExtrudeLeader(std::vector<GizmoVertex>* out, const CadExtrudeAncho
 // The badge's half size across the axis, as a fraction of the control's drawn
 // pixels, clamped into a band of reference units (dp) so it stays a readable
 // badge at both ends of the control-scale band. OWNER-TUNABLE.
-constexpr float kCadExtrudeDockHalfFraction = 0.24f;
-constexpr float kCadExtrudeDockMinHalfUnits = 11.0f;
-constexpr float kCadExtrudeDockMaxHalfUnits = 22.0f;
+constexpr float kCadExtrudeDockHalfFraction = 0.26f;
+constexpr float kCadExtrudeDockMinHalfUnits = 14.0f;
+constexpr float kCadExtrudeDockMaxHalfUnits = 24.0f;
 // The on-screen gap from the drawn arrow point to the dock's near edge, in
 // reference units: the arrow's own grab corridor plus 4, so the dock never
 // stands where a drag would take the arrow.
