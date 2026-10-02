@@ -1,0 +1,15 @@
+r2_04.depth_m=1.5
+r2_04.pose_yaw_pitch_distance=[-0.6, 0.55, 7.0]
+r2_04.shaft_cell=rest handle=1
+r2_04.shaft_screen=554.51166,1359.6688
+r2_04.shaft_uv_units=-1.5500000000000094,-1.9500000000000213
+r2_04.head_clearance_px=156.51578
+r2_04.head_screen=788.0621,1558.7267
+r2_04.search=0.6/0.55/7.0 head [122.41266,1475.229 under View:cad_extrude_panel][133.58795,1466.9258 under View:cad_extrude_panel][144.76326,1458.6226 under View:cad_extrude_panel][155.93857,1450.3192 under View:cad_extrude_panel][167.11386,1442.016 under View:cad_extrude_panel]; 
+r2_04.shaft_covering_view=none
+r2_04.shaft_distance_px=0.0017349451
+r2_04.shaft_fraction=0.38167873
+r2_04.shaft_tap_tokens=[FORGESHAPE_SKETCH_TAP:resolved]
+r2_04.head_tap_tokens=[FORGESHAPE_SKETCH_TAP:arrow_head]
+r2_04.drag_tokens=[FORGESHAPE_SKETCH_TAP:travel]
+r2_04.depth_after_drag=1.8413273692131042
