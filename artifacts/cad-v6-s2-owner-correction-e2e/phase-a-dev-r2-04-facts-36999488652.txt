@@ -1,0 +1,15 @@
+r2_04.depth_after_drag=1.8827227652072906
+r2_04.depth_m=1.5
+r2_04.drag_tokens=[FORGESHAPE_SKETCH_TAP:travel]
+r2_04.head_clearance_px=273.42102
+r2_04.head_screen=122.41266,1475.229
+r2_04.head_tap_tokens=[FORGESHAPE_SKETCH_TAP:arrow_head]
+r2_04.pose_yaw_pitch_distance=[0.6, 0.55, 7.0]
+r2_04.search=
+r2_04.shaft_cell=rest handle=1
+r2_04.shaft_covering_view=none
+r2_04.shaft_distance_px=0.6374943
+r2_04.shaft_fraction=0.08214268
+r2_04.shaft_screen=460.40488,1223.3059
+r2_04.shaft_tap_tokens=[FORGESHAPE_SKETCH_TAP:resolved]
+r2_04.shaft_uv_units=-3.1500000000000057,-0.050000000000020056

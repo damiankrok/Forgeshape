@@ -382,15 +382,15 @@ on the host, with no device, and is the fast native loop.
   camera pulls back and saturates at both ends. `metersPerPixel` is read ONCE
   per frame, at the manipulator's own BASE anchor (`cadExtrudeManipulatorScale`
   through `SketchSession::extrudeViewFacts`), and that ONE fact sizes the drawn
-  arrowhead, the leader, the hit test's head extension and the Android action
-  panel and value text alike — never at the world origin, never read twice —
-  and never a HIT AREA: the panel's plate is its reference size ×
-  `clamp(scale, 0.40, 1.60)` and the value `clamp(14 sp × that, 9, 18)` while
-  every control is an INVISIBLE touch proxy of at least 48 dp that paints
-  nothing and is never `setScale`d, so the interactive floor does not depend on
-  the band at all (`CadHudPresentationTest` pins both on the JVM). The arrow's
-  drawn POINT is one function (`cadExtrudeArrowPoint`) shared by the drawing,
-  the hit test and the panel's anchor (tool-state slots 42..44). A camera-caused overlay
+  arrowhead, the leader, the hit test's head extension, the action dock and
+  the value text alike — never at the world origin, never read twice — and
+  never a HIT AREA: the value is `clamp(14 sp × scale, 9, 18)` and the dock's
+  badge `clamp(0.26 × the control's pixels, 14, 24 reference units)` per half,
+  while every control's touch target is at least 48 dp and never `setScale`d,
+  so the interactive floor does not depend on the band at all
+  (`CadHudPresentationTest` and `CadHud3dPresentationTest` pin it on the JVM).
+  The arrow's drawn POINT is one function (`cadExtrudeArrowPoint`) shared by
+  the drawing, the hit test and the dock's anchor (tool-state slots 42..44). A camera-caused overlay
   rebuild (another `worldPerUnit` or other view facts) advances the overlay
   revision, so the renderer's revision-gated upload never keeps a previous
   zoom's vertices. The hit
@@ -578,7 +578,7 @@ on the host, with no device, and is the fast native loop.
   only a ray along the plane is `ray_parallel`. The debug build attributes
   every Ready tap candidate (`FORGESHAPE_SKETCH_TAP:<resolved|exterior|
   arrow_head|travel|ray_parallel|invalid_face|selection_cap>`) and every HUD
-  view that consumes a Down (`FORGESHAPE_CAD_HUD_TOUCH:<value|panel|palette|
+  view that consumes a Down (`FORGESHAPE_CAD_HUD_TOUCH:<value|dock|palette|
   editor|edit_sketch>`); a release build logs neither, and the release guard
   counts the native one. Rows are TRANSIENT handles (never
   stored), and an exact loop region maps to its one identical face or is
@@ -674,8 +674,9 @@ on the host, with no device, and is the fast native loop.
   is not drawn); the precision surface's pinned Extrude stays, because it
   submits a typed depth first, and native still refuses an invalid commit.
 - **The canvas CAD HUD is a technical-drawing annotation plus ONE action
-  panel, and Ready withdraws the drawing chrome** (`CAD-VERTICAL-SLICE-R1`,
-  reshaped by `CAD-FOUNDATION-C1` and `CAD-FOUNDATION-C2`). The frame draws a
+  DOCK, and Ready withdraws the drawing chrome** (`CAD-VERTICAL-SLICE-R1`,
+  reshaped by `CAD-FOUNDATION-C1` and `CAD-V6-S2-OWNER-CORRECTION-E2E-R1`).
+  The frame draws a
   dimension LEADER beside the shaft — extension lines, a dimension line, 45°
   ticks — in the overlay's existing `Dimension` range, standing on the
   reading-up side of the shaft (`cadExtrudeLeaderSide`, camera-derived
@@ -685,29 +686,37 @@ on the host, with no device, and is the fast native loop.
   a vertical line reads bottom to top), written at the display precision
   (`LengthUnit.formatWithUnit`: 3 decimals in the display unit, the rule the
   area label already used — never the double's round-trip expansion; editors
-  keep every digit). Two Sides puts each value above its OWN leader. The
-  extent, the operation (New Body / Add / Cut) and Flip (One Side only) are ONE
-  compact ACTION PANEL (`CAD-FOUNDATION-C2`): a rigid plate laid out once at
-  its reference size and scaled as ONE unit, attached past the arrow's drawn
-  point ON the arrow's screen line with its proxy clear of the arrow's grab
-  corridor, and placed by ONE continuous function of the projected arrow
-  (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`): no candidate sides — at a viewport
-  edge it slides back along the SAME line by the least that fits, at most to
-  the shaft's base and never to the side of the shaft — and it turns modestly with the leader
-  (`panelRotationDegrees`: 0.35 × the reading angle, capped at 25°, tapered to
-  level before vertical so the wrap never flips it). It is shown WHOLE or not
-  at all — never an icon scattered, clamped away or hidden alone. The plate
-  takes no touch; ONE unscaled, unrotated ≥ 48 dp group proxy covers the
-  turned plate and opens ONE action palette (extent
-  choices, the operations native offers, Flip) of ordinary readable screen
-  chrome, because three 48 dp proxies on shrunken glyphs would overlap. The
-  whole annotation — values and panel together — collapses only when native
-  reports the scale clamped at its floor AND the value is wider than its
-  leader (`annotationCollapsed`). All placement arithmetic is the pure
-  `CadHudPresentation` (JVM-pinned); the view only places. Meaning is carried
-  by icon SHAPE, selected state and content description, with colour (Add
-  success, Cut error) only as a second carrier; Tool Labels captions the
-  palette — never a glyph on the plate. The typed-value editor opens
+  keep every digit). Two Sides puts each value above its OWN leader, and the
+  value collapses only when native reports the scale clamped at its floor AND
+  it is wider than its leader (`annotationCollapsed`). **The action dock is a
+  WORLD rectangle, projected, never a screen rule**
+  (`cadExtrudeDockFor`, `forgeshape_cad_extrude_tool.{h,cpp}`): it lies in the
+  plane of the primary axis `a` and `s = cross(a, m)`, `m` the view direction
+  made perpendicular to `a` (sketch `u`, then camera right, when `m`
+  collapses), so it contains the axis and faces the eye; its centre stands ON
+  the axis past `cadExtrudeArrowPoint` by the grab corridor + 4 reference units
+  of screen gap; its size is the ONE control scale clamped to a readable badge;
+  it foreshortens along the axis (softened by `sqrt(sin)`); and its reading
+  orientation is the leader's rule with an 8° vertical band, so the quad is
+  never mirrored and pixel noise on a vertical shaft cannot turn it over. Native
+  HIDES IT WHOLE — never slides, clamps, re-sides or rescues it — at or below
+  `kCadFeatureViewMinAxisSine` (fading in to 0.45), behind the eye, or with any
+  corner off the viewport, and reports the four projected corners, alpha,
+  centre, sine and hide reason in tool-state slots 45..58. It is a pure
+  function of the frame (no stored orientation) and none of it is truth: no
+  `.forge` byte, history step, checkpoint or fingerprint. Android
+  (`CadExtrudeDockView`, `CadHud3dPresentation`) draws ONE badge — a rounded
+  plate, the OPERATION glyph (New Body / Add / Cut by shape, colour as a second
+  carrier, an error ring when the candidate would be refused) — into those
+  corners through a 4-point homography, and is its own one touch target,
+  claiming only the quad united with the 48 dp floor square on its centre; any
+  other Down in its box is declined to the viewport, so a cell beside it stays
+  tappable. A tap opens the ONE action palette (extent choices, the operations
+  native offers, Flip in One Side) of ordinary readable screen chrome, hung
+  from the dock's box. Meaning is carried by icon SHAPE, selected state and
+  content description, with colour (Add success, Cut error) only as a second
+  carrier; Tool Labels captions the
+  palette — never the dock's badge. The typed-value editor opens
   screen-aligned at the value's point. All sizes are OWNER-TUNABLE
   presentation, decided on a physical device. `SketchChromePolicy` is the one
   statement of what a sketch shows: in Ready the Tool Rail, the orientation
@@ -1376,8 +1385,11 @@ on the host, with no device, and is the fast native loop.
   *extrude arrow* (the world-space arrow along the extrusion normal, its shaft
   the depth; never a "gizmo", which is the transform instrument and scales the
   opposite way), *canvas extrude cluster* (the camera-attached group anchored to
-  that arrow: the *extent selector*, the exact distance, the *operation
-  badge* and *Flip*), *extent selector* (the one extent control and its three
+  that arrow: the exact distance and the *action dock*), *action dock* (the
+  ONE compact badge standing in world space on the axis past the arrow's
+  point, drawn as the *operation badge* and opening the palette that holds the
+  *extent selector*, the operations and *Flip*; never a "panel"), *extent
+  selector* (the one extent control and its three
   icon choices *One Side*, *Symmetric*
   and *Two Sides*), *One Side* (the solid grows out of one side of the sketch),
   *Symmetric* (the same distance out of both; its one value is *Each side* and
@@ -1389,8 +1401,8 @@ on the host, with no device, and is the fast native loop.
   *New Body* (the operation that makes a new body; the only one a world-plane
   sketch offers), *Add* (a later feature that unions material into the SAME
   body; never "Join" in the UI), *Cut* (a later feature that removes material
-  from the SAME body), *operation badge* (the HUD control that states and
-  chooses the operation), *region* (what an extrusion extrudes: a closed loop's
+  from the SAME body), *operation badge* (the dock's glyph that states the
+  operation; the palette chooses it), *region* (what an extrusion extrudes: a closed loop's
   interior minus its holes; never "face" or "profile" to the user), *feature*
   (one sketch + extrusion + operation in a CAD Body's chain), *Tool Labels*
   (the Settings → Interface preference that captions the HUD's icons), *start page* (the full-window

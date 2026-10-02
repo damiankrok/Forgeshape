@@ -1,8 +1,41 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.93.0
-**Updated:** 2026-10-01
-**Latest closeout:** **`CAD-V6-S2-RESEARCH-FILL-PICK-HUD3D-R1` —
+**Status Version:** 0.94.0
+**Updated:** 2026-10-02
+**Latest closeout:** **`CAD-V6-S2-OWNER-CORRECTION-E2E-R1` —
+`PASS-CAD-V6-S2-OWNER-CORRECTION-E2E`** (2026-10-02). **TECH PASS / OWNER
+PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
+`feature/cad-v6-s2-owner-correction-e2e-r1` from the R2 head `b264cfe`; `main`
+stays `6c9f156` and `feature/cad-v6-sketch-face-r1` stays `bbae765`; no
+FullSharded; S3 not started. Record:
+`artifacts/cad-v6-s2-owner-correction-e2e/SUMMARY.md`.
+
+- **Fill/pick R2 (Phase A), device-proven.** A fill selection is a set (any
+  cell adds or removes in any order), point-touching and disjoint cells are
+  separate components, edge-adjacent cells union, a Ready tap resolves at the
+  Down pixel through the Down camera with no orbit inside the slop, from either
+  side of the plane, a still shaft tap toggles the cell under it, a shaft drag
+  changes the depth, a head tap is the arrow's, and an operation refusal keeps
+  the selection. DEV-R2-04's harness now derives its shaft pixel from a known
+  cell interior (test-only).
+- **HUD3D (Phase B).** The flat screen-space action panel is replaced by ONE
+  operation badge drawn into a native-projected WORLD rectangle on the axis
+  past the arrow point (`cadExtrudeDockFor`, tool-state slots 45..58,
+  `CadExtrudeDockView`, `CadHud3dPresentation`): it tilts with the arrow, never
+  slides or re-sides, hides whole near the axis / behind the eye / off the
+  viewport, and claims only its quad plus the 48 dp floor. The dimension
+  leader and value are unchanged. No renderer, format or fixture change.
+- **Gates.** Host `HOST_SELFTESTS_OK (4005 checks, 0 failed)`; JVM 120/120;
+  debug/release/androidTest green; release guard PASS; fixture verdicts 57/57
+  unchanged; corpus 57/57 (CI FAST). `CI DEVICE` `36999488652` on `8ca3e6b`:
+  **PASS 82/82** (11 classes). `CI FAST` `37001980955` on `7ac555c` (product
+  identical to `8ca3e6b`): success. Every failed attempt is in the record.
+- **OWNER APK.** `ci-fast-evidence` artifact `11224257836`,
+  `app/build/outputs/apk/debug/app-debug.apk`, 13,078,746 bytes, SHA-256
+  `431e233b6a33fa8dde8210a6f3291458629d6830dd008cfb91f8810ac5d948b1`
+  (expires 2026-10-16).
+
+**Previous closeout:** **`CAD-V6-S2-RESEARCH-FILL-PICK-HUD3D-R1` —
 `PASS-CAD-V6-S2-RESEARCH-FILL-PICK-HUD3D`** (2026-10-01). READ-ONLY research
 after the OWNER rejected the second S2 physical review; no product, test, build,
 format or workflow change; no CI, DEVICE or FullSharded; not merged. Record:
@@ -1832,8 +1865,8 @@ lives in Git history; only what still constrains the code is kept here.
 `SCULPT-UNDO-R0` (`ARCH-OWNER-12` — a dedicated bounded volatile per-body Sculpt
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
-**Next Stage:** **return this report to the ForgeShape coordinator.** The
-OWNER's CAD-A3-C2 review is closed with PASS; the Delete → Undo → Redo owner
+**Next Stage:** the OWNER physical-device review of the
+`CAD-V6-S2-OWNER-CORRECTION-E2E-R1` APK; the Delete → Undo → Redo owner
 verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See *Next Stage*.
 
 ## Current state
@@ -4627,17 +4660,14 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: `CAD-V6-S2-CORRECTION-FILL-PICK-R2` on
-`feature/cad-v6-sketch-face-r1`** — Phase 1 of
-`artifacts/cad-v6-s2-research/IMPLEMENTATION_PLAN.md`: selection as a set (the
-tap checks the cap only), point-touching faces as separate components,
-refusals at preview/commit, the Ready tap resolved against the Down camera with
-no orbit while it is armed, only the arrow HEAD claiming a still tap, a stated
-edge-on threshold, and attribution tokens. It needs its own authorisation.
-Phase 2 (`CAD-V6-S2-HUD3D-R1`, the world-attached one-badge dock) follows only
-after the OWNER accepts Phase 1 on a physical device. `CAD-V6-S3` (retained-
-sketch mobile UX) waits for both. The branch merges to `main` only after the
-completed v6 migration passes the Tier-5 aggregate once.
+**Exactly one next step: OWNER physical-device review of the
+`CAD-V6-S2-OWNER-CORRECTION-E2E-R1` APK** (artifact `11224257836`, SHA-256
+`431e233b…48b1`) against the checklist in
+`artifacts/cad-v6-s2-owner-correction-e2e/SUMMARY.md`. Nothing merges to
+`feature/cad-v6-sketch-face-r1` or `main` before that verdict; OWNER-TUNABLE
+dock sizes may be adjusted from it. `CAD-V6-S3` (retained-sketch mobile UX)
+waits for it. The v6 branch merges to `main` only after the completed v6
+migration passes the Tier-5 aggregate once.
 
 `FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
 recorded debt, not authorised work. The Council's other OWNER decisions are

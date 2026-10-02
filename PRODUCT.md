@@ -657,8 +657,17 @@ never changes any region but the one under your finger**. Choosing several
 regions extrudes them **together, as one shape**: with the ring and its disk
 both chosen the hole is filled, so a rectangle holding circles A and B, with
 the rectangle and A chosen, becomes a block with only B's hole, and all three
-chosen make a solid block. Regions whose loops touch or cross cannot be
-combined; tapping the second one says so and leaves your choice as it was.
+chosen make a solid block. When curves cross, each enclosed cell is its own
+choice, and **any cell can be added or removed in any order** — no tap is ever
+refused because of what else is chosen. Cells that share an edge merge into
+one shape; cells that only meet at a point, or not at all, stay separate pieces
+of the same solid. Whether the chosen set can be extruded (for example an Add
+that would not touch the body) is said on the operation badge and by the
+missing Extrude, and your choice stays exactly as you made it. A finger that
+wobbles a little while tapping neither turns the view nor misses its cell, and
+a cell is tappable from either side of the sketch plane. A still tap on the
+arrow's shaft chooses the cell under it; a drag from the shaft changes the
+distance; a tap on the arrow's head belongs to the arrow.
 What is chosen is hatched as one shape, and a hole it leaves open stays
 empty. The first
 region you choose also turns the view to one the arrow can be dragged in.
@@ -680,23 +689,25 @@ distance** stands just above that line, turned to run along it and never upside
 down; tap it to type one (the field opens level, where it is easy to type). It
 is written to three decimals in the display unit — `2.359 m`, never a long
 string of binary digits — while the field it opens still holds every digit.
-The **extent**, the **operation** (a separate box for New Body, a solid with a
-plus for Add, a solid with a notch for Cut) and, for a One Side extrusion,
-**Flip** are one small **panel** just past the arrow's point: one plate, its
-icons always together and always the same distance apart. Tap anywhere on it
-and one readable panel opens with every choice at full size — One Side,
-Symmetric or Two Sides; the operations this sketch can make; Flip. Zooming out
-makes the arrow head, the line, the panel and the number smaller with the
-model, and zooming in makes them larger, both within limits; the place you tap
-does not shrink — the panel is always at least a full fingertip wide, and the
-extra room is invisible. When the panel does not fit past the arrow's point it
-stands beside it; when it cannot stand whole anywhere near the arrow it is not
-shown at all, never cut in half or pushed away from the arrow. Far enough out
-that the number would be wider than the line it measures, the number and the
-panel step aside together, and the exact fields stay one tap away on the
-panel toggle. With **Tool labels** turned on in *Settings → Interface*, the
-choices carry a one-word caption. A distance typed at the arrow and the same
-number typed in the panel are the same thing; there is one extrusion, and both
+Just past the arrow's point stands one small **badge** showing the operation
+(a separate box for New Body, a solid with a plus for Add, a solid with a notch
+for Cut). It is a little plate standing in the model on the line of the arrow,
+so it tilts and foreshortens with the arrow as you orbit, follows it smoothly,
+and turns the right way up to read; it never slides along the screen edge or
+jumps to the other side of the arrow. When it would be cut off by the screen
+edge, or you look almost straight down the arrow, it is simply not shown — it
+fades out as you approach that view. Tap the badge and one readable panel
+opens with every choice at full size — One Side, Symmetric or Two Sides; the
+operations this sketch can make; Flip. The place you tap is always at least a
+full fingertip wide, but only the badge and that fingertip-sized square take a
+tap: a cell just beside the badge can still be chosen. Zooming out makes the
+arrow head, the line, the badge and the number smaller with the model, and
+zooming in makes them larger, both within limits. Far enough out that the
+number would be wider than the line it measures, the number steps aside, and
+the exact fields stay one tap away on the panel toggle. With **Tool labels**
+turned on in *Settings → Interface*, the choices in the open panel carry a
+one-word caption. A distance typed at the arrow and the same number typed in
+the panel are the same thing; there is one extrusion, and both
 places show it. These sizes are provisional and are being tuned on a physical
 phone.
 
@@ -712,7 +723,7 @@ each also recognisable by its icon — and when the result would not make sense
 (an Add that does not touch the body, a Cut that misses it or would remove all
 of it) the operation badge says so by name and Extrude is not offered.
 
-The dimension line, its number and the panel **follow** the arrow through a
+The dimension line, its number and the badge **follow** the arrow through a
 drag, an orbit and a zoom, and so does the **Edit Sketch** control below. When
 the line runs off the screen, the number stands on the part of it that is still
 visible.

@@ -693,41 +693,42 @@ the repeat is capped and reset by any settled pass, which is what keeps it layou
 readiness rather than a poll.
 
 **The canvas CAD HUD** (`CadExtrudeCanvasView`, `CAD-VERTICAL-SLICE-R1`,
-reshaped by `CAD-FOUNDATION-C1` and `CAD-FOUNDATION-C2`) is two things over
-the viewport. The VALUE is a transparent 48 dp `TextView` rotated to the
-leader native draws and projects (`cadExtrudeToolState` slots 32..41), written
-by `LengthUnit.formatWithUnit` at the display precision. The ACTION PANEL is
-one plate (`cad_extrude_panel_plate`, `bg_hud_panel`) holding the extent,
-operation and (One Side) Flip glyphs at their REFERENCE size, scaled and turned
-as one unit about its OWN CENTRE and never clickable, plus one invisible,
-unscaled, unrotated group proxy (`cad_extrude_panel`, ≥ 48 dp, covering the
-turned plate's box) that opens one
-action palette (`cad_extrude_actions_palette`: the extent row, the operation
-row of what native offers, Flip). The panel is anchored to the arrow's drawn
-point (slots 42..44, from `cadExtrudeArrowPoint` — the same point the drawing
-ends the head at and the hit test grabs to). `CadHudPresentation` is the
-pure-Java policy, proven on the JVM: `visualScale` is the one multiplier
-(0.40..1.60); `panelReferenceWidthDp`/`panelIconOffsetDp` fix the plate's
-internal layout; `layoutPanel` is ONE continuous function of the projected
-arrow (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`, replacing the discrete
-past/beside-away/beside-toward candidates whose switching made the panel jump
-during an orbit): the centre stands ON the arrow's screen line one corridor
-(24 dp + 4 dp) plus half the proxy's extent past the point, slides back along
-that same line by the least that fits at a viewport edge (`slideRange`, at most
-to the shaft's base, so it stays on the arrow), and is otherwise hidden whole; `panelRotationDegrees`
-turns it by 0.35 of the leader's reading angle, capped at 25° and tapered to
-level over the last 20° before vertical so the reading angle's wrap never flips
-it (all OWNER-TUNABLE); `panelOwnsTouch` states that the one
-proxy owns every glyph; `valueTextSp` is `clamp(14 sp × visualScale, 9, 18)`;
-`annotationCollapsed` hides values and panel together at the scale floor when
-the value outgrows its leader; `readingAngleDegrees`, `clipToViewport` and
-`layoutLeader` stand the value above the VISIBLE part of its leader;
-`captionShown` gives Tool Labels captions to palette choices only. The view
-measures, asks, and places through `ViewportAnchorSpace`; it projects nothing.
-The retained-sketch Edit Sketch control stays a lone capsule at
-`cadBodySketchAnchor` with its compact 24..32 dp glyph (`loneGlyphDp`). The
-open palette is centred under the panel; a closed one is `INVISIBLE`, so it is
-already laid out when it opens, and takes no touch.
+reshaped by `CAD-FOUNDATION-C1` and `CAD-V6-S2-OWNER-CORRECTION-E2E-R1`) is
+two things over the viewport. The VALUE is a transparent 48 dp `TextView`
+rotated to the leader native draws and projects (`cadExtrudeToolState` slots
+32..41), written by `LengthUnit.formatWithUnit` at the display precision.
+The ACTION DOCK is a WORLD rectangle native frames and projects
+(`cadExtrudeDockFor` in `forgeshape_cad_extrude_tool.{h,cpp}`, read through
+`SketchSession::extrudeDock` from the same anchors and the same one control
+scale as the arrow): in the plane of the primary axis `a` and
+`s = cross(a, m)` (`m` the view direction made perpendicular to `a`; sketch
+`u`, then camera right, when it collapses), centred on the axis a
+corridor-plus-4-units screen gap past `cadExtrudeArrowPoint`, sized
+`clamp(0.26 × control pixels, 14, 24 units)` per half across and
+foreshortened along the axis by `sqrt(sin)`, oriented by the leader's reading
+rule with an 8° vertical band. It is hidden WHOLE at or below
+`kCadFeatureViewMinAxisSine` (fading in to 0.45), behind the eye, or with any
+corner off the viewport — never slid, clamped or re-sided — and exported as
+tool-state slots 45..58 (visible, alpha, four corners in reading order, centre,
+sine, hide reason). It stores nothing between frames. `CadExtrudeDockView`
+(`cad_extrude_panel`, the id of the act of opening the palette) draws ONE badge
+— a rounded plate, the operation glyph, an error ring when the candidate would
+be refused — into those corners through a 4-point homography and is its own
+one touch target, claiming only the quad united with the 48 dp floor square on
+its centre and declining every other Down in its box to the viewport. It opens
+one action palette (`cad_extrude_actions_palette`: the extent row, the
+operation row of what native offers, Flip), hung from the dock's box.
+`CadHud3dPresentation` is the pure-Java reading of the dock (tool state →
+quad, touch bounds, the claim, the homography), proven on the JVM;
+`CadHudPresentation` keeps the value's rules: `visualScale` (0.40..1.60),
+`valueTextSp` (`clamp(14 sp × visualScale, 9, 18)`), `annotationCollapsed`
+(the value alone, at the scale floor when it outgrows its leader),
+`readingAngleDegrees`, `clipToViewport` and `layoutLeader`, and `captionShown`
+(Tool Labels captions palette choices only). The view measures, asks, and
+places through `ViewportAnchorSpace`; it projects nothing. The retained-sketch
+Edit Sketch control stays a lone capsule at `cadBodySketchAnchor` with its
+compact 24..32 dp glyph (`loneGlyphDp`). A closed palette is `INVISIBLE`, so
+it is already laid out when it opens, and takes no touch.
 
 **What a sketch shows is one statement** (`SketchChromePolicy`,
 `CAD-VERTICAL-SLICE-R1`): in Editing the Tool Rail carries the drawing tools and
