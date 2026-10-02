@@ -82,10 +82,13 @@ enum class ArrangementStatus : uint8_t {
     // `mergePlanarFaces` (`CAD-V6-S2`): a face index that names no face, or a
     // repeat.
     InvalidSelection,
-    // `mergePlanarFaces`: the union's boundary passes one node twice -- two
-    // chosen faces touch at a single point, whether that makes one loop
-    // revisit a node or two loops share one -- so no simple, disjoint set of
-    // loops bounds it. Refused rather than extruded as a non-manifold solid.
+    // `mergePlanarFaces`: the boundary of ONE edge-connected group of chosen
+    // faces passes one node twice -- a loop revisiting a node, or a hole
+    // touching its own outer at one -- so no simple set of loops bounds that
+    // group. Refused rather than extruded as a non-manifold solid. Two GROUPS
+    // that meet only at a point are NOT this: they are two components
+    // (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`), and no derived atomic face of the
+    // committed test sketches reaches it.
     PinchedSelection,
     // One spline span crosses or touches ITSELF (a cubic loop inside one span).
     // A span is one source edge and has no node to split it at, so the cells it
@@ -248,9 +251,24 @@ struct PlanarProfileComponent {
     double area = 0.0;
 };
 
+// The chosen faces (indices into `arrangement.faces`, any order, no repeats)
+// split into EDGE-CONNECTED groups: two chosen faces are in one group exactly
+// when a chain of chosen faces joins them, each consecutive pair bounding the
+// SAME fragment from its two sides. A shared node is never adjacency, so faces
+// that are disjoint or meet only at a point land in different groups. Each
+// group's indices ascend and the groups are ordered by their smallest index.
+// `InvalidSelection` for an index that names no face or a repeat. Derived,
+// never stored.
+ArrangementStatus partitionSelectedPlanarFacesBySharedBoundary(
+        const SketchArrangement& arrangement, const std::vector<size_t>& faceIndices,
+        std::vector<std::vector<size_t>>* outGroups);
+
 // The union of `faceIndices` (indices into `arrangement.faces`, any order, no
 // repeats), as its connected components in canonical order (by the outer
-// cycle), each with its holes. Deterministic; derived, never stored.
+// cycle), each with its holes. Each edge-connected group (above) is merged on
+// its own, so groups touching at a point become separate components; a group
+// whose own boundary pinches is `PinchedSelection`. Deterministic; derived,
+// never stored.
 ArrangementStatus mergePlanarFaces(const SketchArrangement& arrangement,
                                    const std::vector<size_t>& faceIndices,
                                    std::vector<PlanarProfileComponent>* out);

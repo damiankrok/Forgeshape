@@ -176,6 +176,45 @@ constexpr float kSketchHitToleranceUnits = 24.0f;
 // radius the selection controller uses.
 constexpr float kSketchTapSlopPixels = 24.0f;
 
+// What became of one Ready-state tap candidate (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`).
+// DIAGNOSTIC only: the debug build logs it as `FORGESHAPE_SKETCH_TAP:<name>` so a
+// missed tap on a physical device is attributable from one logcat capture. It
+// decides nothing, is never stored and never crosses JNI as a value.
+enum class SketchTapOutcome : uint8_t {
+    None,
+    // A face (or loop region) under the Down pixel toggled.
+    Resolved,
+    // The Down pixel's ray met the sketch plane outside every bounded area.
+    Exterior,
+    // A still tap on the drawn arrow HEAD: the manipulator's, toggling nothing.
+    ArrowHead,
+    // The finger travelled past the tap slop: an orbit or a drag, not a tap.
+    Travel,
+    // The Down pixel's ray is parallel to the sketch plane (or its hit is not
+    // finite): the existing ray-plane math answered no point.
+    RayParallel,
+    // The area under the finger could not be toggled (no face, a refused
+    // region, a session not in Ready).
+    InvalidFace,
+    // The selection is at its bound (`TooManyRegions`).
+    SelectionCap,
+};
+
+const char* sketchTapOutcomeName(SketchTapOutcome outcome);
+
+// THE one statement of whether the camera is handed a sketch-session event
+// after the session saw it (`forgeshape_jni.cpp` asks nothing else). A
+// consumed event never reaches the camera; while a sketch is being DRAWN no
+// single pointer does; in READY a single pointer navigates -- EXCEPT while a
+// tap is still armed (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`), because a finger
+// that jitters inside the tap slop must neither orbit the view nor be
+// resolved against a camera that moved under it. The caller resets the
+// camera's gesture whenever this is false, so the first event after a tap
+// disarms re-anchors the orbit at the CURRENT point: no jump from the Down.
+// Two pointers are never held back.
+bool sketchEventReachesCamera(SketchSessionState state, bool consumed, int pointerCount,
+                              bool readyTapArmed);
+
 // The dimension annotation's proportions, in reference units (dp), so it reads
 // the same at any zoom (`SKETCH-UX-R1` E1). The dimension line stands this far
 // off the stroke it measures -- far enough that the label never sits on the
@@ -416,9 +455,21 @@ public:
     CadStatus toggleRegion(SketchEntityId outerAnchorId);
 
     // The tap in the canvas: the region under the pixel, toggled. False,
-    // changing nothing, when the tap lands in no region.
+    // changing nothing, when the tap lands in no region. Records the tap's
+    // diagnostic outcome. The touch path hands it the camera captured at the
+    // tap's DOWN, never a later one.
     bool toggleRegionAt(const CameraSnapshot& camera, float x, float y, int viewportWidth,
                         int viewportHeight);
+
+    // Whether a Ready-state tap is armed right now: a single finger is down,
+    // has not travelled past the slop, and is not the arrow head's.
+    bool readyTapArmed() const {
+        return state_ == SketchSessionState::Ready && regionTapArmed_;
+    }
+    // The last tap candidate's diagnostic outcome, and a serial that advances
+    // every time one is recorded, so a caller can tell a new one from an old.
+    SketchTapOutcome lastTapOutcome() const { return lastTapOutcome_; }
+    uint32_t tapOutcomeSerial() const { return tapOutcomeSerial_; }
 
     // Whether the region is part of the current selection.
     bool regionSelected(SketchEntityId outerAnchorId) const;
@@ -440,9 +491,11 @@ public:
     bool planarFaceSelected(size_t index) const;
     // A point strictly inside the face and outside its holes, and its area.
     bool planarFaceInfo(size_t index, SketchPoint* outInterior, double* outArea) const;
-    // Adds the face or, when selected, removes it. Refused by name, the
-    // selection standing as it was, when the union would pinch
-    // (`PlanarFacesTouchAtPoint`) or exceed `kMaxPlanarFaceSelection`.
+    // Adds the face or, when selected, removes it: a pure SET toggle that no
+    // other selected face can gate. Refused by name, the selection standing
+    // as it was, only outside Ready, for an index that names no face, or past
+    // `kMaxPlanarFaceSelection` (`TooManyRegions`). Whether the set extrudes
+    // is the candidate's verdict, never a tap's.
     CadStatus togglePlanarFace(size_t index);
     // Selects exactly this face: the panel's list row.
     CadStatus selectPlanarFace(size_t index);
@@ -711,6 +764,19 @@ private:
     int32_t regionTapPointer_ = -1;
     float regionTapX_ = 0.0f;
     float regionTapY_ = 0.0f;
+    // The camera as it stood at the tap's Down: the tap resolves its cell
+    // against THIS and the Down pixel, so nothing the camera did since can
+    // move which cell the finger meant (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`).
+    CameraSnapshot regionTapCamera_{};
+    // The Down landed on the drawn arrow HEAD: a still tap there is the
+    // manipulator's and is recorded as such on Up.
+    bool regionTapOnHead_ = false;
+    SketchTapOutcome lastTapOutcome_ = SketchTapOutcome::None;
+    uint32_t tapOutcomeSerial_ = 0;
+    void recordTapOutcome(SketchTapOutcome outcome) {
+        lastTapOutcome_ = outcome;
+        ++tapOutcomeSerial_;
+    }
     // Volatile transition intent (`CAD-EXT-R1`). See the accessor.
     ExtrudeDirection oneSideDirection_ = ExtrudeDirection::AlongNormal;
     // The canvas manipulator (`CAD-UX-S1`). Volatile like everything else here,

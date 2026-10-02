@@ -555,16 +555,45 @@ on the host, with no device, and is the fast native loop.
   bit-identical to every earlier build; a FAILED arrangement keeps `LoopRegions`
   only when the loops are exact (`sketchLoopsAreExact`: no two touch or cross)
   and is otherwise REFUSED by the arrangement's own name — never silently read
-  as whole overlapping loops. In PlanarFaces mode a tap toggles the face under
-  the finger — also inside the extrude arrow's grab corridor, where only a
-  still tap within `kCadExtrudeTapOnArrowUnits` of the DRAWN arrow is the
-  arrow's and a drag still takes it — rows are TRANSIENT handles (never
+  as whole overlapping loops. **A face selection is a SET of exact
+  `PlanarFaceRef`s, and a tap is a pure toggle of it**
+  (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): adding a face is refused only outside
+  Ready, for an index that names no face, or past the bound (`TooManyRegions`)
+  — never because of which OTHER faces are chosen — so the result depends on
+  which faces were tapped an odd number of times and on nothing else. Whether
+  the set extrudes is the CANDIDATE's verdict, named on the preview and at
+  commit; a refusal never trims the selection, and Back to Sketch / Edit Sketch
+  keep every face that still resolves. A tap toggles the face under the finger
+  — also inside the extrude arrow's grab corridor and on its SHAFT, where only
+  a still tap on the drawn HEAD (`onDrawnArrowHead`: the cone from
+  `tip - axis·h` to `cadExtrudeArrowPoint`, within `kCadExtrudeTapOnArrowUnits`
+  or the cone's drawn half-width) is the arrow's, and a drag from anywhere in
+  the corridor still takes it. **A Ready tap is resolved at the DOWN pixel
+  through the camera captured at Down**, and while it is armed the camera
+  sees no single-pointer event (`sketchEventReachesCamera`, the one rule JNI
+  asks): a finger inside the 24 px tap slop orbits nothing, and the event that
+  carries it past the slop re-anchors the orbit there, with no jump. The ray
+  math (`buildPickRay`, `screenToSketch`, `intersectRayPlane`) is unchanged and
+  two-sided; there is no grazing band — a finite hit at any angle is a hit and
+  only a ray along the plane is `ray_parallel`. The debug build attributes
+  every Ready tap candidate (`FORGESHAPE_SKETCH_TAP:<resolved|exterior|
+  arrow_head|travel|ray_parallel|invalid_face|selection_cap>`) and every HUD
+  view that consumes a Down (`FORGESHAPE_CAD_HUD_TOUCH:<value|panel|palette|
+  editor|edit_sketch>`); a release build logs neither, and the release guard
+  counts the native one. Rows are TRANSIENT handles (never
   stored), and an exact loop region maps to its one identical face or is
   refused (`PlanarFaceUnresolved`). `mergePlanarFaces` unions the chosen faces
-  on the arrangement's own half-edges — a shared fragment cancels, a node
-  reused across or within loops is `PinchedSelection`, refused as
-  `PlanarFacesTouchAtPoint` and never as the loop model's `OverlappingRegions`
-  — and the union is extruded by the same prism
+  on the arrangement's own half-edges, ONE EDGE-CONNECTED GROUP at a time
+  (`partitionSelectedPlanarFacesBySharedBoundary`: two chosen faces join only
+  through a fragment both bound, never through a shared node) — inside a group
+  a shared fragment cancels and a node its boundary passes twice (a hole
+  touching its own outer) is still `PinchedSelection`, refused as
+  `PlanarFacesTouchAtPoint`; groups that meet only at a point are simply
+  separate components, each prism with its own vertex rings, so the solid
+  stays closed and oriented and Add / Cut stay ONE kernel boolean with a
+  multi-shell tool. The canonical component order did not change, so every
+  selection that merged before derives bit-identically — and the union is
+  extruded by the same prism
   generator, previewed as the candidate, hatched cell by cell, and fed to New
   Body, Add or Cut. A union-boundary fragment is ONE side face: a fragment
   that is its whole source edge keeps the legacy token, a proper piece wears a

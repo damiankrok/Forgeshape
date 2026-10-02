@@ -396,6 +396,17 @@ public:
     bool onDrawnArrow(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera, float x,
                       float y, int viewportWidth, int viewportHeight) const;
 
+    // Whether (x, y) lands on the drawn arrow HEAD of either side -- the cone
+    // from its ring behind the tip (`tip - axis * h`) to its point
+    // (`cadExtrudeArrowPoint`), `h` the head length at the ONE per-frame
+    // control scale -- within `kCadExtrudeTapOnArrowUnits` of that segment, or
+    // within the cone's own drawn half-width when that is wider. The SHAFT is
+    // not the head: a still tap there is a fill-bucket tap
+    // (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`). The same projection and scale
+    // facts the drawing and the hit test use, so Java guesses nothing.
+    bool onDrawnArrowHead(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera, float x,
+                          float y, int viewportWidth, int viewportHeight) const;
+
     // Which side (x, y) takes, preferring the PRIMARY one when both corridors
     // contain the point -- a Symmetric extrusion seen almost edge-on can
     // overlap both, and a deterministic answer beats a nearest-pixel race.

@@ -1,5 +1,6 @@
 #include "forgeshape_cad_extrude_tool.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "forgeshape_picking.h"
@@ -453,6 +454,47 @@ bool CadExtrudeManipulator::onDrawnArrow(const CadExtrudeAnchors& anchors,
     for (const bool positiveSide : {true, false}) {
         if (arrowWithin(anchors, positiveSide, camera, x, y, viewportWidth, viewportHeight,
                         kCadExtrudeTapOnArrowUnits)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CadExtrudeManipulator::onDrawnArrowHead(const CadExtrudeAnchors& anchors,
+                                             const CameraSnapshot& camera, float x, float y,
+                                             int viewportWidth, int viewportHeight) const {
+    if (!anchors.valid || viewportWidth <= 0 || viewportHeight <= 0) {
+        return false;
+    }
+    CadExtrudeControlScale scale;
+    if (!cadExtrudeManipulatorScale(anchors, camera, viewportHeight, &scale)) {
+        return false;
+    }
+    const double headLength = static_cast<double>(scale.world) * kCadExtrudeArrowHeadLengthFraction;
+    // The cone's drawn half-width on screen, at the scale it was drawn at.
+    const float headHalfPixels =
+            static_cast<float>(static_cast<double>(scale.pixels) * kCadExtrudeArrowHeadHalfWidthFraction);
+    const float radius =
+            std::max(kCadExtrudeTapOnArrowUnits * gizmoPixelsPerReferenceUnit(), headHalfPixels);
+    for (const bool positiveSide : {true, false}) {
+        const CadExtrudeSideAnchor& side = anchors.side(positiveSide);
+        if (!side.present) {
+            continue;
+        }
+        const Vec3 ring = vec3Add(side.tip, vec3Scale(side.axis, -static_cast<float>(headLength)));
+        const Vec3 point = cadExtrudeArrowPoint(side, scale.world);
+        float ringX = 0.0f;
+        float ringY = 0.0f;
+        float pointX = 0.0f;
+        float pointY = 0.0f;
+        if (!projectWorldToScreen(camera, ring, viewportWidth, viewportHeight, &ringX, &ringY)
+            || !projectWorldToScreen(camera, point, viewportWidth, viewportHeight, &pointX,
+                                     &pointY)) {
+            continue;
+        }
+        float param = 0.0f;
+        const float distance = distanceToSegment(x, y, ringX, ringY, pointX, pointY, &param);
+        if (std::isfinite(distance) && distance <= radius) {
             return true;
         }
     }

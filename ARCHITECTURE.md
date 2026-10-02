@@ -2802,10 +2802,26 @@ regenerated like a LoopRegions one; nothing refuses it any more
   (`sketchLoopsAreExact`: no two touch or cross, no crossing or forked chain)
   and is otherwise refused by the arrangement's own `CadStatus`, never handed
   to the loop model as whole overlapping loops. A Ready tap inside the extrude
-  arrow's grab corridor but off the DRAWN arrow (`kCadExtrudeTapOnArrowUnits`)
-  is captured as a possible drag that holds the depth until it travels past the
-  tap slop; lifted still, it releases the capture with nothing written and
-  toggles the cell under it.
+  arrow's grab corridor -- the drawn SHAFT included -- but off the drawn HEAD
+  (`CadExtrudeManipulator::onDrawnArrowHead`) is captured as a possible drag
+  that holds the depth until it travels past the tap slop; lifted still, it
+  releases the capture with nothing written and toggles the cell under it
+  (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`). A still tap on the head is the
+  arrow's and toggles nothing.
+- *Selection (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`).* `togglePlanarFace` is a
+  pure set toggle: an ADD checks state, the face index and
+  `kMaxPlanarFaceSelection` and nothing else; it never merges. Whether the set
+  extrudes is the candidate's verdict (`evaluateCandidate`), and
+  `reconcilePlanarSelection` keeps every stored face that still resolves.
+- *Ready tap (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`).* `onExtrudeTouch` stores
+  the `CameraSnapshot` it is handed at Down (`regionTapCamera_`) and both Up
+  paths resolve the tap with it and the Down pixel. JNI hands the camera a
+  sketch event only when `sketchEventReachesCamera` says so -- never while
+  `readyTapArmed()` -- and resets its gesture otherwise, so the Move that
+  disarms the tap re-anchors the orbit where the finger is. Every tap candidate
+  records a `SketchTapOutcome` (debug log `FORGESHAPE_SKETCH_TAP:<reason>`);
+  `CadExtrudeCanvasView.dispatchTouchEvent` logs (debug only, through the pure
+  `CadHudTouchAttribution`) which HUD view consumed a Down.
   In PlanarFaces mode the session holds the arrangement (`arrangement_`) and
   each face's polygon (`faceShapes_`); a tap hit-tests those, JNI lists faces
   by TRANSIENT handle (`index + 1`, never stored), and a loop region maps to
@@ -2813,12 +2829,19 @@ regenerated like a LoopRegions one; nothing refuses it any more
   (`PlanarFaceUnresolved`). A reopen or an edit re-resolves the stored refs
   exactly; one that no longer resolves clears the selection and says so
   (`selectionLost`), never retargets.
-- *Union.* `mergePlanarFaces` (`forgeshape_sketch_arrangement`) walks the
-  arrangement's own half-edges: a half-edge whose twin is also chosen is
-  interior and cancels, the rest chain by successor into loops, holes are
-  re-oriented and owned by the smallest containing outer loop, and a node
-  reused across or within loops is `PinchedSelection` (refused as
-  `PlanarFacesTouchAtPoint`). Each loop keeps the fragments it stands on.
+- *Union.* `mergePlanarFaces` (`forgeshape_sketch_arrangement`) first splits
+  the chosen faces into EDGE-CONNECTED groups
+  (`partitionSelectedPlanarFacesBySharedBoundary`, union-find over fragments
+  both of whose half-edges are chosen; a shared node is not adjacency), then
+  walks each group on the arrangement's own half-edges: a half-edge whose twin
+  is also chosen is interior and cancels, the rest chain by successor into
+  loops, holes are re-oriented and owned by the smallest containing outer loop
+  of the same group, and a node a group's own loops pass twice is
+  `PinchedSelection` (refused as `PlanarFacesTouchAtPoint`). Groups that touch
+  at a point are separate components; the components of every group are
+  sorted by the same canonical outer-cycle order as before, so a selection
+  that merged before derives bit-identically. Each loop keeps the fragments it
+  stands on.
 - *Faces and lineage.* `derivePlanarFeature` (`forgeshape_cad_feature`) emits
   CapPlane, CapFar, then ONE Side per union-boundary FRAGMENT — never per
   facet, so a tessellation count never enters a lineage. A fragment that is its
@@ -2954,7 +2977,9 @@ and nothing else. `commit` is one `ScopedConstructionEdit` around one
 `addCadBody` (New Body) or one `applyState` on the target (Add, Cut, or a staged
 feature edit); a refusal mints no `ObjectId` and stays in Ready. In Ready a
 single pointer that does not travel past the tap slop toggles the region under
-it on Up; one that does is the arrow drag or the camera, as before.
+its DOWN pixel, through the camera captured at Down, on Up; while it is still a
+tap the camera is not handed the event, and one that travels further is the
+arrow drag or the camera, re-anchored where the slop was crossed.
 
 Pointer samples arrive as the same `TouchPointer` the camera and the gizmo
 consume. The session owns ONE pointer by id; a second pointer cancels the

@@ -10,6 +10,31 @@
 
 namespace forgeshape {
 
+const char* sketchTapOutcomeName(SketchTapOutcome outcome) {
+    switch (outcome) {
+        case SketchTapOutcome::None: return "none";
+        case SketchTapOutcome::Resolved: return "resolved";
+        case SketchTapOutcome::Exterior: return "exterior";
+        case SketchTapOutcome::ArrowHead: return "arrow_head";
+        case SketchTapOutcome::Travel: return "travel";
+        case SketchTapOutcome::RayParallel: return "ray_parallel";
+        case SketchTapOutcome::InvalidFace: return "invalid_face";
+        case SketchTapOutcome::SelectionCap: return "selection_cap";
+    }
+    return "none";
+}
+
+bool sketchEventReachesCamera(SketchSessionState state, bool consumed, int pointerCount,
+                              bool readyTapArmed) {
+    if (consumed) {
+        return false;
+    }
+    if (pointerCount > 1) {
+        return true;  // two fingers pan and pinch in every state
+    }
+    return state == SketchSessionState::Ready && !readyTapArmed;
+}
+
 const char* sketchSessionStateName(SketchSessionState state) {
     switch (state) {
         case SketchSessionState::Inactive: return "Inactive";
@@ -176,6 +201,7 @@ CadStatus SketchSession::begin(Workplane plane) {
     editingFeatureId_ = 0;
     evaluation_ = CadCandidateEvaluation{};
     regionTapArmed_ = false;
+    regionTapOnHead_ = false;
     tool_ = SketchTool::Rectangle;
     resetGesture();
     polylineInProgress_ = false;
@@ -216,6 +242,7 @@ void SketchSession::cancel() {
     hasTargetState_ = false;
     evaluation_ = CadCandidateEvaluation{};
     regionTapArmed_ = false;
+    regionTapOnHead_ = false;
     ++candidateRevision_;
     viewFlipped_ = false;
     viewQuarterTurns_ = 0;
@@ -786,6 +813,7 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                                    int viewportHeight) {
     if (count > 1 || action == TouchAction::PointerDown) {
         regionTapArmed_ = false;
+        regionTapOnHead_ = false;
         restoreCancelledExtrudeDrag();
         return false;  // the gesture belongs to the camera
     }
@@ -802,6 +830,8 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             regionTapPointer_ = pointers[0].id;
             regionTapX_ = pointers[0].x;
             regionTapY_ = pointers[0].y;
+            regionTapCamera_ = camera;
+            regionTapOnHead_ = false;
             CadExtrudeAnchors anchors;
             if (!extrudeAnchors(&anchors)) {
                 return false;
@@ -814,15 +844,18 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                                       viewportHeight, &positiveSide)) {
                 return false;  // off the arrow: orbit, pan and tap are untouched
             }
-            // ON the drawn arrow the finger means the arrow, at once. Merely in
-            // its grab corridor the gesture is captured -- a drag still takes
-            // the arrow -- but the tap stays armed, because the corridor
-            // crosses the cells around the chosen area and a still tap there
-            // is a fill-bucket tap on the cell under the finger
-            // (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`).
-            if (extrudeDrag_.onDrawnArrow(anchors, camera, pointers[0].x, pointers[0].y,
-                                          viewportWidth, viewportHeight)) {
+            // ON the drawn arrow HEAD the finger means the arrow, at once.
+            // Anywhere else in the grab corridor -- the shaft included -- the
+            // gesture is captured, so a drag still takes the arrow, but the tap
+            // stays armed: the shaft stands ON the chosen area and, with its
+            // corridor, crosses the cells around it, and a still tap there is a
+            // fill-bucket tap on the cell under the finger
+            // (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`; before it, the whole drawn
+            // shaft claimed the still tap and the tap did nothing).
+            if (extrudeDrag_.onDrawnArrowHead(anchors, camera, pointers[0].x, pointers[0].y,
+                                              viewportWidth, viewportHeight)) {
                 regionTapArmed_ = false;
+                regionTapOnHead_ = true;
             }
             if (!extrudeDrag_.beginDrag(pointers[0].id, anchors, positiveSide, camera,
                                         pointers[0].x, pointers[0].y, viewportWidth,
@@ -837,7 +870,14 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                 && pointers[0].id == regionTapPointer_
                 && std::hypot(pointers[0].x - regionTapX_, pointers[0].y - regionTapY_)
                            > kSketchTapSlopPixels) {
-                regionTapArmed_ = false;  // it became an orbit
+                regionTapArmed_ = false;  // it became an orbit (or a drag)
+                recordTapOutcome(SketchTapOutcome::Travel);
+            }
+            if (regionTapOnHead_ && count == 1 && pointers != nullptr
+                && pointers[0].id == regionTapPointer_
+                && std::hypot(pointers[0].x - regionTapX_, pointers[0].y - regionTapY_)
+                           > kSketchTapSlopPixels) {
+                regionTapOnHead_ = false;  // a head drag, not a still tap
             }
             if (!extrudeDrag_.capturing() || count != 1 || pointers == nullptr
                 || pointers[0].id != extrudeDrag_.capturedPointerId()) {
@@ -867,35 +907,48 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                     const float x = count >= 1 && pointers != nullptr ? pointers[0].x : regionTapX_;
                     const float y = count >= 1 && pointers != nullptr ? pointers[0].y : regionTapY_;
                     if (std::hypot(x - regionTapX_, y - regionTapY_) <= kSketchTapSlopPixels) {
-                        toggleRegionAt(camera, regionTapX_, regionTapY_, viewportWidth,
+                        // The DOWN camera and the Down pixel: the cell the
+                        // finger meant when it landed.
+                        toggleRegionAt(regionTapCamera_, regionTapX_, regionTapY_, viewportWidth,
                                        viewportHeight);
+                    } else {
+                        recordTapOutcome(SketchTapOutcome::Travel);
                     }
                 }
                 regionTapArmed_ = false;
+                regionTapOnHead_ = false;
                 // Never consumed: the camera saw the Down and must see the Up.
                 return false;
             }
             if (actionPointerId >= 0 && actionPointerId != extrudeDrag_.capturedPointerId()) {
                 regionTapArmed_ = false;
+                regionTapOnHead_ = false;
                 restoreCancelledExtrudeDrag();
                 return false;
             }
             if (regionTapArmed_ && action == TouchAction::Up) {
-                // A still tap in the corridor, off the drawn arrow: it never
+                // A still tap in the corridor, off the arrow head: it never
                 // moved the depth, so the capture ends with nothing written and
-                // the cell under the finger toggles.
+                // the cell under the finger -- at the Down, through the Down
+                // camera -- toggles.
                 regionTapArmed_ = false;
                 restoreCancelledExtrudeDrag();
-                toggleRegionAt(camera, regionTapX_, regionTapY_, viewportWidth, viewportHeight);
+                toggleRegionAt(regionTapCamera_, regionTapX_, regionTapY_, viewportWidth,
+                               viewportHeight);
                 return true;
             }
+            if (regionTapOnHead_ && action == TouchAction::Up) {
+                recordTapOutcome(SketchTapOutcome::ArrowHead);
+            }
             regionTapArmed_ = false;
+            regionTapOnHead_ = false;
             extrudeDrag_.endDrag();
             touchOverlay();
             return true;
         }
         case TouchAction::Cancel: {
             regionTapArmed_ = false;
+            regionTapOnHead_ = false;
             return restoreCancelledExtrudeDrag();
         }
         default:
@@ -1389,6 +1442,7 @@ void SketchSession::backToEditing() {
     arrangement_ = SketchArrangement{};
     faceShapes_.clear();
     regionTapArmed_ = false;
+    regionTapOnHead_ = false;
     state_ = SketchSessionState::Editing;
     touchCandidate();
 }
@@ -1473,12 +1527,23 @@ CadStatus SketchSession::toggleRegion(SketchEntityId outerAnchorId) {
 bool SketchSession::toggleRegionAt(const CameraSnapshot& camera, float x, float y,
                                    int viewportWidth, int viewportHeight) {
     if (state_ != SketchSessionState::Ready) {
+        recordTapOutcome(SketchTapOutcome::InvalidFace);
         return false;
     }
     SketchPoint point;
     if (!screenToSketch(camera, x, y, viewportWidth, viewportHeight, &point)) {
+        // The existing ray-plane math found no point: the ray runs along the
+        // plane. No band around edge-on is added here -- a finite hit at any
+        // grazing angle is a hit.
+        recordTapOutcome(SketchTapOutcome::RayParallel);
         return false;
     }
+    const auto toggled = [this](CadStatus why) {
+        recordTapOutcome(why == CadStatus::Ok             ? SketchTapOutcome::Resolved
+                         : why == CadStatus::TooManyRegions ? SketchTapOutcome::SelectionCap
+                                                            : SketchTapOutcome::InvalidFace);
+        return why == CadStatus::Ok;
+    };
     if (!faceShapes_.empty()) {
         // The atomic face under the finger: strictly inside its outer loop and
         // outside its holes. Faces do not overlap; the smallest wins a tie.
@@ -1493,13 +1558,18 @@ bool SketchSession::toggleRegionAt(const CameraSnapshot& camera, float x, float 
                 hit = i;
             }
         }
-        return hit < faceShapes_.size() && togglePlanarFace(hit) == CadStatus::Ok;
+        if (hit == faceShapes_.size()) {
+            recordTapOutcome(SketchTapOutcome::Exterior);
+            return false;
+        }
+        return toggled(togglePlanarFace(hit));
     }
     SketchEntityId anchor = kNoSketchEntity;
     if (!sketchRegionAt(regions_, point, &anchor)) {
+        recordTapOutcome(SketchTapOutcome::Exterior);
         return false;
     }
-    return toggleRegion(anchor) == CadStatus::Ok;
+    return toggled(toggleRegion(anchor));
 }
 
 // ---------------------------------------------------------------------------
@@ -1556,12 +1626,13 @@ std::vector<size_t> SketchSession::selectedPlanarFaceIndices() const {
 }
 
 void SketchSession::reconcilePlanarSelection() {
-    // A stored face selection that still resolves EXACTLY -- every face, and
-    // its union merges -- survives Back to Sketch and Edit Sketch untouched.
+    // A stored face selection whose every face still resolves EXACTLY
+    // survives Back to Sketch and Edit Sketch untouched. Whether its union
+    // extrudes is the candidate's question (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`):
+    // a selection is never dropped here for what the preview would refuse.
     if (extrude_.selection == CadSelectionKind::PlanarFaces && !extrude_.planarFaces.empty()) {
         const std::vector<size_t> indices = selectedPlanarFaceIndices();
-        if (indices.size() == extrude_.planarFaces.size()
-            && mergePlanarFaceSelection(arrangement_, indices, nullptr) == CadStatus::Ok) {
+        if (indices.size() == extrude_.planarFaces.size()) {
             setPlanarSelection(extrude_.planarFaces);
             return;
         }
@@ -1571,7 +1642,7 @@ void SketchSession::reconcilePlanarSelection() {
                && extrude_.profileEntityId != kNoSketchEntity) {
         // A region selection over a sketch that now needs faces: kept only
         // when EVERY chosen region is exactly an atomic face (its whole loop,
-        // unsplit) and the faces merge -- never re-read as a nearest face.
+        // unsplit) -- never re-read as a nearest face.
         std::vector<PlanarFaceRef> faces;
         bool exact = true;
         for (const ProfileRegionRef& ref : extrudeRegions(extrude_)) {
@@ -1581,12 +1652,7 @@ void SketchSession::reconcilePlanarSelection() {
                     && regionAsPlanarFace(regions_, *region, arrangement_, &index);
             if (exact) faces.push_back(arrangement_.faces[index].ref);
         }
-        std::vector<size_t> indices;
-        for (const PlanarFaceRef& face : faces) {
-            size_t i = 0;
-            if (resolvePlanarFaceRef(arrangement_, face, &i)) indices.push_back(i);
-        }
-        if (exact && mergePlanarFaceSelection(arrangement_, indices, nullptr) == CadStatus::Ok) {
+        if (exact && !faces.empty()) {
             setPlanarSelection(std::move(faces));
             return;
         }
@@ -1650,22 +1716,16 @@ CadStatus SketchSession::togglePlanarFace(size_t index) {
         }
     }
     if (!removed) {
-        // A PURE toggle: the tapped face joins and no other face changes. An
-        // addition that cannot merge (a pinch) or passes the bound is refused
-        // BY NAME and the selection stands exactly as it was.
+        // A PURE set toggle (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): the tapped
+        // face joins and no other face changes. The selection is a SET of
+        // exact face refs, so the only addition refused is the bound -- never
+        // because of which OTHER faces are chosen. Whether the set extrudes
+        // (a pinch, an Add that lands nowhere) is the candidate's question,
+        // named on the preview, and is never answered by trimming the set.
         if (next.size() + 1u > kMaxPlanarFaceSelection) {
             return fail(CadStatus::TooManyRegions);
         }
         next.push_back(tapped);
-        std::vector<size_t> indices;
-        for (const PlanarFaceRef& ref : next) {
-            size_t i = 0;
-            if (resolvePlanarFaceRef(arrangement_, ref, &i)) indices.push_back(i);
-        }
-        const CadStatus why = mergePlanarFaceSelection(arrangement_, indices, nullptr);
-        if (why != CadStatus::Ok) {
-            return fail(why);
-        }
     }
     setPlanarSelection(std::move(next));
     selectionLost_ = false;

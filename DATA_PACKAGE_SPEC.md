@@ -1049,7 +1049,7 @@ Everything else is the domain's `validateCadBodyState`, surfaced as
 | over a sketch whose curves share a stretch | `PlanarFaceAmbiguousOverlap` |
 | over a sketch past the arrangement's caps | `PlanarFaceCapExceeded` |
 | an arrangement cycle below the area floor | `PlanarFaceDegenerate` |
-| a face selection whose UNION pinches -- two chosen faces meeting at one point | `PlanarFacesTouchAtPoint` (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`; it was `OverlappingRegions`, the loop model's name for a different thing) |
+| a face selection one of whose EDGE-CONNECTED groups pinches -- the group's own boundary passes a node twice (a hole touching its own outer) | `PlanarFacesTouchAtPoint` (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`; it was `OverlappingRegions`, the loop model's name for a different thing). Since `CAD-V6-S2-CORRECTION-FILL-PICK-R2`, chosen faces that share no fragment -- disjoint, or meeting only at a point -- are separate components and the selection is VALID; no layout, version or fixture changed, and every committed fixture keeps its verdict |
 | a union loop longer than `kMaxProfileVertices` | `TooManyEntities` |
 
 A code-4 FACE is refused by the CODEC (`InvalidSemanticValue`) unless it is a

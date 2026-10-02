@@ -5,9 +5,12 @@ import android.content.res.ColorStateList;
 import android.graphics.Paint;
 import android.text.InputType;
 import android.text.method.DigitsKeyListener;
+import android.content.pm.ApplicationInfo;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
@@ -238,6 +241,10 @@ final class CadExtrudeCanvasView extends FrameLayout {
     private float secondAnchorX;
     private float secondAnchorY;
 
+    /** Debug build: log which HUD surface consumed a Down. Never in release. */
+    private final boolean debugTouchAttribution;
+    private final android.graphics.Rect hitRect = new android.graphics.Rect();
+
     /** The refusal last described, so a steady one is not re-worded per frame. */
     private int describedStatus = NativeViewport.CAD_OK;
     private String describedReason = "";
@@ -250,6 +257,8 @@ final class CadExtrudeCanvasView extends FrameLayout {
         this.actions = actions;
         setId(R.id.cad_extrude_canvas);
         setVisibility(GONE);
+        debugTouchAttribution =
+                (context.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
 
         density = context.getResources().getDisplayMetrics().density;
         hitPx = CadHudPresentation.hitPx(density);
@@ -575,6 +584,55 @@ final class CadExtrudeCanvasView extends FrameLayout {
      * the text. A soft halo in the floating tone keeps the digits readable over
      * the model the way a drawing's dimension text is set clear of its lines.
      */
+    /**
+     * Debug-only attribution (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): when one of
+     * this HUD's views CONSUMES a Down -- which is a Down the viewport, and so
+     * a sketch cell, never sees -- the debug build logs which one. Dispatch is
+     * unchanged; nothing here claims or refuses a touch.
+     */
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        final boolean consumed = super.dispatchTouchEvent(event);
+        if (debugTouchAttribution && event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            final String token = CadHudTouchAttribution.token(consumed,
+                    hudSurfaceAt(event.getX(), event.getY()));
+            if (token != null) {
+                Log.i("ForgeShape", token);
+            }
+        }
+        return consumed;
+    }
+
+    /** The topmost visible HUD surface whose hit box holds (x, y). */
+    private int hudSurfaceAt(float x, float y) {
+        for (int i = getChildCount() - 1; i >= 0; i--) {
+            final View child = getChildAt(i);
+            if (child.getVisibility() != VISIBLE) {
+                continue;
+            }
+            child.getHitRect(hitRect);
+            if (!hitRect.contains((int) x, (int) y)) {
+                continue;
+            }
+            if (child == reading || child == secondReading) {
+                return CadHudTouchAttribution.VALUE;
+            }
+            if (child == panelProxy) {
+                return CadHudTouchAttribution.PANEL;
+            }
+            if (child == actionsPalette) {
+                return CadHudTouchAttribution.PALETTE;
+            }
+            if (child == editor || child == secondEditor) {
+                return CadHudTouchAttribution.EDITOR;
+            }
+            if (child == editSketch.view) {
+                return CadHudTouchAttribution.EDIT_SKETCH;
+            }
+        }
+        return CadHudTouchAttribution.NONE;
+    }
+
     private TextView valueText(Context context, int id) {
         final TextView text = new TextView(context);
         text.setId(id);

@@ -2198,23 +2198,76 @@ void testFillTaps(Recorder& r) {
     }
     r.check("S2CORR_TAP_02_a_drag_from_a_corridor_point_still_takes_the_arrow_and_toggles_nothing",
             dragged);
-    // A still tap ON the drawn arrow is the arrow's: no cell toggles.
+    // Deliberate rule change (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): a still
+    // tap on the drawn MID-SHAFT is a fill-bucket tap on the cell under that
+    // pixel (it toggles, and a second tap toggles it back); only a still tap
+    // on the drawn HEAD is the arrow's and toggles nothing.
     const Meters afterDrag = s.sketch.extrude().depth;
-    bool onArrowKept = false;
+    const auto faceUnder = [&](float px, float py) {
+        SketchPoint p;
+        if (!s.sketch.screenToSketch(s.camera.snapshot(), px, py, SessionDriver::kW,
+                                     SessionDriver::kH, &p)) {
+            return s.sketch.planarFaceCount();
+        }
+        for (size_t f = 0; f < s.sketch.planarFaceCount(); ++f) {
+            std::vector<PlanarProfileComponent> shape;
+            if (mergePlanarFaceSelection(s.sketch.arrangement(), {f}, &shape) != CadStatus::Ok) continue;
+            bool in = sketchPointStrictlyInside(p, shape[0].outer.polygon);
+            for (const PlanarProfileLoop& hole : shape[0].holes) {
+                in = in && !sketchPointStrictlyInside(p, hole.polygon);
+            }
+            if (in) return f;
+        }
+        return s.sketch.planarFaceCount();
+    };
+    bool shaftToggles = false;
+    bool headKept = false;
     if (s.sketch.extrudeAnchors(&anchors)) {
         float mx = 0.0f;
         float my = 0.0f;
         const Vec3 mid = vec3Add(anchors.base, vec3Scale(anchors.axis,
                                                          static_cast<float>(0.5 * anchors.depth)));
-        if (projectWorldToScreen(s.camera.snapshot(), mid, SessionDriver::kW, SessionDriver::kH, &mx,
-                                 &my)
+        const size_t under =
+                projectWorldToScreen(s.camera.snapshot(), mid, SessionDriver::kW, SessionDriver::kH,
+                                     &mx, &my)
+                        ? faceUnder(mx, my)
+                        : s.sketch.planarFaceCount();
+        if (under < s.sketch.planarFaceCount()
             && arrow.onDrawnArrow(anchors, s.camera.snapshot(), mx, my, SessionDriver::kW,
-                                  SessionDriver::kH)) {
+                                  SessionDriver::kH)
+            && !arrow.onDrawnArrowHead(anchors, s.camera.snapshot(), mx, my, SessionDriver::kW,
+                                       SessionDriver::kH)) {
+            const bool wasSelected = s.sketch.planarFaceSelected(under);
             tap(mx, my);
-            onArrowKept = s.sketch.selectedAreaCount() == 2u && s.sketch.extrude().depth == afterDrag;
+            const bool flipped = s.sketch.planarFaceSelected(under) != wasSelected
+                                 && s.sketch.extrude().depth == afterDrag
+                                 && s.sketch.lastTapOutcome() == SketchTapOutcome::Resolved;
+            tap(mx, my);  // and back, so the cases below start where they did
+            shaftToggles = flipped && s.sketch.planarFaceSelected(under) == wasSelected
+                           && s.sketch.selectedAreaCount() == 2u;
+        }
+        // The head: the drawn point of the primary side.
+        float hx = 0.0f;
+        float hy = 0.0f;
+        const CadExtrudeSideAnchor& primary = anchors.side(anchors.primaryIsPositive);
+        CadExtrudeControlScale scale;
+        if (cadExtrudeManipulatorScale(anchors, s.camera.snapshot(), SessionDriver::kH, &scale)) {
+            const Vec3 headMid = vec3Add(primary.tip, vec3Scale(primary.axis,
+                                         static_cast<float>(0.5 * scale.world
+                                                            * kCadExtrudeArrowHeadLengthFraction)));
+            if (projectWorldToScreen(s.camera.snapshot(), headMid, SessionDriver::kW,
+                                     SessionDriver::kH, &hx, &hy)
+                && arrow.onDrawnArrowHead(anchors, s.camera.snapshot(), hx, hy, SessionDriver::kW,
+                                          SessionDriver::kH)) {
+                tap(hx, hy);
+                headKept = s.sketch.selectedAreaCount() == 2u
+                           && s.sketch.extrude().depth == afterDrag
+                           && s.sketch.lastTapOutcome() == SketchTapOutcome::ArrowHead;
+            }
         }
     }
-    r.check("S2CORR_TAP_03_a_still_tap_on_the_drawn_arrow_toggles_no_cell", onArrowKept);
+    r.check("S2CORR_TAP_03_R2_a_still_mid_shaft_tap_toggles_the_cell_under_it", shaftToggles);
+    r.check("S2CORR_TAP_03b_R2_a_still_tap_on_the_drawn_head_toggles_no_cell", headKept);
     // One real tap on a cell wherever the arrow now stands: off its corridor
     // if the cell reaches there, else inside the corridor off the drawn arrow.
     const auto tapCell = [&](size_t face) {
@@ -2232,14 +2285,16 @@ void testFillTaps(Recorder& r) {
     r.check("S2CORR_TAP_04_tapping_A_B_A_leaves_only_B",
             againA && !s.sketch.planarFaceSelected(inside) && s.sketch.planarFaceSelected(rest)
                     && s.sketch.selectedAreaCount() == 1u);
-    // B and the outside part meet only at the two crossings: the tap is
-    // refused by its OWN name and the selection stands.
+    // Deliberate rule change (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): B and the
+    // outside part meet only at the two crossings, and the tap now SELECTS it
+    // -- the selection is a set -- and the candidate is two components.
     const bool pinchTap = tapCell(outside);
-    r.check("S2CORR_TAP_05_two_cells_meeting_at_a_point_are_refused_by_their_own_name",
-            pinchTap && !s.sketch.planarFaceSelected(outside) && s.sketch.selectedAreaCount() == 1u
-                    && s.sketch.lastStatus() == CadStatus::PlanarFacesTouchAtPoint);
-    // Three consecutive real taps build A + B + C: the rectangle with its bump.
-    const bool built = tapCell(inside) && s.sketch.selectedAreaCount() == 2u && tapCell(outside);
+    r.check("S2CORR_TAP_05_R2_two_cells_meeting_at_a_point_are_both_selected",
+            pinchTap && s.sketch.planarFaceSelected(outside) && s.sketch.planarFaceSelected(rest)
+                    && s.sketch.selectedAreaCount() == 2u && s.sketch.lastStatus() == CadStatus::Ok
+                    && s.sketch.evaluateCandidate().status == CadStatus::Ok);
+    // A third real tap builds A + B + C: the rectangle with its bump.
+    const bool built = tapCell(inside);
     r.check("S2CORR_TAP_06_real_taps_reach_all_three_cells_and_the_union_is_valid",
             built && s.sketch.selectedAreaCount() == 3u && s.sketch.planarFaceSelected(outside)
                     && s.sketch.evaluateCandidate().status == CadStatus::Ok);
@@ -3851,11 +3906,45 @@ void testPlanarRuntime(Recorder& r) {
             }
             if (std::fabs(face.area - 1.0) < 1e-9) corner.push_back(face.ref);
         }
+        // Deliberate rule change (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): two
+        // cells meeting only at a corner share no fragment, so they are two
+        // edge-connected groups and therefore two components -- valid, and
+        // never `PlanarFacesTouchAtPoint`.
         const CadBodyState pinched = makeCadBodyState(pinch, facesExtrude(corner, 1.0));
-        r.check("CADV6S2_REG_04_a_pinched_union_is_refused_by_name",
-                corner.size() == 2u
-                        && validateCadBodyState(pinched) == CadStatus::PlanarFacesTouchAtPoint
-                        && regen(pinched).why == CadStatus::PlanarFacesTouchAtPoint);
+        const Regen pinchedSolid = regen(pinched);
+        r.check("CADV6S2_REG_04_R2_two_cells_meeting_at_a_corner_are_two_valid_components",
+                corner.size() == 2u && validateCadBodyState(pinched) == CadStatus::Ok
+                        && pinchedSolid.why == CadStatus::Ok && pinchedSolid.mesh.components == 2u);
+        // The pinch protection is NOT disabled: ONE edge-connected group whose
+        // own boundary passes a node twice -- a frame plus two diagonal cells
+        // of the 2 x 2 grid it surrounds, leaving the other two as holes that
+        // touch at the grid's centre -- is still refused by name.
+        CadSketch grid;
+        addRect(&grid, 1.0, 1.0, 4.0, 4.0);
+        addRect(&grid, 1.0, 1.0, 2.0, 2.0);
+        for (const auto& seg : {std::pair<SketchPoint, SketchPoint>{{1.0, 0.0}, {1.0, 2.0}},
+                                std::pair<SketchPoint, SketchPoint>{{0.0, 1.0}, {2.0, 1.0}}}) {
+            SketchLine line;
+            line.start = seg.first;
+            line.end = seg.second;
+            SketchEntityId id = kNoSketchEntity;
+            addSketchEntity(&grid, line, &id);
+        }
+        PlanarFaceRef frame;
+        PlanarFaceRef bottomLeft;
+        PlanarFaceRef topRight;
+        const bool gridFound = faceAtPoint(grid, SketchPoint{-0.5, -0.5}, &frame)
+                               && faceAtPoint(grid, SketchPoint{0.5, 0.5}, &bottomLeft)
+                               && faceAtPoint(grid, SketchPoint{1.5, 1.5}, &topRight);
+        const CadBodyState selfPinched =
+                makeCadBodyState(grid, facesExtrude({frame, bottomLeft, topRight}, 1.0));
+        const CadBodyState diagonalOnly =
+                makeCadBodyState(grid, facesExtrude({bottomLeft, topRight}, 1.0));
+        r.check("CADV6S2_REG_04b_R2_a_group_whose_own_boundary_pinches_is_still_refused",
+                gridFound && validateCadBodyState(selfPinched) == CadStatus::PlanarFacesTouchAtPoint
+                        && regen(selfPinched).why == CadStatus::PlanarFacesTouchAtPoint
+                        && validateCadBodyState(diagonalOnly) == CadStatus::Ok
+                        && regen(diagonalOnly).mesh.components == 2u);
         // Every arrangement refusal maps to its own v6 name, and a pinch is no
         // longer read as the loop model's overlap
         // (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`).
@@ -4163,6 +4252,880 @@ void testPlanarRuntime(Recorder& r) {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// `CAD-V6-S2-CORRECTION-FILL-PICK-R2`: the fill-bucket selection is a SET of
+// exact face refs (a tap checks state, resolution and the bound only), faces
+// meeting at a point are separate components, and a Ready tap is resolved at
+// the Down pixel through the Down camera with no orbit inside the slop.
+// ---------------------------------------------------------------------------
+
+// The OWNER-style seven-cell sketch: a 4 x 3 rectangle; circles A (-0.8, 0)
+// and B (0, 0), r 0.8, overlapping; circle C (2, 0), r 0.6, across the right
+// side; two lines cutting a 0.5 x 0.5 cell out of the upper-left corner.
+CadSketch ownerSevenCellSketch() {
+    CadSketch s;
+    addRect(&s, 0.0, 0.0, 4.0, 3.0);
+    addCircle(&s, -0.8, 0.0, 0.8);
+    addCircle(&s, 0.0, 0.0, 0.8);
+    addCircle(&s, 2.0, 0.0, 0.6);
+    for (const auto& seg : {std::pair<SketchPoint, SketchPoint>{{-1.5, 1.5}, {-1.5, 1.0}},
+                            std::pair<SketchPoint, SketchPoint>{{-1.5, 1.0}, {-2.0, 1.0}}}) {
+        SketchLine line;
+        line.start = seg.first;
+        line.end = seg.second;
+        SketchEntityId id = kNoSketchEntity;
+        addSketchEntity(&s, line, &id);
+    }
+    return s;
+}
+
+// One interior point per cell, in a fixed reading order.
+enum OwnerCell { kCellRest, kCellCInside, kCellCOutside, kCellCorner, kCellAOnly, kCellLens, kCellBOnly, kOwnerCells };
+const SketchPoint kOwnerCellPoint[kOwnerCells] = {{1.0, 1.2},   {1.8, 0.0},  {2.3, 0.0},
+                                                  {-1.75, 1.25}, {-1.2, 0.0}, {-0.4, 0.0},
+                                                  {0.4, 0.0}};
+
+// The atomic face of a derived arrangement whose interior holds `p`, or the
+// face count when none does.
+size_t arrangementFaceAt(const SketchArrangement& a, const SketchPoint& p) {
+    for (size_t i = 0; i < a.faces.size(); ++i) {
+        std::vector<PlanarProfileComponent> shape;
+        if (mergePlanarFaceSelection(a, {i}, &shape) != CadStatus::Ok || shape.size() != 1u) continue;
+        bool inside = sketchPointStrictlyInside(p, shape[0].outer.polygon);
+        for (const PlanarProfileLoop& hole : shape[0].holes) {
+            inside = inside && !sketchPointStrictlyInside(p, hole.polygon);
+        }
+        if (inside) return i;
+    }
+    return a.faces.size();
+}
+
+// Every entity typed exactly through the gesture path, then Finish.
+bool finishSketchOn(SessionDriver& s, const CadSketch& sketch, bool begin = true) {
+    if (begin && !s.beginWorld(Workplane::XY)) return false;
+    for (const SketchEntity& entity : sketch.entities) {
+        SketchTool tool = SketchTool::Line;
+        if (entity.rectangle() != nullptr) tool = SketchTool::Rectangle;
+        if (entity.circle() != nullptr) tool = SketchTool::Circle;
+        if (s.place(tool, SketchPoint{0.0, 0.0}, SketchPoint{0.5, 0.5}, entity.payload())
+            == kNoSketchEntity) {
+            return false;
+        }
+    }
+    return s.sketch.finish() == CadStatus::Ok;
+}
+
+bool sameFaceRefs(const std::vector<PlanarFaceRef>& a, const std::vector<PlanarFaceRef>& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (!samePlanarFaceRef(a[i], b[i])) return false;
+    }
+    return true;
+}
+
+// The selection as a bitmask over `cells` (face indices in reading order).
+uint32_t selectionMask(const SketchSession& sketch, const std::vector<size_t>& cells) {
+    uint32_t mask = 0;
+    for (size_t k = 0; k < cells.size(); ++k) {
+        if (sketch.planarFaceSelected(cells[k])) mask |= 1u << k;
+    }
+    return mask;
+}
+
+// Empties the face selection through the same toggle a tap uses.
+bool clearFaces(SessionDriver& s) {
+    for (size_t i = 0; i < s.sketch.planarFaceCount(); ++i) {
+        if (s.sketch.planarFaceSelected(i) && s.sketch.togglePlanarFace(i) != CadStatus::Ok) {
+            return false;
+        }
+    }
+    return s.sketch.selectedAreaCount() == 0u;
+}
+
+size_t cycleFragments(const PlanarFaceRef& ref) {
+    size_t n = ref.outer.size();
+    for (const FragmentCycle& hole : ref.holes) n += hole.size();
+    return n;
+}
+
+size_t componentFragments(const std::vector<PlanarProfileComponent>& components) {
+    size_t n = 0;
+    for (const PlanarProfileComponent& c : components) {
+        n += c.outer.fragments.size();
+        for (const PlanarProfileLoop& hole : c.holes) n += hole.fragments.size();
+    }
+    return n;
+}
+
+// The JNI touch ordering, restated for the host: the session first, with the
+// camera as it stands BEFORE the event, then the camera exactly when
+// `sketchEventReachesCamera` says so -- otherwise its gesture is reset.
+bool jniTouch(SessionDriver& s, TouchAction action, float x, float y) {
+    TouchPointer p{7, x, y};
+    const bool consumed = s.sketch.onTouch(action, action == TouchAction::Up ? 7 : -1, &p, 1,
+                                           s.camera.snapshot(), SessionDriver::kW,
+                                           SessionDriver::kH);
+    if (sketchEventReachesCamera(s.sketch.state(), consumed, 1, s.sketch.readyTapArmed())) {
+        s.camera.onTouch(action, action == TouchAction::Up ? 7 : -1, &p, 1);
+    } else {
+        s.camera.resetGesture();
+    }
+    return consumed;
+}
+
+bool samePose(const CameraController::Pose& a, const CameraController::Pose& b) {
+    return a.yaw == b.yaw && a.pitch == b.pitch && a.distance == b.distance
+           && a.target.x == b.target.x && a.target.y == b.target.y && a.target.z == b.target.z
+           && a.projection == b.projection && a.orthoHalfHeightMeters == b.orthoHalfHeightMeters;
+}
+
+void placeCamera(SessionDriver& s, float yaw, float pitch, ProjectionMode projection) {
+    CameraController::Pose pose;
+    pose.target = Vec3{0.0f, 0.0f, 0.0f};
+    pose.yaw = yaw;
+    pose.pitch = pitch;
+    pose.distance = 9.0f;
+    pose.projection = projection;
+    pose.orthoHalfHeightMeters = 4.0f;
+    s.camera.restorePose(pose);
+}
+
+// The face the Ready session would resolve at (x, y) through `camera`.
+size_t sessionFaceAt(const SketchSession& sketch, const CameraSnapshot& camera, float x, float y) {
+    SketchPoint p;
+    if (!sketch.screenToSketch(camera, x, y, SessionDriver::kW, SessionDriver::kH, &p)) {
+        return sketch.planarFaceCount();
+    }
+    return arrangementFaceAt(sketch.arrangement(), p);
+}
+
+void testFillPickR2(Recorder& r) {
+    const CadSketch owner = ownerSevenCellSketch();
+    const SketchArrangement arrangement = deriveSketchArrangement(owner);
+    std::vector<size_t> cell(kOwnerCells, arrangement.faces.size());
+    for (int k = 0; k < kOwnerCells; ++k) cell[k] = arrangementFaceAt(arrangement, kOwnerCellPoint[k]);
+    bool cellsDistinct = arrangement.status == ArrangementStatus::Ok && arrangement.faces.size() == 7u;
+    for (int k = 0; cellsDistinct && k < kOwnerCells; ++k) {
+        cellsDistinct = cell[k] < 7u;
+        for (int j = 0; cellsDistinct && j < k; ++j) cellsDistinct = cell[j] != cell[k];
+    }
+
+    // --- selection / fill (the session) ------------------------------------
+    SessionDriver s;
+    const bool finished = finishSketchOn(s, owner) && s.sketch.planarFaceCount() == 7u
+                          && s.sketch.selectionKind() == CadSelectionKind::PlanarFaces;
+    // The session derives the same arrangement, so the indices carry over.
+    for (int k = 0; finished && k < kOwnerCells; ++k) {
+        cellsDistinct = cellsDistinct
+                        && arrangementFaceAt(s.sketch.arrangement(), kOwnerCellPoint[k]) == cell[k];
+    }
+    const bool ready = finished && cellsDistinct;
+
+    bool alone = ready;
+    for (int k = 0; alone && k < kOwnerCells; ++k) {
+        alone = s.sketch.togglePlanarFace(cell[k]) == CadStatus::Ok
+                && s.sketch.selectedAreaCount() == 1u && s.sketch.planarFaceSelected(cell[k])
+                && clearFaces(s);
+    }
+    int pairRefusals = 0;
+    for (int a = 0; ready && a < kOwnerCells; ++a) {
+        for (int b = 0; b < kOwnerCells; ++b) {
+            if (a == b) continue;
+            if (s.sketch.togglePlanarFace(cell[a]) != CadStatus::Ok
+                || s.sketch.togglePlanarFace(cell[b]) != CadStatus::Ok
+                || s.sketch.selectedAreaCount() != 2u) {
+                ++pairRefusals;
+            }
+            clearFaces(s);
+        }
+    }
+    r.check("FILL_R2_01_every_atomic_face_selects_alone_and_beside_every_other_one",
+            ready && alone && pairRefusals == 0);
+
+    bool orderFree = ready;
+    for (int a = 0; orderFree && a < kOwnerCells; ++a) {
+        for (int b = a + 1; orderFree && b < kOwnerCells; ++b) {
+            s.sketch.togglePlanarFace(cell[a]);
+            s.sketch.togglePlanarFace(cell[b]);
+            const std::vector<PlanarFaceRef> ab = s.sketch.extrude().planarFaces;
+            clearFaces(s);
+            s.sketch.togglePlanarFace(cell[b]);
+            s.sketch.togglePlanarFace(cell[a]);
+            orderFree = ab.size() == 2u && sameFaceRefs(ab, s.sketch.extrude().planarFaces);
+            clearFaces(s);
+        }
+    }
+    r.check("FILL_R2_02_every_ordered_pair_selects_both_with_identical_refs", orderFree);
+
+    std::vector<PlanarFaceRef> full;
+    for (int k = 0; ready && k < kOwnerCells; ++k) s.sketch.togglePlanarFace(cell[k]);
+    full = s.sketch.extrude().planarFaces;
+    clearFaces(s);
+    std::vector<int> order{0, 1, 2, 3, 4, 5, 6};
+    int permutations = 0;
+    int permutationMismatches = 0;
+    do {
+        bool ok = true;
+        for (int k : order) ok = ok && s.sketch.togglePlanarFace(cell[k]) == CadStatus::Ok;
+        ok = ok && sameFaceRefs(full, s.sketch.extrude().planarFaces);
+        if (!ok) ++permutationMismatches;
+        for (int k : order) s.sketch.togglePlanarFace(cell[k]);
+        ++permutations;
+    } while (ready && std::next_permutation(order.begin(), order.end()));
+    r.check("FILL_R2_03_all_5040_tap_orders_of_the_seven_faces_end_in_one_selection",
+            ready && full.size() == 7u && permutations == 5040 && permutationMismatches == 0
+                    && s.sketch.selectedAreaCount() == 0u);
+
+    uint32_t lcg = 0x5EEDu;
+    const auto next = [&lcg]() {
+        lcg = lcg * 1664525u + 1013904223u;
+        return lcg >> 8;
+    };
+    int xorMismatches = 0;
+    for (int run = 0; ready && run < 200; ++run) {
+        uint32_t expected = 0;
+        const int taps = 1 + static_cast<int>(next() % 24u);
+        for (int t = 0; t < taps; ++t) {
+            const int k = static_cast<int>(next() % static_cast<uint32_t>(kOwnerCells));
+            if (s.sketch.togglePlanarFace(cell[k]) != CadStatus::Ok) ++xorMismatches;
+            expected ^= 1u << k;
+        }
+        if (selectionMask(s.sketch, cell) != expected) ++xorMismatches;
+        clearFaces(s);
+    }
+    r.check("FILL_R2_04_200_random_toggle_sequences_equal_their_xor", ready && xorMismatches == 0);
+
+    // --- components --------------------------------------------------------
+    const auto faceRef = [&](int k) { return arrangement.faces[cell[k]].ref; };
+    const auto mergedOf = [&](std::vector<int> ks, std::vector<PlanarProfileComponent>* out,
+                              size_t* groups) {
+        std::vector<size_t> indices;
+        for (int k : ks) indices.push_back(cell[k]);
+        std::vector<std::vector<size_t>> g;
+        partitionSelectedPlanarFacesBySharedBoundary(arrangement, indices, &g);
+        if (groups != nullptr) *groups = g.size();
+        return mergePlanarFaceSelection(arrangement, indices, out);
+    };
+    {
+        std::vector<PlanarProfileComponent> merged;
+        size_t groups = 0;
+        const CadStatus why = cellsDistinct ? mergedOf({kCellAOnly, kCellLens}, &merged, &groups)
+                                            : CadStatus::NotSketching;
+        const size_t separate = cycleFragments(faceRef(kCellAOnly)) + cycleFragments(faceRef(kCellLens));
+        const size_t united = componentFragments(merged);
+        const CadBodyState state =
+                makeCadBodyState(owner, facesExtrude({faceRef(kCellAOnly), faceRef(kCellLens)}, 1.0));
+        CadFeatureGeometry g;
+        const CadStatus built = buildCadFeatureGeometry(state, kCadFeatureId, &g);
+        const Regen solid = regen(state);
+        r.check("FILL_R2_05_faces_sharing_an_edge_are_one_component_with_no_internal_wall",
+                why == CadStatus::Ok && groups == 1u && merged.size() == 1u
+                        && merged[0].holes.empty() && united < separate
+                        && (separate - united) % 2u == 0u && built == CadStatus::Ok
+                        && g.faces.size() == 2u + united && solid.why == CadStatus::Ok
+                        && solid.mesh.components == 1u
+                        && nearRel(solid.mesh.volume, merged[0].area, 1e-7));
+    }
+    {
+        bool bothOrders = ready;
+        for (const auto& pair : {std::pair<int, int>{kCellAOnly, kCellBOnly}, std::pair<int, int>{kCellRest, kCellLens},
+                                 std::pair<int, int>{kCellRest, kCellCOutside}}) {
+            for (int flip = 0; bothOrders && flip < 2; ++flip) {
+                const int first = flip == 0 ? pair.first : pair.second;
+                const int second = flip == 0 ? pair.second : pair.first;
+                bothOrders = s.sketch.togglePlanarFace(cell[first]) == CadStatus::Ok
+                             && s.sketch.togglePlanarFace(cell[second]) == CadStatus::Ok
+                             && s.sketch.selectedAreaCount() == 2u
+                             && s.sketch.lastStatus() == CadStatus::Ok
+                             && s.sketch.evaluateCandidate().status == CadStatus::Ok
+                             && clearFaces(s);
+            }
+            std::vector<PlanarProfileComponent> merged;
+            size_t groups = 0;
+            const CadBodyState state = makeCadBodyState(
+                    owner, facesExtrude({faceRef(pair.first), faceRef(pair.second)}, 1.0));
+            const Regen solid = regen(state);
+            bothOrders = bothOrders && mergedOf({pair.first, pair.second}, &merged, &groups)
+                                               == CadStatus::Ok
+                         && groups == 2u && merged.size() == 2u && solid.why == CadStatus::Ok
+                         && solid.mesh.components == 2u;
+        }
+        r.check("FILL_R2_06_faces_touching_only_at_a_point_select_either_order_and_are_two_components",
+                bothOrders);
+    }
+    {
+        bool disjoint = cellsDistinct;
+        for (const auto& pair : {std::pair<int, int>{kCellCorner, kCellCOutside},
+                                 std::pair<int, int>{kCellLens, kCellCInside}}) {
+            std::vector<PlanarProfileComponent> merged;
+            size_t groups = 0;
+            const Regen solid = regen(makeCadBodyState(
+                    owner, facesExtrude({faceRef(pair.first), faceRef(pair.second)}, 1.0)));
+            disjoint = disjoint
+                       && mergedOf({pair.first, pair.second}, &merged, &groups) == CadStatus::Ok
+                       && groups == 2u && merged.size() == 2u && solid.mesh.components == 2u;
+        }
+        r.check("FILL_R2_07_disjoint_faces_are_two_components", disjoint);
+    }
+    {
+        // The OWNER sequence: all seven, remove C-inside (6 -- rest and
+        // C-outside now meet only at C's crossings), remove the rest, add it
+        // back, add C-inside back. Every tap Ok and the count exact.
+        bool steps = ready;
+        size_t expectCount = 0;
+        for (int k = 0; steps && k < kOwnerCells; ++k) {
+            steps = s.sketch.togglePlanarFace(cell[k]) == CadStatus::Ok
+                    && s.sketch.selectedAreaCount() == ++expectCount;
+        }
+        const int sequence[4] = {kCellCInside, kCellRest, kCellRest, kCellCInside};
+        const size_t counts[4] = {6u, 5u, 6u, 7u};
+        bool previews = true;
+        bool neverTouch = true;
+        for (int i = 0; steps && i < 4; ++i) {
+            const CadStatus why = s.sketch.togglePlanarFace(cell[sequence[i]]);
+            steps = why == CadStatus::Ok && s.sketch.selectedAreaCount() == counts[i];
+            neverTouch = neverTouch && why != CadStatus::PlanarFacesTouchAtPoint
+                         && s.sketch.lastStatus() != CadStatus::PlanarFacesTouchAtPoint;
+            const CadCandidateEvaluation e = s.sketch.evaluateCandidate();
+            previews = previews && e.status == CadStatus::Ok;
+        }
+        r.check("FILL_R2_08_the_owner_sequence_7_6_5_6_7_is_ok_at_every_tap",
+                steps && neverTouch && previews);
+        clearFaces(s);
+    }
+    {
+        int refused = 0;
+        int touchRefusals = 0;
+        int nondeterministic = 0;
+        int componentMismatch = 0;
+        int regenerated = 0;
+        double faceArea[7] = {};
+        for (int k = 0; cellsDistinct && k < kOwnerCells; ++k) faceArea[k] = arrangement.faces[cell[k]].area;
+        for (uint32_t mask = 1; cellsDistinct && mask < 128u; ++mask) {
+            std::vector<int> ks;
+            double area = 0.0;
+            for (int k = 0; k < kOwnerCells; ++k) {
+                if ((mask & (1u << k)) != 0u) {
+                    ks.push_back(k);
+                    area += faceArea[k];
+                }
+            }
+            std::vector<PlanarProfileComponent> first;
+            std::vector<PlanarProfileComponent> second;
+            size_t groups = 0;
+            const CadStatus why = mergedOf(ks, &first, &groups);
+            const CadStatus again = mergedOf(ks, &second, nullptr);
+            if (why != CadStatus::Ok) {
+                ++refused;
+                if (why == CadStatus::PlanarFacesTouchAtPoint) ++touchRefusals;
+                continue;
+            }
+            bool same = again == CadStatus::Ok && first.size() == second.size();
+            for (size_t c = 0; same && c < first.size(); ++c) {
+                same = first[c].outer.polygon.size() == second[c].outer.polygon.size()
+                       && first[c].area == second[c].area
+                       && first[c].holes.size() == second[c].holes.size();
+            }
+            if (!same) ++nondeterministic;
+            if (first.size() != groups) ++componentMismatch;
+            std::vector<PlanarFaceRef> refs;
+            for (int k : ks) refs.push_back(faceRef(k));
+            const Regen solid = regen(makeCadBodyState(owner, facesExtrude(refs, 1.0)));
+            if (solid.why == CadStatus::Ok && solid.mesh.components == groups
+                && std::fabs(solid.mesh.volume - area) <= 0.02 * area) {
+                ++regenerated;
+            }
+        }
+        r.check("FILL_R2_09_all_127_subsets_derive_deterministically_with_no_point_touch_refusal",
+                cellsDistinct && refused == 0 && touchRefusals == 0 && nondeterministic == 0
+                        && componentMismatch == 0 && regenerated == 127);
+    }
+
+    // --- operations through the production kernel path ----------------------
+    {
+        // New Body: two point-touching components, alone and then with a
+        // later Add on the SAME root sketch, which sends the base through
+        // `cadKernelValidateSolid` and one kernel union.
+        bool ok = cellsDistinct;
+        for (const auto& pair : {std::pair<int, int>{kCellAOnly, kCellBOnly},
+                                 std::pair<int, int>{kCellRest, kCellCOutside}}) {
+            const std::vector<PlanarFaceRef> refs{faceRef(pair.first), faceRef(pair.second)};
+            CadBodyState state = makeCadBodyState(owner, facesExtrude(refs, 1.0));
+            const Regen alone = regen(state);
+            const uint32_t added =
+                    appendCadLaterFeature(&state, CadFeatureOperation::Add, kBaseCadSketchId,
+                                          facesExtrude(refs, 2.0));
+            const Regen chained = regen(state);
+            ok = ok && alone.why == CadStatus::Ok && alone.mesh.components == 2u && added != 0u
+                 && validateCadBodyState(state) == CadStatus::Ok && chained.why == CadStatus::Ok
+                 && chained.report.failedFeatureId == 0u && chained.mesh.components == 2u
+                 && nearRel(chained.mesh.volume, 2.0 * alone.mesh.volume, 1e-6);
+        }
+        r.check("FILL_R2_10_a_point_touch_new_body_validates_through_the_production_kernel_path",
+                ok);
+    }
+    {
+        // Add and Cut with ONE tool of two squares meeting at one corner, on
+        // the block's far cap: one kernel boolean each, exact volumes, and the
+        // same result as the two squares added one feature at a time.
+        CadSketch tool;
+        addRect(&tool, -0.25, -0.25, 0.5, 0.5);
+        addRect(&tool, 0.25, 0.25, 0.5, 0.5);
+        PlanarFaceRef lower;
+        PlanarFaceRef upper;
+        const bool found = faceAtPoint(tool, SketchPoint{-0.25, -0.25}, &lower)
+                           && faceAtPoint(tool, SketchPoint{0.25, 0.25}, &upper);
+        std::vector<PlanarProfileComponent> merged;
+        const SketchArrangement ta = deriveSketchArrangement(tool);
+        std::vector<size_t> both;
+        size_t li = 0;
+        size_t ui = 0;
+        if (found && resolvePlanarFaceRef(ta, lower, &li) && resolvePlanarFaceRef(ta, upper, &ui)) {
+            both = {li, ui};
+        }
+        const CadStatus mergedWhy = mergePlanarFaceSelection(ta, both, &merged);
+        const Regen add = regen(withFeature(blockState(1.0), CadFeatureOperation::Add, kCadFeatureId,
+                                            tool, facesExtrude({lower, upper}, 0.5)));
+        const Regen cut = regen(withFeature(blockState(1.0), CadFeatureOperation::Cut, kCadFeatureId,
+                                            tool,
+                                            facesExtrude({lower, upper}, 0.5,
+                                                         ExtrudeDirection::AgainstNormal)));
+        const CadBodyState once = withFeature(blockState(1.0), CadFeatureOperation::Add,
+                                              kCadFeatureId, tool, facesExtrude({lower}, 0.5));
+        const Regen sequential = regen(withFeature(once, CadFeatureOperation::Add, kCadFeatureId,
+                                                   tool, facesExtrude({upper}, 0.5)));
+        r.check("FILL_R2_11_add_and_cut_with_a_point_touch_tool_pass_the_production_kernel_path",
+                found && mergedWhy == CadStatus::Ok && merged.size() == 2u
+                        && add.why == CadStatus::Ok && add.mesh.components == 1u
+                        && nearRel(add.mesh.volume, 4.25, 1e-6) && watertight(add.mesh.mesh)
+                        && cut.why == CadStatus::Ok && cut.mesh.components == 1u
+                        && nearRel(cut.mesh.volume, 3.75, 1e-6) && watertight(cut.mesh.mesh)
+                        && sequential.why == CadStatus::Ok
+                        && nearRel(sequential.mesh.volume, add.mesh.volume, 1e-6));
+    }
+    {
+        // An Add refused for its OPERATION keeps every selected face; removing
+        // the cell that made it disjoint restores the preview.
+        IdLifetimeRig rig;
+        SketchFrame frame;
+        TopoRef ref;
+        const bool opened = rig.open(blockState(1.0))
+                            && worldCapFrame(rig.scene, rig.bodyId, kCadFeatureId,
+                                             CadFaceKind::CapFar, &frame, &ref);
+        const CadBodyState producer = rig.state();
+        SessionDriver f;
+        CadSketch onCap;
+        addRect(&onCap, 0.0, 0.0, 1.0, 1.0);
+        addCircle(&onCap, 0.5, 0.0, 0.3);
+        addRect(&onCap, 3.0, 0.0, 0.5, 0.5);
+        const bool began = opened && f.beginFace(frame, ref, &producer)
+                           && finishSketchOn(f, onCap, false)
+                           && f.sketch.selectionKind() == CadSelectionKind::PlanarFaces;
+        const SketchArrangement fa = f.sketch.arrangement();
+        const size_t inside = arrangementFaceAt(fa, SketchPoint{-0.2, 0.0});
+        const size_t far = arrangementFaceAt(fa, SketchPoint{3.0, 0.0});
+        const bool chosen = began && inside < fa.faces.size() && far < fa.faces.size()
+                            && f.sketch.setOperation(CadFeatureOperation::Add) == CadStatus::Ok
+                            && f.sketch.togglePlanarFace(inside) == CadStatus::Ok
+                            && f.sketch.togglePlanarFace(far) == CadStatus::Ok
+                            && f.sketch.lastStatus() == CadStatus::Ok;
+        const std::vector<PlanarFaceRef> held = f.sketch.extrude().planarFaces;
+        const CadStatus refusedWhy = f.sketch.evaluateCandidate().status;
+        ObjectId none = kNoObject;
+        const CadStatus commitWhy = chosen ? f.sketch.commit(rig.scene, rig.history, &none)
+                                           : CadStatus::NotSketching;
+        const bool kept = sameFaceRefs(held, f.sketch.extrude().planarFaces)
+                          && f.sketch.selectedAreaCount() == 2u && f.sketch.planarFaceSelected(inside)
+                          && f.sketch.planarFaceSelected(far);
+        const bool restored = f.sketch.togglePlanarFace(far) == CadStatus::Ok
+                              && f.sketch.selectedAreaCount() == 1u
+                              && f.sketch.evaluateCandidate().status == CadStatus::Ok;
+        r.check("FILL_R2_12_an_operation_refusal_keeps_the_whole_selection_and_fixing_it_restores_preview",
+                chosen && refusedWhy == CadStatus::AddDisjoint && commitWhy == CadStatus::AddDisjoint
+                        && kept && restored && rig.history.undoDepth() == 0u);
+        if (f.sketch.active()) f.sketch.cancel();
+    }
+    {
+        // A 5 x 4 grid: twenty cells. Sixteen select; the seventeenth is the
+        // bound, by name, the selection standing; an index naming no face and
+        // a session not in Ready are the only other refusals.
+        CadSketch grid;
+        addRect(&grid, 0.0, 0.0, 5.0, 4.0);
+        for (double x : {-1.5, -0.5, 0.5, 1.5}) {
+            SketchLine l;
+            l.start = SketchPoint{x, -2.0};
+            l.end = SketchPoint{x, 2.0};
+            SketchEntityId id = kNoSketchEntity;
+            addSketchEntity(&grid, l, &id);
+        }
+        for (double y : {-1.0, 0.0, 1.0}) {
+            SketchLine l;
+            l.start = SketchPoint{-2.5, y};
+            l.end = SketchPoint{2.5, y};
+            SketchEntityId id = kNoSketchEntity;
+            addSketchEntity(&grid, l, &id);
+        }
+        SessionDriver g;
+        const bool editingRefused = g.beginWorld(Workplane::XY)
+                                    && g.sketch.togglePlanarFace(0) == CadStatus::NotSketching;
+        const bool gridReady = finishSketchOn(g, grid, false) && g.sketch.planarFaceCount() == 20u;
+        bool sixteen = gridReady;
+        for (size_t i = 0; sixteen && i < 16u; ++i) {
+            sixteen = g.sketch.togglePlanarFace(i) == CadStatus::Ok;
+        }
+        const std::vector<PlanarFaceRef> held = g.sketch.extrude().planarFaces;
+        const CadStatus seventeenth = g.sketch.togglePlanarFace(16u);
+        SketchPoint p;
+        float x = 0.0f;
+        float y = 0.0f;
+        const bool tapped = g.sketch.planarFaceInfo(17u, &p, nullptr) && g.screenOf(p, &x, &y)
+                            && !g.sketch.toggleRegionAt(g.camera.snapshot(), x, y, SessionDriver::kW,
+                                                        SessionDriver::kH)
+                            && g.sketch.lastTapOutcome() == SketchTapOutcome::SelectionCap;
+        const CadStatus noFace = g.sketch.togglePlanarFace(999u);
+        r.check("FILL_R2_13_the_cap_and_exact_resolution_are_the_only_add_refusals",
+                editingRefused && sixteen && held.size() == 16u
+                        && seventeenth == CadStatus::TooManyRegions && tapped
+                        && noFace == CadStatus::ProfileNotFound
+                        && sameFaceRefs(held, g.sketch.extrude().planarFaces));
+        g.sketch.cancel();
+    }
+
+    // --- persistence ---------------------------------------------------------
+    {
+        const CadBodyState state = makeCadBodyState(
+                owner, facesExtrude({faceRef(kCellAOnly), faceRef(kCellBOnly), faceRef(kCellCorner)}, 1.0));
+        ProjectCodecStatus why = ProjectCodecStatus::Ok;
+        const std::vector<uint8_t> bytes = encodeProjectV1(cadDocumentFor(state), &why);
+        const std::vector<uint8_t> again = encodeProjectV1(cadDocumentFor(state));
+        uint16_t version = 0;
+        ProjectDocument back;
+        const bool decoded = !bytes.empty()
+                             && decodeProject(bytes.data(), bytes.size(), &back) == ProjectCodecStatus::Ok
+                             && back.cad.bodies.size() == 1u;
+        CadBodyMesh mesh;
+        r.check("FILL_R2_P01_a_point_touching_selection_round_trips_in_cadb_v6_with_no_new_format",
+                cellsDistinct && why == ProjectCodecStatus::Ok && bytes == again
+                        && cadbSectionVersion(bytes, &version) && version == kCadSectionVersionV6
+                        && decoded && sameCadBodyState(back.cad.bodies[0].state, state)
+                        && encodeProjectV1(back) == bytes
+                        && regenerateCadBody(back.cad.bodies[0].state, &mesh) == CadStatus::Ok
+                        && mesh.components == 3u);
+    }
+
+    // --- picking -------------------------------------------------------------
+    s.sketch.cancel();
+    SessionDriver p;
+    const bool pickReady = finishSketchOn(p, owner) && p.sketch.planarFaceCount() == 7u;
+    struct View {
+        float yaw;
+        float pitch;
+    };
+    const float kQuarter = 1.5707963f;
+    std::vector<View> views{{0.0f, 0.35f}, {3.14159265f, 0.35f}, {0.0f, -0.35f},
+                            {3.14159265f, -0.35f}};
+    for (int k = 0; k < 4; ++k) {
+        for (float pitch : {0.6f, -0.6f}) views.push_back(View{0.7853982f + kQuarter * k, pitch});
+    }
+    {
+        int roundTrips = 0;
+        int failures = 0;
+        double worst = 0.0;
+        for (ProjectionMode projection : {ProjectionMode::Perspective, ProjectionMode::Orthographic}) {
+            for (const View& v : views) {
+                placeCamera(p, v.yaw, v.pitch, projection);
+                for (int k = 0; pickReady && k < kOwnerCells; ++k) {
+                    float x = 0.0f;
+                    float y = 0.0f;
+                    SketchPoint back;
+                    if (!p.screenOf(kOwnerCellPoint[k], &x, &y)
+                        || !p.sketch.screenToSketch(p.camera.snapshot(), x, y, SessionDriver::kW,
+                                                    SessionDriver::kH, &back)) {
+                        ++failures;
+                        continue;
+                    }
+                    const double e = std::hypot(back.u - kOwnerCellPoint[k].u,
+                                                back.v - kOwnerCellPoint[k].v);
+                    worst = std::max(worst, e);
+                    ++roundTrips;
+                }
+            }
+        }
+        r.check("PICK_R2_01_project_then_screen_to_sketch_round_trips_front_back_8_octants_both_projections",
+                pickReady && failures == 0 && roundTrips == 2 * 12 * 7 && worst <= 1e-4);
+    }
+    {
+        // The same atomic face from both sides of the plane: a tap at its
+        // projected interior toggles exactly it, front and back alike.
+        bool both = pickReady;
+        for (const View& v : {View{0.0f, 0.35f}, View{3.14159265f, 0.35f}}) {
+            placeCamera(p, v.yaw, v.pitch, ProjectionMode::Perspective);
+            for (int k = 0; both && k < kOwnerCells; ++k) {
+                float x = 0.0f;
+                float y = 0.0f;
+                both = p.screenOf(kOwnerCellPoint[k], &x, &y)
+                       && p.sketch.toggleRegionAt(p.camera.snapshot(), x, y, SessionDriver::kW,
+                                                  SessionDriver::kH)
+                       && p.sketch.selectedAreaCount() == 1u && p.sketch.planarFaceSelected(cell[k])
+                       && p.sketch.lastTapOutcome() == SketchTapOutcome::Resolved && clearFaces(p);
+            }
+        }
+        r.check("PICK_R2_02_the_same_face_is_hit_from_both_sides_of_the_sketch_plane", both);
+    }
+    {
+        // Grazing views: the eye 15, 4 and 1 degrees above the plane. Each
+        // cell resolves wherever the existing ray-plane math is finite -- no
+        // band around edge-on is added.
+        bool grazing = pickReady;
+        for (float degrees : {15.0f, 4.0f, 1.0f}) {
+            placeCamera(p, kQuarter - degrees * 3.14159265f / 180.0f, 0.0f,
+                        ProjectionMode::Perspective);
+            for (int k = 0; grazing && k < kOwnerCells; ++k) {
+                float x = 0.0f;
+                float y = 0.0f;
+                if (!p.screenOf(kOwnerCellPoint[k], &x, &y)) continue;  // off-screen is not a tap
+                grazing = sessionFaceAt(p.sketch, p.camera.snapshot(), x, y) == cell[k]
+                          && p.sketch.toggleRegionAt(p.camera.snapshot(), x, y, SessionDriver::kW,
+                                                     SessionDriver::kH)
+                          && p.sketch.planarFaceSelected(cell[k]) && clearFaces(p);
+            }
+        }
+        r.check("PICK_R2_03_grazing_15_4_and_1_degree_views_resolve_with_no_artificial_band",
+                grazing);
+    }
+    {
+        // Sub-slop jitter through the JNI ordering: the camera does not move
+        // and the toggled face is the one under the DOWN pixel.
+        bool still = pickReady;
+        int taps = 0;
+        for (const View& v : {View{0.7853982f, 0.6f}, View{3.9269908f, -0.6f}, View{0.0f, 0.35f}}) {
+            placeCamera(p, v.yaw, v.pitch, ProjectionMode::Perspective);
+            for (float travel : {4.0f, 8.0f, 16.0f}) {
+                for (int k = 0; still && k < kOwnerCells; ++k) {
+                    float x = 0.0f;
+                    float y = 0.0f;
+                    if (!p.screenOf(kOwnerCellPoint[k], &x, &y)) continue;
+                    const CameraController::Pose before = p.camera.capturePose();
+                    const size_t under = sessionFaceAt(p.sketch, p.camera.snapshot(), x, y);
+                    jniTouch(p, TouchAction::Down, x, y);
+                    jniTouch(p, TouchAction::Move, x + 0.5f * travel, y - 0.3f * travel);
+                    jniTouch(p, TouchAction::Move, x + travel * 0.8f, y + travel * 0.6f);
+                    jniTouch(p, TouchAction::Up, x + travel * 0.8f, y + travel * 0.6f);
+                    still = samePose(before, p.camera.capturePose()) && under == cell[k]
+                            && p.sketch.selectedAreaCount() == 1u && p.sketch.planarFaceSelected(under)
+                            && p.sketch.lastTapOutcome() == SketchTapOutcome::Resolved
+                            && clearFaces(p);
+                    ++taps;
+                }
+            }
+        }
+        r.check("PICK_R2_04_sub_slop_moves_never_orbit_and_the_down_pixel_face_toggles",
+                still && taps > 0);
+    }
+    {
+        // Past the slop: the tap disarms (`travel`), the camera re-anchors on
+        // that event, and the first orbit step is the NEXT move's delta alone.
+        placeCamera(p, 0.7853982f, 0.6f, ProjectionMode::Perspective);
+        float x = 0.0f;
+        float y = 0.0f;
+        const bool on = pickReady && p.screenOf(kOwnerCellPoint[kCellRest], &x, &y);
+        const CameraController::Pose start = p.camera.capturePose();
+        jniTouch(p, TouchAction::Down, x, y);
+        jniTouch(p, TouchAction::Move, x + 10.0f, y);
+        const bool heldInSlop = samePose(start, p.camera.capturePose());
+        jniTouch(p, TouchAction::Move, x + 30.0f, y);
+        const bool disarmed = !p.sketch.readyTapArmed()
+                              && p.sketch.lastTapOutcome() == SketchTapOutcome::Travel;
+        const bool reanchored = samePose(start, p.camera.capturePose());
+        jniTouch(p, TouchAction::Move, x + 40.0f, y);
+        const float yawStep = p.camera.capturePose().yaw - start.yaw;
+        jniTouch(p, TouchAction::Up, x + 40.0f, y);
+        r.check("PICK_R2_05_past_the_slop_the_tap_disarms_and_the_orbit_starts_with_no_jump",
+                on && heldInSlop && disarmed && reanchored
+                        && std::fabs(yawStep - (-10.0f * 0.005f)) < 1e-5f
+                        && p.sketch.selectedAreaCount() == 0u);
+    }
+    {
+        // The arrow: the rest cell chosen, the product's oblique feature view.
+        clearFaces(p);
+        p.sketch.togglePlanarFace(cell[kCellRest]);
+        // A shaft long enough on screen that part of it stands clear of the
+        // drawn head (sized by the control scale, not by the depth).
+        p.sketch.setExtrude(3.0, ExtrudeDirection::AlongNormal);
+        CadExtrudeAnchors anchors;
+        CameraController::Pose pose;
+        p.camera.frameSketchView(p.sketch.frame().origin, p.sketch.frame().u, p.sketch.frame().v,
+                                 p.sketch.frame().n);
+        const bool tilted = pickReady && p.sketch.extrudeAnchors(&anchors)
+                            && cadFeatureViewPose(p.camera.capturePose(), nullptr, p.sketch.frame(),
+                                                  anchors, &pose)
+                                       != CadFeatureViewSource::Unavailable;
+        if (tilted) p.camera.restorePose(pose);
+        const CadExtrudeManipulator& arrow = p.sketch.extrudeManipulator();
+        const CameraSnapshot camera = p.camera.snapshot();
+        // A point ON the drawn shaft and OFF the drawn head: the first one
+        // walking up from the base (the cone covers the shaft's upper part at
+        // this zoom -- the head is sized by the control scale, the shaft by
+        // the depth).
+        const auto shaftPoint = [&](const CadExtrudeAnchors& a, const CameraSnapshot& cam, float* ox,
+                                    float* oy) {
+            for (int step = 2; step <= 18; ++step) {
+                const Vec3 at = vec3Add(a.base, vec3Scale(a.axis, static_cast<float>(
+                                                                         a.depth * step / 20.0)));
+                if (projectWorldToScreen(cam, at, SessionDriver::kW, SessionDriver::kH, ox, oy)
+                    && arrow.onDrawnArrow(a, cam, *ox, *oy, SessionDriver::kW, SessionDriver::kH)
+                    && !arrow.onDrawnArrowHead(a, cam, *ox, *oy, SessionDriver::kW,
+                                               SessionDriver::kH)) {
+                    float bx0 = 0.0f;
+                    float by0 = 0.0f;
+                    // Clear of the base too, so it is a SHAFT point.
+                    if (projectWorldToScreen(cam, a.base, SessionDriver::kW, SessionDriver::kH, &bx0,
+                                             &by0)
+                        && std::hypot(*ox - bx0, *oy - by0) > kSketchTapSlopPixels) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+        float mx = 0.0f;
+        float my = 0.0f;
+        const bool midOk = tilted && shaftPoint(anchors, camera, &mx, &my);
+        const size_t under = midOk ? sessionFaceAt(p.sketch, camera, mx, my) : 7u;
+        const Meters depth = p.sketch.extrude().depth;
+        bool shaft = false;
+        if (midOk && under < 7u) {
+            const bool was = p.sketch.planarFaceSelected(under);
+            jniTouch(p, TouchAction::Down, mx, my);
+            jniTouch(p, TouchAction::Move, mx + 6.0f, my + 4.0f);
+            jniTouch(p, TouchAction::Up, mx + 6.0f, my + 4.0f);
+            shaft = p.sketch.planarFaceSelected(under) != was && p.sketch.extrude().depth == depth
+                    && p.sketch.lastTapOutcome() == SketchTapOutcome::Resolved;
+            jniTouch(p, TouchAction::Down, mx, my);
+            jniTouch(p, TouchAction::Up, mx, my);
+            shaft = shaft && p.sketch.planarFaceSelected(under) == was;
+        }
+        r.check("PICK_R2_06_a_still_tap_on_the_mid_shaft_toggles_the_face_under_it", shaft);
+
+        CadExtrudeControlScale scale;
+        float hx = 0.0f;
+        float hy = 0.0f;
+        const CadExtrudeSideAnchor& primary = anchors.side(anchors.primaryIsPositive);
+        const bool headOk = tilted
+                            && cadExtrudeManipulatorScale(anchors, camera, SessionDriver::kH, &scale)
+                            && projectWorldToScreen(
+                                       camera,
+                                       vec3Add(primary.tip,
+                                               vec3Scale(primary.axis,
+                                                         static_cast<float>(
+                                                                 0.5 * scale.world
+                                                                 * kCadExtrudeArrowHeadLengthFraction))),
+                                       SessionDriver::kW, SessionDriver::kH, &hx, &hy)
+                            && arrow.onDrawnArrowHead(anchors, camera, hx, hy, SessionDriver::kW,
+                                                      SessionDriver::kH);
+        const size_t selectedBefore = p.sketch.selectedAreaCount();
+        const std::vector<PlanarFaceRef> refsBefore = p.sketch.extrude().planarFaces;
+        if (headOk) {
+            jniTouch(p, TouchAction::Down, hx, hy);
+            jniTouch(p, TouchAction::Up, hx, hy);
+        }
+        r.check("PICK_R2_07_a_still_tap_on_the_arrow_head_selects_nothing",
+                headOk && p.sketch.selectedAreaCount() == selectedBefore
+                        && sameFaceRefs(refsBefore, p.sketch.extrude().planarFaces)
+                        && p.sketch.extrude().depth == depth
+                        && p.sketch.lastTapOutcome() == SketchTapOutcome::ArrowHead
+                        && samePose(pose, p.camera.capturePose()));
+
+        // Drags from the head, the shaft and a corridor point off the drawn
+        // arrow all take the arrow and change the depth; none toggles a face.
+        float bx = 0.0f;
+        float by = 0.0f;
+        float tx = 0.0f;
+        float ty = 0.0f;
+        projectWorldToScreen(camera, anchors.base, SessionDriver::kW, SessionDriver::kH, &bx, &by);
+        projectWorldToScreen(camera, anchors.tip, SessionDriver::kW, SessionDriver::kH, &tx, &ty);
+        const float len = std::hypot(tx - bx, ty - by);
+        const float ux = len > 0.0f ? (tx - bx) / len : 0.0f;
+        const float uy = len > 0.0f ? (ty - by) / len : -1.0f;
+        // A corridor point off the drawn arrow, perpendicular to the shaft at
+        // its middle, under the CURRENT arrow (a drag before it moves it).
+        const auto corridorPoint = [&](float* outX, float* outY) {
+            CadExtrudeAnchors now;
+            if (!p.sketch.extrudeAnchors(&now)) return false;
+            const CameraSnapshot cam = p.camera.snapshot();
+            float b0x = 0.0f, b0y = 0.0f, t0x = 0.0f, t0y = 0.0f, m0x = 0.0f, m0y = 0.0f;
+            const Vec3 m0 = vec3Add(now.base, vec3Scale(now.axis, static_cast<float>(0.5 * now.depth)));
+            if (!projectWorldToScreen(cam, now.base, SessionDriver::kW, SessionDriver::kH, &b0x, &b0y)
+                || !projectWorldToScreen(cam, now.tip, SessionDriver::kW, SessionDriver::kH, &t0x, &t0y)
+                || !projectWorldToScreen(cam, m0, SessionDriver::kW, SessionDriver::kH, &m0x, &m0y)) {
+                return false;
+            }
+            const float l0 = std::hypot(t0x - b0x, t0y - b0y);
+            if (!(l0 > 0.0f)) return false;
+            const float vx = (t0x - b0x) / l0;
+            const float vy = (t0y - b0y) / l0;
+            for (float off = 12.0f; off <= 70.0f; off += 2.0f) {
+                const float px = m0x - vy * off;
+                const float py = m0y + vx * off;
+                if (arrow.hitTest(now, cam, px, py, SessionDriver::kW, SessionDriver::kH)
+                    && !arrow.onDrawnArrow(now, cam, px, py, SessionDriver::kW, SessionDriver::kH)) {
+                    *outX = px;
+                    *outY = py;
+                    return true;
+                }
+            }
+            return false;
+        };
+        const auto dragFrom = [&](float x0, float y0) {
+            const Meters d0 = p.sketch.extrude().depth;
+            const size_t n0 = p.sketch.selectedAreaCount();
+            jniTouch(p, TouchAction::Down, x0, y0);
+            const bool captured = arrow.capturing();
+            for (int k = 1; k <= 6; ++k) jniTouch(p, TouchAction::Move, x0 + ux * 12.0f * k, y0 + uy * 12.0f * k);
+            jniTouch(p, TouchAction::Up, x0 + ux * 72.0f, y0 + uy * 72.0f);
+            return captured && p.sketch.extrude().depth != d0 && p.sketch.selectedAreaCount() == n0
+                   && !arrow.capturing();
+        };
+        const bool fromHead = headOk && dragFrom(hx, hy);
+        p.camera.restorePose(pose);
+        CadExtrudeAnchors moved;
+        float sx = mx;
+        float sy = my;
+        const bool fromShaft = p.sketch.extrudeAnchors(&moved)
+                               && shaftPoint(moved, p.camera.snapshot(), &sx, &sy)
+                               && dragFrom(sx, sy);
+        float cx = 0.0f;
+        float cy = 0.0f;
+        const bool fromCorridor = corridorPoint(&cx, &cy) && dragFrom(cx, cy);
+        r.check("PICK_R2_08_drags_from_the_head_the_shaft_and_the_corridor_change_the_depth",
+                fromHead && fromShaft && fromCorridor);
+    }
+    {
+        // Exactly edge-on (orthographic, every ray along the plane): nothing
+        // changes and the tap is `ray_parallel`; one degree off it resolves.
+        clearFaces(p);
+        placeCamera(p, kQuarter, 0.0f, ProjectionMode::Orthographic);
+        float x = 0.0f;
+        float y = 0.0f;
+        const bool projected = pickReady && p.screenOf(kOwnerCellPoint[kCellRest], &x, &y);
+        const bool parallel = projected
+                              && !p.sketch.toggleRegionAt(p.camera.snapshot(), x, y,
+                                                          SessionDriver::kW, SessionDriver::kH)
+                              && p.sketch.lastTapOutcome() == SketchTapOutcome::RayParallel
+                              && p.sketch.selectedAreaCount() == 0u;
+        placeCamera(p, kQuarter - 3.14159265f / 180.0f, 0.0f, ProjectionMode::Orthographic);
+        const bool recovered = p.screenOf(kOwnerCellPoint[kCellRest], &x, &y)
+                               && p.sketch.toggleRegionAt(p.camera.snapshot(), x, y,
+                                                          SessionDriver::kW, SessionDriver::kH)
+                               && p.sketch.planarFaceSelected(cell[kCellRest])
+                               && p.sketch.lastTapOutcome() == SketchTapOutcome::Resolved;
+        r.check("PICK_R2_09_an_edge_on_ray_is_ray_parallel_and_changes_nothing_one_degree_off_resolves",
+                parallel && recovered);
+    }
+    p.sketch.cancel();
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -4447,6 +5410,7 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
     testIdLifetime(r);
     testPlanarRuntime(r);
     testFillTaps(r);
+    testFillPickR2(r);
     measurePerformance(r);
     // The planar arrangement (`CAD-PLANAR-FACE-PF-S1`): derived-only, wired to
     // nothing yet, so it rides in this suite rather than a startup token of

@@ -7656,6 +7656,10 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
     forgeshape::MeshRevision grabMeshRevision = 0;
     forgeshape::Vec3 grabDisplacement{};
     bool sketchLogPending = false;
+    // A Ready tap candidate's diagnostic outcome, logged (debug only) after the
+    // lock: `FORGESHAPE_SKETCH_TAP:<reason>`.
+    forgeshape::SketchTapOutcome sketchTapOutcome = forgeshape::SketchTapOutcome::None;
+    size_t sketchTapSelected = 0;
 
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
@@ -7752,10 +7756,15 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
             forgeshape::SketchSession& sketch = forgeshape::sketchSession();
             if (sketch.active()) {
                 sketchOwned = true;
+                const uint32_t tapSerialBefore = sketch.tapOutcomeSerial();
                 const bool consumed = sketch.onTouch(translated,
                                                      static_cast<int32_t>(actionPointerId),
                                                      pointers, count, g_camera.snapshot(),
                                                      viewWidth, viewHeight);
+                if (sketch.tapOutcomeSerial() != tapSerialBefore) {
+                    sketchTapOutcome = sketch.lastTapOutcome();
+                    sketchTapSelected = sketch.selectedAreaCount();
+                }
                 // READY is the one state where an unclaimed single finger
                 // NAVIGATES (`CAD-UX-S1-C1`). While the sketch is being drawn a
                 // single pointer belongs to the drawing whether or not the
@@ -7768,7 +7777,14 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 // finger does everywhere else in the product.
                 const bool navigable =
                     sketch.state() == forgeshape::SketchSessionState::Ready;
-                if (consumed || (count <= 1 && !navigable)) {
+                // ...except while a Ready TAP is still armed
+                // (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): a finger inside the
+                // tap slop orbits nothing, and the camera's gesture is reset
+                // so the first event after the tap disarms re-anchors the
+                // orbit at the CURRENT point instead of jumping from the Down.
+                // `sketchEventReachesCamera` is the whole rule.
+                if (!forgeshape::sketchEventReachesCamera(sketch.state(), consumed, count,
+                                                          sketch.readyTapArmed())) {
                     g_camera.resetGesture();
                     g_selection.resetGesture();
                 } else {
@@ -8209,6 +8225,21 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 forgeshape::cadStatusName(sketch.lastStatus()), sketch.selectedEntityId(),
                 sketch.polylineInProgress() ? 1 : 0);
     }
+
+#ifndef NDEBUG
+    // Debug-only attribution of a Ready tap candidate
+    // (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): resolved, exterior, arrow_head,
+    // travel, ray_parallel, invalid_face or selection_cap, with the selection
+    // size it left. A release build carries neither the line nor its format.
+    if (sketchTapOutcome != forgeshape::SketchTapOutcome::None) {
+        FS_LOGI("FORGESHAPE_SKETCH_TAP:%s selected=%u",
+                forgeshape::sketchTapOutcomeName(sketchTapOutcome),
+                (unsigned)sketchTapSelected);
+    }
+#else
+    (void)sketchTapOutcome;
+    (void)sketchTapSelected;
+#endif
 
     if (tapRefusedInSculpt) {
         FS_LOGI("FORGESHAPE_SCENE_SELECT_REFUSED:in_sculpt_mode:viewport_tap");
