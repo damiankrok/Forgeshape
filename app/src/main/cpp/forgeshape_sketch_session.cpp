@@ -2234,6 +2234,22 @@ bool SketchSession::extrudeViewFacts(const CameraSnapshot& camera, int viewportW
     return true;
 }
 
+bool SketchSession::extrudeDock(const CameraSnapshot& camera, int viewportWidth,
+                                int viewportHeight, CadExtrudeDock* out) const {
+    if (out == nullptr) {
+        return false;
+    }
+    *out = CadExtrudeDock{};
+    CadExtrudeAnchors anchors;
+    CadExtrudeControlScale scale;
+    if (!extrudeAnchors(&anchors)
+        || !cadExtrudeManipulatorScale(anchors, camera, viewportHeight, &scale)) {
+        return false;
+    }
+    return cadExtrudeDockFor(anchors, camera, scale, frame_.u, viewportWidth, viewportHeight,
+                             out);
+}
+
 void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& view) {
     auto built = std::make_shared<SketchOverlay>();
     built->revision = overlayRevision_;

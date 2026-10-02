@@ -204,7 +204,7 @@ public final class CadPlanarFaceOwnerCorrectionTest {
     }
 
     // =======================================================================
-    // J5: the action panel stays attached through an orbit
+    // J5: the action dock stays attached through an orbit
     // =======================================================================
 
     @Test
@@ -212,11 +212,11 @@ public final class CadPlanarFaceOwnerCorrectionTest {
         drawOwnerSketch();
         finishSketch();
         tapCell(LENS);
-        float previousOffsetX = Float.NaN;
-        float previousOffsetY = Float.NaN;
-        float previousRotation = Float.NaN;
+        float previousCentreX = Float.NaN;
+        float previousCentreY = Float.NaN;
+        float previousAnchorX = Float.NaN;
+        float previousAnchorY = Float.NaN;
         float largestJump = 0.0f;
-        float largestTurn = 0.0f;
         int shown = 0;
         for (int step = 0; step <= 24; step++) {
             final float yaw = 0.35f + 0.025f * step;
@@ -227,49 +227,46 @@ public final class CadPlanarFaceOwnerCorrectionTest {
                 final CadExtrudeCanvasView canvas = workspace.cadExtrudeCanvas();
                 final View viewport = workspace.findViewById(R.id.viewport_surface);
                 final double[] tool = toolState();
-                final CadHudPresentation.PanelLayout panel = canvas.lastPanelLayout();
-                final String why = panel.visible ? CadLeaderHudChecks.panelAtArrow(tool, canvas,
-                        viewport, density, CadHudPresentation.panelIconCount(
-                                (int) tool[NativeViewport.CAD_EXTRUDE_EXTENT])) : null;
-                return new Object[]{panel, why, density, tool};
+                final CadHud3dPresentation.Dock dock = canvas.lastDock();
+                final String why = dock.visible ? CadLeaderHudChecks.dockAtArrow(tool, canvas,
+                        viewport, density) : null;
+                return new Object[]{dock, why, density, tool};
             });
-            final CadHudPresentation.PanelLayout panel = (CadHudPresentation.PanelLayout) frame[0];
+            final CadHud3dPresentation.Dock dock = (CadHud3dPresentation.Dock) frame[0];
             assertNull("step " + step + ": " + frame[1], frame[1]);
             final float density = (Float) frame[2];
-            if (!panel.visible) {
-                fact("j5.step" + step, "hidden");
-                previousOffsetX = Float.NaN;
+            final double[] tool = (double[]) frame[3];
+            if (!dock.visible) {
+                fact("j5.step" + step, "hidden reason=" + dock.hiddenReason);
+                previousCentreX = Float.NaN;
                 continue;
             }
             shown++;
-            // The panel's offset from the arrow's point: it may follow the
-            // point anywhere, but between two small orbit steps it must not
-            // jump to another place around it.
-            final float offsetX = panel.centreX - panel.anchorX;
-            final float offsetY = panel.centreY - panel.anchorY;
-            if (!Float.isNaN(previousOffsetX)) {
+            // The dock's offset from the arrow's point: it follows the point,
+            // and between two small orbit steps it never jumps around it.
+            final float anchorX = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_X];
+            final float anchorY = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_Y];
+            if (!Float.isNaN(previousCentreX)) {
                 largestJump = Math.max(largestJump, (float) Math.hypot(
-                        offsetX - previousOffsetX, offsetY - previousOffsetY) / density);
-                largestTurn = Math.max(largestTurn, Math.abs(panel.rotation - previousRotation));
+                        (dock.centreX - anchorX) - (previousCentreX - previousAnchorX),
+                        (dock.centreY - anchorY) - (previousCentreY - previousAnchorY)) / density);
             }
-            previousOffsetX = offsetX;
-            previousOffsetY = offsetY;
-            previousRotation = panel.rotation;
-            fact("j5.step" + step, "centre=" + panel.centreX + "," + panel.centreY
-                    + " anchor=" + panel.anchorX + "," + panel.anchorY + " rotation="
-                    + panel.rotation + " slide_dp=" + panel.slide / density + " scale="
-                    + panel.scale);
+            previousCentreX = dock.centreX;
+            previousCentreY = dock.centreY;
+            previousAnchorX = anchorX;
+            previousAnchorY = anchorY;
+            fact("j5.step" + step, "centre=" + dock.centreX + "," + dock.centreY
+                    + " anchor=" + anchorX + "," + anchorY + " sine=" + dock.axisSine
+                    + " alpha=" + dock.alpha + " quad=" + java.util.Arrays.toString(dock.quad));
             if (step == 0 || step == 12 || step == 24) {
                 capture("j5_orbit_step_" + step);
             }
         }
         fact("j5.shown_frames", shown);
         fact("j5.largest_offset_jump_dp", largestJump);
-        fact("j5.largest_turn_deg", largestTurn);
-        assertTrue("the panel stands for most of the orbit: " + shown, shown >= 13);
-        assertTrue("no side jump between small orbit steps: " + largestJump + " dp",
-                largestJump < 0.5f * CadHudPresentation.panelReferenceWidthDp(3));
-        assertTrue("no violent turn: " + largestTurn + " deg", largestTurn < 6.0f);
+        assertTrue("the dock stands for most of the orbit: " + shown, shown >= 13);
+        assertTrue("no jump between small orbit steps: " + largestJump + " dp",
+                largestJump < 24.0f);
         // Close, normal and far, for the record.
         for (float distance : new float[]{3.5f, 7.0f, 14.0f}) {
             setCamera(0.65f, 0.6f, distance);
@@ -386,11 +383,11 @@ public final class CadPlanarFaceOwnerCorrectionTest {
                         && owner.getId() != R.id.cad_extrude_panel) {
                     return "under chrome " + owner.getClass().getSimpleName() + "#" + owner.getId();
                 }
-                final CadHudPresentation.PanelLayout panel =
-                        workspace.cadExtrudeCanvas().lastPanelLayout();
-                if (panel != null && toolState()[NativeViewport.CAD_EXTRUDE_ACTIVE] != 0.0
-                        && CadHudPresentation.panelOwnsTouch(panel, at[0], at[1])) {
-                    return "under the action panel";
+                final CadHud3dPresentation.Dock dock = workspace.cadExtrudeCanvas().lastDock();
+                if (dock != null && toolState()[NativeViewport.CAD_EXTRUDE_ACTIVE] != 0.0
+                        && CadHud3dPresentation.claims(dock, at[0], at[1],
+                                CadHudPresentation.hitPx(density))) {
+                    return "under the action dock";
                 }
                 final float shaft = shaftDistance(at[0], at[1]);
                 if (shaft < 16.0f * density) {

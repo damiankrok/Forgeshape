@@ -16,8 +16,8 @@ public final class CadHudTouchAttributionTest {
     public void aConsumedDownNamesItsVisibleSurface() {
         assertEquals("FORGESHAPE_CAD_HUD_TOUCH:value",
                 CadHudTouchAttribution.token(true, CadHudTouchAttribution.VALUE));
-        assertEquals("FORGESHAPE_CAD_HUD_TOUCH:panel",
-                CadHudTouchAttribution.token(true, CadHudTouchAttribution.PANEL));
+        assertEquals("FORGESHAPE_CAD_HUD_TOUCH:dock",
+                CadHudTouchAttribution.token(true, CadHudTouchAttribution.DOCK));
         assertEquals("FORGESHAPE_CAD_HUD_TOUCH:palette",
                 CadHudTouchAttribution.token(true, CadHudTouchAttribution.PALETTE));
         assertEquals("FORGESHAPE_CAD_HUD_TOUCH:editor",
@@ -30,7 +30,7 @@ public final class CadHudTouchAttributionTest {
     public void aDownTheHudDidNotConsumeLogsNothing() {
         final int[] surfaces = {
                 CadHudTouchAttribution.NONE, CadHudTouchAttribution.VALUE,
-                CadHudTouchAttribution.PANEL, CadHudTouchAttribution.PALETTE,
+                CadHudTouchAttribution.DOCK, CadHudTouchAttribution.PALETTE,
                 CadHudTouchAttribution.EDITOR, CadHudTouchAttribution.EDIT_SKETCH,
         };
         for (int surface : surfaces) {

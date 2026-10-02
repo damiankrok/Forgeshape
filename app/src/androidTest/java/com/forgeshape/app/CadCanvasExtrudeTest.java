@@ -123,13 +123,11 @@ public final class CadCanvasExtrudeTest {
             assertEquals("the cluster is drawn", View.VISIBLE, canvas.getVisibility());
             final View value = canvas.findViewById(R.id.cad_extrude_depth_value);
             final View flip = canvas.findViewById(R.id.cad_extrude_flip);
-            final View badge = canvas.findViewById(R.id.cad_extrude_operation);
             final View panel = canvas.findViewById(R.id.cad_extrude_panel);
             assertNotNull("with the exact value", value);
             assertNotNull("a Flip in the action palette", flip);
-            assertNotNull("the operation badge on the panel", badge);
-            assertNotNull("and the panel's one touch target", panel);
-            final CharSequence operation = badge.getContentDescription();
+            assertNotNull("and the dock: the operation badge and its one touch target", panel);
+            final CharSequence operation = panel.getContentDescription();
             assertTrue("which says New Body: " + operation, operation != null
                     && operation.toString().toLowerCase().contains("new body"));
             // E2E-CADUXS1-09 in part, restated by `CAD-VERTICAL-SLICE-R1`: the
@@ -143,11 +141,8 @@ public final class CadCanvasExtrudeTest {
                         control.getScaleX() * control.getScaleY(), 0.0f);
             }
             assertTrue("the value control is a real target", value.getHeight() >= floor - 1);
-            assertTrue("and so is the panel", panel.getHeight() >= floor - 1
+            assertTrue("and so is the dock", panel.getHeight() >= floor - 1
                     && panel.getWidth() >= floor - 1);
-            // `CAD-FOUNDATION-C2`: the badge is a glyph on the panel's plate,
-            // stating the operation; the panel's proxy is what a finger takes.
-            assertFalse("the badge itself takes no touch", badge.isClickable());
             return null;
         });
     }
@@ -589,7 +584,7 @@ public final class CadCanvasExtrudeTest {
             // The badge STATES the operation, by its description as well as by
             // its glyph; with nothing else to choose, nothing else is drawn.
             final CharSequence badge =
-                    canvas.findViewById(R.id.cad_extrude_operation).getContentDescription();
+                    canvas.findViewById(R.id.cad_extrude_panel).getContentDescription();
             assertNotNull("the badge says what the extrusion does", badge);
             assertTrue("and it says New Body: " + badge,
                     badge.toString().toLowerCase().contains("new body"));
@@ -688,7 +683,7 @@ public final class CadCanvasExtrudeTest {
                     maxY = Math.max(maxY, p[1]);
                 }
                 final float modelDp = Math.max(maxX - minX, maxY - minY) / density;
-                final CadHudPresentation.PanelLayout panel = canvas.lastPanelLayout();
+                final CadHud3dPresentation.Dock panel = canvas.lastDock();
                 final android.widget.TextView value =
                         canvas.findViewById(R.id.cad_extrude_depth_value);
                 final float leaderDp = (float) Math.hypot(
@@ -699,18 +694,17 @@ public final class CadCanvasExtrudeTest {
                 final float valueWidthDp = value.getPaint().measureText(
                         value.getText().toString()) / density;
                 textSp[index] = canvas.lastValueTextSp();
-                plateW[index] = panel.visible ? panel.plateWidth : 0.0f;
-                // One panel, whole or absent: never a partial set of icons.
-                final View plate = canvas.findViewById(R.id.cad_extrude_panel_plate);
+                // The dock's drawn width: its top edge, top-left to top-right.
+                plateW[index] = panel.visible ? (float) Math.hypot(panel.quad[2] - panel.quad[0],
+                        panel.quad[3] - panel.quad[1]) : Float.NaN;
+                // One dock, whole or absent.
                 final View proxy = canvas.findViewById(R.id.cad_extrude_panel);
-                assertEquals(where + ": the plate and its proxy are shown together",
-                        plate.isShown(), proxy.isShown());
                 if (panel.visible) {
-                    final String why = CadLeaderHudChecks.panelAtArrow(tool, canvas, viewport,
-                            density, 3);
+                    final String why = CadLeaderHudChecks.dockAtArrow(tool, canvas, viewport,
+                            density);
                     assertNull(where + ": " + why, why);
                 } else {
-                    assertFalse(where + ": a hidden panel shows no glyph", plate.isShown());
+                    assertFalse(where + ": a hidden dock is not shown", proxy.isShown());
                 }
                 if (value.isShown()) {
                     final String on = CadLeaderHudChecks.valueOnLeader(tool, value, viewport,
@@ -730,16 +724,15 @@ public final class CadCanvasExtrudeTest {
                         + " scale=" + tool[NativeViewport.CAD_EXTRUDE_SCALE]
                         + " clamp=" + (int) tool[NativeViewport.CAD_EXTRUDE_CLAMP]
                         + " model_dp=" + modelDp
-                        + " panel_visible=" + panel.visible
-                        + " panel_rotation=" + panel.rotation
-                        + " panel_slide_dp=" + panel.slide / density
-                        + " panel_dp=" + panel.plateWidth / density + "x"
-                        + panel.plateHeight / density
-                        + " proxy_dp=" + panel.hitWidth / density + "x"
-                        + panel.hitHeight / density
-                        + " panel_reach_dp=" + (panel.visible
-                                ? CadLeaderHudChecks.panelReachDp(tool, canvas, viewport, density)
-                                : Float.NaN)
+                        + " dock_visible=" + panel.visible
+                        + " dock_hidden=" + panel.hiddenReason
+                        + " dock_sine=" + panel.axisSine
+                        + " dock_alpha=" + panel.alpha
+                        + " dock_top_edge_dp=" + plateW[index] / density
+                        + " proxy_dp=" + (panel.right - panel.left) / density + "x"
+                        + (panel.bottom - panel.top) / density
+                        + " dock_reach_dp=" + (panel.visible
+                                ? CadLeaderHudChecks.dockReachDp(tool, density) : Float.NaN)
                         + " value_shown=" + value.isShown()
                         + " value=\"" + value.getText() + "\""
                         + " value_sp=" + textSp[index]
@@ -750,13 +743,27 @@ public final class CadCanvasExtrudeTest {
             android.util.Log.i("ForgeShape", "CADFC2_ZOOM " + record + " capture="
                     + captureZoom(names[i]));
         }
-        for (int i = 1; i < distances.length; i++) {
-            assertTrue("a farther camera never draws a larger panel",
-                    plateW[i] <= plateW[i - 1] + 0.5f);
-            assertTrue("nor larger value text", textSp[i] <= textSp[i - 1] + 1e-4f);
+        // The dock is compared only where native drew it: it is whole or absent.
+        int firstShown = -1;
+        int lastShown = -1;
+        for (int i = 0; i < distances.length; i++) {
+            if (i > 0) {
+                assertTrue("nor larger value text", textSp[i] <= textSp[i - 1] + 1e-4f);
+            }
+            if (Float.isNaN(plateW[i])) {
+                continue;
+            }
+            if (lastShown >= 0) {
+                assertTrue("a farther camera never draws a larger dock: " + plateW[lastShown]
+                        + " -> " + plateW[i], plateW[i] <= plateW[lastShown] + 1.0f);
+            }
+            if (firstShown < 0) firstShown = i;
+            lastShown = i;
         }
-        assertTrue("the zoom-out visibly shrinks the panel: " + plateW[0] + " -> " + plateW[2],
-                plateW[2] < plateW[0]);
+        assertTrue("the dock is drawn at two zoom levels at least", firstShown >= 0
+                && lastShown > firstShown);
+        assertTrue("the zoom-out visibly shrinks the dock: " + plateW[firstShown] + " -> "
+                + plateW[lastShown], plateW[lastShown] < plateW[firstShown]);
     }
 
     /**
@@ -807,14 +814,20 @@ public final class CadCanvasExtrudeTest {
         finishSketch();
         final int directionBefore = (int) toolState()[NativeViewport.CAD_EXTRUDE_DIRECTION];
         final double depthBefore = toolState()[NativeViewport.CAD_EXTRUDE_DEPTH];
-        // The drawn EXTENT glyph, the leftmost on the plate: the tap lands on
-        // what the user sees, and the one proxy owns it.
-        final float[] extentGlyph = onWorkspace(rule.getScenario(), (activity, workspace) ->
-                windowCentre(workspace.cadExtrudeCanvas().findViewById(R.id.cad_extrude_extent)));
-        tapWindow(extentGlyph[0], extentGlyph[1]);
+        // The dock's projected centre: the tap lands on the badge the user
+        // sees, and the dock owns it.
+        final float[] badge = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final double[] now = toolState();
+            assertTrue("the dock is drawn", now[NativeViewport.CAD_EXTRUDE_DOCK_VISIBLE] != 0.0);
+            final int[] at = new int[2];
+            workspace.findViewById(R.id.viewport_surface).getLocationInWindow(at);
+            return new float[]{at[0] + (float) now[NativeViewport.CAD_EXTRUDE_DOCK_CENTRE_X],
+                    at[1] + (float) now[NativeViewport.CAD_EXTRUDE_DOCK_CENTRE_Y]};
+        });
+        tapWindow(badge[0], badge[1]);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final CadExtrudeCanvasView canvas = workspace.cadExtrudeCanvas();
-            assertTrue("a tap on the plate opened the action palette",
+            assertTrue("a tap on the dock opened the action palette",
                     canvas.actionPaletteOpen());
             assertTrue("with the extent row", canvas.findViewById(
                     R.id.cad_extrude_extent_palette).isShown());

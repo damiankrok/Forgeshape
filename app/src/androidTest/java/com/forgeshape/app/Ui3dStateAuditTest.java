@@ -136,16 +136,16 @@ public final class Ui3dStateAuditTest {
         assertEquals("Finish Sketch reached Ready", NativeViewport.SKETCH_READY, sketchState());
         record("UI3D-03", "sketch_ready", "S35 cad_extrude cluster", MUST_SHOW,
                 shown(R.id.cad_extrude_depth_value));
-        // `CAD-VERTICAL-SLICE-R1`: ONE extent control stands at rest and opens
-        // the three choices; Ready withdraws the drawing chrome.
-        record("UI3D-03", "sketch_ready", "S35 cad_extrude_extent", MUST_SHOW,
-                shown(R.id.cad_extrude_extent));
+        // `CAD-V6-S2-OWNER-CORRECTION-E2E-R1`: ONE action dock stands at rest
+        // and opens the palette's choices; Ready withdraws the drawing chrome.
+        record("UI3D-03", "sketch_ready", "S35 cad_extrude_dock", MUST_SHOW,
+                shown(R.id.cad_extrude_panel));
         record("UI3D-03", "sketch_ready", "S30 sketch_orientation_navigator", MUST_HIDE,
                 shown(R.id.sketch_orientation_navigator));
         record("UI3D-03", "sketch_ready", "S07 tool_rail_rectangle", MUST_HIDE,
                 shown(R.id.tool_rail_rectangle));
         record("UI3D-03", "sketch_ready", "S35 cad_extrude_flip", MUST_SHOW,
-                shown(R.id.cad_extrude_flip_glyph));
+                offered(R.id.cad_extrude_flip));
         record("UI3D-03", "sketch_ready", "S36 cad_extrude_second_value", MUST_HIDE,
                 shown(R.id.cad_extrude_second_value));
         record("UI3D-03", "sketch_ready", "S38 cad_canvas_edit_sketch", MUST_HIDE,
@@ -157,7 +157,7 @@ public final class Ui3dStateAuditTest {
         // --- One Side -> Symmetric -> Two Sides ---------------------------
         press(R.id.cad_extrude_extent_symmetric);
         record("UI3D-03", "extent_symmetric", "S35 cad_extrude_flip", MUST_HIDE,
-                shown(R.id.cad_extrude_flip_glyph));
+                offered(R.id.cad_extrude_flip));
         record("UI3D-03", "extent_symmetric", "S36 cad_extrude_second_value", MUST_HIDE,
                 shown(R.id.cad_extrude_second_value));
         Ui3dAuditRecorder.capture("ui3d03_05_symmetric");
@@ -166,14 +166,14 @@ public final class Ui3dStateAuditTest {
         record("UI3D-03", "extent_two_sides", "S36 cad_extrude_second_value", MUST_SHOW,
                 shown(R.id.cad_extrude_second_value));
         record("UI3D-03", "extent_two_sides", "S35 cad_extrude_flip", MUST_HIDE,
-                shown(R.id.cad_extrude_flip_glyph));
+                offered(R.id.cad_extrude_flip));
         Ui3dAuditRecorder.capture("ui3d03_06_two_sides");
 
         press(R.id.cad_extrude_extent_one_side);
         record("UI3D-03", "extent_back_to_one_side", "S36 cad_extrude_second_value", MUST_HIDE,
                 shown(R.id.cad_extrude_second_value));
         record("UI3D-03", "extent_back_to_one_side", "S35 cad_extrude_flip", MUST_SHOW,
-                shown(R.id.cad_extrude_flip_glyph));
+                offered(R.id.cad_extrude_flip));
 
         // --- Apply Extrude -> a committed body ----------------------------
         commitExtrude("0.4");
@@ -1063,6 +1063,18 @@ public final class Ui3dStateAuditTest {
             return null;
         });
         settleLayout();
+    }
+
+    /**
+     * Whether a palette member is OFFERED: VISIBLE inside its palette, which is
+     * itself drawn only while open. Flip is offered in One Side alone.
+     */
+    private boolean offered(final int id) {
+        final Boolean value = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View view = workspace.findViewById(id);
+            return view != null && view.getVisibility() == View.VISIBLE;
+        });
+        return Boolean.TRUE.equals(value);
     }
 
     private boolean shown(final int id) {

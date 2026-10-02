@@ -15,8 +15,8 @@ final class CadHudTouchAttribution {
     static final int NONE = 0;
     /** A value label (either side's), an invisible ≥ 48 dp band around its text. */
     static final int VALUE = 1;
-    /** The action panel's one invisible group proxy. */
-    static final int PANEL = 2;
+    /** The action dock: its projected badge or the 48 dp floor on its centre. */
+    static final int DOCK = 2;
     /** The open action palette. */
     static final int PALETTE = 3;
     /** An open typed-value editor. */
@@ -40,7 +40,7 @@ final class CadHudTouchAttribution {
         }
         switch (surface) {
             case VALUE: return "value";
-            case PANEL: return "panel";
+            case DOCK: return "dock";
             case PALETTE: return "palette";
             case EDITOR: return "editor";
             case EDIT_SKETCH: return "edit_sketch";

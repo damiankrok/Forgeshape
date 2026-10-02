@@ -357,6 +357,106 @@ void appendCadExtrudeLeader(std::vector<GizmoVertex>* out, const CadExtrudeAncho
                             const CadExtrudeLeader& leader, double controlWorld);
 
 // ---------------------------------------------------------------------------
+// The action DOCK (`CAD-V6-S2-OWNER-CORRECTION-E2E-R1`, HUD3D)
+// ---------------------------------------------------------------------------
+//
+// The one contextual control of the extrusion -- a compact badge that states
+// the operation and opens the palette -- is a WORLD rectangle standing on the
+// extrusion axis just past the drawn arrow point, projected through the camera
+// like the arrow and the leader it belongs to. Android draws it into the four
+// projected corners with a perspective homography; nothing here is a screen
+// rule, so the dock can never slide along an edge, jump to another side or
+// detach from the geometry. When it cannot be drawn honestly it is HIDDEN
+// whole: near the axis, behind the eye, or with any corner off the viewport.
+//
+// Presentation only: no value here is serialized, reaches a `.forge` byte, a
+// history step, a checkpoint or the fingerprint, and the frame is a pure
+// function of the anchors, the ONE per-frame control scale and the camera --
+// it stores no orientation from a previous frame.
+//
+// Frame:
+//   a = the PRIMARY side's unit axis
+//   f = the unit view direction at the arrow point (eye -> point in
+//       perspective, the camera's own direction in orthographic)
+//   m = normalize(-f - a * dot(-f, a))   toward the eye, perpendicular to a
+//   s = normalize(cross(a, m))           perpendicular to view and axis
+// The dock lies in the plane of (a, s): it CONTAINS the axis and faces the eye
+// as much as such a plane can. When |m| collapses (looking down the axis) s is
+// taken from the sketch frame's `u`, then from the camera's right, each made
+// perpendicular to a -- deterministic, and only ever seen by a hidden dock,
+// because the dock is drawn only while sin(f, a) clears
+// `kCadFeatureViewMinAxisSine`.
+//
+// Reading orientation (the leader's rule, with a vertical band): the dock's
+// RIGHT is whichever of +-a reads left to right on screen -- or, within
+// `kCadExtrudeDockVerticalBandTan` of screen-vertical, bottom to top, so pixel
+// noise on a vertical shaft cannot turn it over -- and its UP is whichever of
+// +-s stands on the upright side of that reading direction. The quad is
+// therefore never mirrored and the badge turns WITH the arrow; at the band's
+// edge it turns 180 degrees in place about a centre that does not move.
+
+// The badge's half size across the axis, as a fraction of the control's drawn
+// pixels, clamped into a band of reference units (dp) so it stays a readable
+// badge at both ends of the control-scale band. OWNER-TUNABLE.
+constexpr float kCadExtrudeDockHalfFraction = 0.24f;
+constexpr float kCadExtrudeDockMinHalfUnits = 11.0f;
+constexpr float kCadExtrudeDockMaxHalfUnits = 22.0f;
+// The on-screen gap from the drawn arrow point to the dock's near edge, in
+// reference units: the arrow's own grab corridor plus 4, so the dock never
+// stands where a drag would take the arrow.
+constexpr float kCadExtrudeDockGapUnits = kCadExtrudeGrabRadiusUnits + 4.0f;
+// The dock fades in between `kCadFeatureViewMinAxisSine` (absent) and this
+// sine (fully drawn), so approaching the axis is a fade, never a snap.
+constexpr float kCadExtrudeDockFadeEndSine = 0.45f;
+// tan(8 degrees): a projected axis this close to screen-vertical reads bottom
+// to top (`cadExtrudeDockFor`). OWNER-TUNABLE.
+constexpr float kCadExtrudeDockVerticalBandTan = 0.1405f;
+// Below this |m| the view direction carries no side information.
+constexpr float kCadExtrudeDockDegenerateSine = 1.0e-3f;
+
+enum class CadExtrudeDockHidden : uint8_t {
+    Shown = 0,
+    NoFrame = 1,      // no primary arrow, no scale or no usable side direction
+    NearAxis = 2,     // sin(view, axis) at or below kCadFeatureViewMinAxisSine
+    BehindEye = 3,    // a corner or the centre does not project
+    OffViewport = 4,  // a corner falls outside the viewport
+};
+
+struct CadExtrudeDock {
+    // The world frame exists. Computed even when the dock is hidden, so a test
+    // can follow the frame through the hidden band.
+    bool valid = false;
+    bool visible = false;
+    CadExtrudeDockHidden hidden = CadExtrudeDockHidden::NoFrame;
+    // [0, 1]: 0 at kCadFeatureViewMinAxisSine, 1 from kCadExtrudeDockFadeEndSine.
+    float alpha = 0.0f;
+    float axisSine = 0.0f;
+    // Whether `s` came from a fallback (sketch u or camera right).
+    bool fallbackSide = false;
+    Vec3 point{};   // the drawn arrow point the dock is attached past
+    Vec3 centre{};
+    Vec3 right{};   // unit, +-a
+    Vec3 up{};      // unit, +-s
+    float halfAlong = 0.0f;   // world metres along `right`
+    float halfAcross = 0.0f;  // world metres along `up`
+    // World corners in reading order: top-left, top-right, bottom-right,
+    // bottom-left.
+    Vec3 corners[4]{};
+    // Their projections (x, y pairs, view-local px) and the centre's; valid
+    // when `visible`, or when `hidden` is OffViewport.
+    float screen[8]{};
+    float screenCentre[2]{};
+};
+
+// The dock for one frame. False (with `out->valid` false) only when there is
+// no frame at all; a hidden dock is a true return with `visible` false.
+bool cadExtrudeDockFor(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera,
+                       const CadExtrudeControlScale& scale, const Vec3& sketchU,
+                       int viewportWidth, int viewportHeight, CadExtrudeDock* out);
+
+const char* cadExtrudeDockHiddenName(CadExtrudeDockHidden hidden);
+
+// ---------------------------------------------------------------------------
 // 3. What a drag means
 // ---------------------------------------------------------------------------
 

@@ -5393,6 +5393,357 @@ void testPlanarFaceBefore(Recorder& r) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// HUD3D: the action dock (`CAD-V6-S2-OWNER-CORRECTION-E2E-R1`)
+// ---------------------------------------------------------------------------
+
+struct DockRig {
+    static constexpr int kW = 1080;
+    static constexpr int kH = 2000;
+    SketchFrame frame;
+    CadExtrudeAnchors anchors;
+    CameraController camera;
+
+    DockRig(const SketchFrame& f, const SketchPoint& at, Meters depth) : frame(f) {
+        camera.setViewport(kW, kH);
+        ExtrudeFeature extrude;
+        extrude.depth = depth;
+        extrude.direction = ExtrudeDirection::AlongNormal;
+        cadExtrudeAnchorsAt(frame, at, extrude, &anchors);
+    }
+    void pose(float yaw, float pitch, float distance, const Vec3& target,
+              ProjectionMode projection = ProjectionMode::Perspective) {
+        CameraController::Pose p;
+        p.target = target;
+        p.yaw = yaw;
+        p.pitch = pitch;
+        p.distance = distance;
+        p.projection = projection;
+        p.orthoHalfHeightMeters = 0.45f * distance;
+        camera.restorePose(p);
+    }
+    bool dock(CadExtrudeDock* out, CadExtrudeControlScale* scaleOut = nullptr) {
+        CadExtrudeControlScale scale;
+        if (!cadExtrudeManipulatorScale(anchors, camera.snapshot(), kH, &scale)) {
+            return false;
+        }
+        if (scaleOut != nullptr) *scaleOut = scale;
+        return cadExtrudeDockFor(anchors, camera.snapshot(), scale, frame.u, kW, kH, out);
+    }
+    // The projected arrow point and the base, for attachment checks.
+    bool axisOnScreen(const CadExtrudeDock& d, float* bx, float* by, float* px, float* py) {
+        return projectWorldToScreen(camera.snapshot(), anchors.base, kW, kH, bx, by)
+               && projectWorldToScreen(camera.snapshot(), d.point, kW, kH, px, py);
+    }
+};
+
+// Distance of (x, y) from the infinite screen line through a -> b, and the
+// parameter along it (0 at a, 1 at b).
+void lineDistance(float x, float y, float ax, float ay, float bx, float by, float* distance,
+                  float* param) {
+    const float dx = bx - ax;
+    const float dy = by - ay;
+    const float len2 = dx * dx + dy * dy;
+    *param = len2 > 0.0f ? ((x - ax) * dx + (y - ay) * dy) / len2 : 0.0f;
+    *distance = len2 > 0.0f ? std::fabs((x - ax) * dy - (y - ay) * dx) / std::sqrt(len2) : 1e9f;
+}
+
+float quadSignedArea(const CadExtrudeDock& d) {
+    float area = 0.0f;
+    for (int i = 0; i < 4; ++i) {
+        const int j = (i + 1) % 4;
+        area += d.screen[2 * i] * d.screen[2 * j + 1] - d.screen[2 * j] * d.screen[2 * i + 1];
+    }
+    return area;
+}
+
+// The largest corner move between two quads, allowing the 180-degree in-place
+// turn of the reading wrap (corner i -> i + 2).
+float quadMove(const CadExtrudeDock& a, const CadExtrudeDock& b, bool* wrapped) {
+    float straight = 0.0f;
+    float turned = 0.0f;
+    for (int i = 0; i < 4; ++i) {
+        const int k = (i + 2) % 4;
+        straight = std::max(straight, std::hypot(a.screen[2 * i] - b.screen[2 * i],
+                                                 a.screen[2 * i + 1] - b.screen[2 * i + 1]));
+        turned = std::max(turned, std::hypot(a.screen[2 * i] - b.screen[2 * k],
+                                             a.screen[2 * i + 1] - b.screen[2 * k + 1]));
+    }
+    *wrapped = turned < straight;
+    return std::min(straight, turned);
+}
+
+bool sameDock(const CadExtrudeDock& a, const CadExtrudeDock& b) {
+    if (a.valid != b.valid || a.visible != b.visible || a.hidden != b.hidden
+        || a.alpha != b.alpha || a.fallbackSide != b.fallbackSide) {
+        return false;
+    }
+    for (int i = 0; i < 8; ++i) {
+        if (a.screen[i] != b.screen[i]) return false;
+    }
+    return a.right.x == b.right.x && a.right.y == b.right.y && a.right.z == b.right.z
+           && a.up.x == b.up.x && a.up.y == b.up.y && a.up.z == b.up.z;
+}
+
+void testHud3dDock(Recorder& r) {
+    const SketchFrame xy{Vec3{0.0f, 0.0f, 0.0f}, Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f},
+                         Vec3{0.0f, 0.0f, 1.0f}};
+    DockRig rig(xy, SketchPoint{0.3, -0.2}, 1.0);
+    const Vec3 base = rig.anchors.base;
+    const float unitsPx = gizmoPixelsPerReferenceUnit();
+
+    // HUD3D-01: over a full orbit the dock's world centre is ON the axis past
+    // the drawn point, and its projected centre stands on the projected axis
+    // line beyond the point, a bounded screen distance from it.
+    // HUD3D-02: consecutive 1-degree frames move every corner a bounded amount
+    // (a vertical-shaft wrap is a 180-degree turn in place, never a move).
+    int visible = 0;
+    bool attached = rig.anchors.valid;
+    bool continuous = true;
+    float worst = 0.0f;
+    int wraps = 0;
+    CadExtrudeDock previous;
+    bool havePrevious = false;
+    for (int step = 0; step <= 360; ++step) {
+        const float yaw = static_cast<float>(step) * 3.14159265f / 180.0f;
+        rig.pose(yaw, 0.45f, 6.0f, base);
+        CadExtrudeDock d;
+        if (!rig.dock(&d) || !d.valid) {
+            attached = false;
+            break;
+        }
+        const Vec3 off = vec3Sub(d.centre, d.point);
+        const Vec3 across = vec3Cross(off, rig.anchors.axis);
+        attached = attached && vec3Dot(across, across) < 1e-10f && vec3Dot(off, rig.anchors.axis) > 0.0f;
+        if (!d.visible) {
+            havePrevious = false;
+            continue;
+        }
+        ++visible;
+        float bx, by, px, py, dist, param;
+        attached = attached && rig.axisOnScreen(d, &bx, &by, &px, &py);
+        lineDistance(d.screenCentre[0], d.screenCentre[1], bx, by, px, py, &dist, &param);
+        const float fromPoint = std::hypot(d.screenCentre[0] - px, d.screenCentre[1] - py);
+        attached = attached && dist < 1.5f && param > 1.0f
+                   && fromPoint > kCadExtrudeDockGapUnits * unitsPx * 0.5f
+                   && fromPoint < (kCadExtrudeDockGapUnits + 3.0f * kCadExtrudeDockMaxHalfUnits) * unitsPx;
+        if (havePrevious) {
+            bool wrapped = false;
+            const float move = quadMove(previous, d, &wrapped);
+            const float centreMove = std::hypot(previous.screenCentre[0] - d.screenCentre[0],
+                                                previous.screenCentre[1] - d.screenCentre[1]);
+            worst = std::max(worst, move);
+            if (wrapped) ++wraps;
+            continuous = continuous && move < 25.0f && centreMove < 25.0f;
+        }
+        previous = d;
+        havePrevious = true;
+    }
+    r.check("HUD3D_01_the_dock_stands_on_the_axis_past_the_arrow_point_across_an_orbit",
+            attached && visible > 300);
+    r.check("HUD3D_02_the_projected_quad_moves_continuously_through_a_360_degree_orbit",
+            continuous && visible > 300 && worst > 0.0f);
+
+    // HUD3D-03: the old screen-edge cases. Panning the view so the arrow runs
+    // off the right edge either keeps the dock attached and continuous, or
+    // hides it WHOLE -- it never slides back along the shaft to stay on.
+    bool edge = true;
+    bool hiddenAtEdge = false;
+    havePrevious = false;
+    for (int step = 0; step <= 160; ++step) {
+        const Vec3 target{base.x - 0.02f * static_cast<float>(step), base.y, base.z};
+        rig.pose(0.0f, 0.4f, 4.0f, target);
+        CadExtrudeDock d;
+        if (!rig.dock(&d)) {
+            edge = false;
+            break;
+        }
+        if (!d.visible) {
+            hiddenAtEdge = hiddenAtEdge || d.hidden == CadExtrudeDockHidden::OffViewport;
+            edge = edge && (d.hidden == CadExtrudeDockHidden::OffViewport
+                            || d.hidden == CadExtrudeDockHidden::BehindEye);
+            havePrevious = false;
+            continue;
+        }
+        float bx, by, px, py, dist, param;
+        edge = edge && rig.axisOnScreen(d, &bx, &by, &px, &py);
+        lineDistance(d.screenCentre[0], d.screenCentre[1], bx, by, px, py, &dist, &param);
+        edge = edge && dist < 1.5f && param > 1.0f;
+        for (int i = 0; i < 4; ++i) {
+            edge = edge && d.screen[2 * i] >= 0.0f && d.screen[2 * i] <= DockRig::kW
+                   && d.screen[2 * i + 1] >= 0.0f && d.screen[2 * i + 1] <= DockRig::kH;
+        }
+        if (havePrevious) {
+            bool wrapped = false;
+            edge = edge && quadMove(previous, d, &wrapped) < 60.0f
+                   && std::hypot(previous.screenCentre[0] - d.screenCentre[0],
+                                 previous.screenCentre[1] - d.screenCentre[1]) < 60.0f;
+        }
+        previous = d;
+        havePrevious = true;
+    }
+    r.check("HUD3D_03_at_a_viewport_edge_the_dock_stays_attached_or_hides_whole_never_slides",
+            edge && hiddenAtEdge);
+
+    // HUD3D-04: looking toward the axis the dock fades and then hides, its
+    // orientation never flips on the way, and a view exactly down the axis
+    // takes the deterministic sketch-frame fallback (hidden, same answer twice).
+    // The orbit pose that looks exactly along +Z (the axis), then a sweep
+    // down the meridian onto it -- the projected shaft is screen-vertical the
+    // whole way, the case pixel noise would flip without the vertical band.
+    float yawZ = 0.0f;
+    float pitchZ = 0.0f;
+    bool approach = cadFeatureViewYawPitch(Vec3{0.0f, 0.0f, 1.0f}, &yawZ, &pitchZ);
+    bool sawFade = false;
+    bool sawNearAxis = false;
+    float lastAlpha = 2.0f;
+    havePrevious = false;
+    for (int step = 0; approach && step <= 100; ++step) {
+        const float pitch = pitchZ + 1.0f - 0.01f * static_cast<float>(step);
+        rig.pose(yawZ, pitch, 6.0f, base);
+        CadExtrudeDock d;
+        if (!rig.dock(&d) || !d.valid) {
+            approach = false;
+            break;
+        }
+        if (d.visible) {
+            approach = approach && d.alpha <= lastAlpha + 1e-6f && !sawNearAxis;
+            lastAlpha = d.alpha;
+            sawFade = sawFade || (d.alpha > 0.0f && d.alpha < 1.0f);
+            if (havePrevious) {
+                approach = approach && vec3Dot(previous.right, d.right) > 0.0f
+                           && vec3Dot(previous.up, d.up) > 0.0f;
+            }
+            previous = d;
+            havePrevious = true;
+        } else {
+            sawNearAxis = sawNearAxis || d.hidden == CadExtrudeDockHidden::NearAxis;
+            approach = approach && d.axisSine <= kCadFeatureViewMinAxisSine + 1e-6f;
+        }
+    }
+    // Exactly down the axis: a YZ-plane sketch (normal +X) seen along X.
+    const SketchFrame yz{Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f}, Vec3{0.0f, 0.0f, 1.0f},
+                         Vec3{1.0f, 0.0f, 0.0f}};
+    DockRig down(yz, SketchPoint{0.0, 0.0}, 1.0);
+    float yawX = 0.0f;
+    float pitchX = 0.0f;
+    bool axial = cadFeatureViewYawPitch(Vec3{1.0f, 0.0f, 0.0f}, &yawX, &pitchX);
+    CadExtrudeDock once;
+    CadExtrudeDock twice;
+    if (axial) {
+        down.pose(yawX, pitchX, 6.0f, down.anchors.base, ProjectionMode::Orthographic);
+        axial = down.dock(&once) && down.dock(&twice) && once.valid && !once.visible
+                && once.hidden == CadExtrudeDockHidden::NearAxis && once.fallbackSide
+                && sameDock(once, twice) && std::fabs(vec3Dot(once.up, Vec3{0.0f, 1.0f, 0.0f})) > 0.999f;
+    }
+    r.check("HUD3D_04_toward_the_axis_the_dock_fades_then_hides_without_a_flip_and_the_axial_fallback_is_deterministic",
+            approach && sawFade && sawNearAxis && axial);
+
+    // HUD3D-05: from opposite hemispheres (yaw and yaw + pi, above and below
+    // the sketch plane) every visible quad is upright and never mirrored: its
+    // top edge reads left to right and its signed area is positive.
+    bool readable = true;
+    int hemispheres = 0;
+    for (const float yaw : {0.6f, 0.6f + 3.14159265f, -1.1f, -1.1f + 3.14159265f}) {
+        for (const float pitch : {0.5f, -0.5f, 1.0f, -1.0f}) {
+            rig.pose(yaw, pitch, 6.0f, base);
+            CadExtrudeDock d;
+            if (!rig.dock(&d) || !d.visible) continue;
+            ++hemispheres;
+            const float tx = d.screen[2] - d.screen[0];
+            const float ty = d.screen[3] - d.screen[1];
+            readable = readable && quadSignedArea(d) > 0.0f
+                       && (tx > 0.0f || (std::fabs(tx) < 1e-3f && ty < 0.0f));
+        }
+    }
+    r.check("HUD3D_05_opposite_hemispheres_give_an_upright_unmirrored_quad", readable && hemispheres >= 12);
+
+    // HUD3D-06: a distance sweep keeps ONE rigid dock -- the along/across ratio
+    // is exactly 1/sqrt(sine) of its own frame -- and its across size stays in
+    // the readable badge band.
+    bool rigid = true;
+    int sizes = 0;
+    for (int step = 0; step <= 40; ++step) {
+        const float distance = 1.5f + 1.0f * static_cast<float>(step);
+        rig.pose(0.6f, 0.5f, distance, base);
+        CadExtrudeDock d;
+        CadExtrudeControlScale scale;
+        if (!rig.dock(&d, &scale) || !d.valid) {
+            rigid = false;
+            break;
+        }
+        const float ratio = d.halfAlong / d.halfAcross;
+        const float expected = 1.0f / std::sqrt(std::max(d.axisSine, kCadFeatureViewMinAxisSine));
+        const float halfPx = d.halfAcross / scale.metersPerPixel;
+        rigid = rigid && std::fabs(ratio - expected) < 1e-4f
+                && halfPx >= kCadExtrudeDockMinHalfUnits * unitsPx - 1e-3f
+                && halfPx <= kCadExtrudeDockMaxHalfUnits * unitsPx + 1e-3f;
+        if (d.visible) ++sizes;
+    }
+    r.check("HUD3D_06_a_scale_sweep_keeps_one_rigid_dock_inside_the_badge_band",
+            rigid && sizes > 10);
+
+    // HUD3D-08: the arrow point behind the eye, or the dock off the viewport,
+    // hides the WHOLE dock.
+    bool hiddenWhole = true;
+    {
+        rig.pose(0.6f, 0.5f, 6.0f, base);
+        CadExtrudeDock front;
+        hiddenWhole = rig.dock(&front) && front.visible;
+        // Stand the eye past the dock, looking away from it.
+        const Vec3 dir = cadFeatureViewDirection(0.6f, 0.5f);
+        rig.pose(0.6f, 0.5f, 3.0f, vec3Sub(front.point, vec3Scale(dir, 6.0f)));
+        CadExtrudeDock behind;
+        hiddenWhole = hiddenWhole && rig.dock(&behind) && !behind.visible
+                      && (behind.hidden == CadExtrudeDockHidden::BehindEye
+                          || behind.hidden == CadExtrudeDockHidden::OffViewport);
+        rig.pose(0.6f, 0.5f, 6.0f, vec3Add(base, Vec3{30.0f, 0.0f, 0.0f}));
+        CadExtrudeDock off;
+        hiddenWhole = hiddenWhole && rig.dock(&off) && !off.visible
+                      && off.hidden == CadExtrudeDockHidden::OffViewport && off.alpha == 0.0f;
+    }
+    r.check("HUD3D_08_behind_the_eye_or_off_the_viewport_the_whole_dock_hides", hiddenWhole);
+
+    // HUD3D-09: the dimension leader is untouched by the dock: the same side
+    // line (the dock's up is +-the leader's side), and the leader's own lines
+    // are exactly what `cadExtrudeLeaderFor` always built.
+    bool leaderSame = true;
+    {
+        rig.pose(0.6f, 0.5f, 6.0f, base);
+        CadExtrudeControlScale scale;
+        CadExtrudeDock d;
+        Vec3 side{};
+        CadExtrudeLeader leader;
+        leaderSame = rig.dock(&d, &scale) && d.visible
+                     && cadExtrudeLeaderSide(rig.anchors, rig.camera.snapshot(), DockRig::kW,
+                                             DockRig::kH, &side)
+                     && cadExtrudeLeaderFor(rig.anchors, side, scale.world, &leader)
+                     && std::fabs(vec3Dot(d.up, side)) > 0.99f;
+        const Vec3 offset = vec3Scale(side, static_cast<float>(scale.world
+                                                               * kCadExtrudeLeaderOffsetFraction));
+        const Vec3 start = vec3Add(rig.anchors.base, offset);
+        const Vec3 end = vec3Add(rig.anchors.positive.tip, offset);
+        leaderSame = leaderSame && leader.positive.start.x == start.x
+                     && leader.positive.start.y == start.y && leader.positive.start.z == start.z
+                     && leader.positive.end.x == end.x && leader.positive.end.y == end.y
+                     && leader.positive.end.z == end.z;
+    }
+    r.check("HUD3D_09_the_dimension_leader_is_unchanged_beside_the_dock", leaderSame);
+
+    // HUD3D-10: no memory: the same inputs give the same dock, whatever was
+    // computed before.
+    rig.pose(2.0f, 0.6f, 5.0f, base);
+    CadExtrudeDock first;
+    const bool firstOk = rig.dock(&first);
+    rig.pose(-1.0f, -0.3f, 9.0f, base);
+    CadExtrudeDock other;
+    rig.dock(&other);
+    rig.pose(2.0f, 0.6f, 5.0f, base);
+    CadExtrudeDock again;
+    r.check("HUD3D_10_the_dock_is_a_pure_function_of_the_frame_it_is_given",
+            firstOk && rig.dock(&again) && sameDock(first, again));
+}
+
 }  // namespace
 
 int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
@@ -5411,6 +5762,7 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
     testPlanarRuntime(r);
     testFillTaps(r);
     testFillPickR2(r);
+    testHud3dDock(r);
     measurePerformance(r);
     // The planar arrangement (`CAD-PLANAR-FACE-PF-S1`): derived-only, wired to
     // nothing yet, so it rides in this suite rather than a startup token of

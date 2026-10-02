@@ -4910,11 +4910,30 @@ bool resolveCadSketchWorldFrame(forgeshape::ConstructionScene& scene, forgeshape
 //   [35] leader end x (beside the tip)     [36] y
 //   [37] 1 when the SECOND side's leader projects; 38..41 meaningless otherwise
 //   [38] start x  [39] y  [40] end x  [41] y
+//
+// `CAD-FOUNDATION-C2` added the PRIMARY arrow's drawn point
+// (`cadExtrudeArrowPoint`), the one spot the drawing, the hit test and the
+// HUD agree the head ends at:
+//   [42] 1 when it projects; 43..44 meaningless otherwise
+//   [43] x  [44] y
+//
+// `CAD-V6-S2-OWNER-CORRECTION-E2E-R1` added the action DOCK
+// (`cadExtrudeDockFor`): a world rectangle on the axis past that point,
+// projected here so Android only draws into it. Whole or not at all:
+//   [45] 1 when the dock is drawn; 46..56 meaningless otherwise
+//   [46] its alpha, (0, 1] (the near-axis fade)
+//   [47] top-left x  [48] y   [49] top-right x  [50] y
+//   [51] bottom-right x  [52] y   [53] bottom-left x  [54] y
+//        (reading order: the badge's upright frame, never mirrored)
+//   [55] the projected centre x  [56] y
+//   [57] |sin| of the view against the axis at the arrow point (diagnostic)
+//   [58] why it is hidden: 0 shown, 1 no frame, 2 near the axis,
+//        3 behind the eye, 4 off the viewport (`CadExtrudeDockHidden`)
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                                                            jdoubleArray out) {
     constexpr jsize kLegacySlots = 21;
-    constexpr jsize kMaxSlots = 45;
+    constexpr jsize kMaxSlots = 59;
     if (out == nullptr || env->GetArrayLength(out) < kLegacySlots) {
         return;
     }
@@ -4984,6 +5003,22 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                     values[42] = 1.0;
                     values[43] = px;
                     values[44] = py;
+                }
+                // The dock, from the SAME anchors and control scale.
+                forgeshape::CadExtrudeDock dock;
+                values[58] = static_cast<double>(forgeshape::CadExtrudeDockHidden::NoFrame);
+                if (session.extrudeDock(g_camera.snapshot(), w, h, &dock)) {
+                    values[57] = dock.axisSine;
+                    values[58] = static_cast<double>(dock.hidden);
+                    if (dock.visible) {
+                        values[45] = 1.0;
+                        values[46] = dock.alpha;
+                        for (int c = 0; c < 8; ++c) {
+                            values[47 + c] = dock.screen[c];
+                        }
+                        values[55] = dock.screenCentre[0];
+                        values[56] = dock.screenCentre[1];
+                    }
                 }
                 forgeshape::CadExtrudeLeader leader;
                 if (view.leaderValid

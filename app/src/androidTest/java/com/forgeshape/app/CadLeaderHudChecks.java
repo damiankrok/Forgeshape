@@ -7,14 +7,14 @@ import android.widget.TextView;
 
 /**
  * Device-side checks of the extrude HUD's technical-drawing leader
- * (`CAD-FOUNDATION-C1`) and its one action panel (`CAD-FOUNDATION-C2`), shared
- * by every class that asserts where the HUD stands.
+ * (`CAD-FOUNDATION-C1`) and its action dock
+ * (`CAD-V6-S2-OWNER-CORRECTION-E2E-R1`), shared by every class that asserts
+ * where the HUD stands.
  *
  * <p>Each check states a GEOMETRIC property of what is on screen against what
  * native projected — the value reads along its leader and stands on its
- * reading-up side; the action panel is ONE plate scaled as a unit, standing
- * just past the arrow's drawn point and clear of its grab corridor, with ONE
- * unscaled touch proxy of at least 48 dp covering it — rather than
+ * reading-up side; the dock stands over its projected quad, past the arrow's
+ * drawn point on the arrow's own screen line — rather than
  * re-running {@link CadHudPresentation}'s arithmetic and comparing it with
  * itself. Every method returns null when the property holds, or a message that
  * names the numbers when it does not, so a caller can assert or record it.
@@ -133,142 +133,89 @@ final class CadLeaderHudChecks {
     }
 
     /**
-     * The action panel (`CAD-FOUNDATION-C2`): the plate and its one proxy share
-     * a centre; the plate is scaled as ONE unit by the camera-attached visual
-     * scale and holds {@code icons} shown glyphs at their reference size; the
-     * proxy is unscaled, at least 48 dp each way and covers the plate; and the
-     * proxy stands clear of the arrow's grab corridor around native's projected
-     * arrow point. Null when all of that holds.
+     * The action DOCK (`CAD-V6-S2-OWNER-CORRECTION-E2E-R1`): native says it is
+     * drawn; its view is shown, never scaled or rotated, and stands exactly
+     * over the bounds of its touch shape (the projected quad united with the
+     * 48 dp floor square on its centre); every corner of the quad is on the
+     * viewport; and its projected centre stands ON the arrow's screen line,
+     * beyond the arrow's drawn point -- attached to the geometry, never beside
+     * it. Null when all of that holds.
      */
-    static String panelAtArrow(double[] tool, View canvas, View viewport, float density,
-                               int icons) {
+    static String dockAtArrow(double[] tool, View canvas, View viewport, float density) {
         if (tool[NativeViewport.CAD_EXTRUDE_HEAD_ON_SCREEN] == 0.0) {
             return "the arrow's point does not project";
         }
-        final View plate = canvas.findViewById(R.id.cad_extrude_panel_plate);
-        final View proxy = canvas.findViewById(R.id.cad_extrude_panel);
-        if (!plate.isShown() || !proxy.isShown()) {
-            return "the panel is not shown (plate " + plate.isShown() + ", proxy "
-                    + proxy.isShown() + ")";
+        if (tool[NativeViewport.CAD_EXTRUDE_DOCK_VISIBLE] == 0.0) {
+            return "native hides the dock (reason "
+                    + (int) tool[NativeViewport.CAD_EXTRUDE_DOCK_HIDDEN] + ")";
         }
-        final String floor = proxy(proxy, density);
-        if (floor != null) {
-            return "panel " + floor;
+        final View dock = canvas.findViewById(R.id.cad_extrude_panel);
+        if (!dock.isShown()) {
+            return "the dock is not shown";
         }
-        if (proxy.getBackground() != null) {
-            return "the touch proxy paints a background";
+        if (dock.getScaleX() != 1.0f || dock.getScaleY() != 1.0f || dock.getRotation() != 0.0f) {
+            return "the dock's view is scaled or rotated";
         }
-        if (plate.isClickable()) {
-            return "the scaled plate takes touches";
+        final float floorPx = CadHudPresentation.hitPx(density);
+        final CadHud3dPresentation.Dock expected =
+                CadHud3dPresentation.fromToolState(tool, floorPx);
+        if (!expected.visible) {
+            return "the tool state's dock does not read as visible";
         }
-        final float expected = CadHudPresentation.visualScale(
-                tool[NativeViewport.CAD_EXTRUDE_SCALE]);
-        if (Math.abs(plate.getScaleX() - expected) > 1e-4f
-                || plate.getScaleX() != plate.getScaleY()) {
-            return "plate scale " + plate.getScaleX() + "x" + plate.getScaleY() + ", expected "
-                    + expected + " both ways";
-        }
-        int shown = 0;
-        final int reference = CadHudPresentation.glyphPx(1.0, density);
-        final ViewGroup group = (ViewGroup) plate;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            final View glyph = group.getChildAt(i);
-            if (glyph.getVisibility() != View.VISIBLE) {
-                continue;
-            }
-            shown++;
-            if (Math.abs(glyph.getWidth() - reference) > 1) {
-                return "a plate glyph is " + glyph.getWidth() + " px, not the reference "
-                        + reference + ": it was resized alone";
-            }
-        }
-        if (shown != icons) {
-            return shown + " glyphs on the plate, expected " + icons;
-        }
-        // The plate's visual centre: it is scaled and turned about its OWN
-        // centre (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`), so that centre is the
-        // layout box's, wherever the translation put it.
         final int[] parent = new int[2];
         final int[] port = new int[2];
-        ((View) plate.getParent()).getLocationInWindow(parent);
+        ((View) dock.getParent()).getLocationInWindow(parent);
         viewport.getLocationInWindow(port);
-        if (Math.abs(plate.getPivotX() - plate.getWidth() * 0.5f) > 1.0f
-                || Math.abs(plate.getPivotY() - plate.getHeight() * 0.5f) > 1.0f) {
-            return "the plate does not turn and scale about its own centre";
+        final float left = parent[0] + dock.getLeft() + dock.getTranslationX() - port[0];
+        final float top = parent[1] + dock.getTop() + dock.getTranslationY() - port[1];
+        if (Math.abs(left - expected.left) > 2.0f || Math.abs(top - expected.top) > 2.0f
+                || dock.getWidth() + 2 < expected.right - expected.left
+                || dock.getHeight() + 2 < expected.bottom - expected.top) {
+            return "the dock's box " + left + "," + top + " " + dock.getWidth() + "x"
+                    + dock.getHeight() + " is not its touch shape's bounds " + expected.left
+                    + "," + expected.top + " .. " + expected.right + "," + expected.bottom;
         }
-        final float plateCX = parent[0] + plate.getLeft() + plate.getTranslationX()
-                + plate.getWidth() * 0.5f - port[0];
-        final float plateCY = parent[1] + plate.getTop() + plate.getTranslationY()
-                + plate.getHeight() * 0.5f - port[1];
-        final float[] turned = CadHudPresentation.rotatedBounds(
-                plate.getWidth() * plate.getScaleX(), plate.getHeight() * plate.getScaleY(),
-                plate.getRotation());
-        final float[] c = centreIn(proxy, viewport);
-        if (Math.abs(plateCX - c[0]) > TOLERANCE_DP * density
-                || Math.abs(plateCY - c[1]) > TOLERANCE_DP * density) {
-            return "the plate is not centred on its proxy";
+        if (dock.getWidth() < floorPx - 1 || dock.getHeight() < floorPx - 1) {
+            return "the dock's box is under the 48 dp floor";
         }
-        if (proxy.getWidth() + 1 < turned[0] || proxy.getHeight() + 1 < turned[1]) {
-            return "the proxy does not cover the turned plate";
+        for (int i = 0; i < 4; i++) {
+            final float x = expected.quad[2 * i];
+            final float y = expected.quad[2 * i + 1];
+            if (x < -1 || y < -1 || x > viewport.getWidth() + 1 || y > viewport.getHeight() + 1) {
+                return "a dock corner is off the viewport: " + x + "," + y;
+            }
         }
-        if (plateCX - turned[0] * 0.5f < -1 || plateCY - turned[1] * 0.5f < -1
-                || plateCX + turned[0] * 0.5f > viewport.getWidth() + 1
-                || plateCY + turned[1] * 0.5f > viewport.getHeight() + 1) {
-            return "the plate is not wholly on screen";
-        }
-        if (Math.abs(plate.getRotation()) > CadHudPresentation.PANEL_ROTATION_MAX_DEGREES + 0.01f) {
-            return "the plate turns " + plate.getRotation() + " degrees, past the cap";
-        }
-        // Attached: the centre stands ON the arrow's screen line, between the
-        // point and the attached offset past it -- never beside the shaft.
+        // Attached: the centre stands ON the arrow's screen line, past its point.
         final float hx = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_X];
         final float hy = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_Y];
         float ax = hx - (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X];
         float ay = hy - (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y];
         final float axisLength = (float) Math.hypot(ax, ay);
-        if (axisLength > 1.0f) {
-            ax /= axisLength;
-            ay /= axisLength;
-        } else {
-            ax = 1.0f;
-            ay = 0.0f;
+        if (!(axisLength > 1.0f)) {
+            return "the arrow has no screen direction";
         }
-        final float along = (c[0] - hx) * ax + (c[1] - hy) * ay;
-        final float across = Math.abs(-(c[0] - hx) * ay + (c[1] - hy) * ax);
+        ax /= axisLength;
+        ay /= axisLength;
+        final float along = (expected.centreX - hx) * ax + (expected.centreY - hy) * ay;
+        final float across = Math.abs(-(expected.centreX - hx) * ay + (expected.centreY - hy) * ax);
         if (across > TOLERANCE_DP * density) {
-            return "the panel stands " + across / density + " dp off the arrow's line: beside "
-                    + "the shaft, not attached at its point";
+            return "the dock stands " + across / density + " dp off the arrow's line";
         }
-        final float attached = (CadHudPresentation.ARROW_CORRIDOR_DP
-                + CadHudPresentation.PANEL_CLEAR_DP) * density
-                + 0.5f * (proxy.getWidth() * Math.abs(ax) + proxy.getHeight() * Math.abs(ay));
-        // From the attached offset past the point back to the shaft's base,
-        // twice the middle-to-point vector behind the point.
-        final float base = axisLength > 1.0f ? 2.0f * axisLength : 0.0f;
-        if (along < -base - TOLERANCE_DP * density || along > attached + TOLERANCE_DP * density) {
-            return "the panel stands " + along / density + " dp along the arrow from its point, "
-                    + "outside [" + (-base / density) + ", " + attached / density + "]";
+        if (!(along > 0.0f)) {
+            return "the dock is not past the arrow's point (" + along / density + " dp)";
         }
-        // Clear of the corridor unless an edge made it slide back.
-        final float dx = Math.max(0.0f, Math.abs(hx - c[0]) - proxy.getWidth() * 0.5f);
-        final float dy = Math.max(0.0f, Math.abs(hy - c[1]) - proxy.getHeight() * 0.5f);
-        final float clearance = (float) Math.hypot(dx, dy) / density;
-        final boolean atEdge = c[0] - proxy.getWidth() * 0.5f <= 2.0f
-                || c[1] - proxy.getHeight() * 0.5f <= 2.0f
-                || c[0] + proxy.getWidth() * 0.5f >= viewport.getWidth() - 2.0f
-                || c[1] + proxy.getHeight() * 0.5f >= viewport.getHeight() - 2.0f;
-        if (!atEdge && clearance < CadHudPresentation.ARROW_CORRIDOR_DP - TOLERANCE_DP) {
-            return "the proxy stands " + clearance + " dp from the arrow's point, inside its "
-                    + "grab corridor, with no edge to explain it";
+        if (!CadHud3dPresentation.claims(expected, expected.centreX, expected.centreY, floorPx)) {
+            return "the dock does not claim its own centre";
         }
         return null;
     }
 
-    /** The panel's distance from the arrow's point to its centre, in dp; for records. */
-    static float panelReachDp(double[] tool, View canvas, View viewport, float density) {
-        final float[] c = centreIn(canvas.findViewById(R.id.cad_extrude_panel), viewport);
-        return (float) Math.hypot(tool[NativeViewport.CAD_EXTRUDE_HEAD_X] - c[0],
-                tool[NativeViewport.CAD_EXTRUDE_HEAD_Y] - c[1]) / density;
+    /** The dock's distance from the arrow's point to its centre, in dp; for records. */
+    static float dockReachDp(double[] tool, float density) {
+        return (float) Math.hypot(
+                tool[NativeViewport.CAD_EXTRUDE_HEAD_X] - tool[NativeViewport.CAD_EXTRUDE_DOCK_CENTRE_X],
+                tool[NativeViewport.CAD_EXTRUDE_HEAD_Y] - tool[NativeViewport.CAD_EXTRUDE_DOCK_CENTRE_Y])
+                / density;
     }
 
     /** An unscaled touch proxy of at least 48 dp each way. */

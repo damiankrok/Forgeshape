@@ -591,6 +591,13 @@ public:
     bool extrudeViewFacts(const CameraSnapshot& camera, int viewportWidth, int viewportHeight,
                           CadExtrudeViewFacts* out) const;
 
+    // The action dock for one frame (`CAD-V6-S2-OWNER-CORRECTION-E2E-R1`):
+    // `cadExtrudeDockFor` over these anchors, the SAME control scale
+    // `extrudeViewFacts` reads, and the authoring frame's `u` as the
+    // near-axis fallback. Presentation only. False when there are no anchors.
+    bool extrudeDock(const CameraSnapshot& camera, int viewportWidth, int viewportHeight,
+                     CadExtrudeDock* out) const;
+
     // Reverses which side of the sketch plane the solid grows on, keeping the
     // exact depth and the same profile. A One Side control ALONE: Symmetric
     // reaches both sides already, and Two Sides states both explicitly, so in

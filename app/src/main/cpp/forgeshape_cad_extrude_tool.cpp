@@ -414,6 +414,188 @@ void appendCadExtrudeLeader(std::vector<GizmoVertex>* out, const CadExtrudeAncho
 }
 
 // ---------------------------------------------------------------------------
+// The action dock (`CAD-V6-S2-OWNER-CORRECTION-E2E-R1`)
+// ---------------------------------------------------------------------------
+
+const char* cadExtrudeDockHiddenName(CadExtrudeDockHidden hidden) {
+    switch (hidden) {
+        case CadExtrudeDockHidden::Shown:
+            return "shown";
+        case CadExtrudeDockHidden::NoFrame:
+            return "no_frame";
+        case CadExtrudeDockHidden::NearAxis:
+            return "near_axis";
+        case CadExtrudeDockHidden::BehindEye:
+            return "behind_eye";
+        case CadExtrudeDockHidden::OffViewport:
+            return "off_viewport";
+    }
+    return "unknown";
+}
+
+namespace {
+
+// `v` made perpendicular to the unit `axis` and normalised; false when nothing
+// of it is left.
+bool perpendicularTo(const Vec3& v, const Vec3& axis, Vec3* out) {
+    if (!vec3Finite(v)) {
+        return false;
+    }
+    const Vec3 rest = vec3Sub(v, vec3Scale(axis, vec3Dot(v, axis)));
+    const float length = std::sqrt(vec3Dot(rest, rest));
+    if (!std::isfinite(length) || length < kCadExtrudeDockDegenerateSine) {
+        return false;
+    }
+    *out = vec3Scale(rest, 1.0f / length);
+    return true;
+}
+
+}  // namespace
+
+bool cadExtrudeDockFor(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera,
+                       const CadExtrudeControlScale& scale, const Vec3& sketchU,
+                       int viewportWidth, int viewportHeight, CadExtrudeDock* out) {
+    if (out == nullptr) {
+        return false;
+    }
+    *out = CadExtrudeDock{};
+    if (!anchors.valid || !scale.valid || viewportWidth <= 0 || viewportHeight <= 0) {
+        return false;
+    }
+    const CadExtrudeSideAnchor& primary = anchors.side(anchors.primaryIsPositive);
+    if (!primary.present || !unitLength(primary.axis)) {
+        return false;
+    }
+    CadExtrudeDock built;
+    const Vec3 a = primary.axis;
+    built.point = cadExtrudeArrowPoint(primary, scale.world);
+    const Vec3 toward = camera.projection == ProjectionMode::Perspective
+                                ? vec3Sub(built.point, camera.eye)
+                                : vec3Sub(camera.target, camera.eye);
+    const Vec3 f = vec3Normalize(toward);
+    if (!unitLength(f)) {
+        return false;
+    }
+    built.axisSine = std::sqrt(std::max(0.0f, vec3Dot(vec3Cross(f, a), vec3Cross(f, a))));
+
+    // The side direction: from the view while it carries one, otherwise the
+    // sketch frame's u, otherwise the camera's right -- never a guess that
+    // depends on an earlier frame.
+    Vec3 side{};
+    Vec3 m{};
+    if (perpendicularTo(vec3Scale(f, -1.0f), a, &m)) {
+        side = vec3Normalize(vec3Cross(a, m));
+    } else if (perpendicularTo(sketchU, a, &side)) {
+        built.fallbackSide = true;
+    } else if (perpendicularTo(Vec3{camera.view.m[0], camera.view.m[4], camera.view.m[8]}, a,
+                               &side)) {
+        built.fallbackSide = true;
+    } else {
+        return false;
+    }
+    if (!unitLength(side)) {
+        return false;
+    }
+
+    // Reading orientation, by the leader's own rule. Without a projection (a
+    // point behind the eye) the unsigned frame stands; the dock is hidden then.
+    Vec3 right = a;
+    Vec3 up = side;
+    {
+        const float probe = scale.world > 0.0f ? scale.world : 1.0f;
+        float px = 0.0f, py = 0.0f, ax = 0.0f, ay = 0.0f, sx = 0.0f, sy = 0.0f;
+        if (projectWorldToScreen(camera, built.point, viewportWidth, viewportHeight, &px, &py)
+            && projectWorldToScreen(camera, vec3Add(built.point, vec3Scale(a, probe)),
+                                    viewportWidth, viewportHeight, &ax, &ay)
+            && projectWorldToScreen(camera, vec3Add(built.point, vec3Scale(side, probe)),
+                                    viewportWidth, viewportHeight, &sx, &sy)) {
+            float dx = ax - px;
+            float dy = ay - py;
+            // Within the vertical band the shaft reads bottom to top whatever
+            // the sign of a pixel-noise dx, so a near-vertical arrow cannot
+            // turn the badge over from one frame to the next; outside it, left
+            // to right. The one 180-degree turn this leaves stands at the
+            // band's edge, where the shaft is visibly not vertical.
+            const bool nearVertical = std::fabs(dx) <= kCadExtrudeDockVerticalBandTan * std::fabs(dy);
+            if (nearVertical ? dy > 0.0f : dx < 0.0f) {
+                right = vec3Scale(a, -1.0f);
+                dx = -dx;
+                dy = -dy;
+            }
+            // Upright for reading direction (dx, dy) is (dy, -dx) in y-down px.
+            if ((sx - px) * dy + (sy - py) * (-dx) < 0.0f) {
+                up = vec3Scale(side, -1.0f);
+            }
+        }
+    }
+    built.right = right;
+    built.up = up;
+
+    // Size: ONE control scale, clamped into a readable badge band. Along the
+    // axis it foreshortens with the arrow, softened (by sqrt of the sine) so a
+    // steep view tilts the badge rather than flattening it.
+    const float unitsPx = gizmoPixelsPerReferenceUnit();
+    const float halfPx = std::min(std::max(scale.pixels * kCadExtrudeDockHalfFraction,
+                                           kCadExtrudeDockMinHalfUnits * unitsPx),
+                                  kCadExtrudeDockMaxHalfUnits * unitsPx);
+    const float sine = std::max(built.axisSine, kCadFeatureViewMinAxisSine);
+    built.halfAcross = halfPx * scale.metersPerPixel;
+    built.halfAlong = built.halfAcross / std::sqrt(sine);
+    // The gap past the point, divided by the foreshortening so it is about the
+    // same on screen at every tilt.
+    const float gap = kCadExtrudeDockGapUnits * unitsPx * scale.metersPerPixel / sine;
+    built.centre = vec3Add(built.point, vec3Scale(a, gap + built.halfAlong));
+    const Vec3 along = vec3Scale(right, built.halfAlong);
+    const Vec3 across = vec3Scale(up, built.halfAcross);
+    built.corners[0] = vec3Add(vec3Sub(built.centre, along), across);
+    built.corners[1] = vec3Add(vec3Add(built.centre, along), across);
+    built.corners[2] = vec3Sub(vec3Add(built.centre, along), across);
+    built.corners[3] = vec3Sub(vec3Sub(built.centre, along), across);
+    for (const Vec3& corner : built.corners) {
+        if (!vec3Finite(corner)) {
+            return false;
+        }
+    }
+    built.valid = true;
+
+    if (built.axisSine <= kCadFeatureViewMinAxisSine) {
+        built.hidden = CadExtrudeDockHidden::NearAxis;
+        *out = built;
+        return true;
+    }
+    if (!projectWorldToScreen(camera, built.centre, viewportWidth, viewportHeight,
+                              &built.screenCentre[0], &built.screenCentre[1])) {
+        built.hidden = CadExtrudeDockHidden::BehindEye;
+        *out = built;
+        return true;
+    }
+    for (int i = 0; i < 4; ++i) {
+        if (!projectWorldToScreen(camera, built.corners[i], viewportWidth, viewportHeight,
+                                  &built.screen[2 * i], &built.screen[2 * i + 1])) {
+            built.hidden = CadExtrudeDockHidden::BehindEye;
+            *out = built;
+            return true;
+        }
+    }
+    for (int i = 0; i < 4; ++i) {
+        const float x = built.screen[2 * i];
+        const float y = built.screen[2 * i + 1];
+        if (x < 0.0f || y < 0.0f || x > static_cast<float>(viewportWidth)
+            || y > static_cast<float>(viewportHeight)) {
+            built.hidden = CadExtrudeDockHidden::OffViewport;
+            *out = built;
+            return true;
+        }
+    }
+    built.alpha = std::min(1.0f, (built.axisSine - kCadFeatureViewMinAxisSine)
+                                         / (kCadExtrudeDockFadeEndSine - kCadFeatureViewMinAxisSine));
+    built.visible = true;
+    built.hidden = CadExtrudeDockHidden::Shown;
+    *out = built;
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // The manipulator
 // ---------------------------------------------------------------------------
 
