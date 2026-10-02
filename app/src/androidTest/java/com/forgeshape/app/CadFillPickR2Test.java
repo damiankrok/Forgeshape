@@ -125,38 +125,53 @@ public final class CadFillPickR2Test {
                 {-0.9f, -0.5f}, {(float) Math.PI - 0.9f, -0.5f}};
         final String[] cells = {A_ONLY, LENS, B_ONLY, C_IN, LOOP_IN, REST};
         final Map<String, Long> handleOf = new HashMap<>();
+        final List<String> problems = new ArrayList<>();
         int jittered = 0;
         for (float[] view : views) {
             setCamera(view[0], view[1], 7.0f);
             for (String cell : cells) {
                 final float[] at = tappablePoint(cell, false);
+                final String where = cell + "@yaw" + view[0] + "/pitch" + view[1];
                 if (at == null) {
-                    fact("r2_01." + cell + "." + view[0], "no tappable point");
+                    fact("r2_01." + where, "no tappable point: " + lastBlock);
                     continue;
                 }
                 final float[] poseBefore = cameraPose();
-                final long[] before = selected();
-                assertEquals("nothing chosen before the tap", 0, before.length);
+                assertEquals("nothing chosen before the tap", 0, selected().length);
+                final String mark = mark();
                 // ~10 px of finger travel in two sub-slop Moves, then Up.
                 realGesture(new float[][]{{at[0], at[1]}, {at[0] + 4.0f, at[1] - 3.0f},
                         {at[0] + 8.0f, at[1] + 6.0f}});
                 final float[] poseAfter = cameraPose();
-                assertArrayEquals(cell + ": a tap never moves the camera", poseBefore, poseAfter,
-                        0.0f);
                 final long[] after = selected();
-                assertEquals(cell + " at yaw " + view[0] + ": exactly one cell", 1, after.length);
-                final Long known = handleOf.get(cell);
-                if (known == null) {
-                    handleOf.put(cell, after[0]);
-                } else {
-                    assertEquals(cell + ": the same atomic face from every side and quadrant",
-                            known.longValue(), after[0]);
+                final List<String> tokens = tokensSince(mark);
+                fact("r2_01." + where, at[0] + "," + at[1] + " selected=" + Arrays.toString(after)
+                        + " tokens=" + tokens);
+                if (!Arrays.equals(poseBefore, poseAfter)) {
+                    problems.add(where + ": the camera moved " + Arrays.toString(poseBefore)
+                            + " -> " + Arrays.toString(poseAfter));
                 }
-                jittered++;
-                assertEquals(NativeViewport.CAD_OK, NativeViewport.sketchToggleRegion(after[0]));
+                if (after.length != 1) {
+                    problems.add(where + ": " + after.length + " cells at " + at[0] + "," + at[1]
+                            + " tokens=" + tokens);
+                } else {
+                    final Long known = handleOf.get(cell);
+                    if (known == null) {
+                        handleOf.put(cell, after[0]);
+                    } else if (known != after[0]) {
+                        problems.add(where + ": face " + after[0] + " where another view chose "
+                                + known);
+                    }
+                    jittered++;
+                }
+                for (long handle : after) {
+                    nativeToggle(handle);
+                }
                 settleLayout();
             }
         }
+        assertTrue("every jittered tap lands on its cell without orbit: " + problems,
+                problems.isEmpty());
         fact("r2_01.jittered_taps", jittered);
         assertTrue("every cell was tapped from at least two views: " + jittered,
                 jittered >= 2 * cells.length);
@@ -219,20 +234,37 @@ public final class CadFillPickR2Test {
         tapCellStill(LENS);
         final int direction = (int) toolState()[NativeViewport.CAD_EXTRUDE_DIRECTION];
         assertEquals(NativeViewport.CAD_OK, NativeViewport.sketchSetExtrude(1.5, direction));
-        setCamera(0.6f, 0.55f, 7.0f);
-        final double[] tool = toolState();
-        assertTrue("the arrow is on screen", tool[NativeViewport.CAD_EXTRUDE_ON_SCREEN] != 0.0
-                && tool[NativeViewport.CAD_EXTRUDE_HEAD_ON_SCREEN] != 0.0);
+        // The first oblique pose in which a finger can reach both the drawn
+        // head and the lower shaft (HUD chrome may stand over either).
+        final float[][] poses = {{0.6f, 0.55f, 7.0f}, {-0.6f, 0.55f, 7.0f}, {0.6f, 0.35f, 9.0f},
+                {2.4f, 0.5f, 8.0f}, {-2.4f, 0.45f, 8.0f}, {1.2f, 0.7f, 9.0f}};
+        double[] tool = null;
+        float[] head = null;
+        float[] shaft = null;
+        final StringBuilder tried = new StringBuilder();
+        for (float[] pose : poses) {
+            setCamera(pose[0], pose[1], pose[2]);
+            tool = toolState();
+            if (tool[NativeViewport.CAD_EXTRUDE_ON_SCREEN] == 0.0
+                    || tool[NativeViewport.CAD_EXTRUDE_HEAD_ON_SCREEN] == 0.0) {
+                tried.append(Arrays.toString(pose)).append(" off screen; ");
+                continue;
+            }
+            head = firstViewportPoint(headCandidates(tool));
+            final String headBlock = lastBlock;
+            shaft = firstViewportPoint(shaftCandidates(tool));
+            if (head != null && shaft != null) {
+                fact("r2_04.pose", Arrays.toString(pose));
+                break;
+            }
+            tried.append(Arrays.toString(pose)).append(" head=").append(headBlock)
+                    .append(" shaft=").append(lastBlock).append("; ");
+            head = null;
+            shaft = null;
+        }
+        assertNotNull("a pose with a reachable head and shaft: " + tried, head);
         final double depth = tool[NativeViewport.CAD_EXTRUDE_DEPTH];
         final long[] chosen = selected();
-
-        // The HEAD: its drawn point, then the tip (the cone's middle).
-        final float[] head = firstViewportPoint(new float[][]{
-                {(float) tool[NativeViewport.CAD_EXTRUDE_HEAD_X],
-                        (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_Y]},
-                {(float) tool[NativeViewport.CAD_EXTRUDE_TIP_X],
-                        (float) tool[NativeViewport.CAD_EXTRUDE_TIP_Y]}});
-        assertNotNull("a head point reaches the viewport", head);
         final String headMark = mark();
         realGesture(new float[][]{{head[0], head[1]}});
         assertArrayEquals("a still head tap toggles no cell", chosen, selected());
@@ -246,14 +278,6 @@ public final class CadFillPickR2Test {
         final float ty = (float) tool[NativeViewport.CAD_EXTRUDE_TIP_Y];
         final float bx = 2.0f * (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X] - tx;
         final float by = 2.0f * (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y] - ty;
-        final float[][] shaftCandidates = new float[5][];
-        final float[] fractions = {0.25f, 0.2f, 0.3f, 0.15f, 0.35f};
-        for (int i = 0; i < fractions.length; i++) {
-            shaftCandidates[i] = new float[]{bx + (tx - bx) * fractions[i],
-                    by + (ty - by) * fractions[i]};
-        }
-        final float[] shaft = firstViewportPoint(shaftCandidates);
-        assertNotNull("a shaft point reaches the viewport", shaft);
         final String shaftMark = mark();
         realGesture(new float[][]{{shaft[0], shaft[1]}, {shaft[0] + 3.0f, shaft[1] + 2.0f}});
         final long[] afterShaft = selected();
@@ -264,7 +288,7 @@ public final class CadFillPickR2Test {
         assertTrue(tokensSince(shaftMark).contains("FORGESHAPE_SKETCH_TAP:resolved"));
         // Put the selection back natively, so the drag starts on the same arrow.
         for (long handle : symmetricDifference(chosen, afterShaft)) {
-            assertEquals(NativeViewport.CAD_OK, NativeViewport.sketchToggleRegion(handle));
+            nativeToggle(handle);
         }
         settleLayout();
         assertArrayEquals(chosen, selected());
@@ -329,7 +353,7 @@ public final class CadFillPickR2Test {
                 line.contains(string(R.string.status_cad_add_disjoint)));
         assertArrayEquals("the selection stands", held, selected());
         // Removing the cell that made it disjoint restores the preview.
-        assertEquals(NativeViewport.CAD_OK, NativeViewport.sketchToggleRegion(far));
+        nativeToggle(far);
         settleLayout();
         assertEquals(NativeViewport.CAD_OK,
                 (int) toolState()[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS]);
@@ -441,10 +465,38 @@ public final class CadFillPickR2Test {
     private void warmUpFeatureView() {
         tapCellStill(REST);
         for (long handle : selected()) {
-            assertEquals(NativeViewport.CAD_OK, NativeViewport.sketchToggleRegion(handle));
+            nativeToggle(handle);
         }
         settleLayout();
         assertEquals(0, selected().length);
+    }
+
+    /** Points ON the drawn head: its point, the cone between, its middle (the tip). */
+    private static float[][] headCandidates(double[] tool) {
+        final float hx = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_X];
+        final float hy = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_Y];
+        final float tx = (float) tool[NativeViewport.CAD_EXTRUDE_TIP_X];
+        final float ty = (float) tool[NativeViewport.CAD_EXTRUDE_TIP_Y];
+        final float[] fractions = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+        final float[][] out = new float[fractions.length][];
+        for (int i = 0; i < fractions.length; i++) {
+            out[i] = new float[]{hx + (tx - hx) * fractions[i], hy + (ty - hy) * fractions[i]};
+        }
+        return out;
+    }
+
+    /** Points low on the drawn shaft, clear of the head. */
+    private static float[][] shaftCandidates(double[] tool) {
+        final float tx = (float) tool[NativeViewport.CAD_EXTRUDE_TIP_X];
+        final float ty = (float) tool[NativeViewport.CAD_EXTRUDE_TIP_Y];
+        final float bx = 2.0f * (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X] - tx;
+        final float by = 2.0f * (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y] - ty;
+        final float[] fractions = {0.25f, 0.2f, 0.3f, 0.15f, 0.35f};
+        final float[][] out = new float[fractions.length][];
+        for (int i = 0; i < fractions.length; i++) {
+            out[i] = new float[]{bx + (tx - bx) * fractions[i], by + (ty - by) * fractions[i]};
+        }
+        return out;
     }
 
     /** The first candidate point of a cell a finger can reach, or null. */
@@ -506,26 +558,44 @@ public final class CadFillPickR2Test {
      * The first point that is on the viewport and that a real finger would
      * deliver to the viewport itself (no clickable chrome above it), or null.
      */
+    /** Why the last {@link #firstViewportPoint} candidate was refused. Evidence only. */
+    private String lastBlock = "";
+
     private float[] firstViewportPoint(float[][] points) {
+        final StringBuilder why = new StringBuilder();
         for (float[] at : points) {
-            final boolean free = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final String block = onWorkspace(rule.getScenario(), (activity, workspace) -> {
                 final float density = activity.getResources().getDisplayMetrics().density;
                 final View viewport = workspace.findViewById(R.id.viewport_surface);
                 if (at[0] < 8 * density || at[1] < 8 * density
                         || at[0] > viewport.getWidth() - 8 * density
                         || at[1] > viewport.getHeight() - 8 * density) {
-                    return false;
+                    return "off the viewport " + viewport.getWidth() + "x" + viewport.getHeight();
                 }
                 final View root = activity.getWindow().getDecorView();
                 final int[] vp = new int[2];
                 viewport.getLocationInWindow(vp);
                 final View owner = clickableAt(root, at[0] + vp[0], at[1] + vp[1]);
-                return owner == null || owner == viewport;
+                if (owner == null || owner == viewport) {
+                    return null;
+                }
+                String name;
+                try {
+                    name = owner.getId() == View.NO_ID ? "no-id"
+                            : activity.getResources().getResourceEntryName(owner.getId());
+                } catch (RuntimeException unnamed) {
+                    name = "#" + owner.getId();
+                }
+                return "under " + owner.getClass().getSimpleName() + ":" + name;
             });
-            if (free) {
+            if (block == null) {
+                lastBlock = "";
                 return at;
             }
+            why.append('[').append(at[0]).append(',').append(at[1]).append(' ').append(block)
+                    .append(']');
         }
+        lastBlock = why.toString();
         return null;
     }
 
@@ -686,9 +756,24 @@ public final class CadFillPickR2Test {
         return pose;
     }
 
+    /**
+     * Toggles a face through the native call AND tells the workspace, as every
+     * product path does, so no HUD view keeps standing where the previous
+     * selection put it and takes the next Down.
+     */
+    private void nativeToggle(long handle) {
+        final int status = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int why = NativeViewport.sketchToggleRegion(handle);
+            workspace.onNativeStateChanged();
+            return why;
+        });
+        assertEquals(NativeViewport.CAD_OK, status);
+        settleLayout();
+    }
+
     private void clearSelection() {
         for (long handle : selected()) {
-            assertEquals(NativeViewport.CAD_OK, NativeViewport.sketchToggleRegion(handle));
+            nativeToggle(handle);
         }
         settleLayout();
         assertEquals(0, selected().length);
