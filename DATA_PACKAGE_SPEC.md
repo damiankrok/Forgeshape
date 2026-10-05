@@ -974,7 +974,7 @@ FACE      u8  faceKind                1 CapPlane, 2 CapFar, 3 Side (a WHOLE sour
           faceKind 4 only:
           CUT start                   the piece's two bounding cuts, in the
           CUT end                     source edge's own parameter order
-FACES     u32 faceCount 1 .. 16
+FACES     u32 faceCount 1 .. 9216
           repeat faceCount: CYCLE outer, u32 holeCount 0 .. 64, CYCLE × holeCount
 CYCLE     u32 fragmentCount 1 .. 1024, then FRAGMENT × fragmentCount
 FRAGMENT  u32 sourceEntityId          != 0
@@ -1000,7 +1000,21 @@ end, 13 for an intersection). Nothing in a face selection is a coordinate, a
 floating-point value, a vector index, a tessellation index or a triangle.
 
 The fixed caps, and why: sketches `kMaxCadSketches` = the feature cap (16);
-faces per selection `kMaxPlanarFaceSelection` = the region cap (16); holes per
+faces per selection `kMaxPlanarFaceSelection` = `kMaxArrangementFaces` (9216) --
+the most bounded faces an arrangement within its own caps can have, NOT the loop
+region cap (16, which still bounds a `LoopRegions` selection). A contact cuts at
+most its two source edges once each, so with S = `kMaxArrangementSourceEdges`
+(1024) and K = `kMaxArrangementContacts` (4096) there are at most S + 2K = 9216
+fragments; by Euler's formula a plane graph of E fragments, V nodes and C
+components has E − V + C ≤ E bounded faces. A valid selection names DISTINCT faces
+of one derived arrangement, so it can never reach this bound; the decoder checks
+the count against it before allocating, then against the bytes present (a face
+is at least 19 bytes: an outer `CYCLE` of one smallest fragment and a zero hole
+count), refusing `ImpossibleCount` above the bound and `Truncated` past the end.
+Until `CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1` this bound was the region cap
+(16); the field was always this u32, so the change moved no byte, no version and
+no fixture -- every file valid before is valid now and decodes identically, and
+a count of 17 .. 9216 that an older build refused is now read. Holes per
 face `kMaxPlanarFaceHoles` = `kMaxRegionHoles` (64); fragments per cycle
 `kMaxPlanarFaceCycleFragments` = `kMaxProfileVertices` (1024), because every
 fragment becomes at least one polygon vertex when a face is extruded, so a longer

@@ -560,7 +560,17 @@ on the host, with no device, and is the fast native loop.
   (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): adding a face is refused only outside
   Ready, for an index that names no face, or past the bound (`TooManyRegions`)
   — never because of which OTHER faces are chosen — so the result depends on
-  which faces were tapped an odd number of times and on nothing else. Whether
+  which faces were tapped an odd number of times and on nothing else. **That
+  bound is the ARRANGEMENT's, never the loop-region cap**
+  (`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`): `kMaxPlanarFaceSelection` =
+  `kMaxArrangementFaces` = `kMaxArrangementSourceEdges` + 2 ×
+  `kMaxArrangementContacts` = 9216, the fragment bound that Euler's formula
+  makes a bound on bounded faces, so every face of an arrangement that derived
+  can be chosen; `kMaxProfileRegions` stays 16 for `LoopRegions`. The `CADB` v6
+  count was always a u32, so no byte, version or fixture moved. Whether a
+  selection exists is asked of the session (`selectionChosen`), on EVERY commit
+  path — the first project's included — and "choose one" (`AmbiguousProfile`)
+  is said only over an EMPTY selection. Whether
   the set extrudes is the CANDIDATE's verdict, named on the preview and at
   commit; a refusal never trims the selection, and Back to Sketch / Edit Sketch
   keep every face that still resolves. A tap toggles the face under the finger

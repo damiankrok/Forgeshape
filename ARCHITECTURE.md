@@ -1101,7 +1101,11 @@ next — and replaces the scene through `loadProjectDocument`, the same validate
 all-or-nothing path Open and Recover take. So the sketch owns no `ObjectId` and
 no `SceneObject` until that moment; a refused profile, depth or regeneration
 creates no project and leaves the sketch in Ready with its reason in
-`lastStatus`; the new project starts with an EMPTY history, as every loaded
+`lastStatus`. Whether anything is chosen is the SESSION's answer
+(`selectionChosen()` / `unchosenStatus()`, the ones `commit` and `commitEdit`
+ask), never the loop-region anchor `selectedProfileId()`, which a PlanarFaces
+selection does not set — reading it refused every fill selection of a first
+project as "choose one" until `CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`. The new project starts with an EMPTY history, as every loaded
 document does (undoing the only body would give an empty project, which does
 not exist); and Back to Home before that moment costs nothing (`closeProject`
 cancels the chooser, the sketch and the borrowed view, and has no body to
@@ -2811,7 +2815,17 @@ regenerated like a LoopRegions one; nothing refuses it any more
   arrow's and toggles nothing.
 - *Selection (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`).* `togglePlanarFace` is a
   pure set toggle: an ADD checks state, the face index and
-  `kMaxPlanarFaceSelection` and nothing else; it never merges. Whether the set
+  `kMaxPlanarFaceSelection` and nothing else; it never merges. That bound is
+  `kMaxArrangementFaces` (`forgeshape_sketch_arrangement.h`, 9216 = the
+  fragment bound S + 2K over the arrangement's own source-edge and contact caps,
+  which by Euler bounds the bounded faces), not the 16-region loop cap, so every
+  face of any arrangement that derived can be chosen
+  (`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`); `kMaxProfileRegions` still
+  bounds a `LoopRegions` selection. The stored selection stays canonical
+  (ascending), so a toggle and a membership test are one binary search, a ref
+  resolves by binary search over the sorted faces, and the duplicate check of
+  `resolvePlanarFaceSelection` sorts once: a tap costs O(log n) comparisons and
+  a whole selection resolves in O(n log F). Whether the set
   extrudes is the candidate's verdict (`evaluateCandidate`), and
   `reconcilePlanarSelection` keeps every stored face that still resolves.
 - *Ready tap (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`).* `onExtrudeTouch` stores
