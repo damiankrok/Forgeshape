@@ -668,6 +668,13 @@ wobbles a little while tapping neither turns the view nor misses its cell, and
 a cell is tappable from either side of the sketch plane. A still tap on the
 arrow's shaft chooses the cell under it; a drag from the shaft changes the
 distance; a tap on the arrow's head belongs to the arrow.
+There is no limit of sixteen: every cell a sketch's curves make can be chosen
+(a 24-cell grid takes all 24, one tap at a time), and the status line counts
+them — *Regions in the extrusion: N.* The first Extrude of a brand-new CAD
+project extrudes the chosen cells like any later one. "Several profiles are
+closed — choose one" is said only when nothing is chosen; an Extrude that is
+refused names its own reason (for example cells that meet only at a point),
+and changing the choice replaces that message with the new count.
 What is chosen is hatched as one shape, and a hole it leaves open stays
 empty. The first
 region you choose also turns the view to one the arrow can be dragged in.

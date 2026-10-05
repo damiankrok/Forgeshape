@@ -1,8 +1,42 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.94.0
-**Updated:** 2026-10-02
-**Latest closeout:** **`CAD-V6-S2-OWNER-CORRECTION-E2E-R1` —
+**Status Version:** 0.95.0
+**Updated:** 2026-10-05
+**Latest closeout:** **`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1` —
+`PASS-CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E`** (2026-10-05). **TECH PASS / OWNER
+PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
+`feature/cad-v6-s2-owner-feedback-multiface-r1` from the previous task head
+`d66dd89`; `main` stays `6c9f156` and `feature/cad-v6-sketch-face-r1` stays
+`bbae765`; no FullSharded; S3 not started. Record:
+`artifacts/cad-v6-s2-owner-feedback-multiface/SUMMARY.md` (BEFORE.md first).
+
+- **The 16-area limit is gone for fill selections.** `kMaxPlanarFaceSelection`
+  was the loop-region cap (16); it is now `kMaxArrangementFaces` = S + 2K =
+  1024 + 2·4096 = 9216, the bound Euler's formula gives on the bounded faces of
+  any arrangement within its own caps, so every cell of a sketch that derives
+  can be chosen. `kMaxProfileRegions` stays 16 for `LoopRegions`. No `CADB`
+  layout or version change (the v6 count was always a u32); fixtures 57/57
+  byte-identical, verdicts 57/57 unchanged.
+- **"Several profiles are closed — choose one" over a chosen selection is
+  fixed.** The first Extrude of a new CAD project (`commitFirstCadProject`)
+  read the loop-region anchor a face selection never sets, so it refused EVERY
+  fill selection (`AmbiguousProfile` on the owner's sketch) while the preview
+  was `Ok`. It now asks the session (`selectionChosen`/`unchosenStatus`).
+  A valid non-empty selection always reports its count on the status line.
+- **Device-proven** (`CadMultiFaceOwnerTest`, Home → New Project → CAD, real
+  window taps): taps 1..18 each resolve and count, all 24 cells select,
+  remove/re-add around the old cap restores the set, the first Extrude commits
+  20 cells (3.2 m³, one body), a pinched 17-cell set's refused commit names
+  its own reason and a fix commits.
+- **Gates.** Host `HOST_SELFTESTS_OK (4024 checks, 0 failed)`; JVM 120/120;
+  debug/release/androidTest green; release guard PASS; `CI DEVICE`
+  `37365134653` (attempt 2) on `e9960fb`: **PASS 69/69** (9 classes);
+  `CI FAST` `37365137933` on `e9960fb`: success, corpus 57/57.
+- **OWNER APK.** `ci-fast-evidence` artifact `11368352590` (zip SHA-256
+  `c91a62b2…01cc5`, expires 2026-10-19),
+  `app/build/outputs/apk/debug/app-debug.apk`.
+
+**Previous closeout:** **`CAD-V6-S2-OWNER-CORRECTION-E2E-R1` —
 `PASS-CAD-V6-S2-OWNER-CORRECTION-E2E`** (2026-10-02). **TECH PASS / OWNER
 PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
 `feature/cad-v6-s2-owner-correction-e2e-r1` from the R2 head `b264cfe`; `main`
@@ -1866,7 +1900,7 @@ lives in Git history; only what still constrains the code is kept here.
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
 **Next Stage:** the OWNER physical-device review of the
-`CAD-V6-S2-OWNER-CORRECTION-E2E-R1` APK; the Delete → Undo → Redo owner
+`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1` APK; the Delete → Undo → Redo owner
 verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See *Next Stage*.
 
 ## Current state
@@ -4661,9 +4695,10 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: OWNER physical-device review of the
-`CAD-V6-S2-OWNER-CORRECTION-E2E-R1` APK** (artifact `11224257836`, SHA-256
-`431e233b…48b1`) against the checklist in
-`artifacts/cad-v6-s2-owner-correction-e2e/SUMMARY.md`. Nothing merges to
+`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1` APK** (`ci-fast-evidence` artifact
+`11368352590` of `CI FAST` `37365137933`, product `e9960fb`) against the
+checklist in `artifacts/cad-v6-s2-owner-feedback-multiface/SUMMARY.md`, which
+carries the previous task's HUD3D checklist forward. Nothing merges to
 `feature/cad-v6-sketch-face-r1` or `main` before that verdict; OWNER-TUNABLE
 dock sizes may be adjusted from it. `CAD-V6-S3` (retained-sketch mobile UX)
 waits for it. The v6 branch merges to `main` only after the completed v6

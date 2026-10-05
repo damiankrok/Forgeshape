@@ -85,6 +85,11 @@ build, and its checksum is validated first.
    through the live camera, Construction / Sculpt / CAD modes) — and requires
    `OK (n tests)`.
 
+   The job log itself names every failed test with the head of its stack
+   (`FAILED_TEST …`) and repeats the fact files the class wrote under
+   `files/evidence` (`TEST_FACT …`, at most 1500 lines), so a reader who
+   cannot open the uploaded artifact still sees what failed and why.
+
 A result is named in `summary.json`: `PASS`,
 `BLOCKED-CI-CLOUD-DEVICE-CAPABILITY` (the emulator gives no usable Vulkan path —
 nothing is weakened, mocked or replaced by an OpenGL fallback),
