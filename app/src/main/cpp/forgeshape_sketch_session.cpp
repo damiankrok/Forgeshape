@@ -194,6 +194,11 @@ CadStatus SketchSession::begin(Workplane plane) {
     selectionLost_ = false;
     extrude_ = ExtrudeFeature{};
     oneSideDirection_ = ExtrudeDirection::AlongNormal;
+    featureKind_ = CadFeatureKind::Extrude;
+    revolve_ = RevolveFeature{};
+    axisPicking_ = false;
+    revolveDragPointer_ = -1;
+    revolveDragLive_ = false;
     operation_ = CadFeatureOperation::NewBody;
     targetBodyId_ = kNoObject;
     targetBaseState_ = CadBodyState{};
@@ -232,6 +237,11 @@ void SketchSession::cancel() {
     faceShapes_.clear();
     selectionLost_ = false;
     extrude_ = ExtrudeFeature{};
+    featureKind_ = CadFeatureKind::Extrude;
+    revolve_ = RevolveFeature{};
+    axisPicking_ = false;
+    revolveDragPointer_ = -1;
+    revolveDragLive_ = false;
     // An edit session that is cancelled has, by construction, written nothing
     // to the body: the staged copy simply goes away with the session.
     editingBodyId_ = kNoObject;
@@ -291,6 +301,16 @@ CadStatus SketchSession::beginEditFeature(ObjectId bodyId, const CadBodyState& s
     sketch_ = *view.sketch;
     extrude_ = *view.extrude;
     operation_ = view.operation;
+    if (view.kind == CadFeatureKind::Revolve && view.revolve != nullptr) {
+        // A Revolve stages as one (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): its axis,
+        // angle and direction, and its selection as the session's ONE
+        // selection, so Finish reconciles it by the rules every selection is
+        // reconciled by. The body's kind is its own and the edit keeps it.
+        featureKind_ = CadFeatureKind::Revolve;
+        revolve_ = *view.revolve;
+        extrude_ = revolveSelectionCarrier(*view.revolve);
+        axisPicking_ = false;
+    }
     // The staged extent comes back with the body, and so does the One Side
     // memory a mode round trip needs: for a One Side body it is the side the
     // solid is on, and for a two-sided one the canonical `AlongNormal`.
@@ -619,6 +639,7 @@ void SketchSession::resetGesture() {
     // way -- an uncommitted sketch is volatile -- so this is about what the user
     // sees, not about the project.
     restoreCancelledExtrudeDrag();
+    cancelRevolveDrag();
 }
 
 // ---------------------------------------------------------------------------
@@ -970,6 +991,10 @@ bool SketchSession::onTouch(TouchAction action, int32_t actionPointerId,
     // which is exactly when the extrusion becomes the thing being adjusted. Two
     // fingers still pan and pinch in both states, unchanged.
     if (state_ == SketchSessionState::Ready) {
+        if (featureKind_ == CadFeatureKind::Revolve) {
+            return onRevolveTouch(action, actionPointerId, pointers, count, camera, viewportWidth,
+                                  viewportHeight);
+        }
         return onExtrudeTouch(action, actionPointerId, pointers, count, camera, viewportWidth,
                               viewportHeight);
     }
@@ -1443,6 +1468,7 @@ void SketchSession::backToEditing() {
     faceShapes_.clear();
     regionTapArmed_ = false;
     regionTapOnHead_ = false;
+    cancelRevolveDrag();
     state_ = SketchSessionState::Editing;
     touchCandidate();
 }
@@ -1868,7 +1894,10 @@ bool SketchSession::selectionAnchorPoint(SketchPoint* out) const {
 }
 
 bool SketchSession::extrudeAnchors(CadExtrudeAnchors* out) const {
-    if (out == nullptr || state_ != SketchSessionState::Ready) {
+    // A Revolve has no extrude arrow: the extrude HUD is hidden whole, on its
+    // own "no anchor, no control" terms, rather than standing over a revolve.
+    if (out == nullptr || state_ != SketchSessionState::Ready
+        || featureKind_ == CadFeatureKind::Revolve) {
         return false;
     }
     SketchPoint base;
@@ -1897,17 +1926,32 @@ CadStatus SketchSession::flipExtrudeDirection() {
                               : ExtrudeDirection::AlongNormal);
 }
 
+RevolveFeature SketchSession::candidateRevolve() const {
+    RevolveFeature revolve = revolve_;
+    setRevolveSelectionFrom(&revolve, extrude_);
+    return revolve;
+}
+
 CadBodyState SketchSession::candidateState() const {
-    // A new body: the sketch and its extrusion, exactly what R0 built.
+    const bool revolve = featureKind_ == CadFeatureKind::Revolve;
+    // A new body: the sketch and its extrusion, exactly what R0 built -- or,
+    // since `CAD-V6-REVOLVE-NEWBODY-E2E-R1`, its Revolve.
     if (editingFeatureId_ == 0 && operation_ == CadFeatureOperation::NewBody) {
-        return makeCadBodyState(sketch_, extrude_);
+        return revolve ? makeCadRevolveBodyState(sketch_, candidateRevolve())
+                       : makeCadBodyState(sketch_, extrude_);
     }
     // Everything else is the TARGET body's chain with one feature appended or
     // replaced -- the same SceneObject, never a copy of it.
     CadBodyState state = targetBaseState_;
     if (editingFeatureId_ == kCadFeatureId) {
         cadBaseSketch(state) = sketch_;
-        state.extrude = extrude_;
+        if (revolve) {
+            state.baseKind = CadFeatureKind::Revolve;
+            state.extrude = ExtrudeFeature{};
+            state.revolve = candidateRevolve();
+        } else {
+            state.extrude = extrude_;
+        }
         return state;
     }
     if (editingFeatureId_ > kCadFeatureId) {
@@ -1962,6 +2006,10 @@ CadBodyState SketchSession::candidateState() const {
 bool SketchSession::operationAvailable(CadFeatureOperation operation) const {
     if (!active()) {
         return false;
+    }
+    // A Revolve is a New Body in R1: Add and Cut are not offered for one.
+    if (featureKind_ == CadFeatureKind::Revolve) {
+        return operation == CadFeatureOperation::NewBody;
     }
     const bool addOrCut = operation == CadFeatureOperation::Add
                           || operation == CadFeatureOperation::Cut;
@@ -2169,6 +2217,426 @@ CadStatus SketchSession::commitIntoTarget(ConstructionScene& scene, Construction
     }
     cancel();
     return fail(CadStatus::Ok);
+}
+
+// ---------------------------------------------------------------------------
+// Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`)
+// ---------------------------------------------------------------------------
+
+bool SketchSession::revolveAvailable() const {
+    if (state_ != SketchSessionState::Ready) {
+        return false;
+    }
+    if (editingFeatureId_ == kCadFeatureId) {
+        // An edit keeps the body's own kind: a Revolve body revolves.
+        return hasTargetState_ && targetBaseState_.baseKind == CadFeatureKind::Revolve;
+    }
+    // A new body only; an edit of a later feature is an Add or a Cut.
+    return editingFeatureId_ == 0;
+}
+
+CadStatus SketchSession::beginRevolve() {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (!revolveAvailable()) {
+        return fail(CadStatus::InvalidFeatureOperation);
+    }
+    if (featureKind_ == CadFeatureKind::Revolve) {
+        return fail(CadStatus::Ok);
+    }
+    restoreCancelledExtrudeDrag();
+    regionTapArmed_ = false;
+    regionTapOnHead_ = false;
+    featureKind_ = CadFeatureKind::Revolve;
+    // A Revolve makes a NEW body in R1, whatever the sketch stands on.
+    operation_ = CadFeatureOperation::NewBody;
+    // The axis is chosen next unless one is already held (Back to Sketch and
+    // Finish again keep it, and so does an edit).
+    axisPicking_ = revolve_.axis.entityId == kNoSketchEntity
+                   || resolveRevolveAxis(sketch_, revolve_.axis, nullptr) != CadStatus::Ok;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::endRevolve() {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (featureKind_ != CadFeatureKind::Revolve) {
+        return fail(CadStatus::Ok);
+    }
+    if (editingFeatureId_ == kCadFeatureId) {
+        return fail(CadStatus::InvalidFeatureKind);
+    }
+    cancelRevolveDrag();
+    regionTapArmed_ = false;
+    featureKind_ = CadFeatureKind::Extrude;
+    axisPicking_ = false;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::beginRevolveAxisPick() {
+    if (state_ != SketchSessionState::Ready || featureKind_ != CadFeatureKind::Revolve) {
+        return fail(CadStatus::NotSketching);
+    }
+    cancelRevolveDrag();
+    axisPicking_ = true;
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::setRevolveAxis(const CadSketchEdgeRef& axis) {
+    if (state_ != SketchSessionState::Ready || featureKind_ != CadFeatureKind::Revolve) {
+        return fail(CadStatus::NotSketching);
+    }
+    // Resolved EXACTLY or refused by name; the held axis stands on a refusal.
+    const CadStatus why = resolveRevolveAxis(sketch_, axis, nullptr);
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    revolve_.axis = axis;
+    axisPicking_ = false;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+bool SketchSession::pickRevolveAxisAt(const CameraSnapshot& camera, float x, float y,
+                                      int viewportWidth, int viewportHeight) {
+    if (!revolveAxisPicking()) {
+        recordTapOutcome(SketchTapOutcome::InvalidFace);
+        return false;
+    }
+    SketchPoint point;
+    if (!screenToSketch(camera, x, y, viewportWidth, viewportHeight, &point)) {
+        recordTapOutcome(SketchTapOutcome::RayParallel);
+        return false;
+    }
+    float perPixel = 0.0f;
+    if (!worldMetersPerPixel(camera, sketchToWorld(point), viewportHeight, &perPixel)) {
+        recordTapOutcome(SketchTapOutcome::RayParallel);
+        return false;
+    }
+    // The SAME hit tolerance the Select tool uses, so what a finger can pick
+    // as an axis is what it can pick as an entity.
+    const double tolerance =
+            kSketchHitToleranceUnits * static_cast<double>(perPixel) * gizmoPixelsPerReferenceUnit();
+    const SketchEntityId id = hitTest(point, tolerance);
+    const SketchEntity* entity = id == kNoSketchEntity ? nullptr : findSketchEntity(sketch_, id);
+    if (entity == nullptr) {
+        recordTapOutcome(SketchTapOutcome::Exterior);
+        return false;
+    }
+    const std::vector<SketchStraightEdge> edges = sketchEntityStraightEdges(*entity);
+    if (edges.empty()) {
+        // A curve is not an axis: said by name, nothing changes.
+        fail(CadStatus::RevolveAxisNotStraight);
+        recordTapOutcome(SketchTapOutcome::InvalidFace);
+        return false;
+    }
+    const SketchStraightEdge* nearest = &edges.front();
+    double best = segmentDistance(point, nearest->start, nearest->end);
+    for (const SketchStraightEdge& edge : edges) {
+        const double d = segmentDistance(point, edge.start, edge.end);
+        if (d < best) {
+            best = d;
+            nearest = &edge;
+        }
+    }
+    const CadStatus why = setRevolveAxis(CadSketchEdgeRef{id, nearest->edgeLocalIndex});
+    recordTapOutcome(why == CadStatus::Ok ? SketchTapOutcome::Resolved
+                                          : SketchTapOutcome::InvalidFace);
+    return why == CadStatus::Ok;
+}
+
+CadStatus SketchSession::setRevolveAngle(double degrees) {
+    if (state_ != SketchSessionState::Ready || featureKind_ != CadFeatureKind::Revolve) {
+        return fail(CadStatus::NotSketching);
+    }
+    RevolveFeature requested = revolve_;
+    requested.angleDegrees = degrees;
+    const CadStatus why = validateRevolveParameters(requested);
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    if (requested.angleDegrees != revolve_.angleDegrees) {
+        revolve_.angleDegrees = requested.angleDegrees;
+        touchCandidate();
+    }
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::flipRevolveDirection() {
+    if (state_ != SketchSessionState::Ready || featureKind_ != CadFeatureKind::Revolve) {
+        return fail(CadStatus::NotSketching);
+    }
+    // A SENSE change: the exact angle is untouched.
+    revolve_.direction = revolve_.direction == RevolveDirection::Positive
+                                 ? RevolveDirection::Negative
+                                 : RevolveDirection::Positive;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+bool SketchSession::revolveRing(RevolveRing* out) const {
+    if (out == nullptr || state_ != SketchSessionState::Ready
+        || featureKind_ != CadFeatureKind::Revolve) {
+        return false;
+    }
+    RevolveAxis2D axis;
+    if (resolveRevolveAxis(sketch_, revolve_.axis, &axis) != CadStatus::Ok) {
+        return false;
+    }
+    // The selected area's extent along the axis and away from it, from the
+    // SAME union loops the hatch draws; the ring stands at the area's axial
+    // middle, on the side the area is on, a little outside its outermost point.
+    std::vector<std::vector<SketchPoint>> loops;
+    if (extrude_.selection == CadSelectionKind::PlanarFaces) {
+        std::vector<PlanarProfileComponent> planar;
+        if (mergePlanarFaceSelection(arrangement_, selectedPlanarFaceIndices(), &planar)
+            == CadStatus::Ok) {
+            for (const PlanarProfileComponent& component : planar) {
+                loops.push_back(component.outer.polygon);
+            }
+        }
+    } else {
+        for (const SketchRegionComponent& component :
+             mergeSelectedRegions(regions_, extrudeRegions(extrude_))) {
+            const std::vector<std::vector<SketchPoint>> l = sketchComponentLoops(regions_, component);
+            if (!l.empty()) loops.push_back(l.front());
+        }
+    }
+    double tMin = 0.0;
+    double tMax = axis.length;
+    double reach = 0.0;
+    double sideSum = 0.0;
+    bool any = false;
+    for (const std::vector<SketchPoint>& loop : loops) {
+        for (const SketchPoint& p : loop) {
+            const double t = (p.u - axis.start.u) * axis.du + (p.v - axis.start.v) * axis.dv;
+            const double r = (p.u - axis.start.u) * -axis.dv + (p.v - axis.start.v) * axis.du;
+            tMin = any ? std::min(tMin, t) : t;
+            tMax = any ? std::max(tMax, t) : t;
+            reach = std::max(reach, std::fabs(r));
+            sideSum += r;
+            any = true;
+        }
+    }
+    if (!any || !(reach > 0.0)) {
+        reach = std::max(axis.length * 0.5, 0.1);
+    }
+    const double side = sideSum < 0.0 ? -1.0 : 1.0;
+    const double mid = (tMin + tMax) * 0.5;
+    const double radius = reach * 1.18;
+    const SketchPoint centre2{axis.start.u + axis.du * mid, axis.start.v + axis.dv * mid};
+    const Vec3 axisWorld = vec3Normalize(vec3Add(vec3Scale(frame_.u, static_cast<float>(axis.du)),
+                                                 vec3Scale(frame_.v, static_cast<float>(axis.dv))));
+    const Vec3 radialWorld = vec3Normalize(
+            vec3Add(vec3Scale(frame_.u, static_cast<float>(-axis.dv * side)),
+                    vec3Scale(frame_.v, static_cast<float>(axis.du * side))));
+    const float sense = revolve_.direction == RevolveDirection::Negative ? -1.0f : 1.0f;
+    const Vec3 tangentWorld = vec3Scale(vec3Cross(axisWorld, radialWorld), sense);
+    // The axis is drawn across the whole area it sweeps, a little beyond.
+    const double over = std::max(0.15 * (tMax - tMin), 0.1);
+    out->axisStart = sketchToWorld(
+            SketchPoint{axis.start.u + axis.du * (tMin - over), axis.start.v + axis.dv * (tMin - over)});
+    out->axisEnd = sketchToWorld(
+            SketchPoint{axis.start.u + axis.du * (tMax + over), axis.start.v + axis.dv * (tMax + over)});
+    out->centre = sketchToWorld(centre2);
+    out->axis = axisWorld;
+    out->radial = radialWorld;
+    out->tangent = tangentWorld;
+    out->radius = static_cast<float>(radius);
+    const double a = revolve_.angleDegrees * 3.14159265358979323846 / 180.0;
+    const auto onRing = [&](double theta, float scale) {
+        return vec3Add(out->centre,
+                       vec3Add(vec3Scale(radialWorld, out->radius * scale * static_cast<float>(std::cos(theta))),
+                               vec3Scale(tangentWorld, out->radius * scale * static_cast<float>(std::sin(theta)))));
+    };
+    out->handle = onRing(a, 1.0f);
+    out->label = onRing(a * 0.5, 1.22f);
+    return vec3Finite(out->handle) && vec3Finite(out->centre);
+}
+
+bool SketchSession::revolvePointerAngle(const RevolveRing& ring, const CameraSnapshot& camera,
+                                        float x, float y, int viewportWidth, int viewportHeight,
+                                        double* out) const {
+    Ray ray;
+    if (!buildPickRay(camera, x, y, viewportWidth, viewportHeight, &ray)) {
+        return false;
+    }
+    // A ring seen edge-on gives no angle: the last good value holds, exactly
+    // as a degenerate viewpoint holds a gizmo drag.
+    if (std::fabs(vec3Dot(ray.direction, ring.axis)) < 0.02f) {
+        return false;
+    }
+    Vec3 hit;
+    if (!intersectRayPlane(ray, ring.centre, ring.axis, &hit)) {
+        return false;
+    }
+    const Vec3 w = vec3Sub(hit, ring.centre);
+    const double a = std::atan2(static_cast<double>(vec3Dot(w, ring.tangent)),
+                                static_cast<double>(vec3Dot(w, ring.radial)));
+    if (!std::isfinite(a)) {
+        return false;
+    }
+    *out = a;
+    return true;
+}
+
+void SketchSession::cancelRevolveDrag() {
+    if (revolveDragPointer_ < 0) {
+        return;
+    }
+    // Put the angle back to what the finger found; nothing was recorded either
+    // way -- the session is volatile -- so this is about what the user sees.
+    if (revolveDragLive_ && revolve_.angleDegrees != revolveDragStartDegrees_) {
+        revolve_.angleDegrees = revolveDragStartDegrees_;
+        touchCandidate();
+    }
+    revolveDragPointer_ = -1;
+    revolveDragLive_ = false;
+    touchOverlay();
+}
+
+bool SketchSession::onRevolveTouch(TouchAction action, int32_t actionPointerId,
+                                   const TouchPointer* pointers, int count,
+                                   const CameraSnapshot& camera, int viewportWidth,
+                                   int viewportHeight) {
+    if (count > 1 || action == TouchAction::PointerDown) {
+        regionTapArmed_ = false;
+        cancelRevolveDrag();
+        return false;  // two fingers pan and pinch
+    }
+    switch (action) {
+        case TouchAction::Down: {
+            if (count != 1 || pointers == nullptr) {
+                return false;
+            }
+            // Armed as a TAP exactly as an Extrude Ready tap is: resolved on Up
+            // at the Down pixel through the Down camera; while armed the camera
+            // sees nothing, so jitter inside the slop orbits nothing.
+            regionTapArmed_ = true;
+            regionTapPointer_ = pointers[0].id;
+            regionTapX_ = pointers[0].x;
+            regionTapY_ = pointers[0].y;
+            regionTapCamera_ = camera;
+            regionTapOnHead_ = false;
+            RevolveRing ring;
+            if (axisPicking_ || !revolveRing(&ring)) {
+                return false;
+            }
+            float hx = 0.0f;
+            float hy = 0.0f;
+            if (!projectWorldToScreen(camera, ring.handle, viewportWidth, viewportHeight, &hx, &hy)
+                || std::hypot(hx - pointers[0].x, hy - pointers[0].y)
+                           > kRevolveHandleGrabUnits * gizmoPixelsPerReferenceUnit()) {
+                return false;  // off the handle: a tap, or (after the slop) navigation
+            }
+            // ON the handle: the gesture is the handle's from here on, and the
+            // ring is FROZEN so the growing preview cannot move it.
+            revolveDragPointer_ = pointers[0].id;
+            revolveDragLive_ = false;
+            revolveDragRing_ = ring;
+            revolveDragStartDegrees_ = revolve_.angleDegrees;
+            revolveDragDegrees_ = revolve_.angleDegrees;
+            double a = 0.0;
+            revolveDragPointerAngle_ =
+                    revolvePointerAngle(ring, camera, pointers[0].x, pointers[0].y, viewportWidth,
+                                        viewportHeight, &a)
+                            ? a
+                            : revolve_.angleDegrees * 3.14159265358979323846 / 180.0;
+            regionTapOnHead_ = true;
+            touchOverlay();
+            return true;
+        }
+        case TouchAction::Move: {
+            const bool ours = count == 1 && pointers != nullptr && pointers[0].id == regionTapPointer_;
+            if (regionTapArmed_ && ours
+                && std::hypot(pointers[0].x - regionTapX_, pointers[0].y - regionTapY_)
+                           > kSketchTapSlopPixels) {
+                regionTapArmed_ = false;
+                if (revolveDragPointer_ < 0) {
+                    recordTapOutcome(SketchTapOutcome::Travel);
+                }
+            }
+            if (revolveDragPointer_ < 0 || count != 1 || pointers == nullptr
+                || pointers[0].id != revolveDragPointer_) {
+                return revolveDragPointer_ >= 0;
+            }
+            if (regionTapArmed_) {
+                return true;  // still a possible tap: the angle holds
+            }
+            revolveDragLive_ = true;
+            double a = 0.0;
+            if (revolvePointerAngle(revolveDragRing_, camera, pointers[0].x, pointers[0].y,
+                                    viewportWidth, viewportHeight, &a)) {
+                // Unwrapped, so a drag can run the whole way round to 360.
+                const double delta = std::remainder(a - revolveDragPointerAngle_,
+                                                    2.0 * 3.14159265358979323846);
+                revolveDragPointerAngle_ = a;
+                revolveDragDegrees_ = std::min(
+                        kMaxRevolveAngleDegrees,
+                        std::max(kRevolveDragMinDegrees,
+                                 revolveDragDegrees_ + delta * 180.0 / 3.14159265358979323846));
+                // Whole degrees under the finger: a readable value at every
+                // sample, and 360 reachable exactly. A typed value is exact.
+                setRevolveAngle(std::min(kMaxRevolveAngleDegrees,
+                                         std::max(kRevolveDragMinDegrees,
+                                                  std::round(revolveDragDegrees_))));
+            }
+            return true;
+        }
+        case TouchAction::Up:
+        case TouchAction::PointerUp: {
+            if (revolveDragPointer_ < 0) {
+                if (regionTapArmed_ && action == TouchAction::Up
+                    && (actionPointerId < 0 || actionPointerId == regionTapPointer_)) {
+                    const float x = count >= 1 && pointers != nullptr ? pointers[0].x : regionTapX_;
+                    const float y = count >= 1 && pointers != nullptr ? pointers[0].y : regionTapY_;
+                    if (std::hypot(x - regionTapX_, y - regionTapY_) <= kSketchTapSlopPixels) {
+                        if (axisPicking_) {
+                            pickRevolveAxisAt(regionTapCamera_, regionTapX_, regionTapY_,
+                                              viewportWidth, viewportHeight);
+                        } else {
+                            toggleRegionAt(regionTapCamera_, regionTapX_, regionTapY_,
+                                           viewportWidth, viewportHeight);
+                        }
+                    } else {
+                        recordTapOutcome(SketchTapOutcome::Travel);
+                    }
+                }
+                regionTapArmed_ = false;
+                regionTapOnHead_ = false;
+                return false;
+            }
+            if (actionPointerId >= 0 && actionPointerId != revolveDragPointer_) {
+                regionTapArmed_ = false;
+                cancelRevolveDrag();
+                return false;
+            }
+            if (regionTapArmed_ && action == TouchAction::Up) {
+                // A still tap on the handle: the manipulator's, changing nothing.
+                recordTapOutcome(SketchTapOutcome::ArrowHead);
+            }
+            regionTapArmed_ = false;
+            regionTapOnHead_ = false;
+            revolveDragPointer_ = -1;
+            revolveDragLive_ = false;
+            touchOverlay();
+            return true;
+        }
+        case TouchAction::Cancel: {
+            const bool owned = revolveDragPointer_ >= 0;
+            regionTapArmed_ = false;
+            regionTapOnHead_ = false;
+            cancelRevolveDrag();
+            return owned;
+        }
+        default:
+            return revolveDragPointer_ >= 0;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2497,9 +2965,54 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
             }
         }
     }
+    // The Revolve manipulator (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): the axis drawn
+    // across the area it sweeps, the ring arc from the profile to the current
+    // angle in the plane square to the axis, its two spokes and the handle --
+    // world geometry like the extrude arrow, in the same range, so the renderer
+    // needs no new style. In axis-pick mode every straight edge that could be
+    // an axis is drawn in the axis colour, so the choice is visible.
+    if (state_ == SketchSessionState::Ready && featureKind_ == CadFeatureKind::Revolve) {
+        if (axisPicking_) {
+            for (const SketchEntity& entity : sketch_.entities) {
+                for (const SketchStraightEdge& edge : sketchEntityStraightEdges(entity)) {
+                    pushLine(&v, local(edge.start), local(edge.end), 3.0f, 0.0f);
+                }
+            }
+        }
+        RevolveRing ring;
+        if (revolveRing(&ring)) {
+            pushLine(&v, ring.axisStart, ring.axisEnd, 3.0f, 1.0f);
+            const double angle = revolve_.angleDegrees * 3.14159265358979323846 / 180.0;
+            const uint32_t steps = std::max<uint32_t>(
+                    8u, static_cast<uint32_t>(std::ceil(64.0 * revolve_.angleDegrees / 360.0)));
+            const auto onRing = [&ring](double theta) {
+                return vec3Add(ring.centre,
+                               vec3Add(vec3Scale(ring.radial, ring.radius * static_cast<float>(std::cos(theta))),
+                                       vec3Scale(ring.tangent, ring.radius * static_cast<float>(std::sin(theta)))));
+            };
+            for (uint32_t k = 0; k < steps; ++k) {
+                pushLine(&v, onRing(angle * k / steps), onRing(angle * (k + 1) / steps), 0.0f, 1.0f);
+            }
+            pushLine(&v, ring.centre, onRing(0.0), 0.0f, 1.0f);
+            pushLine(&v, ring.centre, ring.handle, 0.0f, 1.0f);
+            // The handle: a diamond a fixed number of reference units across,
+            // in the ring's own plane, so it reads the same at every zoom.
+            const float h = 9.0f * (worldPerUnit > 0.0f ? worldPerUnit : 0.01f)
+                            * (revolveDragging() ? 1.4f : 1.0f);
+            const Vec3 radial = vec3Normalize(vec3Sub(ring.handle, ring.centre));
+            const Vec3 along = vec3Cross(ring.axis, radial);
+            const Vec3 corners[4] = {vec3Add(ring.handle, vec3Scale(radial, h)),
+                                     vec3Add(ring.handle, vec3Scale(along, h)),
+                                     vec3Sub(ring.handle, vec3Scale(radial, h)),
+                                     vec3Sub(ring.handle, vec3Scale(along, h))};
+            for (int c = 0; c < 4; ++c) {
+                pushLine(&v, corners[c], corners[(c + 1) % 4], 0.0f, 1.0f);
+            }
+        }
+    }
     // The extrude preview: every union loop's far cap, near cap and edges --
     // holes included, so the preview of a ring shows its bore.
-    if (!chosenLoops.empty()) {
+    if (!chosenLoops.empty() && featureKind_ != CadFeatureKind::Revolve) {
         // The SAME two offsets `generateCadMesh` extrudes between, so the
         // preview and the solid it previews cannot disagree about where the
         // caps are in any extent mode.

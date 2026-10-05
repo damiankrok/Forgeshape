@@ -79,6 +79,21 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     /** The manipulator state, re-read on every refresh; nothing is kept. */
     private final double[] nativeExtrude = new double[NativeViewport.CAD_EXTRUDE_SIZE];
 
+    // --- Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`) ---
+    /** The extrusion's own rows, withdrawn whole while the selection is revolved. */
+    private final LinearLayout extrudeSection;
+    /** "Revolve…": drawn only when native can revolve the chosen areas. */
+    private final TextView revolveBegin;
+    /** Axis, angle, Flip, Change axis and Extrude instead. */
+    private final LinearLayout revolveSection;
+    private final TextView revolveAxisSummary;
+    private final NumericPropertyRow angleField;
+    private final TextView revolveChangeAxis;
+    private final TextView revolveFlip;
+    private final TextView revolveBackToExtrude;
+    private final TextView revolveCommit;
+    private final double[] nativeRevolve = new double[NativeViewport.REVOLVE_STATE_SIZE];
+
     private final UnitChipsView unitChips;
 
     /** The one pinned commit; its content is swapped with the state. */
@@ -96,6 +111,21 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     /** Told to act; the workspace owns what the act means. */
     interface OnSketchAction {
         void onExtrudeRequested();
+
+        /** Revolve the chosen areas instead of extruding them. */
+        void onRevolveBeginRequested();
+
+        /** Back from Revolve to the extrusion, keeping the selection. */
+        void onRevolveEndRequested();
+
+        /** The next tap on a straight edge chooses the axis. */
+        void onRevolveAxisPickRequested();
+
+        /** Reverse the revolve direction, keeping the exact angle. */
+        void onRevolveFlipRequested();
+
+        /** An exact angle, in degrees, as typed. */
+        void onRevolveAngleEntered(double degrees);
 
         /**
          * New Body, Add or Cut (`CAD-VERTICAL-SLICE-R1`) — the same act the
@@ -203,12 +233,28 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         operationChips.addView(operationCut, EditorControlStyles.evenShare(smallGap));
         operationRow.addView(operationChips, EditorControlStyles.rowParams(smallGap));
         readySection.addView(operationRow, EditorControlStyles.rowParams(sectionGap));
-        readySection.addView(EditorControlStyles.sectionLabel(context,
+        // "Revolve…" (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): the SAME chosen areas,
+        // swept about a straight sketch edge instead of along the normal.
+        revolveBegin = EditorControlStyles.secondaryActionChip(context, R.id.sketch_revolve_begin,
+                context.getString(R.string.revolve_begin));
+        revolveBegin.setContentDescription(context.getString(R.string.revolve_begin_description));
+        revolveBegin.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SketchEditorView.this.actions.onRevolveBeginRequested();
+            }
+        });
+        final LinearLayout.LayoutParams revolveBeginParams = EditorControlStyles.rowParams(sectionGap);
+        revolveBeginParams.width = LayoutParams.MATCH_PARENT;
+        readySection.addView(revolveBegin, revolveBeginParams);
+        extrudeSection = new LinearLayout(context);
+        extrudeSection.setOrientation(VERTICAL);
+        extrudeSection.addView(EditorControlStyles.sectionLabel(context,
                 context.getString(R.string.sketch_extrude_section)),
-                EditorControlStyles.rowParams(sectionGap));
+                EditorControlStyles.rowParams(0));
         depthField = new NumericPropertyRow(context, R.id.field_extrude_depth,
                 context.getString(R.string.label_depth), true);
-        readySection.addView(depthField, EditorControlStyles.rowParams(smallGap));
+        extrudeSection.addView(depthField, EditorControlStyles.rowParams(smallGap));
         final LinearLayout directions = new LinearLayout(context);
         directions.setOrientation(HORIZONTAL);
         directionAlong = EditorControlStyles.chip(context, R.id.extrude_direction_along,
@@ -230,8 +276,75 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         directions.addView(directionAlong, EditorControlStyles.evenShare(0));
         directions.addView(directionAgainst, EditorControlStyles.evenShare(smallGap));
         directionRow = directions;
-        readySection.addView(directions, EditorControlStyles.rowParams(gap));
+        extrudeSection.addView(directions, EditorControlStyles.rowParams(gap));
+        readySection.addView(extrudeSection, EditorControlStyles.rowParams(sectionGap));
+
+        // ----- Revolve -----
+        revolveSection = new LinearLayout(context);
+        revolveSection.setId(R.id.sketch_revolve_section);
+        revolveSection.setOrientation(VERTICAL);
+        revolveSection.addView(EditorControlStyles.sectionLabel(context,
+                context.getString(R.string.sketch_revolve_section)),
+                EditorControlStyles.rowParams(0));
+        revolveAxisSummary = EditorControlStyles.titleText(context,
+                R.id.sketch_revolve_axis_summary, "");
+        revolveSection.addView(revolveAxisSummary, EditorControlStyles.rowParams(smallGap));
+        angleField = new NumericPropertyRow(context, R.id.field_revolve_angle,
+                context.getString(R.string.label_angle), true);
+        revolveSection.addView(angleField, EditorControlStyles.rowParams(smallGap));
+        final LinearLayout revolveChips = new LinearLayout(context);
+        revolveChips.setOrientation(HORIZONTAL);
+        revolveFlip = EditorControlStyles.chip(context, R.id.sketch_revolve_flip,
+                context.getString(R.string.revolve_flip));
+        revolveFlip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // The typed angle first, so a Flip never throws away what the
+                // field says; then the sense, the angle untouched.
+                if (submitAngle()) {
+                    SketchEditorView.this.actions.onRevolveFlipRequested();
+                }
+            }
+        });
+        revolveChangeAxis = EditorControlStyles.chip(context, R.id.sketch_revolve_change_axis,
+                context.getString(R.string.revolve_change_axis));
+        revolveChangeAxis.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SketchEditorView.this.actions.onRevolveAxisPickRequested();
+            }
+        });
+        revolveChips.addView(revolveFlip, EditorControlStyles.evenShare(0));
+        revolveChips.addView(revolveChangeAxis, EditorControlStyles.evenShare(smallGap));
+        revolveSection.addView(revolveChips, EditorControlStyles.rowParams(gap));
+        revolveBackToExtrude = EditorControlStyles.secondaryActionChip(context,
+                R.id.sketch_revolve_back_to_extrude,
+                context.getString(R.string.revolve_back_to_extrude));
+        revolveBackToExtrude.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SketchEditorView.this.actions.onRevolveEndRequested();
+            }
+        });
+        final LinearLayout.LayoutParams backParams = EditorControlStyles.rowParams(gap);
+        backParams.width = LayoutParams.MATCH_PARENT;
+        revolveSection.addView(revolveBackToExtrude, backParams);
+        readySection.addView(revolveSection, EditorControlStyles.rowParams(sectionGap));
         addView(readySection, EditorControlStyles.rowParams(0));
+
+        revolveCommit = EditorControlStyles.primaryButton(context, R.id.sketch_revolve_commit,
+                context.getString(R.string.revolve));
+        revolveCommit.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // The typed angle FIRST, so the commit revolves what the field
+                // says rather than what the session last held -- the pinned
+                // Extrude's rule.
+                if (submitAngle()) {
+                    SketchEditorView.this.actions.onExtrudeRequested();
+                }
+            }
+        });
 
         extrude = EditorControlStyles.primaryButton(context, R.id.sketch_extrude_commit,
                 context.getString(R.string.extrude));
@@ -311,8 +424,11 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         readySection.setVisibility(ready ? VISIBLE : GONE);
         unitChips.showSelected(unit);
 
-        // The pinned commit follows the state.
-        final View wanted = ready ? extrude : applyEntity;
+        NativeViewport.cadRevolveToolState(nativeRevolve);
+        final boolean revolving = ready && CadRevolvePresentation.active(nativeRevolve);
+        // The pinned commit follows the state: Apply while drawing, Extrude or
+        // Revolve in Ready.
+        final View wanted = !ready ? applyEntity : revolving ? revolveCommit : extrude;
         if (commit.getChildCount() != 1 || commit.getChildAt(0) != wanted) {
             commit.removeAllViews();
             commit.addView(wanted, new FrameLayout.LayoutParams(
@@ -327,6 +443,7 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         depthField.setText(unit.format(nativeSketch[NativeViewport.SKETCH_EXTRUDE_DEPTH]));
         NativeViewport.cadExtrudeToolState(nativeExtrude);
         refreshOperations();
+        refreshRevolve(revolving);
         // The pinned Extrude stays live even while the preview is refused,
         // unlike the toolbar's: it SUBMITS the typed depth first, so it is how
         // a depth that makes the candidate valid again reaches native. A commit
@@ -465,6 +582,69 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
             params.width = LayoutParams.MATCH_PARENT;
             profileChooser.addView(chip, params);
         }
+    }
+
+    /**
+     * The Revolve rows (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`), from the one revolve
+     * state read: the extrusion's rows and the operation choice are withdrawn
+     * while the selection is revolved (a Revolve is a New Body), and "Revolve…"
+     * is drawn only where native could revolve the chosen areas.
+     */
+    private void refreshRevolve(boolean revolving) {
+        final Context context = getContext();
+        revolveBegin.setVisibility(CadRevolvePresentation.entryShown(nativeRevolve) ? VISIBLE : GONE);
+        extrudeSection.setVisibility(revolving ? GONE : VISIBLE);
+        revolveSection.setVisibility(revolving ? VISIBLE : GONE);
+        if (!revolving) {
+            return;
+        }
+        operationRow.setVisibility(GONE);
+        final long axisEntity = (long) nativeRevolve[NativeViewport.REVOLVE_AXIS_ENTITY];
+        if (axisEntity == 0 || CadRevolvePresentation.axisPicking(nativeRevolve)) {
+            revolveAxisSummary.setText(axisEntity == 0
+                    ? context.getString(R.string.revolve_axis_none)
+                    : context.getString(R.string.status_revolve_choose_axis));
+        } else {
+            revolveAxisSummary.setText(context.getString(R.string.revolve_axis_summary,
+                    context.getString(R.string.sketch_entity_label, axisEntity),
+                    (int) nativeRevolve[NativeViewport.REVOLVE_AXIS_EDGE]));
+        }
+        angleField.setText(CadRevolvePresentation.formatDegrees(
+                nativeRevolve[NativeViewport.REVOLVE_ANGLE]));
+        revolveFlip.setContentDescription(context.getString(
+                nativeRevolve[NativeViewport.REVOLVE_DIRECTION] == NativeViewport.REVOLVE_NEGATIVE
+                        ? R.string.revolve_direction_negative
+                        : R.string.revolve_direction_positive));
+        revolveBackToExtrude.setVisibility(
+                CadRevolvePresentation.extrudeInsteadShown(nativeRevolve) ? VISIBLE : GONE);
+    }
+
+    /** Submits the angle field; false (reported, focused) on a refusal. */
+    private boolean submitAngle() {
+        NativeViewport.cadRevolveToolState(nativeRevolve);
+        if (!CadRevolvePresentation.active(nativeRevolve)) {
+            return true;
+        }
+        final String raw = angleField.text();
+        final double degrees = CadRevolvePresentation.parseDegrees(raw);
+        if (Double.isNaN(degrees)) {
+            host.showStatus(raw.trim().isEmpty()
+                    ? getContext().getString(R.string.field_empty, angleField.label())
+                    : getContext().getString(R.string.field_not_a_number, angleField.label(),
+                            raw.trim()), R.attr.fsTextError);
+            angleField.focusForCorrection();
+            return false;
+        }
+        if (degrees == nativeRevolve[NativeViewport.REVOLVE_ANGLE]) {
+            return true;
+        }
+        final int status = NativeViewport.sketchSetRevolveAngle(degrees);
+        if (status != NativeViewport.CAD_OK) {
+            host.showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            angleField.focusForCorrection();
+            return false;
+        }
+        return true;
     }
 
     /** Shows the operations native offers and marks the one it holds. */
@@ -637,5 +817,6 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         for (NumericPropertyRow field : circleFields) field.clearEditFocus();
         for (NumericPropertyRow field : lineFields) field.clearEditFocus();
         depthField.clearEditFocus();
+        angleField.clearEditFocus();
     }
 }

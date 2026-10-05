@@ -619,6 +619,77 @@ public:
     // it because the session owns what it writes.
     const CadExtrudeManipulator& extrudeManipulator() const { return extrudeDrag_; }
 
+    // --- Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`) -------------------------
+    //
+    // In Ready the finished sketch's ONE selection may be extruded or revolved.
+    // Which is a volatile session choice -- never persisted, never in a history
+    // step -- and so are the axis, the angle and the direction until the one
+    // commit writes them as a Revolve feature. A Revolve is a New Body in R1.
+
+    // Extrude (the default after every Finish of a new sketch) or Revolve.
+    CadFeatureKind featureKind() const { return featureKind_; }
+
+    // Whether Revolve can be chosen now: Ready, New Body offered, and the
+    // session authoring a new body or editing a body whose first feature is a
+    // Revolve. An edit of an Extrude body keeps its kind.
+    bool revolveAvailable() const;
+
+    // Ready (Extrude) -> Ready (Revolve). The operation becomes New Body. With
+    // no axis yet the session waits for one (`revolveAxisPicking`). Refused
+    // (`NotSketching` outside Ready, `InvalidFeatureOperation` when New Body is
+    // not offered) changing nothing.
+    CadStatus beginRevolve();
+    // Ready (Revolve) -> Ready (Extrude), keeping the selection and dropping
+    // nothing of the project. Refused for an edit of a Revolve body, whose kind
+    // is the body's own (`InvalidFeatureKind`).
+    CadStatus endRevolve();
+    // Whether a Ready tap picks the axis rather than toggling an area.
+    bool revolveAxisPicking() const {
+        return state_ == SketchSessionState::Ready && featureKind_ == CadFeatureKind::Revolve
+               && axisPicking_;
+    }
+    // Re-enters the axis pick, keeping the current axis until another is picked.
+    CadStatus beginRevolveAxisPick();
+    // Sets the axis EXACTLY to this edge, or refuses by name
+    // (`resolveRevolveAxis`). Never a nearest edge.
+    CadStatus setRevolveAxis(const CadSketchEdgeRef& axis);
+    // The tap in axis-pick mode: the straight edge under the pixel. A curve is
+    // refused by name (`RevolveAxisNotStraight`); a tap on nothing changes
+    // nothing. Recorded as a tap outcome like an area tap.
+    bool pickRevolveAxisAt(const CameraSnapshot& camera, float x, float y, int viewportWidth,
+                           int viewportHeight);
+    // A typed angle, in degrees, exactly as typed: refused, never clamped.
+    CadStatus setRevolveAngle(double degrees);
+    // Reverses the sense, keeping the exact angle.
+    CadStatus flipRevolveDirection();
+    // The axis, the angle and the direction the session holds (the selection
+    // fields of this value are not used: the selection is the session's one).
+    const RevolveFeature& revolveParameters() const { return revolve_; }
+
+    // Where the ring manipulator stands in WORLD space for the current
+    // candidate: the axis line, the ring's centre on it, the radial and
+    // tangential unit vectors, its radius, and the handle at the current angle.
+    // Camera-free; false when there is no axis or no selection to size it by.
+    struct RevolveRing {
+        Vec3 axisStart{};
+        Vec3 axisEnd{};
+        Vec3 centre{};
+        Vec3 axis{};
+        Vec3 radial{};
+        Vec3 tangent{};
+        float radius = 0.0f;
+        Vec3 handle{};
+        Vec3 label{};
+    };
+    bool revolveRing(RevolveRing* out) const;
+    bool revolveDragging() const { return revolveDragPointer_ >= 0 && revolveDragLive_; }
+
+    // The grab radius around the projected handle, in reference units; and the
+    // floor a DRAG clamps at (a typed angle is refused below the domain's own
+    // minimum instead).
+    static constexpr float kRevolveHandleGrabUnits = 28.0f;
+    static constexpr double kRevolveDragMinDegrees = 1.0;
+
     // THE commit. Ready -> Inactive on success, with the new body's id in
     // `outId`. One transaction; a refusal changes nothing and stays in Ready.
     //
@@ -789,6 +860,28 @@ private:
     }
     // Volatile transition intent (`CAD-EXT-R1`). See the accessor.
     ExtrudeDirection oneSideDirection_ = ExtrudeDirection::AlongNormal;
+    // `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: which feature the Ready selection makes,
+    // and a Revolve's axis, angle and direction. Volatile until the commit.
+    CadFeatureKind featureKind_ = CadFeatureKind::Extrude;
+    RevolveFeature revolve_;
+    bool axisPicking_ = false;
+    // The Revolve the candidate makes: `revolve_` with the session's selection.
+    RevolveFeature candidateRevolve() const;
+    // The ring handle drag: one captured pointer, the angle and the unwrapped
+    // pointer angle at the last sample, and the ring frozen at pointer-down so
+    // the growing preview cannot move it under the finger.
+    int32_t revolveDragPointer_ = -1;
+    bool revolveDragLive_ = false;
+    double revolveDragStartDegrees_ = 0.0;
+    double revolveDragPointerAngle_ = 0.0;
+    double revolveDragDegrees_ = 0.0;
+    RevolveRing revolveDragRing_{};
+    bool onRevolveTouch(TouchAction action, int32_t actionPointerId, const TouchPointer* pointers,
+                        int count, const CameraSnapshot& camera, int viewportWidth,
+                        int viewportHeight);
+    bool revolvePointerAngle(const RevolveRing& ring, const CameraSnapshot& camera, float x,
+                             float y, int viewportWidth, int viewportHeight, double* out) const;
+    void cancelRevolveDrag();
     // The canvas manipulator (`CAD-UX-S1`). Volatile like everything else here,
     // and alive only in Ready: while the sketch is being DRAWN the single
     // finger belongs to the drawing, and an arrow that competed with it would

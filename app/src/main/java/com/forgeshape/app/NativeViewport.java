@@ -2274,6 +2274,22 @@ final class NativeViewport {
     static final int CAD_PLANAR_FACE_DEGENERATE = 59;
     /** Two chosen areas meet only at a point: their union cannot be extruded. */
     static final int CAD_PLANAR_FACES_TOUCH_AT_POINT = 61;
+    /**
+     * `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: the Revolve feature's refusals, appended
+     * below JNI so every earlier code keeps its number.
+     */
+    static final int CAD_INVALID_FEATURE_KIND = 62;
+    static final int CAD_REVOLVE_AXIS_UNRESOLVED = 63;
+    static final int CAD_REVOLVE_AXIS_NOT_STRAIGHT = 64;
+    static final int CAD_REVOLVE_AXIS_DEGENERATE = 65;
+    static final int CAD_REVOLVE_ANGLE_INVALID = 66;
+    static final int CAD_REVOLVE_DIRECTION_INVALID = 67;
+    static final int CAD_REVOLVE_PROFILE_CROSSES_AXIS = 68;
+    static final int CAD_REVOLVE_ZERO_RADIUS = 69;
+    static final int CAD_REVOLVE_COMPONENTS_OVERLAP = 70;
+    static final int CAD_REVOLVE_PAYLOAD_MISMATCH = 71;
+    static final int CAD_REVOLVE_LATER_FEATURE_UNSUPPORTED = 72;
+    static final int CAD_REVOLVE_NEEDS_AXIS = 73;
 
     /**
      * What an extrusion does to material (`CAD-VERTICAL-SLICE-R1`), in the
@@ -2641,6 +2657,58 @@ final class NativeViewport {
      */
     static native int sketchFlipExtrudeDirection();
 
+    // --- Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`) -------------------------
+    //
+    // The axis, the angle and the direction live below JNI until the one
+    // commit; Java submits acts and re-reads the REVOLVE_* slots.
+
+    /** Ready (Extrude) -> Ready (Revolve). Returns a {@code CAD_*} code. */
+    static native int sketchBeginRevolve();
+
+    /** Ready (Revolve) -> Ready (Extrude), keeping the selection. */
+    static native int sketchEndRevolve();
+
+    /** Re-enters the axis pick: the next tap on a straight edge sets the axis. */
+    static native int sketchBeginRevolveAxisPick();
+
+    /** Sets the axis to exactly this edge, or refuses it by name. */
+    static native int sketchSetRevolveAxis(long entityId, int edgeIndex);
+
+    /** A typed angle in degrees, refused (never clamped) outside (0, 360]. */
+    static native int sketchSetRevolveAngle(double degrees);
+
+    /** Reverses the revolve direction, keeping the exact angle. */
+    static native int sketchFlipRevolve();
+
+    /** The Revolve chrome's state, in the REVOLVE_* slots, in one read. */
+    static native void cadRevolveToolState(double[] out);
+
+    static final int REVOLVE_STATE_SIZE = 24;
+    static final int REVOLVE_ACTIVE = 0;
+    static final int REVOLVE_AXIS_PICKING = 1;
+    static final int REVOLVE_AXIS_ENTITY = 2;
+    static final int REVOLVE_AXIS_EDGE = 3;
+    static final int REVOLVE_ANGLE = 4;
+    static final int REVOLVE_DIRECTION = 5;
+    static final int REVOLVE_CANDIDATE_STATUS = 6;
+    static final int REVOLVE_LABEL_VISIBLE = 7;
+    static final int REVOLVE_LABEL_X = 8;
+    static final int REVOLVE_LABEL_Y = 9;
+    static final int REVOLVE_HANDLE_VISIBLE = 10;
+    static final int REVOLVE_HANDLE_X = 11;
+    static final int REVOLVE_HANDLE_Y = 12;
+    static final int REVOLVE_AXIS_VISIBLE = 13;
+    static final int REVOLVE_AXIS_START_X = 14;
+    static final int REVOLVE_AXIS_START_Y = 15;
+    static final int REVOLVE_AXIS_END_X = 16;
+    static final int REVOLVE_AXIS_END_Y = 17;
+    static final int REVOLVE_DRAGGING = 18;
+    static final int REVOLVE_AVAILABLE = 19;
+    static final int REVOLVE_FULL_TURN = 20;
+    static final int REVOLVE_SELECTED_AREAS = 21;
+    static final int REVOLVE_EDITING_REVOLVE_BODY = 22;
+    static final int REVOLVE_CANDIDATE_REVISION = 23;
+
     /**
      * Changes the extent mode (`CAD-EXT-R1`): {@link #EXTENT_ONE_SIDE},
      * {@link #EXTENT_SYMMETRIC} or {@link #EXTENT_TWO_SIDES}.
@@ -2741,7 +2809,7 @@ final class NativeViewport {
     static native int cadFeatureCount(long bodyId);
 
     /** Slots of {@link #cadFeatureInfo}. */
-    static final int CAD_FEATURE_INFO_SIZE = 9;
+    static final int CAD_FEATURE_INFO_SIZE = 12;
     static final int CAD_FEATURE_ID = 0;
     static final int CAD_FEATURE_OPERATION = 1;
     static final int CAD_FEATURE_EXTENT = 2;
@@ -2751,6 +2819,18 @@ final class NativeViewport {
     static final int CAD_FEATURE_HOLES = 6;
     static final int CAD_FEATURE_SUPPORT = 7;
     static final int CAD_FEATURE_ENTITIES = 8;
+    /** {@link #FEATURE_KIND_EXTRUDE} or {@link #FEATURE_KIND_REVOLVE}. */
+    static final int CAD_FEATURE_KIND = 9;
+    /** A Revolve's angle in degrees; 0 for an Extrude. */
+    static final int CAD_FEATURE_ANGLE = 10;
+    /** A Revolve's direction: {@link #REVOLVE_POSITIVE} or {@link #REVOLVE_NEGATIVE}. */
+    static final int CAD_FEATURE_REVOLVE_DIRECTION = 11;
+
+    /** A feature's kind (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`), in the native enum's order. */
+    static final int FEATURE_KIND_EXTRUDE = 0;
+    static final int FEATURE_KIND_REVOLVE = 1;
+    static final int REVOLVE_POSITIVE = 0;
+    static final int REVOLVE_NEGATIVE = 1;
 
     /** One feature of a CAD body's chain, by chain position. False past the end. */
     static native boolean cadFeatureInfo(long bodyId, int index, double[] out);
@@ -2805,7 +2885,7 @@ final class NativeViewport {
     static native boolean sceneActiveBodyIsFaceSupportedCad();
 
     /** Slots of {@link #cadState}. */
-    static final int CAD_STATE_SIZE = 9;
+    static final int CAD_STATE_SIZE = 11;
     static final int CAD_PLANE = 0;
     /** The PRIMARY authored distance: One Side's depth, Symmetric's per side. */
     static final int CAD_DEPTH = 1;
@@ -2819,6 +2899,10 @@ final class NativeViewport {
     static final int CAD_PROFILE_VERTICES = 7;
     /** The body's extent mode (`CAD-EXT-R1`), one of the EXTENT_* values. */
     static final int CAD_STATE_EXTENT = 8;
+    /** The base feature's kind: {@link #FEATURE_KIND_EXTRUDE} or {@link #FEATURE_KIND_REVOLVE}. */
+    static final int CAD_STATE_KIND = 9;
+    /** A Revolve body's angle in degrees. */
+    static final int CAD_STATE_REVOLVE_ANGLE = 10;
     static final int CAD_PROFILE_NONE = 0;
     static final int CAD_PROFILE_RECTANGLE = 1;
     static final int CAD_PROFILE_CIRCLE = 2;

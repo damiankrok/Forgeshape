@@ -87,6 +87,20 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_cad_degenerate_area);
             case NativeViewport.CAD_PLANAR_FACES_TOUCH_AT_POINT:
                 return context.getString(R.string.status_cad_areas_touch_at_point);
+            case NativeViewport.CAD_REVOLVE_NEEDS_AXIS:
+                return context.getString(R.string.status_cad_revolve_needs_axis);
+            case NativeViewport.CAD_REVOLVE_AXIS_NOT_STRAIGHT:
+                return context.getString(R.string.status_cad_revolve_axis_not_straight);
+            case NativeViewport.CAD_REVOLVE_AXIS_UNRESOLVED:
+                return context.getString(R.string.status_cad_revolve_axis_unresolved);
+            case NativeViewport.CAD_REVOLVE_ANGLE_INVALID:
+                return context.getString(R.string.status_cad_revolve_angle_invalid);
+            case NativeViewport.CAD_REVOLVE_PROFILE_CROSSES_AXIS:
+                return context.getString(R.string.status_cad_revolve_crosses_axis);
+            case NativeViewport.CAD_REVOLVE_ZERO_RADIUS:
+                return context.getString(R.string.status_cad_revolve_zero_radius);
+            case NativeViewport.CAD_REVOLVE_COMPONENTS_OVERLAP:
+                return context.getString(R.string.status_cad_revolve_components_overlap);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));

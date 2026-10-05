@@ -4749,7 +4749,11 @@ Java_com_forgeshape_app_NativeViewport_cadFeatureSelectionKind(JNIEnv*, jclass, 
         || !forgeshape::cadFeatureAt(body->state(), static_cast<uint32_t>(index), &view)) {
         return -1;
     }
-    return view.extrude->selection == forgeshape::CadSelectionKind::PlanarFaces ? 1 : 0;
+    const forgeshape::CadSelectionKind kind =
+            view.kind == forgeshape::CadFeatureKind::Revolve && view.revolve != nullptr
+                    ? view.revolve->selection
+                    : view.extrude->selection;
+    return kind == forgeshape::CadSelectionKind::PlanarFaces ? 1 : 0;
 }
 
 // What the extrusion does (`CAD-VERTICAL-SLICE-R1`): 0 New Body, 1 Add, 2 Cut.
@@ -5133,11 +5137,16 @@ Java_com_forgeshape_app_NativeViewport_cadFeatureCount(JNIEnv*, jclass, jlong bo
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_cadFeatureInfo(JNIEnv* env, jclass, jlong bodyId,
                                                       jint index, jdoubleArray out) {
-    constexpr jsize kSlots = 9;
-    if (out == nullptr || env->GetArrayLength(out) < kSlots || index < 0) {
+    // `CAD-V6-REVOLVE-NEWBODY-E2E-R1` added [9] the feature kind (0 Extrude,
+    // 1 Revolve), [10] a Revolve's angle in degrees and [11] its direction
+    // (0 Positive, 1 Negative); a 9-slot reader is untouched.
+    constexpr jsize kLegacySlots = 9;
+    constexpr jsize kMaxSlots = 12;
+    if (out == nullptr || env->GetArrayLength(out) < kLegacySlots || index < 0) {
         return JNI_FALSE;
     }
-    jdouble values[kSlots] = {0};
+    const jsize kSlots = std::min(env->GetArrayLength(out), kMaxSlots);
+    jdouble values[kMaxSlots] = {0};
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         const forgeshape::SceneObject* object =
@@ -5148,13 +5157,24 @@ Java_com_forgeshape_app_NativeViewport_cadFeatureInfo(JNIEnv* env, jclass, jlong
             || !forgeshape::cadFeatureAt(body->state(), static_cast<uint32_t>(index), &view)) {
             return JNI_FALSE;
         }
+        const bool revolve =
+                view.kind == forgeshape::CadFeatureKind::Revolve && view.revolve != nullptr;
+        // A Revolve's selection read through its carrier; its extent slots
+        // stay zero, because a Revolve has no extrusion to describe.
+        const forgeshape::ExtrudeFeature selection =
+                revolve ? forgeshape::revolveSelectionCarrier(*view.revolve) : *view.extrude;
         values[0] = view.featureId;
         values[1] = forgeshape::cadFeatureOperationIndex(view.operation);
-        values[2] = forgeshape::extrudeExtentModeIndex(view.extrude->extent);
-        values[3] = forgeshape::extrudePositiveDistance(*view.extrude);
-        values[4] = forgeshape::extrudeNegativeDistance(*view.extrude);
+        if (!revolve) {
+            values[2] = forgeshape::extrudeExtentModeIndex(view.extrude->extent);
+            values[3] = forgeshape::extrudePositiveDistance(*view.extrude);
+            values[4] = forgeshape::extrudeNegativeDistance(*view.extrude);
+        }
+        values[9] = forgeshape::cadFeatureKindIndex(view.kind);
+        values[10] = revolve ? view.revolve->angleDegrees : 0.0;
+        values[11] = revolve ? forgeshape::revolveDirectionIndex(view.revolve->direction) : 0.0;
         const std::vector<forgeshape::ProfileRegionRef> regions =
-            forgeshape::extrudeRegions(*view.extrude);
+            forgeshape::extrudeRegions(selection);
         values[5] = static_cast<double>(regions.size());
         size_t holes = 0;
         for (const forgeshape::ProfileRegionRef& region : regions) {
@@ -5311,6 +5331,165 @@ Java_com_forgeshape_app_NativeViewport_sketchFlipExtrudeDirection(JNIEnv*, jclas
         FS_LOGI("FORGESHAPE_EXTRUDE_FLIP_OK");
     }
     return cadCode(status);
+}
+
+// ---------------------------------------------------------------------------
+// Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`)
+// ---------------------------------------------------------------------------
+//
+// Acts, each one native call that returns a CadStatus code, and ONE locked
+// read of everything the chrome shows. The shell holds no axis, no angle and
+// no direction: it submits and re-reads.
+
+namespace {
+
+jint revolveAct(const char* name, forgeshape::CadStatus (*act)(forgeshape::SketchSession&)) {
+    forgeshape::CadStatus status;
+    double angle = 0.0;
+    int direction = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        status = act(session);
+        angle = session.revolveParameters().angleDegrees;
+        direction = forgeshape::revolveDirectionIndex(session.revolveParameters().direction);
+    }
+    if (status != forgeshape::CadStatus::Ok) {
+        FS_LOGI("FORGESHAPE_REVOLVE_REFUSED:%s:%s", name, forgeshape::cadStatusName(status));
+    } else {
+        FS_LOGI("FORGESHAPE_REVOLVE:%s angle=%.6f direction=%d", name, angle, direction);
+    }
+    return cadCode(status);
+}
+
+}  // namespace
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchBeginRevolve(JNIEnv*, jclass) {
+    return revolveAct("begin", [](forgeshape::SketchSession& s) { return s.beginRevolve(); });
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchEndRevolve(JNIEnv*, jclass) {
+    return revolveAct("end", [](forgeshape::SketchSession& s) { return s.endRevolve(); });
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchBeginRevolveAxisPick(JNIEnv*, jclass) {
+    return revolveAct("axis_pick",
+                      [](forgeshape::SketchSession& s) { return s.beginRevolveAxisPick(); });
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchFlipRevolve(JNIEnv*, jclass) {
+    return revolveAct("flip", [](forgeshape::SketchSession& s) { return s.flipRevolveDirection(); });
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetRevolveAxis(JNIEnv*, jclass, jlong entityId,
+                                                            jint edgeIndex) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::RevolveAxisUnresolved;
+    if (entityId >= 0 && entityId <= 0xFFFFFFFFll && edgeIndex >= 0) {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().setRevolveAxis(forgeshape::CadSketchEdgeRef{
+                static_cast<forgeshape::SketchEntityId>(entityId), static_cast<uint32_t>(edgeIndex)});
+    }
+    FS_LOGI("FORGESHAPE_REVOLVE_AXIS:%lld:%d %s", (long long)entityId, (int)edgeIndex,
+            forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetRevolveAngle(JNIEnv*, jclass, jdouble degrees) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().setRevolveAngle(degrees);
+    }
+    FS_LOGI("FORGESHAPE_REVOLVE_ANGLE:%.6f %s", (double)degrees, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// The Revolve chrome's whole state, in one locked read, into NativeViewport's
+// REVOLVE_* slots:
+//   [0]  1 while the session's Ready selection is being revolved
+//   [1]  1 while a tap picks the axis
+//   [2]  the axis entity id (0 none)     [3] its edge index
+//   [4]  the angle, degrees              [5] the direction (0 Positive, 1 Negative)
+//   [6]  the candidate's CadStatus code (0: what a commit would make)
+//   [7]  1 when the angle label projects; 8..9 meaningless otherwise
+//   [8]  label x  [9] label y
+//   [10] 1 when the ring handle projects; 11..12 meaningless otherwise
+//   [11] handle x [12] handle y
+//   [13] 1 when the axis projects; 14..17 meaningless otherwise
+//   [14] axis start x [15] y [16] axis end x [17] y
+//   [18] 1 while a handle drag is captured
+//   [19] 1 when Revolve can be chosen now (`revolveAvailable`)
+//   [20] 1 for a full turn
+//   [21] how many areas are chosen
+//   [22] 1 when the session edits a Revolve body (its kind is fixed)
+//   [23] the candidate revision the evaluation answered
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_cadRevolveToolState(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr jsize kSlots = 24;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) {
+        return;
+    }
+    double values[kSlots] = {0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        const bool revolve = session.state() == forgeshape::SketchSessionState::Ready
+                             && session.featureKind() == forgeshape::CadFeatureKind::Revolve;
+        const forgeshape::RevolveFeature& parameters = session.revolveParameters();
+        values[0] = revolve ? 1.0 : 0.0;
+        values[1] = session.revolveAxisPicking() ? 1.0 : 0.0;
+        values[2] = static_cast<double>(parameters.axis.entityId);
+        values[3] = static_cast<double>(parameters.axis.edgeLocalIndex);
+        values[4] = parameters.angleDegrees;
+        values[5] = forgeshape::revolveDirectionIndex(parameters.direction);
+        values[18] = session.revolveDragging() ? 1.0 : 0.0;
+        values[19] = session.revolveAvailable() ? 1.0 : 0.0;
+        values[20] = forgeshape::revolveIsFullTurn(parameters) ? 1.0 : 0.0;
+        values[21] = static_cast<double>(session.selectedAreaCount());
+        values[22] = session.editingFeatureId() == forgeshape::kCadFeatureId && revolve ? 1.0 : 0.0;
+        if (revolve) {
+            const forgeshape::CadCandidateEvaluation& evaluation = session.evaluateCandidate();
+            values[6] = forgeshape::cadStatusCode(evaluation.status);
+            values[23] = static_cast<double>(evaluation.revision);
+            forgeshape::SketchSession::RevolveRing ring;
+            if (session.revolveRing(&ring)) {
+                const forgeshape::CameraSnapshot camera = g_camera.snapshot();
+                const int w = g_camera.viewportWidth();
+                const int h = g_camera.viewportHeight();
+                float x = 0.0f;
+                float y = 0.0f;
+                float x2 = 0.0f;
+                float y2 = 0.0f;
+                if (forgeshape::projectWorldToScreen(camera, ring.label, w, h, &x, &y)
+                    && x >= 0.0f && y >= 0.0f && x <= w && y <= h) {
+                    values[7] = 1.0;
+                    values[8] = x;
+                    values[9] = y;
+                }
+                if (forgeshape::projectWorldToScreen(camera, ring.handle, w, h, &x, &y)
+                    && x >= 0.0f && y >= 0.0f && x <= w && y <= h) {
+                    values[10] = 1.0;
+                    values[11] = x;
+                    values[12] = y;
+                }
+                if (forgeshape::projectWorldToScreen(camera, ring.axisStart, w, h, &x, &y)
+                    && forgeshape::projectWorldToScreen(camera, ring.axisEnd, w, h, &x2, &y2)) {
+                    values[13] = 1.0;
+                    values[14] = x;
+                    values[15] = y;
+                    values[16] = x2;
+                    values[17] = y2;
+                }
+            }
+        }
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, values);
 }
 
 // Where a COMMITTED CAD body retained sketch is, on screen (`CAD-UX-S1` 4.7).
@@ -5755,11 +5934,16 @@ Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsFaceSupportedCad(JNIEnv*
 // Returns false, writing nothing, when the active body is not a CAD Body.
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_cadState(JNIEnv* env, jclass, jdoubleArray out) {
-    constexpr jsize kSize = 9;
-    if (out == nullptr || env->GetArrayLength(out) < kSize) {
+    // `CAD-V6-REVOLVE-NEWBODY-E2E-R1` added [9] the base feature's kind (0
+    // Extrude, 1 Revolve) and [10] a Revolve's angle in degrees; a 9-slot
+    // reader is untouched.
+    constexpr jsize kLegacySize = 9;
+    constexpr jsize kMaxSize = 11;
+    if (out == nullptr || env->GetArrayLength(out) < kLegacySize) {
         return JNI_FALSE;
     }
-    jdouble values[kSize] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+    const jsize kSize = std::min(env->GetArrayLength(out), kMaxSize);
+    jdouble values[kMaxSize] = {0};
     bool found = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
@@ -5786,6 +5970,10 @@ Java_com_forgeshape_app_NativeViewport_cadState(JNIEnv* env, jclass, jdoubleArra
             values[6] = static_cast<double>(baseSketch.entities.size());
             values[8] = static_cast<double>(
                 forgeshape::extrudeExtentModeIndex(state.extrude.extent));
+            values[9] = forgeshape::cadFeatureKindIndex(state.baseKind);
+            values[10] = state.baseKind == forgeshape::CadFeatureKind::Revolve
+                                 ? state.revolve.angleDegrees
+                                 : 0.0;
             forgeshape::ProfileExtraction extraction;
             if (forgeshape::validateCadBodyState(state, &extraction) == forgeshape::CadStatus::Ok) {
                 const forgeshape::ClosedProfile* profile =

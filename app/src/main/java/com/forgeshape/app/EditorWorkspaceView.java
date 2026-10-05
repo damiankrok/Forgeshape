@@ -72,6 +72,7 @@ final class EditorWorkspaceView extends FrameLayout
         SketchOrientationNavigatorView.OnOrientationAction,
         SketchDimensionLabelView.OnDimensionAction,
         CadExtrudeCanvasView.OnCanvasExtrudeAction,
+        CadRevolveAngleLabelView.OnRevolveAngleAction,
         BodyDimensionLabelsView.OnDimensionAction,
         SculptHistoryNavigatorView.OnHistoryStateChosen,
         AnchoredSurfaceView.OnOpenStateChanged {
@@ -359,6 +360,18 @@ final class EditorWorkspaceView extends FrameLayout
      * it decides for itself which of the two it is showing from native truth.
      */
     private final CadExtrudeCanvasView cadExtrudeCanvas;
+    /** The Revolve angle beside its ring (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`). */
+    private final CadRevolveAngleLabelView cadRevolveAngle;
+    /** The Revolve chrome's state, re-read on every use; nothing is kept. */
+    private final double[] nativeRevolve = new double[NativeViewport.REVOLVE_STATE_SIZE];
+    /**
+     * What the last report described of the revolve (axis, angle, direction,
+     * picking, candidate), so a gesture that changed it is reported once and a
+     * gesture that did not is not reported again. Null outside a revolve.
+     */
+    private String lastReportedRevolve;
+    /** Whether the last report was made while a tap picked the axis. */
+    private boolean lastReportedRevolvePicking;
     /**
      * The three overall-dimension labels over the viewport (Stage 020M).
      *
@@ -806,6 +819,8 @@ final class EditorWorkspaceView extends FrameLayout
         overlayRoot.addView(sketchDimension, SketchDimensionLabelView.anchoredParams());
         cadExtrudeCanvas = new CadExtrudeCanvasView(context, this, anchorSpace, this);
         overlayRoot.addView(cadExtrudeCanvas, CadExtrudeCanvasView.anchoredParams());
+        cadRevolveAngle = new CadRevolveAngleLabelView(context, this, anchorSpace, this);
+        overlayRoot.addView(cadRevolveAngle, CadRevolveAngleLabelView.anchoredParams());
 
         // Stage 020M's three overall-dimension labels, on exactly those terms
         // and in the same overlay. It fills the chrome area rather than wrapping
@@ -1029,6 +1044,15 @@ final class EditorWorkspaceView extends FrameLayout
         }
         if (newProjectChooserVisible()) {
             onNewProjectCancelled();
+            return true;
+        }
+        // A Revolve in progress is one step inside Ready: Back returns to the
+        // extrusion of the same selection, changing nothing of the project
+        // (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`). An edit of a revolved body has no
+        // extrusion to return to, so there Back falls through to the sketch's.
+        NativeViewport.cadRevolveToolState(nativeRevolve);
+        if (CadRevolvePresentation.extrudeInsteadShown(nativeRevolve)) {
+            onRevolveEndRequested();
             return true;
         }
         if (bootstrapVisible()) {
@@ -3296,6 +3320,9 @@ final class EditorWorkspaceView extends FrameLayout
         // — or neither — from native truth, so there is no shell predicate here
         // that could disagree with the session.
         cadExtrudeCanvas.refreshFromNative();
+        // The Revolve angle label decides from native truth too: it stands only
+        // while a revolve with an axis is open and its anchor projects.
+        cadRevolveAngle.refreshFromNative();
         // Stage 020M's body-dimension labels follow the same rule from the
         // other side: they belong to Dimensions mode and to nothing else, and
         // a sketch and that mode can never both be open. The view withdraws
@@ -3532,6 +3559,33 @@ final class EditorWorkspaceView extends FrameLayout
         sketchEditor.refreshFromNative();
         NativeViewport.sketchState(nativeSketch);
         final int lastStatus = (int) nativeSketch[NativeViewport.SKETCH_LAST_STATUS];
+        if (nativeSketch[NativeViewport.SKETCH_STATE] == NativeViewport.SKETCH_READY
+                && revolveSignature() != null) {
+            // A Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): a tap may have picked
+            // the axis or changed the selection, a handle drag the angle. The
+            // chrome follows the candidate, and a change is reported once.
+            final String revolve = revolveSignature();
+            final boolean axisJustChosen = lastReportedRevolvePicking
+                    && !CadRevolvePresentation.axisPicking(nativeRevolve)
+                    && nativeRevolve[NativeViewport.REVOLVE_AXIS_ENTITY] != 0.0;
+            lastReportedSketchStatus = lastStatus;
+            refreshExtrudeReadiness();
+            refreshSketchViewportSurfaces(true);
+            if (!revolve.equals(lastReportedRevolve)) {
+                lastReportedRegionSelection = regionSelectionSignature();
+                reportRevolveVerdict(axisJustChosen
+                        ? getContext().getString(R.string.status_revolve_axis_chosen,
+                                CadRevolvePresentation.label(
+                                        nativeRevolve[NativeViewport.REVOLVE_ANGLE]))
+                        : null);
+                return;
+            }
+            if (lastStatus != NativeViewport.CAD_OK) {
+                showStatus(CadStatusMessages.describe(getContext(), lastStatus),
+                        R.attr.fsTextError);
+            }
+            return;
+        }
         if (nativeSketch[NativeViewport.SKETCH_STATE] == NativeViewport.SKETCH_READY) {
             // In Ready a tap chooses REGIONS (`CAD-VERTICAL-SLICE-R1`), and a
             // region choice changes what Extrude would make: the chrome is
@@ -3594,9 +3648,138 @@ final class EditorWorkspaceView extends FrameLayout
     /** Draws Extrude only while the preview is a candidate a commit may make. */
     private void refreshExtrudeReadiness() {
         NativeViewport.cadExtrudeToolState(nativeExtrude);
+        NativeViewport.cadRevolveToolState(nativeRevolve);
+        // The same evaluation answers for a Revolve: the toolbar's commit is
+        // then named Revolve, in Extrude's place.
+        toolbar.showRevolveMode(CadRevolvePresentation.active(nativeRevolve));
         toolbar.showExtrudeReadiness(
                 (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS]
                         == NativeViewport.CAD_OK);
+    }
+
+    // -----------------------------------------------------------------------
+    // Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`)
+    // -----------------------------------------------------------------------
+    //
+    // Every act is one native call followed by a re-read. The workspace holds
+    // no axis, no angle and no direction; it reports what native now says.
+
+    /** A signature of what the revolve chrome shows, or null outside one. */
+    private String revolveSignature() {
+        NativeViewport.cadRevolveToolState(nativeRevolve);
+        if (!CadRevolvePresentation.active(nativeRevolve)) {
+            return null;
+        }
+        return (long) nativeRevolve[NativeViewport.REVOLVE_AXIS_ENTITY] + ":"
+                + (int) nativeRevolve[NativeViewport.REVOLVE_AXIS_EDGE] + ":"
+                + nativeRevolve[NativeViewport.REVOLVE_ANGLE] + ":"
+                + (int) nativeRevolve[NativeViewport.REVOLVE_DIRECTION] + ":"
+                + (int) nativeRevolve[NativeViewport.REVOLVE_AXIS_PICKING] + ":"
+                + (int) nativeRevolve[NativeViewport.REVOLVE_CANDIDATE_STATUS] + ":"
+                + (int) nativeRevolve[NativeViewport.REVOLVE_SELECTED_AREAS];
+    }
+
+    /**
+     * Says what the revolve WOULD do: "choose an axis" while one is picked,
+     * the named refusal when the candidate would be refused, otherwise
+     * {@code okMessage} or the angle. A verdict on the current candidate.
+     */
+    private void reportRevolveVerdict(String okMessage) {
+        final Context context = getContext();
+        lastReportedRevolve = revolveSignature();
+        if (lastReportedRevolve == null) {
+            lastReportedRevolvePicking = false;
+            return;
+        }
+        lastReportedRevolvePicking = CadRevolvePresentation.axisPicking(nativeRevolve);
+        if (CadRevolvePresentation.axisPicking(nativeRevolve)) {
+            showStatus(context.getString(R.string.status_revolve_choose_axis),
+                    R.attr.fsTextSecondary);
+            return;
+        }
+        final int candidate = (int) nativeRevolve[NativeViewport.REVOLVE_CANDIDATE_STATUS];
+        if (candidate != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, candidate), R.attr.fsTextError);
+            return;
+        }
+        showStatus(okMessage != null ? okMessage
+                        : context.getString(R.string.status_revolve_angle,
+                                CadRevolvePresentation.label(
+                                        nativeRevolve[NativeViewport.REVOLVE_ANGLE])),
+                R.attr.fsTextSecondary);
+    }
+
+    /** After a revolve act: the whole chrome re-read, then the verdict. */
+    private void afterRevolveAct(String okMessage) {
+        syncFromNative();
+        refreshExtrudeReadiness();
+        refreshWorldAnchoredUi();
+        reportRevolveVerdict(okMessage);
+    }
+
+    @Override
+    public void onRevolveBeginRequested() {
+        final int status = NativeViewport.sketchBeginRevolve();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            syncFromNative();
+            return;
+        }
+        afterRevolveAct(null);
+    }
+
+    @Override
+    public void onRevolveEndRequested() {
+        final int status = NativeViewport.sketchEndRevolve();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            return;
+        }
+        cadRevolveAngle.closeEditor();
+        lastReportedRevolve = null;
+        syncFromNative();
+        refreshExtrudeReadiness();
+        refreshWorldAnchoredUi();
+        showStatus(getContext().getString(R.string.status_revolve_ended), R.attr.fsTextSecondary);
+    }
+
+    @Override
+    public void onRevolveAxisPickRequested() {
+        final int status = NativeViewport.sketchBeginRevolveAxisPick();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            return;
+        }
+        afterRevolveAct(null);
+    }
+
+    @Override
+    public void onRevolveFlipRequested() {
+        final int status = NativeViewport.sketchFlipRevolve();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            return;
+        }
+        NativeViewport.cadRevolveToolState(nativeRevolve);
+        afterRevolveAct(getContext().getString(R.string.status_revolve_flipped,
+                CadRevolvePresentation.label(nativeRevolve[NativeViewport.REVOLVE_ANGLE])));
+    }
+
+    @Override
+    public void onRevolveAngleEntered(double degrees) {
+        final int status = NativeViewport.sketchSetRevolveAngle(degrees);
+        if (status != NativeViewport.CAD_OK) {
+            // Refused, never clamped: the angle stands as it was.
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            return;
+        }
+        cadRevolveAngle.closeEditor();
+        afterRevolveAct(null);
+    }
+
+    /** The Revolve angle label, for verification. */
+    CadRevolveAngleLabelView cadRevolveAngleLabel() {
+        return cadRevolveAngle;
     }
 
     /**
@@ -3711,6 +3894,8 @@ final class EditorWorkspaceView extends FrameLayout
         final boolean firstProject = !NativeViewport.projectOpen();
         NativeViewport.cadExtrudeToolState(nativeExtrude);
         final int operation = (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_OPERATION];
+        NativeViewport.cadRevolveToolState(nativeRevolve);
+        final boolean revolved = CadRevolvePresentation.active(nativeRevolve);
         final long created = NativeViewport.sketchCommit();
         if (created == NativeViewport.NO_OBJECT) {
             showStatus(CadStatusMessages.describe(context, NativeViewport.sketchLastStatus()),
@@ -3737,10 +3922,12 @@ final class EditorWorkspaceView extends FrameLayout
                     R.attr.fsTextSuccess);
             return;
         }
+        lastReportedRevolve = null;
         showStatus(firstProject
                         ? context.getString(R.string.status_first_project_created,
                                 BodyLabels.of(context, created))
-                        : context.getString(R.string.status_sketch_extruded,
+                        : context.getString(revolved ? R.string.status_revolve_committed
+                                        : R.string.status_sketch_extruded,
                                 BodyLabels.of(context, created)),
                 R.attr.fsTextSuccess);
     }
@@ -3787,12 +3974,19 @@ final class EditorWorkspaceView extends FrameLayout
      */
     @Override
     public void onEditCadFeatureRequested(long featureId) {
-        if (featureId <= 1) {
+        final Context context = getContext();
+        final long bodyId = NativeViewport.sceneActiveBodyId();
+        // A revolved body's first feature IS the Revolve
+        // (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): its row reopens the revolve
+        // staged in Ready -- axis, angle and direction in front of the user,
+        // Back to Sketch one step away -- the way a later Add or Cut reopens.
+        final double[] cad = new double[NativeViewport.CAD_STATE_SIZE];
+        final boolean revolveBase = featureId <= 1 && NativeViewport.cadState(cad)
+                && (int) cad[NativeViewport.CAD_STATE_KIND] == NativeViewport.FEATURE_KIND_REVOLVE;
+        if (featureId <= 1 && !revolveBase) {
             onEditCadSketchRequested();
             return;
         }
-        final Context context = getContext();
-        final long bodyId = NativeViewport.sceneActiveBodyId();
         final int status = NativeViewport.sketchBeginEditFeature(bodyId, featureId, true);
         if (status != NativeViewport.CAD_OK) {
             showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
@@ -3801,6 +3995,7 @@ final class EditorWorkspaceView extends FrameLayout
         dismissPrimarySurfacesExcept(null);
         finishEditing();
         onNativeStateChanged();
+        refreshExtrudeReadiness();
         showStatus(context.getString(R.string.status_feature_edit_begun, featureId,
                         BodyLabels.of(context, bodyId)), R.attr.fsTextSecondary);
     }

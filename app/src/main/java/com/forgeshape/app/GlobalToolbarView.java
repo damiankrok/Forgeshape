@@ -77,6 +77,14 @@ final class GlobalToolbarView extends LinearLayout {
     private final TextView finishSketchButton;
     private final TextView extrudeButton;
     /**
+     * The same commit while the Ready selection is being REVOLVED
+     * (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): drawn in Extrude's place, never beside
+     * it, so the row still carries exactly one way forward and names it.
+     */
+    private final TextView revolveButton;
+    /** Whether the open session revolves rather than extrudes, as last read. */
+    private boolean revolving;
+    /**
      * Whether the staged extrusion's candidate is one a commit may make, as the
      * workspace last read it; Extrude is drawn in Ready only while it is.
      */
@@ -274,6 +282,20 @@ final class GlobalToolbarView extends LinearLayout {
             }
         });
         editingGroup.addView(extrudeButton, EditorControlStyles.wrap(0));
+
+        revolveButton = EditorControlStyles.primaryButton(context, R.id.revolve_sketch,
+                context.getString(R.string.revolve));
+        EditorControlStyles.asCapsuleMember(revolveButton, R.drawable.bg_capsule_primary);
+        boundTransitionWidth(revolveButton);
+        revolveButton.setVisibility(GONE);
+        revolveButton.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // ONE commit act: native knows the candidate is a Revolve.
+                actions.onExtrudeRequested();
+            }
+        });
+        editingGroup.addView(revolveButton, EditorControlStyles.wrap(0));
 
         // The way out of the CAD bootstrap (APP-H1) before its first commit.
         // No project exists yet, so leaving costs nothing and is never
@@ -522,7 +544,9 @@ final class GlobalToolbarView extends LinearLayout {
                         : transition == finishSketchButton
                                 ? R.string.finish_sketch
                                 : transition == extrudeButton
-                                        ? R.string.extrude : R.string.start_sculpting);
+                                        ? R.string.extrude
+                                        : transition == revolveButton
+                                                ? R.string.revolve : R.string.start_sculpting);
         if (transition == backButton && naturalWidth(transition, label) > budget) {
             label = context.getString(imported
                     ? R.string.back_to_imported_mesh_short : R.string.back_to_construction_short);
@@ -545,6 +569,9 @@ final class GlobalToolbarView extends LinearLayout {
         }
         if (extrudeButton.getVisibility() == VISIBLE) {
             return extrudeButton;
+        }
+        if (revolveButton.getVisibility() == VISIBLE) {
+            return revolveButton;
         }
         if (backButton.getVisibility() == VISIBLE) {
             return backButton;
@@ -609,6 +636,8 @@ final class GlobalToolbarView extends LinearLayout {
         applyMemberForm(finishSketchButton, solo && lone == finishSketchButton,
                 R.drawable.bg_pill_primary, R.drawable.bg_capsule_primary);
         applyMemberForm(extrudeButton, solo && lone == extrudeButton,
+                R.drawable.bg_pill_primary, R.drawable.bg_capsule_primary);
+        applyMemberForm(revolveButton, solo && lone == revolveButton,
                 R.drawable.bg_pill_primary, R.drawable.bg_capsule_primary);
         applyMemberForm(backToHomeButton, solo && lone == backToHomeButton,
                 R.drawable.bg_pill_tonal, R.drawable.bg_capsule_tonal);
@@ -822,8 +851,7 @@ final class GlobalToolbarView extends LinearLayout {
         finishSketchButton.setVisibility(
                 sketchState == NativeViewport.SKETCH_EDITING ? VISIBLE : GONE);
         this.sketchState = sketchState;
-        extrudeButton.setVisibility(sketchState == NativeViewport.SKETCH_READY && extrudeReady
-                ? VISIBLE : GONE);
+        applySketchCommitVisibility();
         if (this.imported != imported) {
             // The way out of Sculpt is labelled by the REPRESENTATION as well as
             // by the width the row can spare, and that label is written from the
@@ -853,10 +881,33 @@ final class GlobalToolbarView extends LinearLayout {
         }
         extrudeReady = ready;
         if (sketchState == NativeViewport.SKETCH_READY) {
-            extrudeButton.setVisibility(ready ? VISIBLE : GONE);
+            applySketchCommitVisibility();
             applyEditingComposition();
             requestLayout();
         }
+    }
+
+    /**
+     * Whether the Ready selection is being revolved (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`):
+     * the commit is then named Revolve, in Extrude's place.
+     */
+    void showRevolveMode(boolean revolve) {
+        if (revolving == revolve) {
+            return;
+        }
+        revolving = revolve;
+        if (sketchState == NativeViewport.SKETCH_READY) {
+            applySketchCommitVisibility();
+            applyEditingComposition();
+            requestLayout();
+        }
+    }
+
+    /** Exactly one of Extrude and Revolve, and only for a candidate a commit may make. */
+    private void applySketchCommitVisibility() {
+        final boolean commit = sketchState == NativeViewport.SKETCH_READY && extrudeReady;
+        extrudeButton.setVisibility(commit && !revolving ? VISIBLE : GONE);
+        revolveButton.setVisibility(commit && revolving ? VISIBLE : GONE);
     }
 
     /** Marks the Display button active while its popover is open. */
