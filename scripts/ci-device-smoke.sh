@@ -461,7 +461,16 @@ with open(junit, "w") as f:
     f.write('</testsuite>\n')
 with open(counts, "w") as f:
     f.write("run=%d failed=%d final_code=%s\n" % (len(tests), len(failed), final_code))
+# Each failure named in the job log itself, with the head of its stack, so a
+# reader who cannot open the uploaded artifact still sees what failed and why.
+for cls, name, code, stack in failed:
+    print("FAILED_TEST %s#%s (status %d)" % (cls, name, code))
+    for line in stack.strip().split("\n")[:8]:
+        print("    " + line)
 PY
+# The fact files a class chose to write (bounded), for the same reader.
+find "$OUT/test-evidence" -name 'facts-*.txt' -print0 2>/dev/null \
+    | xargs -0 -r cat 2>/dev/null | head -n 400 | sed 's/^/TEST_FACT /' || true
 read -r TESTS_RUN TESTS_FAILED FINAL_CODE < <(sed -E 's/run=([0-9]+) failed=([0-9]+) final_code=(.*)/\1 \2 \3/' "$OUT/instrumentation-counts.txt")
 echo "Instrumentation: run=$TESTS_RUN failed=$TESTS_FAILED final_code=$FINAL_CODE exit=$instrument_exit (${TEST_SECONDS}s)"
 grep -E '^(OK \(|FAILURES!!!|Tests run:)' "$OUT/instrumentation-raw.txt" || true

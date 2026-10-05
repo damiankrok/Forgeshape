@@ -356,9 +356,9 @@ public final class CadMultiFaceOwnerTest {
         handles = new long[CELLS];
         final long[] faces = faceHandles();
         for (int k = 0; k < CELLS; k++) {
-            final double u = -hu + (k % COLS + 0.5) * cell;
-            final double v = -hv + (k / COLS + 0.5) * cell;
-            handles[k] = faceAt(faces, u, v);
+            final double u = -hu + (k % COLS) * cell;
+            final double v = -hv + (k / COLS) * cell;
+            handles[k] = faceAt(faces, u, v, u + cell, v + cell);
             assertTrue("cell " + k + " resolves to a face", handles[k] > 0);
         }
         final long[] distinct = handles.clone();
@@ -369,24 +369,40 @@ public final class CadMultiFaceOwnerTest {
         fact("grid", "cell=" + cell + " handles=" + Arrays.toString(handles));
     }
 
-    /** The face handle whose interior holds (u, v): the nearest interior point. */
-    private static long faceAt(long[] faces, double u, double v) {
-        long best = -1;
-        double bestDistance = Double.MAX_VALUE;
+    /**
+     * The face handle whose native interior point lies inside the cell
+     * [u0, u1] x [v0, v1], decided on screen: the cell's four corners are
+     * projected and the interior point tested against that convex quad, so no
+     * assumption about where inside its face native puts the point is made.
+     */
+    private static long faceAt(long[] faces, double u0, double v0, double u1, double v1) {
+        final double[][] corners = {{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}};
+        final float[][] quad = new float[4][2];
+        for (int i = 0; i < 4; i++) {
+            assertTrue(NativeViewport.sketchScreenPoint(corners[i][0], corners[i][1], quad[i]));
+        }
         final double[] info = new double[NativeViewport.SKETCH_REGION_INFO_SIZE];
+        long found = -1;
         for (long handle : faces) {
             assertTrue(NativeViewport.sketchProfileInfo(handle, info));
             if (info[NativeViewport.SKETCH_REGION_ON_SCREEN] == 0.0) continue;
-            final float[] at = new float[2];
-            if (!NativeViewport.sketchScreenPoint(u, v, at)) continue;
-            final double d = Math.hypot(info[NativeViewport.SKETCH_REGION_SCREEN_X] - at[0],
-                    info[NativeViewport.SKETCH_REGION_SCREEN_Y] - at[1]);
-            if (d < bestDistance) {
-                bestDistance = d;
-                best = handle;
+            final double x = info[NativeViewport.SKETCH_REGION_SCREEN_X];
+            final double y = info[NativeViewport.SKETCH_REGION_SCREEN_Y];
+            int positive = 0;
+            int negative = 0;
+            for (int i = 0; i < 4; i++) {
+                final float[] a = quad[i];
+                final float[] b = quad[(i + 1) % 4];
+                final double cross = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+                if (cross > 0) positive++;
+                if (cross < 0) negative++;
+            }
+            if (positive == 4 || negative == 4) {
+                assertEquals("one face per cell", -1, found);
+                found = handle;
             }
         }
-        return best;
+        return found;
     }
 
     // -----------------------------------------------------------------------
