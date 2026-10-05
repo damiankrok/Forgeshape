@@ -3049,6 +3049,80 @@ Finish, and regeneration runs at commit and at an Apply — discrete user acts,
 each one publication. The render thread takes the overlay pointer under the
 same lock as the scene snapshot and does its upload with the lock released.
 
+### Revolve New Body (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`)
+
+A CAD Body's first feature has a KIND (`CadFeatureKind`: `Extrude` or
+`Revolve`), stored on `CadBodyState::baseKind` beside the two typed payloads
+`extrude` and `revolve`; exactly one carries values, and a Revolve body holding
+extrude values (or the reverse) is refused (`RevolvePayloadMismatch`). R1 makes
+a Revolve only as a body's FIRST feature and only as New Body: a revolved body
+carries no later features (`RevolveLaterFeatureUnsupported`), and a sketch on
+one of its faces is not offered.
+
+`RevolveFeature` (`forgeshape_cad_body.h`) is what cannot be recomputed: the
+retained sketch id, the SAME selection an Extrude makes (`LoopRegions` anchor
+plus regions and holes, or canonical `PlanarFaces` refs — held in the
+Revolve's own fields and lent to the region code through a transient
+`ExtrudeFeature` carrier, `revolveSelectionCarrier` / `setRevolveSelectionFrom`,
+never stored as one), the axis as a SEMANTIC edge ref
+`CadSketchEdgeRef{entityId, edgeLocalIndex}` (a Line's edge 0, a Polyline's
+segment i, a Rectangle's edge i — `sketchEntityStraightEdges` is the one
+statement of which edges exist), the angle in DEGREES (binary64, exact as
+typed — the product's rotation convention; `kMinRevolveAngleDegrees` 0.001 to
+360, a full turn exactly when it equals 360) and a `RevolveDirection`.
+`resolveRevolveAxis` resolves the ref by exact equality or refuses it by name
+(`RevolveAxisUnresolved`, `RevolveAxisNotStraight` for a Circle, Arc or Spline,
+`RevolveAxisDegenerate`); there is no nearest-edge fallback, and an edit that
+removes the edge leaves a stale ref that is refused, never re-aimed.
+
+`forgeshape_cad_revolve.{h,cpp}` derives the solid: the selected union,
+component by component with its holes, maps to `(t, r)` about the infinite axis
+line; `classifyRevolveComponents` refuses an area crossing that line
+(`RevolveProfileCrossesAxis`, exact for circle/arc sub-arcs and bounded for
+spline spans) and opposite-side components whose mirrored images would meet on
+a sweep of half a turn or more (`RevolveComponentsOverlap`), while a profile
+TOUCHING the axis is legal; `appendRevolveSolid` emits
+`revolveSegmentCount(angle)` steps (the circle's own density, 32 for a full
+turn), wraps the ring on a full turn with no caps and no duplicated seam, caps a
+partial turn with the triangulated profile, and collapses on-axis vertices to
+apex vertices so every vertex neighbourhood is one disc. No camera, zoom or
+viewport enters it. `walkCadChain` dispatches on the feature kind and
+`regenerateCadBody` hands every revolved solid to the kernel's validity answer
+(`cadKernelValidateSolid`) before publishing; the R0 float path is taken only by
+an Extrude. A revolve's faces are DERIVED and all INELIGIBLE as sketch
+supports in R1 — caps exist only on a partial turn, and nothing hosts on them.
+
+The session (`SketchSession`) holds the Revolve as volatile Ready-state
+intent beside the extrusion: `beginRevolve` / `endRevolve` switch the feature
+kind over the SAME selection, `beginRevolveAxisPick` arms a tap that
+`pickRevolveAxisAt` resolves at the Down pixel through the Down camera with the
+Select tool's own hit tolerance, and `setRevolveAngle` / `flipRevolveDirection`
+are the only writers of angle and sense. The one candidate is evaluated and
+drawn exactly as an Extrude's is, so the preview IS what commits; commit,
+Edit (`sketchBeginEditFeature` reopens a revolved body in Ready on its
+Revolve) and the first-project bootstrap are each ONE transaction. The ring
+manipulator — the axis line, an arc from the profile to the current angle, its
+spokes and a diamond handle — is more `SketchOverlay` geometry in the extrude
+preview's range, so the renderer needed nothing new. `revolveRing` places it
+from the selected union and the axis alone; a handle drag captures one
+pointer, FREEZES the ring at pointer-down, unwraps the pointer angle on the
+ring plane, writes whole degrees clamped to [1, 360], holds the last value when
+the ring is seen edge-on, and is cancelled (angle restored) by a second pointer
+or a Cancel. Off the handle, a still finger is a region tap and a travelled one
+navigates, exactly as in an Extrude's Ready. Once an axis is set,
+`revolveViewPose` leans the camera to a 3/4 pose that sees the ring square to
+the axis — presentation only. JNI exposes it as `cadRevolveToolState` (24
+slots) plus seven acts; Android draws the precision surface's Revolve section
+(`SketchEditorView`), the toolbar's Revolve commit (`GlobalToolbarView`) and the
+angle as canvas chrome at the projected half-angle point
+(`CadRevolveAngleLabelView`), and decides visibility through the pure
+`CadRevolvePresentation`.
+
+`CADB` gains version 7 (`DATA_PACKAGE_SPEC.md` §7h): v6's layout with a kind
+byte after every feature id and the Revolve payload. It is written only when a
+body revolves; every v1..v6-representable project keeps its bytes and its
+fingerprint (the `REV7` fingerprint block is mixed only for a revolved body).
+
 ### What this stage deliberately does not do
 
 CAD → Sculpt: `buildSculptSourceMesh` returns false for a CAD Body, the freeze
@@ -3058,8 +3132,9 @@ three decisions this stage does not make — the wording of the way back out of
 Sculpt over a CAD Body, the stale-source rule over a CAD edit, and the
 `CADB`+`SCUL` file combination — and each deserves its own approval. Since
 `CAD-VERTICAL-SLICE-R1` holes, face-supported sketches, arcs, splines and the
-Add / Cut booleans exist; fillets, chamfers, shells, revolves, sweeps, lofts,
-patterns, sketch mirrors, offsets, trims, constraints, Intersect, feature
+Add / Cut booleans exist, and since `CAD-V6-REVOLVE-NEWBODY-E2E-R1` a Revolve
+New Body; fillets, chamfers, shells, a Revolve Add/Cut or later Revolve, sweeps,
+lofts, patterns, sketch mirrors, offsets, trims, constraints, Intersect, feature
 delete/reorder and suppression are absent and are not drawn anywhere.
 
 ## Sculpt domain

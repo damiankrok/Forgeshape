@@ -200,7 +200,8 @@ on the host, with no device, and is the fast native loop.
   crossing, zero-area and duplicate-edge loops are refused, never repaired —
   and a loop cleanly inside another is no longer refused: it is a HOLE of the
   region around it (see the region rule below). There is no fillet, no
-  chamfer, no shell, no revolve, no taper and no constraint solver; the only
+  chamfer, no shell, no taper and no constraint solver, and a revolve is a
+  first feature only (see the Revolve rule below); the only
   booleans are a later feature's Add and Cut; a rectangle is parametric (centre, width,
   height, axis-aligned in sketch space) and a circle is centre and radius, and
   both are editable later. R0 had no arc and no spline either; `SKETCH-UX-R1`
@@ -443,9 +444,10 @@ on the host, with no device, and is the fast native loop.
   **The sketch panel holds no draft direction any more**: it shows what native
   says on every refresh, so the canvas Flip and the panel chips cannot become
   two answers. Add, Cut, the feature list and `CADB` v5 arrived with
-  `CAD-VERTICAL-SLICE-R1` (the rules below). **Still not delivered:**
-  `Revolve`, `Intersect`, a Hole feature, a constraint solver, and
-  multi-feature reuse of one sketch.
+  `CAD-VERTICAL-SLICE-R1` (the rules below), Revolve New Body with
+  `CAD-V6-REVOLVE-NEWBODY-E2E-R1`. **Still not delivered:** a Revolve Add or
+  Cut, `Intersect`, a Hole feature, a constraint solver, and multi-feature
+  reuse of one sketch.
 - **An extrusion's EXTENT is TWO non-negative DISTANCES, and a mode names which
   of them the controls author** (`CAD-EXT-R1`). The durable truth is how far
   the solid reaches along `+N` and along `-N`, of which at least one is
@@ -493,7 +495,7 @@ on the host, with no device, and is the fast native loop.
   `mixed_cad_extent`, and the two the decoder must refuse, `cad_bad_extent` and
   `cad_bad_two_sides`), and every one of those older fixtures is still
   byte-for-byte unchanged. A later Add or Cut feature carries its extent on
-  exactly these terms. **Still not delivered:** `Intersect`, `Revolve`,
+  exactly these terms. **Still not delivered:** `Intersect`,
   `To Object`, `Through All`, taper or draft, a Hole feature, and a
   total-length presentation of Symmetric — the durable value stays the distance
   per side whatever a later UI chooses to show.
@@ -672,6 +674,51 @@ on the host, with no device, and is the fast native loop.
   (`sketchBeginEditFeature`) is staged and Finish is ONE step. **Faking any of
   this is prohibited**: no overlapping `SceneObject`s, hidden tool bodies,
   renderer compositing, baked meshes or triangle-index identity.
+- **A Revolve is a body's FIRST feature, its axis is a SEMANTIC edge, and its
+  angle is exact degrees** (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`). A CAD Body's base
+  feature has a KIND (`CadFeatureKind::Extrude` or `Revolve`, on
+  `CadBodyState::baseKind`) and exactly the payload of that kind — a Revolve
+  carrying extrude values, or the reverse, is refused
+  (`RevolvePayloadMismatch`). R1 is **New Body only**: a revolved body has no
+  later features (`RevolveLaterFeatureUnsupported`) and its faces are all
+  INELIGIBLE supports, so nothing stands on one. What is swept is the SAME
+  selection an Extrude makes (regions with holes, or exact `PlanarFaceRef`s),
+  held in the Revolve's own fields and lent to the region code through a
+  transient carrier — never stored as an Extrude. The axis is
+  `CadSketchEdgeRef{entityId, edgeLocalIndex}` — a Line's edge 0, a
+  Polyline's segment i, a Rectangle's edge i — resolved by exact equality or
+  refused by name (`RevolveAxisUnresolved`; a Circle, Arc or Spline is
+  `RevolveAxisNotStraight`; `RevolveAxisDegenerate`), **never re-aimed at the
+  nearest edge**. The angle is binary64 DEGREES exactly as typed, in
+  [`kMinRevolveAngleDegrees` 0.001, 360], a full turn exactly when it equals
+  360, out-of-range or non-finite refused (`RevolveAngleInvalid`) and never
+  clamped; **Flip reverses the direction and never the angle's sign.** The
+  solid (`forgeshape_cad_revolve.{h,cpp}`) is derived from those values ALONE —
+  no camera, zoom or viewport — at the circle's own density (32 steps for a
+  full turn): a full turn closes its seam with no caps, a partial one carries
+  two caps, an on-axis vertex is one apex, and every revolved solid passes the
+  kernel's `cadKernelValidateSolid` before it is published. An area that
+  CROSSES the infinite axis line is refused (`RevolveProfileCrossesAxis`,
+  exact on circle and arc sub-arcs, bounded on spline spans); one that TOUCHES
+  it is legal; opposite-side components whose sweeps could meet are refused
+  (`RevolveComponentsOverlap`) because their union is a boolean R1 does not
+  make. **The ring manipulator holds no truth**: it is `SketchOverlay`
+  geometry placed from the selection and the axis, a handle drag captures one
+  pointer, freezes the ring at pointer-down, writes whole degrees through
+  `setRevolveAngle` (the one door a typed value uses), never orbits, and is
+  restored by a second pointer or a Cancel; a still tap beside it is still the
+  region's. The angle label is chrome at the projected half-angle point and is
+  hidden, never guessed, when that point does not project. Commit, Edit and
+  the first-project bootstrap are each ONE transaction, and none of the
+  session's revolve intent is truth until then. **`CADB` gains version 7**
+  (a kind byte after every feature id, and the Revolve payload), written ONLY
+  when a body revolves; every v1..v6-representable project keeps its bytes
+  and its fingerprint. `CAD-V6-REVOLVE-NEWBODY-E2E-R1` added the four v7
+  fixtures (`cad_revolve_full_v7`, `cad_revolve_partial_v7`, and the two the
+  decoder must refuse, `cad_revolve_bad_axis_v7` and
+  `cad_bad_feature_kind_v7`). **Not this stage:** a Revolve Add or Cut, a
+  later Revolve feature, a sketch on a revolved face, an axis that is not a
+  sketch edge, a two-sided or symmetric sweep, and a constraint solver.
 - **The preview IS the candidate** (`CAD-VERTICAL-SLICE-R1`). `SketchSession`
   evaluates ONE candidate, latest-only, keyed by a revision every authoring
   change bumps (region, distance, extent, operation, flip); the renderer draws
@@ -948,8 +995,11 @@ on the host, with no device, and is the fast native loop.
   must refuse, `cad_bad_sketch_ref`, `cad_duplicate_sketch_id`,
   `cad_bad_selection_kind`, `cad_noncanonical_face`, `cad_unresolved_face` and
   `cad_overlap_face`); `CAD-V6-S2` added
-  `cad_fragment_support` (a sketch on a FRAGMENT side, v6 FACE code 4) — a
-  **fifty-seven**-fixture corpus in
+  `cad_fragment_support` (a sketch on a FRAGMENT side, v6 FACE code 4);
+  `CAD-V6-REVOLVE-NEWBODY-E2E-R1` added the four **`CADB` v7** fixtures
+  (`cad_revolve_full`, `cad_revolve_partial`, and the two the decoder must
+  refuse, `cad_revolve_bad_axis` and `cad_bad_feature_kind`) — a
+  **sixty-one**-fixture corpus in
   which every older fixture is byte-for-byte unchanged. Every corrupt fixture is CONSTRUCTED
   by the PowerShell builder with the bad value in place, never generated and
   then mutated.
@@ -1411,7 +1461,10 @@ on the host, with no device, and is the fast native loop.
   *New Body* (the operation that makes a new body; the only one a world-plane
   sketch offers), *Add* (a later feature that unions material into the SAME
   body; never "Join" in the UI), *Cut* (a later feature that removes material
-  from the SAME body), *operation badge* (the dock's glyph that states the
+  from the SAME body), *Revolve* (a New Body made by sweeping the chosen
+  region about a straight edge of its sketch, the *axis*, by an *angle* in
+  degrees; never "lathe" or "spin"), *revolve ring* (the world-space axis, arc
+  and handle that show and drag the angle; never a "gizmo"), *operation badge* (the dock's glyph that states the
   operation; the palette chooses it), *region* (what an extrusion extrudes: a closed loop's
   interior minus its holes; never "face" or "profile" to the user), *feature*
   (one sketch + extrusion + operation in a CAD Body's chain), *Tool Labels*
