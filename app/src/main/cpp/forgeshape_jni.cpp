@@ -354,6 +354,17 @@ forgeshape::CadFeatureViewSource beginExtrudeFeatureView() {
     return source;
 }
 
+// The Revolve's view (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): once an axis is set the
+// camera leans to a 3/4 pose that sees the ring square to the axis -- the
+// extrude feature view's counterpart, presentation only. The caller holds
+// g_stateMutex.
+void beginRevolveFeatureView() {
+    forgeshape::CameraController::Pose pose;
+    if (forgeshape::sketchSession().revolveViewPose(g_camera.capturePose(), &pose)) {
+        g_camera.restorePose(pose);
+    }
+}
+
 // Whether Ready was entered with NO region chosen (`CAD-VERTICAL-SLICE-R1`):
 // a sketch of several regions selects none, so there are no anchors and the
 // tilt above is refused. The view is then still the aligned one, from which
@@ -5366,7 +5377,13 @@ jint revolveAct(const char* name, forgeshape::CadStatus (*act)(forgeshape::Sketc
 
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchBeginRevolve(JNIEnv*, jclass) {
-    return revolveAct("begin", [](forgeshape::SketchSession& s) { return s.beginRevolve(); });
+    return revolveAct("begin", [](forgeshape::SketchSession& s) {
+        const forgeshape::CadStatus why = s.beginRevolve();
+        if (why == forgeshape::CadStatus::Ok && !s.revolveAxisPicking()) {
+            beginRevolveFeatureView();  // an edit or a return holds its axis already
+        }
+        return why;
+    });
 }
 
 JNIEXPORT jint JNICALL
@@ -5393,6 +5410,9 @@ Java_com_forgeshape_app_NativeViewport_sketchSetRevolveAxis(JNIEnv*, jclass, jlo
         std::lock_guard<std::mutex> lock(g_stateMutex);
         status = forgeshape::sketchSession().setRevolveAxis(forgeshape::CadSketchEdgeRef{
                 static_cast<forgeshape::SketchEntityId>(entityId), static_cast<uint32_t>(edgeIndex)});
+        if (status == forgeshape::CadStatus::Ok) {
+            beginRevolveFeatureView();
+        }
     }
     FS_LOGI("FORGESHAPE_REVOLVE_AXIS:%lld:%d %s", (long long)entityId, (int)edgeIndex,
             forgeshape::cadStatusName(status));
@@ -7980,6 +8000,8 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
             if (sketch.active()) {
                 sketchOwned = true;
                 const uint32_t tapSerialBefore = sketch.tapOutcomeSerial();
+                const forgeshape::CadSketchEdgeRef axisBefore = sketch.revolveParameters().axis;
+                const bool pickingBefore = sketch.revolveAxisPicking();
                 const bool consumed = sketch.onTouch(translated,
                                                      static_cast<int32_t>(actionPointerId),
                                                      pointers, count, g_camera.snapshot(),
@@ -8022,6 +8044,18 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 if (translated == forgeshape::TouchAction::Up && navigable) {
                     // A Ready tap may have chosen the first region.
                     beginPendingExtrudeFeatureView();
+                    // ...or, in a Revolve, the axis: the ring's view follows.
+                    if (pickingBefore && !sketch.revolveAxisPicking()
+                        && !forgeshape::sameCadSketchEdgeRef(axisBefore,
+                                                             sketch.revolveParameters().axis)) {
+                        beginRevolveFeatureView();
+#ifndef NDEBUG
+                        // Debug-only attribution, like the Ready-tap token.
+                        FS_LOGI("FORGESHAPE_REVOLVE_AXIS_TAP:%u:%u",
+                                sketch.revolveParameters().axis.entityId,
+                                sketch.revolveParameters().axis.edgeLocalIndex);
+#endif
+                    }
                 }
             }
         }

@@ -2459,6 +2459,47 @@ bool SketchSession::revolveRing(RevolveRing* out) const {
     return vec3Finite(out->handle) && vec3Finite(out->centre);
 }
 
+bool SketchSession::revolveViewPose(const CameraController::Pose& current,
+                                    CameraController::Pose* out) const {
+    RevolveRing ring;
+    if (out == nullptr || !revolveRing(&ring)) {
+        return false;
+    }
+    const Vec3 n = vec3Normalize(frame_.n);
+    // The ring plane's normal is the axis: a view needs a real component along
+    // it to see the ring as an ellipse, and one along +n to keep the sketch
+    // side towards the eye.
+    constexpr float kAlongNormal = 0.55f;
+    constexpr float kAlongAxis = 0.65f;
+    constexpr float kAlongRadial = 0.52f;
+    constexpr float kMinAxisDot = 0.35f;
+    const float signs[4][2] = {{1.0f, 1.0f}, {-1.0f, 1.0f}, {1.0f, -1.0f}, {-1.0f, -1.0f}};
+    for (const auto& sign : signs) {
+        const Vec3 candidate = vec3Normalize(
+                vec3Add(vec3Scale(n, kAlongNormal),
+                        vec3Add(vec3Scale(ring.axis, kAlongAxis * sign[0]),
+                                vec3Scale(ring.radial, kAlongRadial * sign[1]))));
+        float yaw = 0.0f;
+        float pitch = 0.0f;
+        if (!cadFeatureViewYawPitch(candidate, &yaw, &pitch)) {
+            continue;
+        }
+        pitch = std::min(kPitchLimitRadians, std::max(-kPitchLimitRadians, pitch));
+        const Vec3 installed = cadFeatureViewDirection(yaw, pitch);
+        if (std::fabs(vec3Dot(installed, ring.axis)) < kMinAxisDot || vec3Dot(installed, n) <= 0.1f) {
+            continue;
+        }
+        *out = current;
+        out->target = ring.centre;
+        out->yaw = yaw;
+        out->pitch = pitch;
+        out->orthoHalfHeightMeters = std::max(current.orthoHalfHeightMeters, ring.radius * 1.8f);
+        out->distance = std::max(current.distance, ring.radius * 4.0f);
+        return true;
+    }
+    return false;
+}
+
 bool SketchSession::revolvePointerAngle(const RevolveRing& ring, const CameraSnapshot& camera,
                                         float x, float y, int viewportWidth, int viewportHeight,
                                         double* out) const {

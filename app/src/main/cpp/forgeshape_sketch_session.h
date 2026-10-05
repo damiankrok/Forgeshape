@@ -682,6 +682,15 @@ public:
         Vec3 label{};
     };
     bool revolveRing(RevolveRing* out) const;
+
+    // The view a Revolve is adjusted through once its axis is set: a 3/4 pose
+    // on the sketch's +n side that sees the ring's plane (square to the axis)
+    // at a real angle rather than edge-on, centred on the ring and wide enough
+    // for the swept solid. A pure function of the ring and the frame: four
+    // deterministic candidates, each re-measured after the orbit's pitch clamp
+    // (the extrude feature view's own rule). PRESENTATION: never stored. False
+    // when there is no ring or no candidate survives the clamp.
+    bool revolveViewPose(const CameraController::Pose& current, CameraController::Pose* out) const;
     bool revolveDragging() const { return revolveDragPointer_ >= 0 && revolveDragLive_; }
 
     // The grab radius around the projected handle, in reference units; and the

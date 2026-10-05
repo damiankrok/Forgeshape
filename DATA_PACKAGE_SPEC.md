@@ -1143,6 +1143,103 @@ is the stored outer cycle fragment for fragment, so the lens of
 `cad_face_lens_v6` has the lineage `0x9873F7F20DED4004`
 (`cad_fragment_support_v6`).
 
+## 7h. `CADB` v7 — the feature KIND and the Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`)
+
+Version 7 says one thing v6 cannot: what KIND of feature a record is. v6's
+feature record IS an extrusion -- its depth, extent and direction are not
+optional -- so a Revolve could only be written there by reusing those fields
+(an angle in `depth`, a rotation sense in `direction`), which a v6 reader would
+then regenerate as an extrusion. v7 is v6's layout (§7g) with an explicit kind
+after every feature id and a payload of that kind's own:
+
+```
+FEATURE    featureId u32 | kind u8 | KIND PAYLOAD
+kind       1 Extrude, 2 Revolve (any other code: InvalidSemanticValue)
+EXTRUDE    exactly the v6 bytes after featureId:
+           operation u8 | sketchId u32 | extent u8 | direction u8 |
+           depth f64 | secondDistance f64 | SELECTION
+REVOLVE    operation u8 | sketchId u32 |
+           axisEntityId u32 | axisEdgeLocalIndex u32 |
+           angleDegrees f64 | direction u8 (1 Positive, 2 Negative) |
+           SELECTION
+SELECTION  selectionKind u8 (1 LoopRegions, 2 PlanarFaces) and its block,
+           exactly as §7g
+```
+
+Every other part of a v7 body -- the high-water marks, the sketch table and its
+placements, entities, cuts, fragments and face tokens -- is §7g byte for byte.
+
+### When v7 is written, and what an older reader does
+
+v7 is written ONLY when some body of the document carries a Revolve; the whole
+section is then v7 (an Extrude body in it wears kind 1). A document of
+Extrudes alone writes whichever of v1..v6 it always wrote, byte for byte, so
+no existing file and no fixture moves. `CADB` is a required section, so a
+build that predates v7 refuses a v7 file (`UnsupportedSectionVersion`) rather
+than opening a Revolve as an extrusion or a project with a body missing.
+
+### The Revolve, and what is refused
+
+A Revolve sweeps the selected area -- the same union an Extrude of that
+selection would extrude (§7f, §7g), holes included -- about a straight edge of
+its own sketch by `angleDegrees` in the stated sense.
+
+- **Kind and chain (R1).** A Revolve is the body's FIRST feature (id 1) with
+  operation New Body (code 1), and a Revolve body carries no later feature. A
+  Revolve elsewhere, or with another operation, is `InvalidSemanticValue`.
+- **The axis** is the pair `(axisEntityId, axisEdgeLocalIndex)` of the base
+  sketch -- a SEMANTIC edge, never a renderer line, a tessellation sample or a
+  screen point: a Line's edge 0; a Polyline's segment `i`, `vertices[i] ->
+  vertices[i+1]` (a closed one's segment `n-1` closes `n-1 -> 0`); a
+  Rectangle's edge `k` between its counter-clockwise corners `k -> k+1` from
+  `(-w/2, -h/2)` (0 bottom, 1 right, 2 top, 3 left). The axis DIRECTION is that
+  edge's own start -> end. A ref naming no entity, an index past the entity's
+  edges, a Circle, an Arc or a Spline, or a zero-length edge is refused
+  (`InvalidSemanticValue`; the domain names `RevolveAxisUnresolved`,
+  `RevolveAxisNotStraight`, `RevolveAxisDegenerate`). Nothing is retargeted to a
+  nearest edge.
+- **The angle** is binary64 DEGREES -- the product's authored-angle unit, which
+  keeps 360, 180, 90 and 37.5 exact -- in `[0.001, 360]`, 360 a full turn. A
+  non-finite value, zero, a negative value or anything above 360 is refused,
+  never clamped. **The direction** is `Positive` (right-hand about the axis
+  direction) or `Negative`; any other code is refused.
+- **The side rule.** The selected area must lie on ONE side of the infinite
+  axis line, touching it at most: a vertex within 1 µm of the line is ON it.
+  Curves are judged on the true curve -- a Circle's or an Arc's closest approach
+  between two tessellation vertices exactly, a Spline's span against its Bezier
+  deviation bound -- so a curve that dips across the axis between samples is
+  refused (`RevolveProfileCrossesAxis`). Areas on OPPOSITE sides whose mirror
+  images meet are refused once the angle reaches 180 (`RevolveComponentsOverlap`):
+  their sweeps would need a boolean union this version does not make.
+- **One payload per kind.** A Revolve body's in-memory extrusion is the empty
+  default and an Extrude body's revolve is the empty default; a body stating the
+  other kind's values is refused (`RevolvePayloadMismatch`), so one body has one
+  encoding.
+
+A Revolve body is regenerated during validation, held to the boolean kernel's
+validity answer (closed, oriented 2-manifold, positive volume), and refused if
+it does not regenerate.
+
+### Its faces
+
+For picking only, a Revolve lists `CapPlane` (the start cap) and `CapFar` (the
+end cap) on a partial sweep and neither on a full turn, then one `Side` per
+boundary edge (or fragment, for a PlanarFaces selection) in the §7f / §7g
+order. Every one of them is INELIGIBLE: no `TopoRef` and no feature support
+may name a revolved face, so no lineage token of a Revolve is ever stored.
+
+### The mesh, for an independent implementation
+
+Not stored, and stated so a second implementation derives the same solid: the
+sweep has `sketchArcSegmentCount(angle)` angular steps -- the circle density,
+32 for a full turn, at least 4 -- at `theta_k = angle * k / steps`, the last
+exactly `angle`; a point at axial coordinate `t` and radius `r` on side `s`
+maps to `A + t*D + r*(cos(theta)*E1 + sin(theta)*E2)` with `E1 = s * (left
+normal of D)` and `E2 = ±(D x E1)` by the direction. A full turn closes its seam
+by index (no caps, no seam vertex twice); a profile vertex on the axis is one
+apex (two on a full turn when two swept edges meet there); an edge on the axis
+sweeps nothing.
+
 ## 8. Validation and compatibility
 
 Decoding happens entirely into temporary document structures. **No live project
@@ -1380,13 +1477,18 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `cad_spline_face_v6.forge` | 451 | `d85f98db59968bbe6c47f1842f59bb2f93f167f61deba67f5f846e98651cd800` | The lens fixture with a three-point **Spline** (entity 3) added to its sketch, clear of both curves. Refused (`PlanarFaceUnsupportedCurve`) while a Spline disabled the arrangement; since `CAD-V6-S2-CORRECTION-FILL-HUD-R1` the **same bytes** are a VALID file — the spline bounds no face and the lens resolves |
 | `cad_overlap_face_v6.forge` | 376 | `313652c95c14d3ebfd5e451447b8b46d0890fbed35b7c680911fb94426e118f9` | The rectangle with a line lying **along** its bottom side, selecting the rectangle's whole boundary — refused `InvalidSemanticValue` (`PlanarFaceAmbiguousOverlap`) |
 | `cad_fragment_support_v6.forge` | 531 | `e1726cb5cbf0504ee0e50f457d8490ab410d12e41e426fdfe631dbb1e8c0acb6` | `CAD-V6-S2`: the `cad_face_lens_v6` body, and a second retained sketch on the lens's STRAIGHT side -- a fragment of the rectangle's right side, placement 3, FACE code 4 with cuts `X(2.0#0) > X(2.0#1)`, lineage `0x9873F7F20DED4004` -- holding a 0.3 m square Added 0.2 m out of it |
+| `cad_revolve_full_v7.forge` | 332 | `1e6d021408bf3959659cef1fb119d3e5a4ced0442289b3ab5bb583fdcde5d450` | `CAD-V6-REVOLVE-NEWBODY-E2E-R1`, `CADB` **v7**: a 1 × 1 m square (rectangle entity 1, centre `(1.5, 0.5)`) and a Line (entity 2, `(0, -1)`–`(0, 2)`) on world XY; the base is a **Revolve** New Body of the square about the Line's edge 0, 360°, Positive — a tube with no caps |
+| `cad_revolve_partial_v7.forge` | 332 | `7b72037a923f8c767a8694cc6e080e0ef8a8eb624ee926e02f288e5541b2fdd2` | The same sketch revolved **90°**, direction **Negative** (code 2) — a quarter sweep with its two planar caps |
+| `cad_revolve_bad_axis_v7.forge` | 332 | `8be1bee7210c7286e72c8ba94a44f8724bda1400feff6589ef64b3ce30d5ecd1` | The full revolve with its axis naming entity **7**, which the sketch does not hold — refused `InvalidSemanticValue` (`RevolveAxisUnresolved`), never re-aimed at the nearest edge |
+| `cad_bad_feature_kind_v7.forge` | 332 | `404e648523be5069334321bf20cf2abf077ed0ba0b6bb48cc728c30ab56a9fb5` | The full revolve with its base feature's KIND byte **9** in front of the otherwise well-formed Revolve payload — refused `InvalidSemanticValue` (`InvalidFeatureKind`) at the kind byte |
 
-The seventeen corrupt fixtures written since `CADB` v2 — two each for `CADB` v2,
-v3 and v4, four for `CADB` v5, six for `CADB` v6 and one for `SCNE` v2 — are
+The nineteen corrupt fixtures written since `CADB` v2 — two each for `CADB` v2,
+v3, v4 and v7, four for `CADB` v5, six for `CADB` v6 and one for `SCNE` v2 — are
 **constructed** by the PowerShell builder with the bad value in place, never
 generated and then mutated; the C++ self-test reaches the same bytes by its own
 route (patching the valid parent's one field and its CRC, or — for five of the
-six v6 ones — writing the bad STATE through `encodeProjectV1Unchecked`), and
+six v6 ones and the v7 bad axis — writing the bad STATE through
+`encodeProjectV1Unchecked`), and
 the digests agreeing is what proves the two routes describe one file. The
 envelope fixtures and `cad_bad_plane_v1` predate the rule and are still derived
 from their canonical parent.
@@ -1404,16 +1506,16 @@ the two matched could not tell a decoder that confused them apart. Every number
 is an exact binary fraction, so the two implementations agree byte for byte or
 not at all.
 
-No section version has moved an older fixture: `CADB` v2, v3, v4, v5 and v6 are
-each written only when a body needs what they add — a face support, a curve, an
-extent that is not One Side, a hole or a later feature, a shared or retained
-sketch or a face selection — so a world-only CAD
+No section version has moved an older fixture: `CADB` v2, v3, v4, v5, v6 and v7
+are each written only when a body needs what they add — a face support, a curve,
+an extent that is not One Side, a hole or a later feature, a shared or retained
+sketch or a face selection, a Revolve — so a world-only CAD
 project still writes `CADB` v1, a curveless one v1 or v2, a One Side one v1..v3
 and a one-region single-feature one v1..v4. Each of these features costs a
 project that does not use it exactly nothing, exactly as the imported branch
 and the generalized `SCUL` cost the files before them nothing.
 
-**Fifty-six fixtures in all.** The thirty-six that predate `CADB` v5 are
+**Sixty-one fixtures in all.** The thirty-six that predate `CADB` v5 are
 verified by `FSR1A-12`, `IMP01A-19`, `IMP01B-11/12`, `CADR0-33..36`,
 `CADA3-46..51`, `CADUXR1-38`, `CADEXT-10` and `OBJ018A-15/16`, and printed on
 every debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `…_IMPORTED`,
@@ -1426,11 +1528,16 @@ same writer without its validation (`encodeProjectV1Unchecked`), and the one bad
 code by patching the valid parent's byte; `cad_fragment_support_v6`
 (`CAD-V6-S2`, `CADV6S2_P16`) through the ordinary writer, its fragment token and
 lineage derived by the production face enumeration while the builder computes
-both from the text above. CI FAST's corpus parity step holds all
-fifty-seven byte-identical between the builder and the repository. The thirteen v6
+both from the text above. The four `CADB` v7 fixtures are asserted by
+`REV_FMT_07`: the two valid ones and the bad axis through the writers above, the
+unknown kind by patching the full fixture's kind byte and its CRC while the
+builder writes kind 9 in place. CI FAST's corpus parity step holds all
+sixty-one byte-identical between the builder and the repository. The thirteen v6
 fixtures are single-body Construction projects with the `SCNE` record of the
 v4/v5 ones, and every one of the forty-four before them is byte-for-byte
-unchanged: none needs what v6 adds.
+unchanged: none needs what v6 adds. The four v7 fixtures are single-body
+projects on the same `SCNE` record, and every one of the fifty-seven before them
+is byte-for-byte unchanged: none of them revolves.
 
 Regenerate and re-verify with:
 

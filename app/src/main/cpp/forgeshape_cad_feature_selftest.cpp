@@ -18,6 +18,7 @@
 #include "forgeshape_cad_feature.h"
 #include "forgeshape_cad_kernel.h"
 #include "forgeshape_cad_multiface_selftest.h"
+#include "forgeshape_cad_revolve_selftest.h"
 #include "forgeshape_cad_v6_selftest.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_history.h"
@@ -5799,6 +5800,15 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + multifacePerformance;
+    // Revolve New Body (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): the feature kind, the
+    // solid, the session and `CADB` v7, beside the chain they extend.
+    std::vector<ArrangementSelfTestCheck> revolve;
+    std::string revolvePerformance;
+    runCadRevolveSelfTests(&revolve, &revolvePerformance);
+    for (const ArrangementSelfTestCheck& check : revolve) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + revolvePerformance;
     // The retained sketch table, the selection variant and `CADB` v6
     // (`CAD-V6-S1`): model and persistence only, wired to no session, JNI or
     // UI path, so -- like the arrangement -- they ride in this suite.
@@ -5809,6 +5819,7 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_digests += " " + v6Digests;
+    g_digests += " " + cadRevolveFixtureDigests();
     return r.n;
 }
 

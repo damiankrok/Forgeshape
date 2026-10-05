@@ -1757,6 +1757,120 @@ function New-CadOverlapFaceFile {
         -Features @($base))
 }
 
+# ---------------------------------------------------------------------------
+# CADB v7 (CAD-V6-REVOLVE-NEWBODY-E2E-R1): an explicit feature KIND
+# ---------------------------------------------------------------------------
+#
+# v7 is v6's layout (7g) with a KIND after every feature id and a payload of
+# that kind's own -- DATA_PACKAGE_SPEC.md 7h:
+#
+#   FEATURE    featureId u32 | kind u8 (1 Extrude, 2 Revolve) | KIND PAYLOAD
+#   EXTRUDE    exactly the v6 bytes after featureId (operation .. selection)
+#   REVOLVE    operation u8 (1 New Body, the only one in R1) | sketchId u32 |
+#              axisEntityId u32 | axisEdgeLocalIndex u32 | angleDegrees f64 |
+#              direction u8 (1 Positive, 2 Negative) |
+#              selectionKind u8 and its block, exactly as 7g
+#
+# A Revolve stores no extent, no depth and no second distance: nothing of it is
+# an Extrude field. These writers validate nothing, so the two corrupt
+# fixtures are CONSTRUCTED with their bad value in place.
+
+function Add-CadSelectionV7 {
+    param($Buffer, $Feature)
+    Add-U8  $Buffer $Feature.SelectionKind
+    if ($Feature.SelectionKind -eq 1) {
+        Add-U32 $Buffer ([uint32] $Feature.ProfileEntityId)
+        Add-CadRegions $Buffer $Feature.Regions
+    } else {
+        $faces = @(if ($null -ne $Feature.Faces) { $Feature.Faces })
+        Add-U32 $Buffer ([uint32] $faces.Count)
+        foreach ($face in $faces) {
+            Add-CadFragmentCycle $Buffer $face.Outer
+            $holes = @(if ($null -ne $face.Holes) { $face.Holes })
+            Add-U32 $Buffer ([uint32] $holes.Count)
+            foreach ($hole in $holes) { Add-CadFragmentCycle $Buffer $hole }
+        }
+    }
+}
+
+function Add-CadFeatureV7 {
+    param($Buffer, $Feature)
+    Add-U32 $Buffer ([uint32] $Feature.FeatureId)
+    Add-U8  $Buffer $Feature.KindCode
+    # The payload follows the SHAPE of the feature object, never its kind
+    # byte: a feature built as a Revolve writes the Revolve payload whatever
+    # kind it carries, so KindCode 9 constructs an unknown kind standing in
+    # front of an otherwise well-formed payload.
+    if ($null -ne $Feature.PSObject.Properties['AxisEntityId']) {
+        Add-U8  $Buffer $Feature.OperationCode
+        Add-U32 $Buffer ([uint32] $Feature.SketchId)
+        Add-U32 $Buffer ([uint32] $Feature.AxisEntityId)
+        Add-U32 $Buffer ([uint32] $Feature.AxisEdgeLocalIndex)
+        Add-F64 $Buffer $Feature.AngleDegrees
+        Add-U8  $Buffer $Feature.RevolveDirectionCode
+    } else {
+        Add-U8  $Buffer $Feature.OperationCode
+        Add-U32 $Buffer ([uint32] $Feature.SketchId)
+        Add-U8  $Buffer $Feature.ExtentCode
+        Add-U8  $Buffer $Feature.DirectionCode
+        Add-F64 $Buffer $Feature.Depth
+        Add-F64 $Buffer $Feature.Second
+    }
+    Add-CadSelectionV7 $Buffer $Feature
+}
+
+function New-CadPayloadV7 {
+    param($Bodies)
+    $p = New-ByteBuffer
+    $bodyList = @($Bodies)
+    Add-U32 $p ([uint32] $bodyList.Count)
+    foreach ($body in $bodyList) {
+        Add-U64 $p ([uint64] $body.ObjectId)
+        Add-U32 $p ([uint32] $body.NextSketchId)
+        Add-U32 $p ([uint32] $body.NextFeatureId)
+        $sketches = @($body.Sketches)
+        Add-U32 $p ([uint32] $sketches.Count)
+        foreach ($sketch in $sketches) { Add-CadSketchV6 $p $sketch }
+        $features = @($body.Features)
+        Add-U32 $p ([uint32] $features.Count)
+        foreach ($feature in $features) { Add-CadFeatureV7 $p $feature }
+    }
+    return $p.ToArray()
+}
+
+# A Revolve New Body base on a world-XY root sketch, selecting one region.
+function New-CadRevolveBase {
+    param([uint32] $ProfileEntityId, [uint32] $AxisEntityId, [uint32] $AxisEdgeLocalIndex,
+          [double] $AngleDegrees, [int] $RevolveDirectionCode, [int] $KindCode = 2)
+    return [pscustomobject]@{
+        FeatureId = 1; KindCode = $KindCode; OperationCode = 1; SketchId = 1
+        AxisEntityId = $AxisEntityId; AxisEdgeLocalIndex = $AxisEdgeLocalIndex
+        AngleDegrees = $AngleDegrees; RevolveDirectionCode = $RevolveDirectionCode
+        SelectionKind = 1; ProfileEntityId = $ProfileEntityId; Regions = (New-CadRegionSelection)
+        Faces = @()
+    }
+}
+
+# CAD REVOLVE: a 1 x 1 m square (entity 1) from u 1..2, v 0..1 on XY, and a
+# separate Line (entity 2) on u = 0 from v -1 to v 2 as the axis. The square is
+# revolved about the line, edge 0 -- a tube. `$KindCode` 9 constructs the
+# unknown-kind refusal from this very fixture.
+function New-CadRevolveFile {
+    param([double] $AngleDegrees = 360.0, [int] $RevolveDirectionCode = 1,
+          [uint32] $AxisEntityId = 2, [int] $KindCode = 2)
+    $sketch = New-CadSketchV6 -SketchId 1 -PlacementCode 1 -PlaneCode 1 -NextEntityId 3 `
+        -Entities @((New-CadRectangleEntity 1 1.5 0.5 1.0 1.0), (New-CadLineEntity 2 0.0 -1.0 0.0 2.0))
+    $base = New-CadRevolveBase -ProfileEntityId 1 -AxisEntityId $AxisEntityId `
+        -AxisEdgeLocalIndex 0 -AngleDegrees $AngleDegrees `
+        -RevolveDirectionCode $RevolveDirectionCode -KindCode $KindCode
+    $body = [pscustomobject]@{ ObjectId = 1; NextSketchId = 2; NextFeatureId = 2
+                               Sketches = @($sketch); Features = @($base) }
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 7 $true (New-CadPayloadV7 @($body))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
 # The one Imported Mesh every imported fixture carries.
 #
 # Four vertices, two submeshes with DIFFERENT doubleSided answers, and every
@@ -2358,6 +2472,10 @@ $fixtures = [ordered]@{
     'cad_spline_face_v6.forge'        = (New-CadSplineFaceFile)
     'cad_overlap_face_v6.forge'       = (New-CadOverlapFaceFile)
     'cad_fragment_support_v6.forge'   = (New-CadFragmentSupportFile)
+    'cad_revolve_full_v7.forge'       = (New-CadRevolveFile)
+    'cad_revolve_partial_v7.forge'    = (New-CadRevolveFile -AngleDegrees 90.0 -RevolveDirectionCode 2)
+    'cad_revolve_bad_axis_v7.forge'   = (New-CadRevolveFile -AxisEntityId 7)
+    'cad_bad_feature_kind_v7.forge'   = (New-CadRevolveFile -KindCode 9)
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -2430,6 +2548,11 @@ foreach ($name in @('cad_sketch_shared_v6', 'cad_face_lens_v6', 'cad_face_protru
                     'cad_duplicate_sketch_id_v6', 'cad_bad_selection_kind_v6',
                     'cad_noncanonical_face_v6', 'cad_unresolved_face_v6', 'cad_spline_face_v6',
                     'cad_overlap_face_v6', 'cad_fragment_support_v6')) {
+    Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
+}
+Write-Host 'Digests of the CADB v7 fixtures (CAD-V6-REVOLVE-NEWBODY-E2E-R1):'
+foreach ($name in @('cad_revolve_full_v7', 'cad_revolve_partial_v7', 'cad_revolve_bad_axis_v7',
+                    'cad_bad_feature_kind_v7')) {
     Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
 }
 Write-Host 'Lineage tokens the v5 fixtures carry (7c / 7f signature):'
