@@ -599,8 +599,13 @@ public final class CadCanvasExtrudeTest {
                     "Intersect", "Revolve"}) {
                 assertFalse("E2E-CADUXS1-08: the cluster never names " + forbidden,
                         containsText(canvas, forbidden));
-                assertFalse("nor does the sketch panel", containsText(workspace.sketchEditor(),
-                        forbidden));
+                // Since `CAD-V6-REVOLVE-NEWBODY-E2E-R1` the sketch panel offers
+                // "Revolve…" over a chosen region -- a real act, never an
+                // operation of the extrusion -- so only the cluster is held to it.
+                if (!"Revolve".equals(forbidden)) {
+                    assertFalse("nor does the sketch panel",
+                            containsText(workspace.sketchEditor(), forbidden));
+                }
             }
             return null;
         });
