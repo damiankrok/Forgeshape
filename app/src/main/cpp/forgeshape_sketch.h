@@ -236,11 +236,46 @@ enum class CadStatus : uint8_t {
     // model's `OverlappingRegions` describes a different thing: these faces do
     // not overlap at all.
     PlanarFacesTouchAtPoint,
+    // --- `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: the Revolve feature. APPENDED. ---
+    //
+    // A feature kind code outside Extrude / Revolve.
+    InvalidFeatureKind,
+    // A Revolve whose axis names no edge of its sketch: the entity is gone, or
+    // the edge index is past the entity's edges. Never retargeted to a nearby
+    // edge.
+    RevolveAxisUnresolved,
+    // A Revolve axis on a Circle, an Arc or a Spline. An axis is a straight
+    // edge: a Line, one Polyline segment, or one Rectangle edge.
+    RevolveAxisNotStraight,
+    // The axis edge has no direction (its two ends coincide).
+    RevolveAxisDegenerate,
+    // A sweep angle that is not finite, not positive, below the minimum or
+    // above a full turn (360 degrees).
+    RevolveAngleInvalid,
+    // A Revolve direction code outside the two.
+    RevolveDirectionInvalid,
+    // The selected area has material on BOTH sides of the axis line: its solid
+    // of revolution would pass through itself.
+    RevolveProfileCrossesAxis,
+    // The selected area lies entirely on the axis: it sweeps no volume.
+    RevolveZeroRadius,
+    // Selected areas on OPPOSITE sides of the axis whose sweeps would overlap
+    // or touch: a valid result would need a boolean union R1 does not make.
+    RevolveComponentsOverlap,
+    // A body's payload contradicts its kind: an Extrude body carrying Revolve
+    // values, or a Revolve body carrying Extrude values. Refused, never read
+    // as either.
+    RevolvePayloadMismatch,
+    // A later feature on a Revolve body. Revolve Add/Cut and features on a
+    // revolved body are not R1.
+    RevolveLaterFeatureUnsupported,
+    // A Revolve was asked for before its axis was chosen.
+    RevolveNeedsAxis,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 62;
+constexpr int kCadStatusCount = 74;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);

@@ -63,6 +63,143 @@ const char* cadSelectionKindName(CadSelectionKind kind) {
     return "unknown";
 }
 
+const char* cadFeatureKindName(CadFeatureKind kind) {
+    switch (kind) {
+        case CadFeatureKind::Extrude: return "Extrude";
+        case CadFeatureKind::Revolve: return "Revolve";
+    }
+    return "unknown";
+}
+
+bool cadFeatureKindFromIndex(int index, CadFeatureKind* out) {
+    if (out == nullptr || index < 0 || index >= kCadFeatureKindCount) {
+        return false;
+    }
+    *out = static_cast<CadFeatureKind>(index);
+    return true;
+}
+
+int cadFeatureKindIndex(CadFeatureKind kind) { return static_cast<int>(kind); }
+
+const char* revolveDirectionName(RevolveDirection direction) {
+    switch (direction) {
+        case RevolveDirection::Positive: return "Positive";
+        case RevolveDirection::Negative: return "Negative";
+    }
+    return "unknown";
+}
+
+bool revolveDirectionFromIndex(int index, RevolveDirection* out) {
+    if (out == nullptr || index < 0 || index >= kRevolveDirectionCount) {
+        return false;
+    }
+    *out = static_cast<RevolveDirection>(index);
+    return true;
+}
+
+int revolveDirectionIndex(RevolveDirection direction) { return static_cast<int>(direction); }
+
+bool sameCadSketchEdgeRef(const CadSketchEdgeRef& a, const CadSketchEdgeRef& b) {
+    return a.entityId == b.entityId && a.edgeLocalIndex == b.edgeLocalIndex;
+}
+
+std::vector<SketchStraightEdge> sketchEntityStraightEdges(const SketchEntity& entity) {
+    std::vector<SketchStraightEdge> edges;
+    if (const SketchLine* line = entity.line()) {
+        edges.push_back(SketchStraightEdge{0u, line->start, line->end});
+    } else if (const SketchPolyline* polyline = entity.polyline()) {
+        // The AUTHORED segments, exactly as the stroke is drawn: vertices[i] ->
+        // vertices[i+1], and a closed polyline's closing segment last.
+        const size_t n = polyline->vertices.size();
+        for (size_t i = 0; i + 1 < n; ++i) {
+            edges.push_back(SketchStraightEdge{static_cast<uint32_t>(i), polyline->vertices[i],
+                                               polyline->vertices[i + 1]});
+        }
+        if (polyline->closed && n >= 3) {
+            edges.push_back(SketchStraightEdge{static_cast<uint32_t>(n - 1), polyline->vertices[n - 1],
+                                               polyline->vertices[0]});
+        }
+    } else if (const SketchRectangle* rectangle = entity.rectangle()) {
+        // The same counter-clockwise corners, and so the same edge numbering, a
+        // rectangle's extruded side faces already wear.
+        const std::vector<SketchPoint> corners = rectangleProfilePolygon(*rectangle);
+        for (uint32_t k = 0; k < 4u; ++k) {
+            edges.push_back(SketchStraightEdge{k, corners[k], corners[(k + 1u) % 4u]});
+        }
+    }
+    // A circle, an arc and a spline offer no straight edge.
+    return edges;
+}
+
+CadStatus resolveRevolveAxis(const CadSketch& sketch, const CadSketchEdgeRef& ref,
+                             RevolveAxis2D* out) {
+    if (ref.entityId == kNoSketchEntity) {
+        return CadStatus::RevolveNeedsAxis;
+    }
+    const SketchEntity* entity = findSketchEntity(sketch, ref.entityId);
+    if (entity == nullptr) {
+        return CadStatus::RevolveAxisUnresolved;
+    }
+    if (entity->circle() != nullptr || entity->arc() != nullptr || entity->spline() != nullptr) {
+        return CadStatus::RevolveAxisNotStraight;
+    }
+    for (const SketchStraightEdge& edge : sketchEntityStraightEdges(*entity)) {
+        if (edge.edgeLocalIndex != ref.edgeLocalIndex) {
+            continue;
+        }
+        const double du = edge.end.u - edge.start.u;
+        const double dv = edge.end.v - edge.start.v;
+        const double length = std::sqrt(du * du + dv * dv);
+        if (!std::isfinite(length) || length <= kSketchCoincidenceMeters) {
+            return CadStatus::RevolveAxisDegenerate;
+        }
+        if (out != nullptr) {
+            out->start = edge.start;
+            out->end = edge.end;
+            out->du = du / length;
+            out->dv = dv / length;
+            out->length = length;
+        }
+        return CadStatus::Ok;
+    }
+    return CadStatus::RevolveAxisUnresolved;
+}
+
+CadStatus validateRevolveParameters(const RevolveFeature& revolve) {
+    const int direction = revolveDirectionIndex(revolve.direction);
+    if (direction < 0 || direction >= kRevolveDirectionCount) {
+        return CadStatus::RevolveDirectionInvalid;
+    }
+    // Refused, never clamped: 400 degrees is not a full turn the user meant,
+    // and zero is not a thin one.
+    if (!std::isfinite(revolve.angleDegrees) || revolve.angleDegrees < kMinRevolveAngleDegrees
+        || revolve.angleDegrees > kMaxRevolveAngleDegrees) {
+        return CadStatus::RevolveAngleInvalid;
+    }
+    return CadStatus::Ok;
+}
+
+ExtrudeFeature revolveSelectionCarrier(const RevolveFeature& revolve) {
+    ExtrudeFeature carrier;
+    carrier.profileEntityId = revolve.profileEntityId;
+    carrier.profileHoleIds = revolve.profileHoleIds;
+    carrier.additionalRegions = revolve.additionalRegions;
+    carrier.selection = revolve.selection;
+    carrier.planarFaces = revolve.planarFaces;
+    return carrier;
+}
+
+void setRevolveSelectionFrom(RevolveFeature* revolve, const ExtrudeFeature& selection) {
+    if (revolve == nullptr) {
+        return;
+    }
+    revolve->profileEntityId = selection.profileEntityId;
+    revolve->profileHoleIds = selection.profileHoleIds;
+    revolve->additionalRegions = selection.additionalRegions;
+    revolve->selection = selection.selection;
+    revolve->planarFaces = selection.planarFaces;
+}
+
 // ---------------------------------------------------------------------------
 // The two durable distances
 // ---------------------------------------------------------------------------
@@ -323,6 +460,13 @@ bool sameExtrudeFeature(const ExtrudeFeature& a, const ExtrudeFeature& b) {
            && sameBits(a.secondDistance, b.secondDistance);
 }
 
+bool sameRevolveFeature(const RevolveFeature& a, const RevolveFeature& b) {
+    // The selection compared by the one rule an extrusion's is.
+    return sameExtrudeFeature(revolveSelectionCarrier(a), revolveSelectionCarrier(b))
+           && sameCadSketchEdgeRef(a.axis, b.axis) && sameBits(a.angleDegrees, b.angleDegrees)
+           && a.direction == b.direction;
+}
+
 bool sameCadSketchRecord(const CadSketchRecord& a, const CadSketchRecord& b) {
     return a.sketchId == b.sketchId && a.hasFeatureSupport == b.hasFeatureSupport
            && sameCadFeatureSupport(a.featureSupport, b.featureSupport)
@@ -410,6 +554,14 @@ CadBodyState makeCadBodyState(CadSketch sketch, ExtrudeFeature extrude) {
     return state;
 }
 
+CadBodyState makeCadRevolveBodyState(CadSketch sketch, RevolveFeature revolve) {
+    CadBodyState state;
+    state.sketches.front().sketch = std::move(sketch);
+    state.baseKind = CadFeatureKind::Revolve;
+    state.revolve = std::move(revolve);
+    return state;
+}
+
 CadSketchId addCadSketchRecord(CadBodyState* state, CadSketch sketch,
                                const CadFeatureSupport* support) {
     if (state == nullptr || state->sketches.size() >= kMaxCadSketches
@@ -473,6 +625,10 @@ uint32_t appendCadLaterFeatureWithSketch(CadBodyState* state, CadFeatureOperatio
 }
 
 bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
+    // A Revolve has no encoding below v7 (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`).
+    if (state.baseKind != CadFeatureKind::Extrude) {
+        return false;
+    }
     const size_t later = state.laterFeatures.size();
     // A fragment side token (`CAD-V6-S2`) has no v1..v5 encoding: a body whose
     // base stands on one -- through a TopoRef to ANOTHER body's face-selected
@@ -524,7 +680,14 @@ bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
     return true;
 }
 
+bool cadBodyStateUsesRevolve(const CadBodyState& state) {
+    return state.baseKind == CadFeatureKind::Revolve;
+}
+
 bool cadBodyStateUsesPlanarFaces(const CadBodyState& state) {
+    if (state.baseKind == CadFeatureKind::Revolve) {
+        return state.revolve.selection == CadSelectionKind::PlanarFaces;
+    }
     if (state.extrude.selection == CadSelectionKind::PlanarFaces) {
         return true;
     }
@@ -549,10 +712,13 @@ bool cadFeatureAt(const CadBodyState& state, uint32_t index, CadFeatureView* out
     const ExtrudeFeature* extrude =
             index == 0 ? &state.extrude : &state.laterFeatures[index - 1u].extrude;
     const CadSketchRecord* record = findCadSketchRecord(state, sketchId);
+    const bool revolve = index == 0 && state.baseKind == CadFeatureKind::Revolve;
     *out = CadFeatureView{featureId,
                           operation,
                           sketchId,
                           record != nullptr ? &record->sketch : nullptr,
+                          revolve ? CadFeatureKind::Revolve : CadFeatureKind::Extrude,
+                          revolve ? &state.revolve : nullptr,
                           extrude,
                           record != nullptr && record->hasFeatureSupport ? &record->featureSupport
                                                                          : nullptr};
@@ -579,7 +745,8 @@ uint32_t nextCadFeatureId(const CadBodyState& state) { return state.nextFeatureI
 bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b) {
     if (a.sketches.size() != b.sketches.size() || a.nextSketchId != b.nextSketchId
         || a.baseSketchId != b.baseSketchId || a.nextFeatureId != b.nextFeatureId
-        || !sameExtrudeFeature(a.extrude, b.extrude)
+        || a.baseKind != b.baseKind || !sameExtrudeFeature(a.extrude, b.extrude)
+        || !sameRevolveFeature(a.revolve, b.revolve)
         || a.laterFeatures.size() != b.laterFeatures.size()) {
         return false;
     }
@@ -937,6 +1104,26 @@ CadStatus validateCadFeatureGeometry(const CadSketch& sketch, const ExtrudeFeatu
     return CadStatus::Ok;
 }
 
+CadStatus validateRevolveFeatureGeometry(const CadSketch& sketch, const RevolveFeature& revolve,
+                                         SketchRegionExtraction* outRegions) {
+    const CadStatus sketchWhy = validateCadSketch(sketch);
+    if (sketchWhy != CadStatus::Ok) {
+        return sketchWhy;
+    }
+    const CadStatus parametersWhy = validateRevolveParameters(revolve);
+    if (parametersWhy != CadStatus::Ok) {
+        return parametersWhy;
+    }
+    const CadStatus axisWhy = resolveRevolveAxis(sketch, revolve.axis, nullptr);
+    if (axisWhy != CadStatus::Ok) {
+        return axisWhy;
+    }
+    // The selection, by exactly the rules an Extrude's is judged by: the
+    // carrier's default extent always passes, so every refusal here is about
+    // WHAT is selected.
+    return validateCadFeatureGeometry(sketch, revolveSelectionCarrier(revolve), outRegions);
+}
+
 namespace {
 
 // The table's own rules, before any geometry: ids, order, high-water marks,
@@ -1009,7 +1196,41 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
     if (tableWhy != CadStatus::Ok) {
         return tableWhy;
     }
+    const int kind = cadFeatureKindIndex(state.baseKind);
+    if (kind < 0 || kind >= kCadFeatureKindCount) {
+        return CadStatus::InvalidFeatureKind;
+    }
     SketchRegionExtraction baseRegions;
+    if (state.baseKind == CadFeatureKind::Revolve) {
+        // One encoding per body: the payload the kind does not use is the
+        // canonical empty one, and nothing else.
+        if (!sameExtrudeFeature(state.extrude, ExtrudeFeature{})) {
+            return CadStatus::RevolvePayloadMismatch;
+        }
+        if (!state.laterFeatures.empty()) {
+            return CadStatus::RevolveLaterFeatureUnsupported;
+        }
+        const CadStatus revolveWhy =
+                validateRevolveFeatureGeometry(cadBaseSketch(state), state.revolve, &baseRegions);
+        if (revolveWhy != CadStatus::Ok) {
+            return revolveWhy;
+        }
+        // Whether the area stays on one side of the axis, and whether its
+        // pieces would collide, is decided by deriving the feature -- no
+        // kernel -- so a file or a candidate with a crossing profile is
+        // refused here by name rather than at its first regeneration.
+        const CadStatus chainWhy = validateCadChain(state);
+        if (chainWhy != CadStatus::Ok) {
+            return chainWhy;
+        }
+        if (outProfiles != nullptr) {
+            *outProfiles = std::move(baseRegions.loops);
+        }
+        return CadStatus::Ok;
+    }
+    if (!sameRevolveFeature(state.revolve, RevolveFeature{})) {
+        return CadStatus::RevolvePayloadMismatch;
+    }
     const CadStatus baseWhy =
             validateCadFeatureGeometry(cadBaseSketch(state), state.extrude, &baseRegions);
     if (baseWhy != CadStatus::Ok) {
@@ -1202,7 +1423,8 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
     }
 
     // Every body any earlier version created: R0's path, bit for bit.
-    if (chain.size() == 1u && extrudeSelectsSingleSimpleProfile(base.extrude)) {
+    if (chain.size() == 1u && base.kind == CadFeatureKind::Extrude
+        && extrudeSelectsSingleSimpleProfile(base.extrude)) {
         const SketchRegion& region = base.regions.regions[base.chosen.front()];
         const ClosedProfile& profile = base.regions.loops.profiles[region.outerLoop];
         CadBodyMesh result;
@@ -1239,6 +1461,18 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
     }
     uint32_t components = base.componentCount();
     double volume = cadSolidVolume(body);
+    if (base.kind == CadFeatureKind::Revolve) {
+        // A revolved solid has no R0 path to be bit-identical to and is built
+        // by new code, so it is held to the production kernel's own validity
+        // answer -- closed, oriented 2-manifold, positive volume -- before it
+        // can be published, previewed or committed. Its measure is the kernel's.
+        CadSolidMeasure measure;
+        if (cadKernelValidateSolid(body, &measure) != CadKernelStatus::Ok) {
+            return finish(CadStatus::KernelFailed, kCadFeatureId);
+        }
+        components = measure.components;
+        volume = measure.volume;
+    }
     if (chain.size() > 1u) {
         const auto t0 = std::chrono::steady_clock::now();
         CadSolidMeasure measure;

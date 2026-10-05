@@ -54,6 +54,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_cad_body.cpp
     forgeshape_cad_face.cpp
     forgeshape_cad_feature.cpp
+    forgeshape_cad_revolve.cpp
     forgeshape_cad_kernel.cpp
     forgeshape_cad_extrude_tool.cpp
     forgeshape_sketch.cpp

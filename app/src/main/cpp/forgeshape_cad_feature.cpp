@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "forgeshape_cad_revolve.h"
+
 namespace forgeshape {
 namespace {
 
@@ -305,6 +307,154 @@ CadStatus deriveFeature(uint32_t featureId, CadFeatureOperation operation, const
     return CadStatus::Ok;
 }
 
+// The selected union as revolve components (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`):
+// every loop's polygon with, per edge, the tag of the side face it sweeps (in
+// exactly the order the face table lists them, from `sideTag`), the entity it
+// lies on and whether it is a piece of a curve.
+std::vector<RevolveComponent> revolveComponentsOf(const CadFeatureGeometry& g, uint32_t sideTag) {
+    std::vector<RevolveComponent> components;
+    if (!g.planarComponents.empty()) {
+        for (const PlanarProfileComponent& component : g.planarComponents) {
+            RevolveComponent out;
+            std::vector<const PlanarProfileLoop*> loops{&component.outer};
+            for (const PlanarProfileLoop& hole : component.holes) loops.push_back(&hole);
+            for (const PlanarProfileLoop* loop : loops) {
+                RevolveLoop r;
+                r.polygon = loop->polygon;
+                for (uint32_t fragment : loop->edgeFragment) {
+                    r.edgeTag.push_back(sideTag + fragment);
+                    r.edgeEntity.push_back(fragment < loop->fragments.size()
+                                                   ? loop->fragments[fragment].sourceEntityId
+                                                   : kNoSketchEntity);
+                    r.edgeCurved.push_back(fragment < loop->fragmentCurved.size()
+                                                   ? loop->fragmentCurved[fragment]
+                                                   : 0u);
+                }
+                sideTag += static_cast<uint32_t>(loop->fragments.size());
+                out.loops.push_back(std::move(r));
+            }
+            components.push_back(std::move(out));
+        }
+        return components;
+    }
+    const std::vector<ClosedProfile>& profiles = g.regions.loops.profiles;
+    for (const SketchRegionComponent& component : g.components) {
+        RevolveComponent out;
+        std::vector<uint32_t> loops{component.outerLoop};
+        loops.insert(loops.end(), component.holeLoops.begin(), component.holeLoops.end());
+        for (uint32_t index : loops) {
+            const ClosedProfile& profile = profiles[index];
+            const size_t n = profile.polygon.size();
+            RevolveLoop r;
+            r.polygon = profile.polygon;
+            for (size_t k = 0; k < n; ++k) {
+                r.edgeTag.push_back(sideTag++);
+                r.edgeEntity.push_back(profile.edgeEntityId.size() == n ? profile.edgeEntityId[k]
+                                                                        : profile.anchorEntityId);
+                const bool curved = profile.fromCircle
+                                    || (profile.edgeCurved.size() == n && profile.edgeCurved[k] != 0u);
+                r.edgeCurved.push_back(curved ? 1u : 0u);
+            }
+            out.loops.push_back(std::move(r));
+        }
+        components.push_back(std::move(out));
+    }
+    return components;
+}
+
+// A Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): the selection resolved by the
+// rules an Extrude's is, the axis resolved exactly, the side of every union
+// component decided on the true curves, and the face table -- a start and an
+// end cap on a partial sweep, then one swept side per boundary edge (fragment
+// for a PlanarFaces selection) in the order an Extrude lists its walls. Every
+// face is INELIGIBLE in R1: nothing may stand on a revolved face yet.
+CadStatus deriveRevolveFeature(CadFeatureGeometry* g) {
+    CadStatus why = validateRevolveParameters(g->revolve);
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    why = resolveRevolveAxis(g->sketch, g->revolve.axis, &g->revolveAxis);
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    if (g->extrude.selection == CadSelectionKind::PlanarFaces) {
+        SketchArrangement arrangement;
+        std::vector<size_t> faces;
+        why = resolvePlanarFaceSelection(g->sketch, g->extrude, &arrangement, &faces);
+        if (why != CadStatus::Ok) {
+            return why;
+        }
+        why = mergePlanarFaceSelection(arrangement, faces, &g->planarComponents);
+        if (why != CadStatus::Ok) {
+            return why;
+        }
+        if (g->planarComponents.empty()) {
+            return CadStatus::ProfileNotFound;
+        }
+    } else {
+        why = validateCadFeatureGeometry(g->sketch, g->extrude, &g->regions);
+        if (why != CadStatus::Ok) {
+            return why;
+        }
+        for (const ProfileRegionRef& ref : extrudeRegions(g->extrude)) {
+            for (uint32_t r = 0; r < g->regions.regions.size(); ++r) {
+                if (g->regions.regions[r].outerAnchorId == ref.outerAnchorId) {
+                    g->chosen.push_back(r);
+                    break;
+                }
+            }
+        }
+        g->components = mergeSelectedRegions(g->regions, extrudeRegions(g->extrude));
+        if (g->chosen.empty() || g->components.empty()) {
+            return CadStatus::ProfileNotFound;
+        }
+    }
+    why = classifyRevolveComponents(g->sketch, g->revolveAxis, g->revolve.angleDegrees,
+                                    revolveComponentsOf(*g, 0u), &g->revolveSides);
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    // The faces. Their frames are the sketch's own, placed: a revolved face
+    // carries no sketch in R1, so a frame here only has to be finite.
+    const bool full = revolveIsFullTurn(g->revolve);
+    if (!full) {
+        for (const bool start : {true, false}) {
+            CadFeatureFace cap;
+            cap.token.kind = start ? CadFaceKind::CapPlane : CadFaceKind::CapFar;
+            cap.eligible = false;
+            cap.frame = g->placement;
+            g->faces.push_back(cap);
+        }
+    }
+    if (!g->planarComponents.empty()) {
+        for (const PlanarProfileComponent& component : g->planarComponents) {
+            appendFragmentSides(g, component.outer, /*hole=*/false, /*featureEligible=*/false);
+            for (const PlanarProfileLoop& hole : component.holes) {
+                appendFragmentSides(g, hole, /*hole=*/true, /*featureEligible=*/false);
+            }
+        }
+    } else {
+        const std::vector<ClosedProfile>& loops = g->regions.loops.profiles;
+        for (const SketchRegionComponent& component : g->components) {
+            const ClosedProfile& outer = loops[component.outerLoop];
+            for (uint32_t k = 0; k < outer.polygon.size(); ++k) {
+                g->faces.push_back(sideFace(*g, outer, k, /*hole=*/false, /*featureEligible=*/false));
+            }
+            for (uint32_t h : component.holeLoops) {
+                const ClosedProfile& hole = loops[h];
+                for (uint32_t k = 0; k < hole.polygon.size(); ++k) {
+                    g->faces.push_back(sideFace(*g, hole, k, /*hole=*/true, /*featureEligible=*/false));
+                }
+            }
+        }
+    }
+    if (!framesFinite(*g)) {
+        return CadStatus::RegenerationFailed;
+    }
+    g->signature = featureSignature(*g);
+    return CadStatus::Ok;
+}
+
 }  // namespace
 
 DVec3 cadFramePoint(const CadFrame64& frame, double a, double b, double c) {
@@ -406,8 +556,20 @@ CadStatus walkCadChain(const CadBodyState& state, std::vector<CadFeatureGeometry
             return refuse(placed, view.featureId);
         }
         CadFeatureGeometry g;
-        const CadStatus why =
-                deriveFeature(view.featureId, view.operation, *view.sketch, *view.extrude, placement, &g);
+        CadStatus why = CadStatus::Ok;
+        if (view.kind == CadFeatureKind::Revolve && view.revolve != nullptr) {
+            g.featureId = view.featureId;
+            g.operation = view.operation;
+            g.sketch = *view.sketch;
+            g.kind = CadFeatureKind::Revolve;
+            g.revolve = *view.revolve;
+            g.extrude = revolveSelectionCarrier(*view.revolve);
+            g.placement = placement;
+            why = deriveRevolveFeature(&g);
+        } else {
+            why = deriveFeature(view.featureId, view.operation, *view.sketch, *view.extrude,
+                                placement, &g);
+        }
         if (why != CadStatus::Ok) {
             return refuse(why, view.featureId);
         }
@@ -552,6 +714,15 @@ CadStatus appendPrism(const CadFeatureGeometry& g, const std::vector<std::vector
 CadStatus appendCadFeatureSolid(const CadFeatureGeometry& g, uint32_t tagOffset, CadSolid* solid) {
     if (solid == nullptr) {
         return CadStatus::RegenerationFailed;
+    }
+    if (g.kind == CadFeatureKind::Revolve) {
+        // The face table lists the two caps first on a partial sweep and none
+        // on a full turn; the sides follow in the same walk either way.
+        const bool full = revolveIsFullTurn(g.revolve);
+        const uint32_t sideTag = tagOffset + (full ? 0u : 2u);
+        return appendRevolveSolid(g.placement, g.revolveAxis, g.revolve.angleDegrees,
+                                  g.revolve.direction, revolveComponentsOf(g, sideTag),
+                                  g.revolveSides, tagOffset + 0u, tagOffset + 1u, solid);
     }
     CadSolid out = *solid;
     // The two caps are the table's first two entries; which one the +N set of

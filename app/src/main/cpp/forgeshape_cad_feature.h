@@ -54,6 +54,17 @@ struct CadFeatureGeometry {
     CadFeatureOperation operation = CadFeatureOperation::NewBody;
     // Copies, so the geometry never dangles into a state that changed.
     CadSketch sketch;
+    // Extrude or Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`). For a Revolve,
+    // `extrude` is the selection CARRIER (`revolveSelectionCarrier`: the
+    // revolve's selection over a default extrusion) through which the shared
+    // region and planar-face rules below read what is selected -- its extent is
+    // never used -- and `revolve` is the authored feature.
+    CadFeatureKind kind = CadFeatureKind::Extrude;
+    RevolveFeature revolve;
+    // A Revolve's axis, resolved against `sketch`, and per union component the
+    // side of the axis it lies on (+1 / -1) -- both derived at derivation.
+    RevolveAxis2D revolveAxis{};
+    std::vector<int> revolveSides;
     ExtrudeFeature extrude;
     SketchRegionExtraction regions;
     // Indices into `regions.regions`, in selection (ascending anchor) order.

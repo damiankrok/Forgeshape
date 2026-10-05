@@ -55,4 +55,3 @@ truncated_v1.forge Truncated
 unknown_optional_v1.forge Ok cad_bodies=0 regenerated=0
 unknown_required_v1.forge UnknownRequiredSection
 unsupported_major_v1.forge UnsupportedMajor
-CORPUS_FIXTURES 57

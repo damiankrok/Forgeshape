@@ -178,6 +178,15 @@ constexpr uint16_t kCadSectionVersionV5 = 5;
 // bytes. An older build refuses v6 rather than opening a body with a shared
 // sketch duplicated or a face selection silently read as something else.
 constexpr uint16_t kCadSectionVersionV6 = 6;
+// CAD-V6-REVOLVE-NEWBODY-E2E-R1: version 7 is v6's layout with an explicit
+// FEATURE KIND after every feature id and a payload of that kind's own
+// (DATA_PACKAGE_SPEC.md §7h): Extrude (code 1) carries exactly the bytes a v6
+// feature carries after its id, Revolve (code 2) its operation, sketch id, axis
+// edge ref, angle in degrees and direction, then the same selection block.
+// Written only when a body carries a Revolve; every project without one keeps
+// the v1..v6 bytes it always had. An older build refuses v7 as a required
+// section at an unknown version rather than reading a Revolve as an Extrude.
+constexpr uint16_t kCadSectionVersionV7 = 7;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.

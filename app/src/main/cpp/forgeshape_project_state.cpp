@@ -614,6 +614,31 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
             mixSelection(hash, feature.extrude);
         }
     }
+    // `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: a Revolve's whole authored truth -- its
+    // selection, its axis ref, the exact angle bits and the direction. Mixed
+    // only for a Revolve, so every Extrude project keeps the fingerprint it
+    // always had.
+    if (state.baseKind == CadFeatureKind::Revolve) {
+        mixU64(hash, 0x52455637ull);  // "REV7"
+        mixSelection(hash, revolveSelectionCarrier(state.revolve));
+        mixU64(hash, state.revolve.profileEntityId);
+        mixU64(hash, state.revolve.profileHoleIds.size());
+        for (SketchEntityId hole : state.revolve.profileHoleIds) {
+            mixU64(hash, hole);
+        }
+        mixU64(hash, state.revolve.additionalRegions.size());
+        for (const ProfileRegionRef& region : state.revolve.additionalRegions) {
+            mixU64(hash, region.outerAnchorId);
+            mixU64(hash, region.holeAnchorIds.size());
+            for (SketchEntityId hole : region.holeAnchorIds) {
+                mixU64(hash, hole);
+            }
+        }
+        mixU64(hash, state.revolve.axis.entityId);
+        mixU64(hash, state.revolve.axis.edgeLocalIndex);
+        mixDouble(hash, state.revolve.angleDegrees);
+        mixU64(hash, static_cast<uint64_t>(revolveDirectionIndex(state.revolve.direction)));
+    }
 }
 
 void mixTransform(uint64_t& hash, const TransformValues& values) {
