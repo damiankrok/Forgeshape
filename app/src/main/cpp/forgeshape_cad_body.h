@@ -149,12 +149,25 @@ constexpr int kCadSelectionKindCount = 2;
 const char* cadSelectionKindName(CadSelectionKind kind);
 
 // How many planar faces one feature may select, how many holes one face may
-// carry, and how many fragments one boundary cycle may have. The first two are
-// the region caps, for the same reason; the third is the largest polygon a
-// profile may become (`kMaxProfileVertices`): every fragment contributes at
-// least one polygon vertex when a face is extruded, so a longer cycle could
-// never be regenerated, and bounding it here bounds a history step and a file.
-constexpr uint32_t kMaxPlanarFaceSelection = kMaxProfileRegions;
+// carry, and how many fragments one boundary cycle may have.
+//
+// The selection bound is the ARRANGEMENT's own face bound
+// (`kMaxArrangementFaces`, derived from its source-edge and contact caps in
+// forgeshape_sketch_arrangement.h), deliberately NOT the loop-region cap
+// (`kMaxProfileRegions`, 16) it was until
+// `CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`: a selection names DISTINCT faces
+// of one derived arrangement, so any arrangement that derived at all can have
+// every one of its faces chosen and this bound is never the reason a tap is
+// refused. It stays a bound because the decoder reads a count before it has an
+// arrangement to resolve against. The loop-region cap is untouched and still
+// governs `LoopRegions` selections.
+//
+// The holes cap is the region cap, for the same reason as before; the third
+// is the largest polygon a profile may become (`kMaxProfileVertices`): every
+// fragment contributes at least one polygon vertex when a face is extruded, so
+// a longer cycle could never be regenerated, and bounding it here bounds a
+// history step and a file.
+constexpr uint32_t kMaxPlanarFaceSelection = kMaxArrangementFaces;
 constexpr uint32_t kMaxPlanarFaceHoles = kMaxRegionHoles;
 constexpr uint32_t kMaxPlanarFaceCycleFragments = kMaxProfileVertices;
 

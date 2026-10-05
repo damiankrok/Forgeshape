@@ -2102,8 +2102,17 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body) {
             if (!in.u32(&faceCount)) {
                 return ProjectCodecStatus::Truncated;
             }
+            // The bound is the arrangement's own face bound
+            // (`kMaxPlanarFaceSelection` = `kMaxArrangementFaces`), not the
+            // field's width; the count is held to it before anything is
+            // allocated, and then to the bytes that are actually there.
             if (faceCount == 0 || faceCount > kMaxPlanarFaceSelection) {
                 return ProjectCodecStatus::ImpossibleCount;
+            }
+            // Smallest face: an outer cycle of one smallest fragment (4 + 11
+            // bytes) and a zero hole count (4).
+            if (static_cast<uint64_t>(faceCount) * 19ull > in.remaining()) {
+                return ProjectCodecStatus::Truncated;
             }
             extrude.planarFaces.resize(faceCount);
             for (PlanarFaceRef& face : extrude.planarFaces) {

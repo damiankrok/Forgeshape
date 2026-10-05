@@ -1579,13 +1579,16 @@ bool samePlanarFaceRef(const PlanarFaceRef& a, const PlanarFaceRef& b) {
 bool resolvePlanarFaceRef(const SketchArrangement& arrangement, const PlanarFaceRef& ref,
                           size_t* outIndex) {
     if (arrangement.status != ArrangementStatus::Ok) return false;
-    for (size_t i = 0; i < arrangement.faces.size(); ++i) {
-        if (samePlanarFaceRef(arrangement.faces[i].ref, ref)) {
-            if (outIndex != nullptr) *outIndex = i;
-            return true;
-        }
-    }
-    return false;
+    // `faces` is sorted by ref and no two faces share one (a directed
+    // half-edge bounds exactly one face), so exact equality is one binary
+    // search: resolving a whole selection stays O(n log F).
+    const auto it = std::lower_bound(arrangement.faces.begin(), arrangement.faces.end(), ref,
+                                     [](const AtomicPlanarFace& face, const PlanarFaceRef& key) {
+                                         return comparePlanarFaceRef(face.ref, key) < 0;
+                                     });
+    if (it == arrangement.faces.end() || !samePlanarFaceRef(it->ref, ref)) return false;
+    if (outIndex != nullptr) *outIndex = static_cast<size_t>(it - arrangement.faces.begin());
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -2138,13 +2141,12 @@ ArrangementStatus mergeEdgeConnectedFaces(const SketchArrangement& arrangement,
     const uint32_t halfCount = static_cast<uint32_t>(arrangement.fragments.size() * 2u);
     std::vector<int64_t> cycleOf(halfCount, -1);
     std::vector<uint32_t> positionOf(halfCount, 0);
-    std::vector<size_t> seen;
+    std::vector<uint8_t> seen(arrangement.faces.size(), 0);
     for (size_t index : faceIndices) {
-        if (index >= arrangement.faces.size()
-            || std::find(seen.begin(), seen.end(), index) != seen.end()) {
+        if (index >= arrangement.faces.size() || seen[index] != 0u) {
             return ArrangementStatus::InvalidSelection;
         }
-        seen.push_back(index);
+        seen[index] = 1u;
         const PlanarFaceRef& ref = arrangement.faces[index].ref;
         std::vector<const FragmentCycle*> boundary{&ref.outer};
         for (const FragmentCycle& hole : ref.holes) boundary.push_back(&hole);
@@ -2333,13 +2335,13 @@ ArrangementStatus partitionSelectedPlanarFacesBySharedBoundary(
     // repeated face.
     const uint32_t halfCount = static_cast<uint32_t>(arrangement.fragments.size() * 2u);
     std::vector<int64_t> ownerOf(halfCount, -1);
+    std::vector<uint8_t> seen(arrangement.faces.size(), 0);
     for (size_t slot = 0; slot < faceIndices.size(); ++slot) {
         const size_t index = faceIndices[slot];
-        if (index >= arrangement.faces.size()
-            || std::find(faceIndices.begin(), faceIndices.begin() + static_cast<std::ptrdiff_t>(slot),
-                         index) != faceIndices.begin() + static_cast<std::ptrdiff_t>(slot)) {
+        if (index >= arrangement.faces.size() || seen[index] != 0u) {
             return ArrangementStatus::InvalidSelection;
         }
+        seen[index] = 1u;
         const PlanarFaceRef& ref = arrangement.faces[index].ref;
         std::vector<const FragmentCycle*> boundary{&ref.outer};
         for (const FragmentCycle& hole : ref.holes) boundary.push_back(&hole);

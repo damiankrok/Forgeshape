@@ -501,6 +501,10 @@ public:
     CadStatus selectPlanarFace(size_t index);
     // Whether anything is chosen, whichever the selection kind.
     bool selectionChosen() const;
+    // Why nothing is chosen, when nothing is: the lost selection, "choose one"
+    // among several areas, or no area at all. Meaningful only while
+    // `selectionChosen()` is false -- a non-empty selection is never "choose one".
+    CadStatus unchosenStatus() const;
     // How many regions or faces are chosen.
     size_t selectedAreaCount() const;
     // True after Finish found that a stored face selection (an edited feature)
@@ -726,7 +730,6 @@ private:
                                             const CadBodyMesh& candidateMesh) const;
     CadStatus fail(CadStatus why) { lastStatus_ = why; return why; }
     void reconcilePlanarSelection();
-    CadStatus unchosenStatus() const;
     void setPlanarSelection(std::vector<PlanarFaceRef> faces);
     void clearPlanarSelection();
     std::vector<size_t> selectedPlanarFaceIndices() const;

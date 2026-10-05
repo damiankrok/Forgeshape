@@ -764,14 +764,24 @@ CadStatus resolvePlanarFaceSelection(const CadSketch& sketch, const ExtrudeFeatu
             return formWhy;
         }
     }
-    // A repeat anywhere is named as a repeat before the order is judged.
-    for (size_t i = 0; i < faces.size(); ++i) {
-        for (size_t j = i + 1; j < faces.size(); ++j) {
-            if (samePlanarFaceRef(faces[i], faces[j])) {
+    // A repeat anywhere is named as a repeat before the order is judged. A
+    // sorted copy puts every repeat beside its twin, so the same verdict costs
+    // O(n log n) rather than every pair -- a selection may hold thousands.
+    {
+        std::vector<const PlanarFaceRef*> sorted;
+        sorted.reserve(faces.size());
+        for (const PlanarFaceRef& face : faces) sorted.push_back(&face);
+        std::sort(sorted.begin(), sorted.end(), [](const PlanarFaceRef* a, const PlanarFaceRef* b) {
+            return comparePlanarFaceRef(*a, *b) < 0;
+        });
+        for (size_t i = 1; i < sorted.size(); ++i) {
+            if (samePlanarFaceRef(*sorted[i - 1], *sorted[i])) {
                 return CadStatus::DuplicatePlanarFace;
             }
         }
-        if (i > 0 && comparePlanarFaceRef(faces[i - 1], faces[i]) >= 0) {
+    }
+    for (size_t i = 1; i < faces.size(); ++i) {
+        if (comparePlanarFaceRef(faces[i - 1], faces[i]) >= 0) {
             return CadStatus::PlanarFaceRefNotCanonical;
         }
     }

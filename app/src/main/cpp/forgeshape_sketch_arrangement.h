@@ -105,6 +105,29 @@ const char* arrangementStatusName(ArrangementStatus status);
 constexpr uint32_t kMaxArrangementSourceEdges = 1024;
 constexpr uint32_t kMaxArrangementContacts = 4096;
 
+// The most FRAGMENTS and the most bounded ATOMIC FACES an arrangement that
+// passed both caps above can have -- derived from them, never chosen.
+//
+// Fragments: a contact cuts at most its two source edges once each, so the
+// cuts total at most 2K for K contacts. An open source edge with c cuts makes
+// at most c + 1 fragments, a closed one (a circle) max(c, 1) <= c + 1. Summed
+// over S source edges: fragments <= S + 2K.
+//
+// Faces: the fragments that bound a face form a planar multigraph with E
+// edges, V nodes and C connected components, and Euler's formula for a plane
+// graph (V - E + F = 1 + C, F counting the unbounded face) leaves exactly
+// E - V + C BOUNDED faces. Every component has at least one node (a circle
+// with no cut gets its own), so C <= V and the bounded faces are at most E,
+// which is at most the fragment bound. A pruned dangling or bridging fragment
+// only removes edges, so it cannot raise the count.
+//
+// With the caps above: 1024 + 2 * 4096 = 9216. The densest arrangement the
+// caps admit in practice -- 64 lines by 64 lines, exactly 4096 crossings --
+// has 63 * 63 = 3969 faces, inside it.
+constexpr uint32_t kMaxArrangementFragments =
+        kMaxArrangementSourceEdges + 2u * kMaxArrangementContacts;
+constexpr uint32_t kMaxArrangementFaces = kMaxArrangementFragments;
+
 // ---------------------------------------------------------------------------
 // Semantic identity
 // ---------------------------------------------------------------------------

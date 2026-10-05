@@ -4748,9 +4748,12 @@ void testFillPickR2(Recorder& r) {
         if (f.sketch.active()) f.sketch.cancel();
     }
     {
-        // A 5 x 4 grid: twenty cells. Sixteen select; the seventeenth is the
-        // bound, by name, the selection standing; an index naming no face and
-        // a session not in Ready are the only other refusals.
+        // A 5 x 4 grid: twenty cells. Deliberate rule change
+        // (`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`): the bound is the
+        // arrangement's own face bound, so EVERY cell selects -- the 17th
+        // included -- and a tap is never answered `selection_cap`; an index
+        // naming no face and a session not in Ready are the refusals left,
+        // each with the selection standing.
         CadSketch grid;
         addRect(&grid, 0.0, 0.0, 5.0, 4.0);
         for (double x : {-1.5, -0.5, 0.5, 1.5}) {
@@ -4775,20 +4778,23 @@ void testFillPickR2(Recorder& r) {
         for (size_t i = 0; sixteen && i < 16u; ++i) {
             sixteen = g.sketch.togglePlanarFace(i) == CadStatus::Ok;
         }
-        const std::vector<PlanarFaceRef> held = g.sketch.extrude().planarFaces;
         const CadStatus seventeenth = g.sketch.togglePlanarFace(16u);
         SketchPoint p;
         float x = 0.0f;
         float y = 0.0f;
         const bool tapped = g.sketch.planarFaceInfo(17u, &p, nullptr) && g.screenOf(p, &x, &y)
-                            && !g.sketch.toggleRegionAt(g.camera.snapshot(), x, y, SessionDriver::kW,
-                                                        SessionDriver::kH)
-                            && g.sketch.lastTapOutcome() == SketchTapOutcome::SelectionCap;
+                            && g.sketch.toggleRegionAt(g.camera.snapshot(), x, y, SessionDriver::kW,
+                                                       SessionDriver::kH)
+                            && g.sketch.lastTapOutcome() == SketchTapOutcome::Resolved
+                            && g.sketch.planarFaceSelected(17u);
+        const bool rest = g.sketch.togglePlanarFace(18u) == CadStatus::Ok
+                          && g.sketch.togglePlanarFace(19u) == CadStatus::Ok
+                          && g.sketch.selectedAreaCount() == 20u;
+        const std::vector<PlanarFaceRef> held = g.sketch.extrude().planarFaces;
         const CadStatus noFace = g.sketch.togglePlanarFace(999u);
         r.check("FILL_R2_13_the_cap_and_exact_resolution_are_the_only_add_refusals",
-                editingRefused && sixteen && held.size() == 16u
-                        && seventeenth == CadStatus::TooManyRegions && tapped
-                        && noFace == CadStatus::ProfileNotFound
+                editingRefused && sixteen && seventeenth == CadStatus::Ok && tapped && rest
+                        && held.size() == 20u && noFace == CadStatus::ProfileNotFound
                         && sameFaceRefs(held, g.sketch.extrude().planarFaces));
         g.sketch.cancel();
     }

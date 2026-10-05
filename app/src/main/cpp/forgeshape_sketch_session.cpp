@@ -1669,15 +1669,18 @@ void SketchSession::reconcilePlanarSelection() {
 }
 
 bool SketchSession::planarFaceSelected(size_t index) const {
-    if (index >= arrangement_.faces.size() || faceShapes_.empty()) {
+    if (index >= arrangement_.faces.size() || faceShapes_.empty()
+        || extrude_.selection != CadSelectionKind::PlanarFaces) {
         return false;
     }
-    for (const PlanarFaceRef& ref : extrude_.planarFaces) {
-        if (samePlanarFaceRef(ref, arrangement_.faces[index].ref)) {
-            return true;
-        }
-    }
-    return false;
+    // The selection is canonical (ascending), so membership is one binary
+    // search: the chooser asks this once per face on every refresh.
+    const PlanarFaceRef& ref = arrangement_.faces[index].ref;
+    const auto at = std::lower_bound(extrude_.planarFaces.begin(), extrude_.planarFaces.end(), ref,
+                                     [](const PlanarFaceRef& a, const PlanarFaceRef& b) {
+                                         return comparePlanarFaceRef(a, b) < 0;
+                                     });
+    return at != extrude_.planarFaces.end() && samePlanarFaceRef(*at, ref);
 }
 
 bool SketchSession::planarFaceInfo(size_t index, SketchPoint* outInterior, double* outArea) const {
@@ -1706,28 +1709,35 @@ CadStatus SketchSession::togglePlanarFace(size_t index) {
         return fail(CadStatus::ProfileNotFound);
     }
     const PlanarFaceRef& tapped = arrangement_.faces[index].ref;
-    std::vector<PlanarFaceRef> next;
-    bool removed = false;
-    for (const PlanarFaceRef& ref : extrude_.planarFaces) {
-        if (samePlanarFaceRef(ref, tapped)) {
-            removed = true;
-        } else {
-            next.push_back(ref);
-        }
+    // The stored selection is kept in canonical (ascending) order by
+    // `setPlanarSelection`, so the tapped face is found -- and a new one is
+    // placed -- by one binary search rather than a scan and a re-sort: a tap
+    // costs O(log n) comparisons however many faces are chosen.
+    if (extrude_.selection != CadSelectionKind::PlanarFaces) {
+        setPlanarSelection(std::vector<PlanarFaceRef>(extrude_.planarFaces));
     }
-    if (!removed) {
+    std::vector<PlanarFaceRef>& faces = extrude_.planarFaces;
+    const auto at = std::lower_bound(faces.begin(), faces.end(), tapped,
+                                     [](const PlanarFaceRef& a, const PlanarFaceRef& b) {
+                                         return comparePlanarFaceRef(a, b) < 0;
+                                     });
+    if (at != faces.end() && samePlanarFaceRef(*at, tapped)) {
+        faces.erase(at);
+    } else {
         // A PURE set toggle (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): the tapped
         // face joins and no other face changes. The selection is a SET of
         // exact face refs, so the only addition refused is the bound -- never
         // because of which OTHER faces are chosen. Whether the set extrudes
         // (a pinch, an Add that lands nowhere) is the candidate's question,
         // named on the preview, and is never answered by trimming the set.
-        if (next.size() + 1u > kMaxPlanarFaceSelection) {
+        // The bound is the arrangement's own face bound
+        // (`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`), so a selection of
+        // distinct faces of a derived arrangement cannot reach it.
+        if (faces.size() + 1u > kMaxPlanarFaceSelection) {
             return fail(CadStatus::TooManyRegions);
         }
-        next.push_back(tapped);
+        faces.insert(at, tapped);
     }
-    setPlanarSelection(std::move(next));
     selectionLost_ = false;
     touchCandidate();
     return fail(CadStatus::Ok);

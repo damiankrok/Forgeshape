@@ -3603,7 +3603,7 @@ final class EditorWorkspaceView extends FrameLayout
      * WHICH regions the open session's extrusion holds, as their outer anchors
      * in native's ascending order — so a tap that swaps one region for another
      * is a change even though the count is not. Read fresh; bounded by the
-     * sixteen-region cap.
+     * number of areas the finished sketch has.
      */
     private String regionSelectionSignature() {
         final int count = NativeViewport.sketchProfiles(null);
