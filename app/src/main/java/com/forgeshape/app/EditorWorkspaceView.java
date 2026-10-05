@@ -3666,7 +3666,11 @@ final class EditorWorkspaceView extends FrameLayout
     /**
      * Says what the staged extrusion WOULD do: the named refusal when the
      * preview is not something a commit may make (a disjoint Add, a Cut that
-     * misses), otherwise {@code okMessage}. A verdict, never an instruction.
+     * misses), otherwise {@code okMessage} — or, with none given and areas
+     * chosen, how many are in the extrusion. A verdict, never an instruction,
+     * and always about the CURRENT candidate: a valid selection never leaves an
+     * earlier refusal (a failed Extrude's, say) standing on the status line
+     * (`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`).
      */
     private void reportCandidateVerdict(String okMessage) {
         NativeViewport.cadExtrudeToolState(nativeExtrude);
@@ -3675,6 +3679,9 @@ final class EditorWorkspaceView extends FrameLayout
         if (selected > 0 && candidate != NativeViewport.CAD_OK) {
             showStatus(CadStatusMessages.describe(getContext(), candidate), R.attr.fsTextError);
             return;
+        }
+        if (okMessage == null && selected > 0) {
+            okMessage = getContext().getString(R.string.status_regions_selected, selected);
         }
         if (okMessage != null) {
             showStatus(okMessage, R.attr.fsTextSecondary);
