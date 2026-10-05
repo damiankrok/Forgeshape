@@ -732,21 +732,21 @@ void testStatus(Checks& r) {
 }
 
 // The device class's own sequence (`CadMultiFaceOwnerTest` DEV-MF-05), on its
-// own 4-column x 6-row grid, pinned here first so the device asserts a fact
+// own 6-column x 4-row grid, pinned here first so the device asserts a fact
 // the host already proved: seventeen cells whose union pinches at one corner,
 // then sixteen once (row 2, col 2) is dropped.
 void testDevicePattern(Checks& r) {
     Driver d;
-    const bool ready = d.finishOn(gridSketch(4, 6));
-    const std::vector<size_t> cells = ready ? gridCells(d.sketch, 4, 6) : std::vector<size_t>{};
+    const bool ready = d.finishOn(gridSketch(6, 4));
+    const std::vector<size_t> cells = ready ? gridCells(d.sketch, 6, 4) : std::vector<size_t>{};
     bool chosen = cells.size() == 24u;
-    for (const auto& rc : {std::pair<int, int>{1, 0}, {1, 1}, {2, 0}, {2, 2}, {3, 0}, {3, 1}, {3, 2},
-                           {0, 3}, {1, 3}, {2, 3}, {3, 3}, {4, 3}, {5, 3}, {5, 0}, {5, 1}, {5, 2},
+    for (const auto& rc : {std::pair<int, int>{0, 1}, {1, 1}, {0, 2}, {2, 2}, {0, 3}, {1, 3}, {2, 3},
+                           {3, 0}, {3, 1}, {3, 2}, {3, 3}, {3, 4}, {3, 5}, {0, 5}, {1, 5}, {2, 5},
                            {0, 0}}) {
-        chosen = chosen && d.sketch.togglePlanarFace(cells[rc.first * 4 + rc.second]) == CadStatus::Ok;
+        chosen = chosen && d.sketch.togglePlanarFace(cells[rc.first * 6 + rc.second]) == CadStatus::Ok;
     }
     const CadStatus pinched = d.sketch.evaluateCandidate().status;
-    const bool dropped = chosen && d.sketch.togglePlanarFace(cells[2 * 4 + 2]) == CadStatus::Ok;
+    const bool dropped = chosen && d.sketch.togglePlanarFace(cells[2 * 6 + 2]) == CadStatus::Ok;
     const CadCandidateEvaluation& fixed = d.sketch.evaluateCandidate();
     r.check("MF_15C_the_device_pattern_pinches_at_17_cells_and_extrudes_at_16",
             chosen && pinched == CadStatus::PlanarFacesTouchAtPoint && dropped

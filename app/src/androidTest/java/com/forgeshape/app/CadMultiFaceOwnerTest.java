@@ -57,8 +57,8 @@ import java.util.List;
 public final class CadMultiFaceOwnerTest {
 
     private static final String TAG = "ForgeShape";
-    private static final int COLS = 4;
-    private static final int ROWS = 6;
+    private static final int COLS = 6;
+    private static final int ROWS = 4;
     private static final int CELLS = COLS * ROWS;
 
     @Rule
@@ -67,7 +67,7 @@ public final class CadMultiFaceOwnerTest {
 
     private File outDir;
     private final List<String> facts = new ArrayList<>();
-    /** Cell size in metres (one drawing unit). */
+    /** Cell size in metres (two drawing units). */
     private double cell;
     /** Face handle per cell, reading order: row by row from the lower left. */
     private long[] handles;
@@ -194,7 +194,7 @@ public final class CadMultiFaceOwnerTest {
     @Test
     public void devMf04_the_first_extrude_commits_a_twenty_cell_selection() {
         newCadProjectGrid();
-        // Rows 0..4: a contiguous 4 x 5 block.
+        // Rows 0..2 whole and two cells of row 3: one edge-connected block.
         for (int k = 0; k < 20; k++) {
             tapCell(k);
         }
@@ -244,8 +244,8 @@ public final class CadMultiFaceOwnerTest {
         tapCell(0);
         // Seventeen cells whose union pinches at the corner between (row 1,
         // col 1) and (row 2, col 2) -- the pattern the host's MF_15C pins.
-        final int[][] pinch = {{1, 0}, {1, 1}, {2, 0}, {2, 2}, {3, 0}, {3, 1}, {3, 2}, {0, 3},
-                {1, 3}, {2, 3}, {3, 3}, {4, 3}, {5, 3}, {5, 0}, {5, 1}, {5, 2}, {0, 0}};
+        final int[][] pinch = {{0, 1}, {1, 1}, {0, 2}, {2, 2}, {0, 3}, {1, 3}, {2, 3}, {3, 0},
+                {3, 1}, {3, 2}, {3, 3}, {3, 4}, {3, 5}, {0, 5}, {1, 5}, {2, 5}, {0, 0}};
         for (int[] rc : pinch) {
             tapCell(rc[0] * COLS + rc[1]);
         }
@@ -318,7 +318,7 @@ public final class CadMultiFaceOwnerTest {
     }
 
     // -----------------------------------------------------------------------
-    // The sketch: New Project -> CAD, a 4 x 6 grid of cells, Finish
+    // The sketch: New Project -> CAD, a 6 x 4 grid of cells, Finish
     // -----------------------------------------------------------------------
 
     private void newCadProjectGrid() {
@@ -326,16 +326,25 @@ public final class CadMultiFaceOwnerTest {
         press(R.id.new_project_cad);
         assertEquals("New CAD lands in a sketch", NativeViewport.SKETCH_EDITING, sketchState());
         assertFalse(NativeViewport.projectOpen());
+        // A drag snaps to the view-adaptive grid in force when it is made, so
+        // every coordinate below is a whole multiple of that step, read after
+        // the new sketch's view has settled, and the rectangle is read back.
+        settleLayout();
         final double grid = NativeViewport.sketchGridStep();
         assertTrue("a grid step to draw on: " + grid, grid > 0.0 && grid <= 0.25);
-        final double unit = grid * Math.max(1.0, Math.rint(0.2 / grid));
-        // One grid unit per cell: a 4 x 6 grid of about 1 x 1.5 m stands wholly
-        // inside the first sketch's view, so no drag ends past the viewport.
-        cell = unit;
+        cell = grid * Math.max(1.0, Math.rint(0.5 / grid));
         final double hu = 0.5 * COLS * cell;
         final double hv = 0.5 * ROWS * cell;
         selectTool(rule.getScenario(), R.id.tool_rail_rectangle);
         dragSketch(rule.getScenario(), -hu, -hv, hu, hv);
+        final double[] drawn = new double[NativeViewport.SKETCH_ENTITY_SIZE];
+        assertTrue("the new rectangle is selected", NativeViewport.sketchSelectedEntity(drawn));
+        fact("rectangle", "grid=" + grid + " cell=" + cell + " values="
+                + Arrays.toString(drawn));
+        assertEquals("the rectangle is the one drawn (width)", 2 * hu,
+                drawn[NativeViewport.SKETCH_ENTITY_VALUES + 2], 1e-9);
+        assertEquals("the rectangle is the one drawn (height)", 2 * hv,
+                drawn[NativeViewport.SKETCH_ENTITY_VALUES + 3], 1e-9);
         selectTool(rule.getScenario(), R.id.tool_rail_line);
         for (int k = 1; k < COLS; k++) {
             dragSketch(rule.getScenario(), -hu + k * cell, -hv, -hu + k * cell, hv);
