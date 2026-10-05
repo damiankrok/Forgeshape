@@ -1,0 +1,58 @@
+cad_arc_profile_v3.forge Ok cad_bodies=1 regenerated=1
+cad_bad_arc_v3.forge InvalidSemanticValue
+cad_bad_extent_v4.forge InvalidSemanticValue
+cad_bad_face_ref_v2.forge InvalidSemanticValue
+cad_bad_feature_order_v5.forge InvalidSemanticValue
+cad_bad_feature_ref_v5.forge InvalidSemanticValue
+cad_bad_operation_v5.forge InvalidSemanticValue
+cad_bad_plane_v1.forge InvalidSemanticValue
+cad_bad_region_v5.forge InvalidSemanticValue
+cad_bad_selection_kind_v6.forge InvalidSemanticValue
+cad_bad_sketch_ref_v6.forge InvalidSemanticValue
+cad_bad_spline_v3.forge InvalidSemanticValue
+cad_bad_two_sides_v4.forge InvalidSemanticValue
+cad_circle_v1.forge Ok cad_bodies=1 regenerated=1
+cad_dependency_cycle_v2.forge UnresolvedReference
+cad_duplicate_sketch_id_v6.forge InvalidSemanticValue
+cad_face_chain_v2.forge Ok cad_bodies=3 regenerated=3
+cad_face_curve_v3.forge Ok cad_bodies=2 regenerated=2
+cad_face_extent_v4.forge Ok cad_bodies=3 regenerated=3
+cad_face_lens_v6.forge Ok cad_bodies=1 regenerated=1
+cad_face_protrusion_v6.forge Ok cad_bodies=1 regenerated=1
+cad_face_sketch_cap_v2.forge Ok cad_bodies=2 regenerated=2
+cad_face_sketch_side_v2.forge Ok cad_bodies=2 regenerated=2
+cad_face_two_circles_v6.forge Ok cad_bodies=1 regenerated=1
+cad_feature_add_v5.forge Ok cad_bodies=1 regenerated=1
+cad_feature_chain_v5.forge Ok cad_bodies=1 regenerated=1
+cad_feature_cut_v5.forge Ok cad_bodies=1 regenerated=1
+cad_fragment_support_v6.forge Ok cad_bodies=1 regenerated=1
+cad_mixed_curve_profile_v3.forge Ok cad_bodies=3 regenerated=3
+cad_mixed_selection_v6.forge Ok cad_bodies=1 regenerated=1
+cad_noncanonical_face_v6.forge InvalidSemanticValue
+cad_overlap_face_v6.forge InvalidSemanticValue
+cad_rectangle_v1.forge Ok cad_bodies=1 regenerated=1
+cad_region_hole_v5.forge Ok cad_bodies=1 regenerated=1
+cad_sketch_shared_v6.forge Ok cad_bodies=1 regenerated=1
+cad_spline_face_v6.forge Ok cad_bodies=1 regenerated=1
+cad_spline_profile_v3.forge Ok cad_bodies=1 regenerated=1
+cad_symmetric_v4.forge Ok cad_bodies=1 regenerated=1
+cad_two_sides_v4.forge Ok cad_bodies=1 regenerated=1
+cad_unresolved_face_v6.forge InvalidSemanticValue
+construction_imported_v1.forge Ok cad_bodies=0 regenerated=0
+construction_multibody_v1.forge Ok cad_bodies=0 regenerated=0
+corrupt_crc_v1.forge ChecksumMismatch
+imported_only_v1.forge Ok cad_bodies=0 regenerated=0
+imported_sculpt_v1.forge Ok cad_bodies=0 regenerated=0
+mixed_cad_extent_v4.forge Ok cad_bodies=3 regenerated=3
+mixed_cad_face_v2.forge Ok cad_bodies=2 regenerated=2
+mixed_cad_v1.forge Ok cad_bodies=2 regenerated=2
+mixed_imported_sculpt_v1.forge Ok cad_bodies=0 regenerated=0
+mixed_imported_v1.forge Ok cad_bodies=0 regenerated=0
+object_state_bad_flags_v2.forge BadPayload
+object_state_v2.forge Ok cad_bodies=0 regenerated=0
+sculpt_mixed_v1.forge Ok cad_bodies=0 regenerated=0
+truncated_v1.forge Truncated
+unknown_optional_v1.forge Ok cad_bodies=0 regenerated=0
+unknown_required_v1.forge UnknownRequiredSection
+unsupported_major_v1.forge UnsupportedMajor
+CORPUS_FIXTURES 57
