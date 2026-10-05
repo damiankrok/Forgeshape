@@ -17,6 +17,7 @@
 #include "forgeshape_cad_face.h"
 #include "forgeshape_cad_feature.h"
 #include "forgeshape_cad_kernel.h"
+#include "forgeshape_cad_multiface_selftest.h"
 #include "forgeshape_cad_v6_selftest.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_history.h"
@@ -5784,6 +5785,14 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + fillPerformance;
+    // The large fill-bucket selection (`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`).
+    std::vector<ArrangementSelfTestCheck> multiface;
+    std::string multifacePerformance;
+    runCadMultiFaceSelfTests(&multiface, &multifacePerformance);
+    for (const ArrangementSelfTestCheck& check : multiface) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + multifacePerformance;
     // The retained sketch table, the selection variant and `CADB` v6
     // (`CAD-V6-S1`): model and persistence only, wired to no session, JNI or
     // UI path, so -- like the arrangement -- they ride in this suite.
