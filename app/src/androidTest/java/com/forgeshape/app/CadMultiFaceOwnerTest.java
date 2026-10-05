@@ -326,31 +326,38 @@ public final class CadMultiFaceOwnerTest {
         press(R.id.new_project_cad);
         assertEquals("New CAD lands in a sketch", NativeViewport.SKETCH_EDITING, sketchState());
         assertFalse(NativeViewport.projectOpen());
-        // A drag snaps to the view-adaptive grid in force when it is made, so
-        // every coordinate below is a whole multiple of that step, read after
-        // the new sketch's view has settled, and the rectangle is read back.
+        // Each entity is placed by a real drag and then TYPED to its exact
+        // geometry through the precision path the Sketch values surface uses
+        // (`sketchApply…`): a drag snaps to the view's touch grid, which need
+        // not be the step `sketchGridStep` reports, and the grid under test
+        // must be exact. The taps that follow are what this class proves.
         settleLayout();
-        final double grid = NativeViewport.sketchGridStep();
-        assertTrue("a grid step to draw on: " + grid, grid > 0.0 && grid <= 0.25);
-        cell = grid * Math.max(1.0, Math.rint(0.5 / grid));
+        cell = 0.4;
         final double hu = 0.5 * COLS * cell;
         final double hv = 0.5 * ROWS * cell;
         selectTool(rule.getScenario(), R.id.tool_rail_rectangle);
         dragSketch(rule.getScenario(), -hu, -hv, hu, hv);
         final double[] drawn = new double[NativeViewport.SKETCH_ENTITY_SIZE];
         assertTrue("the new rectangle is selected", NativeViewport.sketchSelectedEntity(drawn));
-        fact("rectangle", "grid=" + grid + " cell=" + cell + " values="
-                + Arrays.toString(drawn));
-        assertEquals("the rectangle is the one drawn (width)", 2 * hu,
+        assertEquals(NativeViewport.SKETCH_ENTITY_KIND_RECTANGLE,
+                (int) drawn[NativeViewport.SKETCH_ENTITY_KIND]);
+        fact("rectangle.dragged", Arrays.toString(drawn));
+        final long rectangle = (long) drawn[NativeViewport.SKETCH_ENTITY_ID];
+        assertEquals(NativeViewport.CAD_OK, applyOnUi(() ->
+                NativeViewport.sketchApplyRectangle(rectangle, 2 * hu, 2 * hv)));
+        assertTrue(NativeViewport.sketchSelectedEntity(drawn));
+        assertEquals("centred", 0.0, drawn[NativeViewport.SKETCH_ENTITY_VALUES], 1e-9);
+        assertEquals("centred", 0.0, drawn[NativeViewport.SKETCH_ENTITY_VALUES + 1], 1e-9);
+        assertEquals("the rectangle is exact (width)", 2 * hu,
                 drawn[NativeViewport.SKETCH_ENTITY_VALUES + 2], 1e-9);
-        assertEquals("the rectangle is the one drawn (height)", 2 * hv,
+        assertEquals("the rectangle is exact (height)", 2 * hv,
                 drawn[NativeViewport.SKETCH_ENTITY_VALUES + 3], 1e-9);
         selectTool(rule.getScenario(), R.id.tool_rail_line);
         for (int k = 1; k < COLS; k++) {
-            dragSketch(rule.getScenario(), -hu + k * cell, -hv, -hu + k * cell, hv);
+            placeLine(-hu + k * cell, -hv, -hu + k * cell, hv);
         }
         for (int k = 1; k < ROWS; k++) {
-            dragSketch(rule.getScenario(), -hu, -hv + k * cell, hu, -hv + k * cell);
+            placeLine(-hu, -hv + k * cell, hu, -hv + k * cell);
         }
         assertEquals("the rectangle and its grid lines", 1 + (COLS - 1) + (ROWS - 1),
                 sketchEntityCount());
@@ -382,6 +389,31 @@ public final class CadMultiFaceOwnerTest {
             assertTrue("cells are distinct faces", distinct[k] != distinct[k - 1]);
         }
         fact("grid", "cell=" + cell + " handles=" + Arrays.toString(handles));
+    }
+
+    /** A line by a real drag, then typed to its exact endpoints. */
+    private void placeLine(double u0, double v0, double u1, double v1) {
+        final int before = sketchEntityCount();
+        dragSketch(rule.getScenario(), u0, v0, u1, v1);
+        assertEquals("one line placed", before + 1, sketchEntityCount());
+        final double[] drawn = new double[NativeViewport.SKETCH_ENTITY_SIZE];
+        assertTrue("the new line is selected", NativeViewport.sketchSelectedEntity(drawn));
+        assertEquals(NativeViewport.SKETCH_ENTITY_KIND_LINE,
+                (int) drawn[NativeViewport.SKETCH_ENTITY_KIND]);
+        final long id = (long) drawn[NativeViewport.SKETCH_ENTITY_ID];
+        assertEquals(NativeViewport.CAD_OK,
+                applyOnUi(() -> NativeViewport.sketchApplyLine(id, u0, v0, u1, v1)));
+    }
+
+    /** A native typed-value apply, then the workspace's re-read, as the panel does. */
+    private int applyOnUi(java.util.function.IntSupplier apply) {
+        final int status = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int why = apply.getAsInt();
+            workspace.onNativeStateChanged();
+            return why;
+        });
+        settleLayout();
+        return status;
     }
 
     /**
