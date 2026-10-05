@@ -67,7 +67,7 @@ public final class CadMultiFaceOwnerTest {
 
     private File outDir;
     private final List<String> facts = new ArrayList<>();
-    /** Cell size in metres (two sketch grid units). */
+    /** Cell size in metres (one drawing unit). */
     private double cell;
     /** Face handle per cell, reading order: row by row from the lower left. */
     private long[] handles;
@@ -153,9 +153,11 @@ public final class CadMultiFaceOwnerTest {
         assertEquals(regionsSelected(CELLS), statusLine());
         final double[] preview = candidateMeasure();
         final double depth = depth();
-        fact("mf02.preview", "volume=" + preview[0] + " components=" + preview[1] + " depth=" + depth);
-        assertEquals("the preview is the whole slab", CELLS * cell * cell * depth, preview[0],
-                1e-6 * CELLS * cell * cell * depth);
+        final double area = selectedArea();
+        fact("mf02.preview", "volume=" + preview[0] + " components=" + preview[1] + " depth=" + depth
+                + " area=" + area);
+        assertEquals("the cells are the grid drawn", CELLS * cell * cell, area, 1e-9);
+        assertEquals("the preview is the whole slab", area * depth, preview[0], 1e-6 * area * depth);
         assertEquals("one component", 1.0, preview[1], 0.0);
         assertTrue("the toolbar's Extrude is offered", extrudeShown());
     }
@@ -199,7 +201,9 @@ public final class CadMultiFaceOwnerTest {
         assertEquals(20, selected().length);
         final double[] preview = candidateMeasure();
         final double depth = depth();
-        final double expected = 20 * cell * cell * depth;
+        final double area = selectedArea();
+        assertEquals("the block is the twenty cells drawn", 20 * cell * cell, area, 1e-9);
+        final double expected = area * depth;
         assertEquals("the preview is the block", expected, preview[0], 1e-6 * expected);
         assertEquals(1.0, preview[1], 0.0);
         assertTrue("the toolbar's Extrude is offered", extrudeShown());
@@ -325,7 +329,9 @@ public final class CadMultiFaceOwnerTest {
         final double grid = NativeViewport.sketchGridStep();
         assertTrue("a grid step to draw on: " + grid, grid > 0.0 && grid <= 0.25);
         final double unit = grid * Math.max(1.0, Math.rint(0.2 / grid));
-        cell = 2.0 * unit;
+        // One grid unit per cell: a 4 x 6 grid of about 1 x 1.5 m stands wholly
+        // inside the first sketch's view, so no drag ends past the viewport.
+        cell = unit;
         final double hu = 0.5 * COLS * cell;
         final double hv = 0.5 * ROWS * cell;
         selectTool(rule.getScenario(), R.id.tool_rail_rectangle);
@@ -486,8 +492,19 @@ public final class CadMultiFaceOwnerTest {
                 }
             }
         }
-        return view.isClickable() || view.getId() == R.id.viewport_surface ? view : null;
+        return view.isClickable() || HUD_DOWN_TAKERS.contains(view.getId())
+                || view.getId() == R.id.viewport_surface ? view : null;
     }
+
+    /**
+     * The canvas HUD views that consume a Down over the viewport whether or
+     * not they are marked clickable (the debug `FORGESHAPE_CAD_HUD_TOUCH`
+     * reasons): a finger on one of them is the HUD's, never a cell's.
+     */
+    private static final java.util.Set<Integer> HUD_DOWN_TAKERS = new java.util.HashSet<>(
+            Arrays.asList(R.id.cad_extrude_depth_value, R.id.cad_extrude_second_value,
+                    R.id.cad_extrude_depth_editor, R.id.cad_extrude_second_editor,
+                    R.id.cad_extrude_panel, R.id.cad_canvas_edit_sketch));
 
     /** px from the drawn arrow (base to its point); infinite with no arrow. */
     private static float shaftDistance(float x, float y) {
@@ -615,6 +632,17 @@ public final class CadMultiFaceOwnerTest {
         }
         Arrays.sort(result);
         return result;
+    }
+
+    /** The summed native area of the selected faces, square metres. */
+    private static double selectedArea() {
+        double sum = 0.0;
+        final double[] info = new double[NativeViewport.SKETCH_REGION_INFO_SIZE];
+        for (long handle : selected()) {
+            assertTrue(NativeViewport.sketchProfileInfo(handle, info));
+            sum += info[NativeViewport.SKETCH_REGION_AREA];
+        }
+        return sum;
     }
 
     private static double[] toolState() {

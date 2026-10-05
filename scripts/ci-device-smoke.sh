@@ -470,7 +470,7 @@ for cls, name, code, stack in failed:
 PY
 # The fact files a class chose to write (bounded), for the same reader.
 find "$OUT/test-evidence" -name 'facts-*.txt' -print0 2>/dev/null \
-    | xargs -0 -r cat 2>/dev/null | head -n 400 | sed 's/^/TEST_FACT /' || true
+    | xargs -0 -r cat 2>/dev/null | head -n 1500 | sed 's/^/TEST_FACT /' || true
 read -r TESTS_RUN TESTS_FAILED FINAL_CODE < <(sed -E 's/run=([0-9]+) failed=([0-9]+) final_code=(.*)/\1 \2 \3/' "$OUT/instrumentation-counts.txt")
 echo "Instrumentation: run=$TESTS_RUN failed=$TESTS_FAILED final_code=$FINAL_CODE exit=$instrument_exit (${TEST_SECONDS}s)"
 grep -E '^(OK \(|FAILURES!!!|Tests run:)' "$OUT/instrumentation-raw.txt" || true
