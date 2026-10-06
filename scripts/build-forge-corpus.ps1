@@ -1871,6 +1871,190 @@ function New-CadRevolveFile {
     return New-ForgeFile 1 @($scne, $cadb) 8
 }
 
+# ---------------------------------------------------------------------------
+# CADB v8 (CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1): drafting truth in the sketch
+# ---------------------------------------------------------------------------
+#
+# v8 is v7's layout (7h) with two additions inside EVERY sketch record --
+# DATA_PACKAGE_SPEC.md 7i:
+#
+#   ENTITY     id u32 | kind u8 | ROLE u8 (1 Regular, 2 Construction) | payload
+#   SKETCH     ... | nextEntityId u32 | entities | nextDimensionId u32 |
+#              dimensionCount u32 | DIMENSION x count (ascending id)
+#   DIMENSION  id u32 | kind u8 (1..12) | mode u8 (1 Driving, 2 Reference) |
+#              firstEntityId u32 | firstEdgeLocalIndex u32 |
+#              secondEntityId u32 | secondEdgeLocalIndex u32     (22 bytes)
+#
+# Dimension kinds: 1 LineLength, 2 LineAngle, 3 LineHorizontal, 4 LineVertical,
+# 5 RectangleWidth, 6 RectangleHeight, 7 CircleRadius, 8 CircleDiameter,
+# 9 EdgeLength, 10 ArcRadius, 11 ArcSweep, 12 EdgeAngle. No value is stored:
+# a dimension's number is derived from the entity it names. These writers
+# validate nothing, so the two corrupt fixtures are CONSTRUCTED with their bad
+# record in place.
+
+function Add-CadEntityListV8 {
+    param($Buffer, $Entities)
+    $list = @(if ($null -ne $Entities) { $Entities })
+    Add-U32 $Buffer ([uint32] $list.Count)
+    foreach ($entity in $list) {
+        Add-U32 $Buffer ([uint32] $entity.Id)
+        Add-U8  $Buffer $entity.KindCode
+        $role = if ($null -ne $entity.PSObject.Properties['RoleCode']) { $entity.RoleCode } else { 1 }
+        Add-U8  $Buffer $role
+        switch ($entity.KindCode) {
+            1 { foreach ($value in $entity.Values) { Add-F64 $Buffer $value } }
+            2 {
+                Add-U8  $Buffer $(if ($entity.Closed) { 1 } else { 0 })
+                Add-U32 $Buffer ([uint32] ($entity.Values.Count / 2))
+                foreach ($value in $entity.Values) { Add-F64 $Buffer $value }
+            }
+            3 { foreach ($value in $entity.Values) { Add-F64 $Buffer $value } }
+            4 { foreach ($value in $entity.Values) { Add-F64 $Buffer $value } }
+            5 { foreach ($value in $entity.Values) { Add-F64 $Buffer $value } }
+            6 {
+                Add-U32 $Buffer ([uint32] ($entity.Values.Count / 2))
+                foreach ($value in $entity.Values) { Add-F64 $Buffer $value }
+            }
+        }
+    }
+}
+
+function Add-CadSketchV8 {
+    param($Buffer, $Sketch)
+    Add-U32 $Buffer ([uint32] $Sketch.SketchId)
+    Add-U8  $Buffer $Sketch.PlacementCode
+    # Every v8 fixture stands on a world plane; the face placements are v6's.
+    Add-U8  $Buffer $Sketch.PlaneCode
+    Add-U32 $Buffer ([uint32] $Sketch.NextEntityId)
+    Add-CadEntityListV8 $Buffer $Sketch.Entities
+    Add-U32 $Buffer ([uint32] $Sketch.NextDimensionId)
+    $dimensions = @(if ($null -ne $Sketch.Dimensions) { $Sketch.Dimensions })
+    Add-U32 $Buffer ([uint32] $dimensions.Count)
+    foreach ($d in $dimensions) {
+        Add-U32 $Buffer ([uint32] $d.Id)
+        Add-U8  $Buffer $d.KindCode
+        Add-U8  $Buffer $d.ModeCode
+        Add-U32 $Buffer ([uint32] $d.FirstEntityId)
+        Add-U32 $Buffer ([uint32] $d.FirstEdge)
+        Add-U32 $Buffer ([uint32] $d.SecondEntityId)
+        Add-U32 $Buffer ([uint32] $d.SecondEdge)
+    }
+}
+
+function New-CadDimension {
+    param([uint32] $Id, [int] $KindCode, [int] $ModeCode, [uint32] $FirstEntityId,
+          [uint32] $FirstEdge = 0, [uint32] $SecondEntityId = 0, [uint32] $SecondEdge = 0)
+    return [pscustomobject]@{ Id = $Id; KindCode = $KindCode; ModeCode = $ModeCode
+                              FirstEntityId = $FirstEntityId; FirstEdge = $FirstEdge
+                              SecondEntityId = $SecondEntityId; SecondEdge = $SecondEdge }
+}
+
+function With-Role {
+    param($Entity, [int] $RoleCode)
+    $Entity | Add-Member -NotePropertyName RoleCode -NotePropertyValue $RoleCode -Force
+    return $Entity
+}
+
+function New-CadArcEntity {
+    param([uint32] $Id, [double] $U0, [double] $V0, [double] $U1, [double] $V1, [double] $U2,
+          [double] $V2)
+    return [pscustomobject]@{ Id = $Id; KindCode = 5; Values = @($U0, $V0, $U1, $V1, $U2, $V2) }
+}
+
+function New-CadOpenPolylineEntity {
+    param([uint32] $Id, [double[]] $Values)
+    return [pscustomobject]@{ Id = $Id; KindCode = 2; Closed = $false; Values = @($Values) }
+}
+
+# One world-XY Extrude body of ONE region (profile 1, no holes), 1 m along +Z,
+# whose single sketch carries the given drafting truth.
+function New-CadDraftingFile {
+    param($Entities, [uint32] $NextEntityId, [uint32] $NextDimensionId, $Dimensions)
+    $sketch = [pscustomobject]@{ SketchId = 1; PlacementCode = 1; PlaneCode = 1
+                                 NextEntityId = $NextEntityId; Entities = @($Entities)
+                                 NextDimensionId = $NextDimensionId
+                                 Dimensions = @(if ($null -ne $Dimensions) { $Dimensions }) }
+    $base = New-CadV6Base -SelectionKind 1 -ProfileEntityId 1 -Regions (New-CadRegionSelection)
+    $base | Add-Member -NotePropertyName KindCode -NotePropertyValue 1 -Force
+    $p = New-ByteBuffer
+    Add-U32 $p 1
+    Add-U64 $p 1
+    Add-U32 $p 2
+    Add-U32 $p 2
+    Add-U32 $p 1
+    Add-CadSketchV8 $p $sketch
+    Add-U32 $p 1
+    Add-CadFeatureV7 $p $base
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 8 $true ($p.ToArray())
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD CONSTRUCTION: a 2 x 1 m rectangle (entity 1, Regular) crossed by a
+# CONSTRUCTION centre line (entity 2) and a CONSTRUCTION circle (entity 3)
+# around it. Material topology ignores both, so the rectangle is ONE region and
+# the base extrudes it alone; read as material they would split it.
+function New-CadConstructionFile {
+    $entities = @(
+        (New-CadRectangleEntity 1 0.0 0.0 2.0 1.0),
+        (With-Role (New-CadLineEntity 2 -2.0 0.0 2.0 0.0) 2),
+        (With-Role (New-CadCircleEntity 3 0.0 0.0 1.5) 2))
+    return New-CadDraftingFile -Entities $entities -NextEntityId 4 -NextDimensionId 1
+}
+
+# CAD DIMENSION DRIVING: the 2 x 1 m rectangle (1), a separate circle (2) at
+# (3, 0) of radius 0.5 and a separate Line (3) from (-1, -2) to (1, -2), each
+# carrying DRIVING dimensions -- width, height, diameter, length and angle.
+# `$Conflict` adds a Radius DRIVING the same circle the Diameter drives: the
+# refusal the decoder must make (`SketchDimensionConflict`). `$BadRef` points
+# the diameter at entity 9, which the sketch does not carry.
+function New-CadDrivingDimensionFile {
+    param([switch] $Conflict, [switch] $BadRef)
+    $entities = @(
+        (New-CadRectangleEntity 1 0.0 0.0 2.0 1.0),
+        (New-CadCircleEntity 2 3.0 0.0 0.5),
+        (New-CadLineEntity 3 -1.0 -2.0 1.0 -2.0))
+    $circle = if ($BadRef) { 9 } else { 2 }
+    $dimensions = @(
+        (New-CadDimension 1 5 1 1),
+        (New-CadDimension 2 6 1 1),
+        (New-CadDimension 3 8 1 $circle),
+        (New-CadDimension 4 1 1 3),
+        (New-CadDimension 5 2 1 3))
+    $next = 6
+    if ($Conflict) {
+        $dimensions += (New-CadDimension 6 7 1 2)
+        $next = 7
+    }
+    return New-CadDraftingFile -Entities $entities -NextEntityId 4 -NextDimensionId $next `
+        -Dimensions $dimensions
+}
+
+# CAD DIMENSION REFERENCE: the rectangle (1), a three-point Arc (2), an open
+# Polyline (3) and a Line (4), measured by REFERENCE dimensions only -- the arc's
+# radius and sweep, a polyline segment's and a rectangle edge's length, the
+# line's horizontal and vertical components, and the angle between the two
+# polyline segments. The high-water mark 9 is above every id: dimension 8 was
+# made and deleted, and its id is never minted again.
+function New-CadReferenceDimensionFile {
+    $entities = @(
+        (New-CadRectangleEntity 1 0.0 0.0 2.0 1.0),
+        (New-CadArcEntity 2 3.0 0.0 4.0 1.0 5.0 0.0),
+        (New-CadOpenPolylineEntity 3 @(0.0, -2.0, 2.0, -2.0, 2.0, -3.0)),
+        (New-CadLineEntity 4 0.0 2.0 2.0 3.0))
+    $dimensions = @(
+        (New-CadDimension 1 10 2 2),
+        (New-CadDimension 2 11 2 2),
+        (New-CadDimension 3 9 2 3 1),
+        (New-CadDimension 4 9 2 1 2),
+        (New-CadDimension 5 3 2 4),
+        (New-CadDimension 6 4 2 4),
+        (New-CadDimension 7 12 2 3 0 3 1))
+    return New-CadDraftingFile -Entities $entities -NextEntityId 5 -NextDimensionId 9 `
+        -Dimensions $dimensions
+}
+
 # The one Imported Mesh every imported fixture carries.
 #
 # Four vertices, two submeshes with DIFFERENT doubleSided answers, and every
@@ -2476,6 +2660,11 @@ $fixtures = [ordered]@{
     'cad_revolve_partial_v7.forge'    = (New-CadRevolveFile -AngleDegrees 90.0 -RevolveDirectionCode 2)
     'cad_revolve_bad_axis_v7.forge'   = (New-CadRevolveFile -AxisEntityId 7)
     'cad_bad_feature_kind_v7.forge'   = (New-CadRevolveFile -KindCode 9)
+    'cad_construction_v8.forge'          = (New-CadConstructionFile)
+    'cad_dimension_driving_v8.forge'     = (New-CadDrivingDimensionFile)
+    'cad_dimension_reference_v8.forge'   = (New-CadReferenceDimensionFile)
+    'cad_bad_dimension_ref_v8.forge'     = (New-CadDrivingDimensionFile -BadRef)
+    'cad_dimension_conflict_v8.forge'    = (New-CadDrivingDimensionFile -Conflict)
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -2553,6 +2742,11 @@ foreach ($name in @('cad_sketch_shared_v6', 'cad_face_lens_v6', 'cad_face_protru
 Write-Host 'Digests of the CADB v7 fixtures (CAD-V6-REVOLVE-NEWBODY-E2E-R1):'
 foreach ($name in @('cad_revolve_full_v7', 'cad_revolve_partial_v7', 'cad_revolve_bad_axis_v7',
                     'cad_bad_feature_kind_v7')) {
+    Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
+}
+Write-Host 'Digests of the CADB v8 fixtures (CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1):'
+foreach ($name in @('cad_construction_v8', 'cad_dimension_driving_v8', 'cad_dimension_reference_v8',
+                    'cad_bad_dimension_ref_v8', 'cad_dimension_conflict_v8')) {
     Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
 }
 Write-Host 'Lineage tokens the v5 fixtures carry (7c / 7f signature):'

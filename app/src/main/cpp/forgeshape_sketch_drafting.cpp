@@ -239,7 +239,7 @@ void straightRemains(const SketchPoint& a, const SketchPoint& b, const SketchPoi
 }  // namespace
 
 CadStatus planSketchTrim(const CadSketch& sketch, const SketchPoint& point, double tolerance,
-                         SketchTrimPlan* out) {
+                         SketchTrimPlan* out, const SketchArrangement* allCurves) {
     if (out == nullptr) {
         return CadStatus::DraftingNoTarget;
     }
@@ -255,7 +255,10 @@ CadStatus planSketchTrim(const CadSketch& sketch, const SketchPoint& point, doub
     if (!sketchDimensionsReferencing(sketch, target).empty()) {
         return CadStatus::SketchDimensionDependency;
     }
-    const SketchArrangement arrangement = deriveSketchArrangement(cadSketchAllCurvesView(sketch));
+    const SketchArrangement derived = allCurves != nullptr
+                                              ? SketchArrangement{}
+                                              : deriveSketchArrangement(cadSketchAllCurvesView(sketch));
+    const SketchArrangement& arrangement = allCurves != nullptr ? *allCurves : derived;
     if (arrangement.status != ArrangementStatus::Ok) {
         return cadStatusForArrangement(arrangement.status);
     }

@@ -716,7 +716,10 @@ const SketchSnapCandidates& SketchSession::snapCandidates() const {
     // points and never re-derives the arrangement.
     if (!snapCacheValid_ || !sameCadSketch(snapSketch_, sketch_)) {
         snapSketch_ = sketch_;
-        snapCache_ = collectSketchSnapCandidates(sketch_);
+        allCurvesCache_ = sketch_.entities.empty()
+                                  ? SketchArrangement{}
+                                  : deriveSketchArrangement(cadSketchAllCurvesView(sketch_));
+        snapCache_ = collectSketchSnapCandidates(sketch_, &allCurvesCache_);
         snapCacheValid_ = true;
     }
     return snapCache_;
@@ -1547,7 +1550,8 @@ CadStatus SketchSession::trimAt(const SketchPoint& point, double toleranceMeters
         return fail(CadStatus::NotSketching);
     }
     SketchTrimPlan plan;
-    const CadStatus why = planSketchTrim(sketch_, point, toleranceMeters, &plan);
+    snapCandidates();  // brings the shared all-curves arrangement up to date
+    const CadStatus why = planSketchTrim(sketch_, point, toleranceMeters, &plan, &allCurvesCache_);
     if (why != CadStatus::Ok) {
         return fail(why);
     }
@@ -1692,7 +1696,8 @@ void SketchSession::updateModifyPreview(const SketchPoint& raw) {
     const double tolerance = kSketchHitToleranceUnits * worldPerUnit_;
     if (modifyMode_ == SketchModifyMode::Trim) {
         SketchTrimPlan plan;
-        if (planSketchTrim(sketch_, raw, tolerance, &plan) == CadStatus::Ok) {
+        snapCandidates();
+        if (planSketchTrim(sketch_, raw, tolerance, &plan, &allCurvesCache_) == CadStatus::Ok) {
             modifyPreview_ = std::move(plan.removed);
         }
     } else if (modifyMode_ == SketchModifyMode::Extend) {

@@ -81,7 +81,12 @@ struct SketchSnapCandidates {
     bool intersectionsDerived = true;
 };
 
-SketchSnapCandidates collectSketchSnapCandidates(const CadSketch& sketch);
+// `allCurves`, when given, must be `deriveSketchArrangement(cadSketchAllCurvesView
+// (sketch))` for this very sketch: the session derives it once per sketch
+// content and shares it with Trim, so a pointer move never re-derives it.
+struct SketchArrangement;
+SketchSnapCandidates collectSketchSnapCandidates(const CadSketch& sketch,
+                                                 const SketchArrangement* allCurves = nullptr);
 
 struct SketchSnapResult {
     SketchPoint point{};

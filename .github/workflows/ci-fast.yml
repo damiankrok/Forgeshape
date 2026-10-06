@@ -157,10 +157,10 @@ jobs:
           done
           echo "committed=$committed generated=$generated mismatches=$mismatches" \
             | tee ci-fast-evidence/forge-corpus-parity.txt
-          test "$committed" -eq 61
-          test "$generated" -eq 61
+          test "$committed" -eq 66
+          test "$generated" -eq 66
           test "$mismatches" -eq 0
-          echo "FORGE_CORPUS_PARITY=PASS (61/61 byte-identical)" | tee -a ci-fast-evidence/forge-corpus-parity.txt
+          echo "FORGE_CORPUS_PARITY=PASS (66/66 byte-identical)" | tee -a ci-fast-evidence/forge-corpus-parity.txt
 
       - name: Device-free runner and device-guard checks
         shell: bash

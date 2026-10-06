@@ -22,7 +22,8 @@ const char* sketchSnapKindName(SketchSnapKind kind) {
     return "unknown";
 }
 
-SketchSnapCandidates collectSketchSnapCandidates(const CadSketch& sketch) {
+SketchSnapCandidates collectSketchSnapCandidates(const CadSketch& sketch,
+                                                 const SketchArrangement* allCurves) {
     SketchSnapCandidates out;
     std::vector<const SketchEntity*> entities;
     entities.reserve(sketch.entities.size());
@@ -71,7 +72,10 @@ SketchSnapCandidates collectSketchSnapCandidates(const CadSketch& sketch) {
     // some fragment is cut there by a partner -- a crossing or a T-junction --
     // rather than merely meeting another curve end to end.
     if (!sketch.entities.empty()) {
-        const SketchArrangement arrangement = deriveSketchArrangement(cadSketchAllCurvesView(sketch));
+        const SketchArrangement derived =
+                allCurves != nullptr ? SketchArrangement{}
+                                     : deriveSketchArrangement(cadSketchAllCurvesView(sketch));
+        const SketchArrangement& arrangement = allCurves != nullptr ? *allCurves : derived;
         if (arrangement.status != ArrangementStatus::Ok) {
             out.intersectionsDerived = false;
         } else {

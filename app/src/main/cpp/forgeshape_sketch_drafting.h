@@ -90,8 +90,13 @@ struct SketchTrimPlan {
 // point), `TrimSplineUnsupported`, `SketchDimensionDependency` (a dimension
 // names the target), the arrangement's own name when it cannot derive, and the
 // geometry's when a piece would be invalid.
+//
+// `allCurves`, when given, must be the all-curves arrangement of this very
+// sketch (`deriveSketchArrangement(cadSketchAllCurvesView(sketch))`); the
+// session passes the one it already derived for snapping.
+struct SketchArrangement;
 CadStatus planSketchTrim(const CadSketch& sketch, const SketchPoint& point, double tolerance,
-                         SketchTrimPlan* out);
+                         SketchTrimPlan* out, const SketchArrangement* allCurves = nullptr);
 
 // --- Extend --------------------------------------------------------------------
 

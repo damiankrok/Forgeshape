@@ -978,6 +978,9 @@ private:
     mutable bool snapCacheValid_ = false;
     mutable CadSketch snapSketch_;
     mutable SketchSnapCandidates snapCache_;
+    // The all-curves arrangement the snap cache was built from, shared with
+    // the Trim preview so a pointer move never re-derives it.
+    mutable SketchArrangement allCurvesCache_;
     SketchSnapResult lastSnap_{};
 
     SketchRegionExtraction regions_;

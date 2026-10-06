@@ -614,6 +614,32 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
             mixSelection(hash, feature.extrude);
         }
     }
+    // `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`: every sketch's roles, dimension
+    // table and dimension high-water mark. Mixed only when some sketch carries
+    // drafting truth, so every project without any keeps exactly the
+    // fingerprint it always had -- and a Make Construction, a dimension added
+    // or removed and a Driving edit each move it.
+    if (cadBodyStateUsesDrafting(state)) {
+        mixU64(hash, 0x44524638ull);  // "DRF8"
+        for (const CadSketchRecord& record : state.sketches) {
+            mixU64(hash, record.sketchId);
+            for (const SketchEntity& entity : record.sketch.entities) {
+                mixU64(hash, entity.id());
+                mixU64(hash, static_cast<uint64_t>(entity.role()));
+            }
+            mixU64(hash, record.sketch.nextDimensionId);
+            mixU64(hash, record.sketch.dimensions.size());
+            for (const SketchDimension& dimension : record.sketch.dimensions) {
+                mixU64(hash, dimension.id);
+                mixU64(hash, static_cast<uint64_t>(dimension.kind));
+                mixU64(hash, static_cast<uint64_t>(dimension.mode));
+                mixU64(hash, dimension.first.entityId);
+                mixU64(hash, dimension.first.edgeLocalIndex);
+                mixU64(hash, dimension.second.entityId);
+                mixU64(hash, dimension.second.edgeLocalIndex);
+            }
+        }
+    }
     // `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: a Revolve's whole authored truth -- its
     // selection, its axis ref, the exact angle bits and the direction. Mixed
     // only for a Revolve, so every Extrude project keeps the fingerprint it

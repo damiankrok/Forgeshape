@@ -279,6 +279,71 @@ bool sketchEntityKindFromFileCode(uint8_t code, SketchEntityKind* out) {
     }
 }
 
+uint8_t sketchEntityRoleFileCode(SketchEntityRole role) {
+    switch (role) {
+        case SketchEntityRole::Regular: return 1;
+        case SketchEntityRole::Construction: return 2;
+    }
+    return 0;
+}
+
+bool sketchEntityRoleFromFileCode(uint8_t code, SketchEntityRole* out) {
+    if (out == nullptr) return false;
+    switch (code) {
+        case 1: *out = SketchEntityRole::Regular; return true;
+        case 2: *out = SketchEntityRole::Construction; return true;
+        default: return false;
+    }
+}
+
+uint8_t sketchDimensionKindFileCode(SketchDimensionKind kind) {
+    switch (kind) {
+        case SketchDimensionKind::LineLength: return 1;
+        case SketchDimensionKind::LineAngle: return 2;
+        case SketchDimensionKind::LineHorizontal: return 3;
+        case SketchDimensionKind::LineVertical: return 4;
+        case SketchDimensionKind::RectangleWidth: return 5;
+        case SketchDimensionKind::RectangleHeight: return 6;
+        case SketchDimensionKind::CircleRadius: return 7;
+        case SketchDimensionKind::CircleDiameter: return 8;
+        case SketchDimensionKind::EdgeLength: return 9;
+        case SketchDimensionKind::ArcRadius: return 10;
+        case SketchDimensionKind::ArcSweep: return 11;
+        case SketchDimensionKind::EdgeAngle: return 12;
+    }
+    return 0;
+}
+
+bool sketchDimensionKindFromFileCode(uint8_t code, SketchDimensionKind* out) {
+    if (out == nullptr || code < 1 || code > 12) return false;
+    static const SketchDimensionKind kinds[12] = {
+            SketchDimensionKind::LineLength,      SketchDimensionKind::LineAngle,
+            SketchDimensionKind::LineHorizontal,  SketchDimensionKind::LineVertical,
+            SketchDimensionKind::RectangleWidth,  SketchDimensionKind::RectangleHeight,
+            SketchDimensionKind::CircleRadius,    SketchDimensionKind::CircleDiameter,
+            SketchDimensionKind::EdgeLength,      SketchDimensionKind::ArcRadius,
+            SketchDimensionKind::ArcSweep,        SketchDimensionKind::EdgeAngle};
+    *out = kinds[code - 1];
+    return true;
+}
+
+uint8_t sketchDimensionModeFileCode(SketchDimensionMode mode) {
+    switch (mode) {
+        case SketchDimensionMode::Driving: return 1;
+        case SketchDimensionMode::Reference: return 2;
+    }
+    return 0;
+}
+
+bool sketchDimensionModeFromFileCode(uint8_t code, SketchDimensionMode* out) {
+    if (out == nullptr) return false;
+    switch (code) {
+        case 1: *out = SketchDimensionMode::Driving; return true;
+        case 2: *out = SketchDimensionMode::Reference; return true;
+        default: return false;
+    }
+}
+
 uint8_t cadFaceKindFileCode(CadFaceKind kind) {
     switch (kind) {
         case CadFaceKind::CapPlane: return 1;
@@ -441,6 +506,19 @@ bool cadDocumentNeedsV6(const ProjectDocument& document) {
 bool cadDocumentNeedsV7(const ProjectDocument& document) {
     for (const ProjectCadBody& body : document.cad.bodies) {
         if (cadBodyStateUsesRevolve(body.state)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Whether any CAD body needs the v8 section (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`):
+// a Construction entity, a sketch dimension or a dimension high-water mark
+// above 1, none of which an earlier layout has a byte for. Everything else
+// keeps whichever of v1..v7 it already used, byte for byte.
+bool cadDocumentNeedsV8(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (cadBodyStateUsesDrafting(body.state)) {
             return true;
         }
     }
@@ -1036,11 +1114,15 @@ namespace {
 
 // The entity list, exactly as §7b and §7d write it. One writer for a first
 // feature's sketch and a later feature's alike, so the two can never drift.
-void writeCadEntities(ByteWriter& out, const CadSketch& sketch) {
+void writeCadEntities(ByteWriter& out, const CadSketch& sketch, bool roles = false) {
     out.u32(static_cast<uint32_t>(sketch.entities.size()));
     for (const SketchEntity& entity : sketch.entities) {
         out.u32(entity.id());
         out.u8(sketchEntityKindFileCode(entity.kind()));
+        if (roles) {
+            // v8 (§7i): the role byte, directly after the kind it qualifies.
+            out.u8(sketchEntityRoleFileCode(entity.role()));
+        }
         if (const SketchLine* line = entity.line()) {
             out.f64(line->start.u);
             out.f64(line->start.v);
@@ -1179,7 +1261,24 @@ void writeCadSelectionV6(ByteWriter& out, const ExtrudeFeature& selection) {
 // (§7h), which is the same table with a KIND after every feature id: the
 // high-water marks, the sketch table, then every feature -- base first --
 // referencing a sketch by id.
-void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKinds) {
+// v8's dimension table (§7i): the high-water mark, the count, then each record
+// in ascending id order, 22 bytes each.
+void writeCadDimensions(ByteWriter& out, const CadSketch& sketch) {
+    out.u32(sketch.nextDimensionId);
+    out.u32(static_cast<uint32_t>(sketch.dimensions.size()));
+    for (const SketchDimension& dimension : sketch.dimensions) {
+        out.u32(dimension.id);
+        out.u8(sketchDimensionKindFileCode(dimension.kind));
+        out.u8(sketchDimensionModeFileCode(dimension.mode));
+        out.u32(dimension.first.entityId);
+        out.u32(dimension.first.edgeLocalIndex);
+        out.u32(dimension.second.entityId);
+        out.u32(dimension.second.edgeLocalIndex);
+    }
+}
+
+void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKinds,
+                    bool drafting) {
     const CadBodyState& state = body.state;
     out.u64(body.objectId);
     out.u32(state.nextSketchId);
@@ -1202,7 +1301,10 @@ void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKin
             out.u8(workplaneFileCode(record.sketch.plane));
         }
         out.u32(record.sketch.nextEntityId);
-        writeCadEntities(out, record.sketch);
+        writeCadEntities(out, record.sketch, drafting);
+        if (drafting) {
+            writeCadDimensions(out, record.sketch);
+        }
     }
     out.u32(cadFeatureCount(state));
     for (uint32_t index = 0; index < cadFeatureCount(state); ++index) {
@@ -1347,7 +1449,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
 
     // The section is written at the LOWEST version that can carry it, so every
     // project that predates a feature keeps the bytes it always had.
-    const bool cadV7 = document.hasCad && cadDocumentNeedsV7(document);
+    const bool cadV8 = document.hasCad && cadDocumentNeedsV8(document);
+    const bool cadV7 = document.hasCad && (cadV8 || cadDocumentNeedsV7(document));
     const bool cadV6 = document.hasCad && (cadV7 || cadDocumentNeedsV6(document));
     const bool cadV5 = document.hasCad && cadDocumentNeedsV5(document);
     const bool cadV4 = document.hasCad && (cadV5 || cadDocumentNeedsV4(document));
@@ -1362,7 +1465,7 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
                 // v6 is its own layout (§7g), not a tail on v5: the sketch
                 // table replaces the inline sketches outright. v7 (§7h) is that
                 // layout with a kind after every feature id.
-                writeCadBodyV6(out, body, /*featureKinds=*/cadV7);
+                writeCadBodyV6(out, body, /*featureKinds=*/cadV7, /*drafting=*/cadV8);
                 continue;
             }
             const CadBodyState& state = body.state;
@@ -1495,7 +1598,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
         appendSection(file, kSectionTagCad,
-                      cadV7   ? kCadSectionVersionV7
+                      cadV8   ? kCadSectionVersionV8
+                      : cadV7 ? kCadSectionVersionV7
                       : cadV6 ? kCadSectionVersionV6
                       : cadV5 ? kCadSectionVersionV5
                       : cadV4 ? kCadSectionVersionV4
@@ -1781,7 +1885,7 @@ ProjectCodecStatus decodeImportedPayload(ByteReader& in, ProjectImportedRecord* 
 // The entity list after its count (§7b, §7d). One reader for a first
 // feature's sketch and a later feature's alike.
 ProjectCodecStatus readCadEntities(ByteReader& in, uint32_t entityCount, CadSketch* sketch,
-                                   bool allowCurves) {
+                                   bool allowCurves, bool roles = false) {
     if (entityCount == 0 || entityCount > kMaxSketchEntities) {
         return ProjectCodecStatus::ImpossibleCount;
     }
@@ -1800,6 +1904,20 @@ ProjectCodecStatus readCadEntities(ByteReader& in, uint32_t entityCount, CadSket
         if (!sketchEntityKindFromFileCode(kindCode, &kind)) {
             return ProjectCodecStatus::InvalidSemanticValue;
         }
+        // v8 (§7i): the role byte. An unknown role is refused by name, never
+        // read as Regular -- a construction line read as material would close
+        // a profile the user never drew.
+        SketchEntityRole role = SketchEntityRole::Regular;
+        if (roles) {
+            uint8_t roleCode = 0;
+            if (!in.u8(&roleCode)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            if (!sketchEntityRoleFromFileCode(roleCode, &role)) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+        }
+        const size_t entitiesBefore = sketch->entities.size();
         // A curve kind is a v3 field. Meeting one inside a section that
         // declared itself v1 or v2 is a malformed file, not a newer one:
         // the version says what the payload may contain, and a payload
@@ -1893,6 +2011,41 @@ ProjectCodecStatus readCadEntities(ByteReader& in, uint32_t entityCount, CadSket
                 sketch->entities.emplace_back(id, std::move(spline));
                 break;
             }
+        }
+        if (sketch->entities.size() == entitiesBefore + 1u) {
+            sketch->entities.back().setRole(role);
+        }
+    }
+    return ProjectCodecStatus::Ok;
+}
+
+// v8's dimension table (§7i). Structure and file codes here -- the count bound
+// proven against the remaining bytes before anything is allocated; every
+// relation (ids, order, high-water mark, refs, modes, conflicts) is
+// `validateCadSketch`'s, judged on the decoded state as a whole.
+ProjectCodecStatus readCadDimensions(ByteReader& in, CadSketch* sketch) {
+    uint32_t count = 0;
+    if (!in.u32(&sketch->nextDimensionId) || !in.u32(&count)) {
+        return ProjectCodecStatus::Truncated;
+    }
+    if (count > kMaxSketchDimensions) {
+        return ProjectCodecStatus::ImpossibleCount;
+    }
+    if (static_cast<uint64_t>(count) * 22ull > in.remaining()) {
+        return ProjectCodecStatus::Truncated;
+    }
+    sketch->dimensions.resize(count);
+    for (SketchDimension& dimension : sketch->dimensions) {
+        uint8_t kindCode = 0;
+        uint8_t modeCode = 0;
+        if (!in.u32(&dimension.id) || !in.u8(&kindCode) || !in.u8(&modeCode)
+            || !in.u32(&dimension.first.entityId) || !in.u32(&dimension.first.edgeLocalIndex)
+            || !in.u32(&dimension.second.entityId) || !in.u32(&dimension.second.edgeLocalIndex)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        if (!sketchDimensionKindFromFileCode(kindCode, &dimension.kind)
+            || !sketchDimensionModeFromFileCode(modeCode, &dimension.mode)) {
+            return ProjectCodecStatus::InvalidSemanticValue;
         }
     }
     return ProjectCodecStatus::Ok;
@@ -2113,7 +2266,8 @@ ProjectCodecStatus readCadSelectionV6(ByteReader& in, ExtrudeFeature* extrude) {
 // stored, the base feature from the first feature record.
 // Structure and file codes here; every relation between the parts --
 // ids, order, references, placements, selections -- is `validateCadBodyState`'s.
-ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool featureKinds) {
+ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool featureKinds,
+                                   bool drafting) {
     CadBodyState& state = body->state;
     uint32_t sketchCount = 0;
     if (!in.u64(&body->objectId) || !in.u32(&state.nextSketchId)
@@ -2181,9 +2335,15 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
             return ProjectCodecStatus::Truncated;
         }
         const ProjectCodecStatus entities =
-                readCadEntities(in, entityCount, &sketch, /*allowCurves=*/true);
+                readCadEntities(in, entityCount, &sketch, /*allowCurves=*/true, /*roles=*/drafting);
         if (entities != ProjectCodecStatus::Ok) {
             return entities;
+        }
+        if (drafting) {
+            const ProjectCodecStatus dimensions = readCadDimensions(in, &sketch);
+            if (dimensions != ProjectCodecStatus::Ok) {
+                return dimensions;
+            }
         }
     }
     uint32_t featureCount = 0;
@@ -2292,7 +2452,8 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
 }
 
 ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, uint16_t version) {
-    if (version == kCadSectionVersionV6 || version == kCadSectionVersionV7) {
+    if (version == kCadSectionVersionV6 || version == kCadSectionVersionV7
+        || version == kCadSectionVersionV8) {
         uint32_t bodyCount = 0;
         if (!in.u32(&bodyCount)) {
             return ProjectCodecStatus::Truncated;
@@ -2310,7 +2471,8 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         record->bodies.resize(bodyCount);
         for (ProjectCadBody& body : record->bodies) {
             const ProjectCodecStatus why =
-                    decodeCadBodyV6(in, &body, /*featureKinds=*/version == kCadSectionVersionV7);
+                    decodeCadBodyV6(in, &body, /*featureKinds=*/version >= kCadSectionVersionV7,
+                                    /*drafting=*/version == kCadSectionVersionV8);
             if (why != ProjectCodecStatus::Ok) {
                 return why;
             }
@@ -2593,7 +2755,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
                         || sectionVersion == kCadSectionVersionV4
                         || sectionVersion == kCadSectionVersionV5
                         || sectionVersion == kCadSectionVersionV6
-                        || sectionVersion == kCadSectionVersionV7;
+                        || sectionVersion == kCadSectionVersionV7
+                        || sectionVersion == kCadSectionVersionV8;
         } else if (isScene) {
             // SCNE became the second multi-version section at Stage 018A: v1 as
             // every build before it wrote, and v2 carrying per-body visibility,

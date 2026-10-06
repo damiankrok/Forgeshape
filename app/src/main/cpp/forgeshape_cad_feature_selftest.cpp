@@ -19,6 +19,7 @@
 #include "forgeshape_cad_kernel.h"
 #include "forgeshape_cad_multiface_selftest.h"
 #include "forgeshape_cad_revolve_selftest.h"
+#include "forgeshape_sketch_drafting_selftest.h"
 #include "forgeshape_cad_v6_selftest.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_history.h"
@@ -5809,6 +5810,16 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + revolvePerformance;
+    // The sketch drafting toolkit (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`): the
+    // Construction role, retained dimensions, snaps, Trim / Extend / Offset /
+    // Mirror and `CADB` v8, beside the sketch model they extend.
+    std::vector<ArrangementSelfTestCheck> drafting;
+    std::string draftingPerformance;
+    runSketchDraftingSelfTests(&drafting, &draftingPerformance);
+    for (const ArrangementSelfTestCheck& check : drafting) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + draftingPerformance;
     // The retained sketch table, the selection variant and `CADB` v6
     // (`CAD-V6-S1`): model and persistence only, wired to no session, JNI or
     // UI path, so -- like the arrangement -- they ride in this suite.
@@ -5820,6 +5831,7 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
     }
     g_digests += " " + v6Digests;
     g_digests += " " + cadRevolveFixtureDigests();
+    g_digests += " " + sketchDraftingFixtureDigests();
     return r.n;
 }
 

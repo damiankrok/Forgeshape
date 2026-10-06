@@ -187,6 +187,16 @@ constexpr uint16_t kCadSectionVersionV6 = 6;
 // the v1..v6 bytes it always had. An older build refuses v7 as a required
 // section at an unknown version rather than reading a Revolve as an Extrude.
 constexpr uint16_t kCadSectionVersionV7 = 7;
+// CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1: version 8 is v7's layout with two
+// additions inside every sketch record (DATA_PACKAGE_SPEC.md §7i): a ROLE byte
+// after every entity's kind (1 Regular, 2 Construction), and after the entity
+// list the sketch's dimension high-water mark and its DIMENSION TABLE. Written
+// only when a sketch carries drafting truth -- a Construction entity, a
+// dimension, or a dimension high-water mark above 1; every other project keeps
+// the v1..v7 bytes it always had. An older build refuses v8 as a required
+// section at an unknown version rather than extruding a construction line or
+// dropping a driving dimension.
+constexpr uint16_t kCadSectionVersionV8 = 8;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.
@@ -198,6 +208,14 @@ bool extrudeDirectionFromFileCode(uint8_t code, ExtrudeDirection* out);
 uint8_t extrudeExtentFileCode(ExtrudeExtentMode mode);
 bool extrudeExtentFromFileCode(uint8_t code, ExtrudeExtentMode* out);
 uint8_t sketchEntityKindFileCode(SketchEntityKind kind);
+// CADB v8 drafting codes (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`), file-owned and
+// 1-based like the rest.
+uint8_t sketchEntityRoleFileCode(SketchEntityRole role);
+bool sketchEntityRoleFromFileCode(uint8_t code, SketchEntityRole* out);
+uint8_t sketchDimensionKindFileCode(SketchDimensionKind kind);
+bool sketchDimensionKindFromFileCode(uint8_t code, SketchDimensionKind* out);
+uint8_t sketchDimensionModeFileCode(SketchDimensionMode mode);
+bool sketchDimensionModeFromFileCode(uint8_t code, SketchDimensionMode* out);
 bool sketchEntityKindFromFileCode(uint8_t code, SketchEntityKind* out);
 
 // CADB v2 face-kind file codes (`CAD-A3`), file-owned and 1-based like the rest.
