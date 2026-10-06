@@ -868,6 +868,68 @@ stays a useful size, and a value you type is never nudged to it.
 Not yet: sketching on an imported or sculpted surface; a curved face as a
 sketch support; and moving a face-attached body on its own.
 
+## Drafting inside a sketch
+
+While a sketch is being drawn, a **Modify** control stands under the
+orientation navigator in the upper corner. It opens the **sketch actions
+palette**: *Select multiple*, *Dimension*, *Make Construction* (or *Make
+Regular*), *Trim*, *Extend*, *Offset*, *Mirror* and *Delete*, plus the
+*Dimensions* choice — *Selected*, *All* or *Off*. The palette offers only what
+can work for what is selected: Trim and Extend are always there, Dimension and
+Offset appear for one entity whose kind has them, and Mirror and Delete need a
+selection. While a mode is active the same corner shows its name, what it needs
+and *Done*; choosing a drawing tool ends it.
+
+**Construction geometry.** *Make Construction* turns the selected entities into
+construction geometry: drawn dashed and quieter, still selectable, snapped to
+and dimensioned, but never part of a filled area — a rectangle made
+Construction leaves nothing to extrude, and Finish says so. A construction line
+can be the axis of a Revolve. *Make Regular* turns it back.
+
+**Dimensions.** *Dimension* with an entity selected offers the measurements
+that entity has — a line's Length and Angle (and Horizontal / Vertical), a
+rectangle's Width and Height, a circle's Radius and Diameter, an arc's Radius
+and Sweep. Tapping another entity while the mode is on makes it the next
+target. A new dimension is **Driving** unless you switch the chip to
+**Reference**. Each dimension is a number on the drawing: `R` for a radius, `Ø`
+for a diameter, `°` for an angle, and a Reference in parentheses and paler.
+Tap a Driving number to type a new value — plain numbers or simple arithmetic
+such as `12+3` — and the geometry changes exactly: a line keeps its start point
+and direction, an angle keeps the length, a rectangle and a circle keep their
+centre. A Reference number only reads; tapping it offers *Delete*. *Selected*
+shows the numbers of what is selected, *All* shows every one, *Off* none; the
+numbers follow pinching and panning. Where two numbers would overlap, one is
+hidden — the selected entity's own first, then Driving — rather than moved, and
+a number that would not fit on screen is hidden rather than pushed in. **A
+number never covers the line or curve it measures**, and a tap beside a number
+reaches the drawing.
+
+**Snapping while drawing.** A new point lands exactly on a nearby endpoint,
+midpoint, centre, crossing of two lines, or the origin, or lines up
+horizontally or vertically with one.
+
+**Trim, Extend, Offset, Mirror.** *Trim*: tap the piece of a line, circle or
+rectangle edge between two crossings and it is removed (a circle becomes an
+arc, a rectangle becomes lines); the filled areas follow. *Extend*: tap near
+the end of a line and it reaches exactly to the next line or circle in its way.
+*Offset*: a parallel copy of a line, circle, rectangle or polyline, previewed
+first; drag to set the distance or type it exactly, then *Confirm* — *Done*
+without confirming creates nothing. *Mirror*: with *Select multiple* on, select
+the entities, choose *Mirror*, tap a straight line as the mirror line, see the
+preview, *Confirm*. An entity a dimension measures cannot be trimmed, and a line
+whose length is Driving cannot be extended — the status line says so; delete
+the dimension first. Offset and Mirror copy no dimension.
+
+**Saving and editing later.** Construction geometry and dimensions are saved
+with the project and come back on reopen, with nothing selected. Editing the
+sketch of an extruded body — the *Edit Sketch* control on the body — or of a
+revolved body — *Edit Sketch* in the body's precision panel — and changing a
+Driving dimension or trimming regenerates the same body as one Undo step.
+
+Not yet: a constraint solver that keeps relations, a "fully defined" state,
+projecting edges of other bodies into a sketch, drawing sheets and title
+blocks, and dimensioning, trimming, extending or offsetting a spline.
+
 ## Choosing and sizing the shape
 
 The Tool Rail in Construction carries exactly two entries, **Shape** and
@@ -2016,7 +2078,8 @@ up to fifteen Add and Cut extrusions on its own flat faces, each reopenable, or
 a single Revolve New Body about a straight sketch edge. There
 is no Through All or Up To Face extent, no Intersect, no deleting or reordering
 a feature, and no fillet, chamfer, shell, sweep, loft, pattern, feature
-mirror, offset, trim or constraint solver, no custom construction plane, no
+mirror or constraint solver (sketch Trim, Extend, Offset and Mirror exist —
+see *Drafting inside a sketch*), no custom construction plane, no
 sketch on the inside of a Cut, and no sketch on a
 curved or imported surface; a polygon profile's points are not numerically
 editable, a spline's points are edited by redrawing it, and a CAD Body does not

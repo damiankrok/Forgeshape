@@ -3123,6 +3123,87 @@ byte after every feature id and the Revolve payload. It is written only when a
 body revolves; every v1..v6-representable project keeps its bytes and its
 fingerprint (the `REV7` fingerprint block is mixed only for a revolved body).
 
+### Sketch drafting (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`)
+
+Technical drafting INSIDE a sketch, with no constraint solver. Four
+platform-neutral modules own it, and the sketch session is still the only
+writer of a staged sketch:
+
+| module | owns |
+| --- | --- |
+| `forgeshape_sketch.h` | `SketchEntityRole` (`Regular` / `Construction`) on every entity, and the sketch's `SketchDimension` table with its `nextDimensionId` high-water mark |
+| `forgeshape_sketch_dimension.{h,cpp}` | the twelve dimension kinds, the DERIVED value (`sketchDimensionValue`), the ONE Driving edit path (`applySketchDimensionValue`), the conflict and dependency rules, and the annotation (`buildSketchDimensionAnnotation`) |
+| `forgeshape_sketch_drafting.{h,cpp}` | the hit test every drafting tap uses (nearest stroke within tolerance, ties to the earlier entity), the role toggle, Trim, Extend, Offset, Mirror and Delete-with-dimensions, each a pure function from one `CadSketch` to another |
+| `forgeshape_sketch_snap.{h,cpp}` | the snap priority (endpoint, intersection, midpoint, centre, origin, horizontal / vertical guide, grid) in two apertures, inner 8 dp first, then 24 dp |
+
+**Construction is ignored by material topology in exactly two places**:
+`extractClosedProfiles` and the arrangement's source-edge collection. Every
+region, face, token, lineage signature, fill cell, preview and Extrude / Revolve
+derives from those, so none of them needs its own role predicate. Construction
+stays selectable, snappable, dimensionable, mirrorable and a valid Revolve or
+Mirror axis. Snap, Trim and Extend need every curve, so they derive the SAME
+arrangement over `cadSketchAllCurvesView` (every entity read as Regular): the
+interval Trim removes is exactly the fragment the fill
+cells are bounded by, and an overlap the arrangement calls ambiguous is refused
+by that name.
+
+**A dimension stores no number.** Its value is derived from authored geometry
+on every read; a Driving edit rewrites the geometry through one path (a Line's
+length keeps `P0` and the direction, its angle keeps `P0` and the length, a
+rectangle keeps its centre, a circle its centre) and stores nothing else. A
+second Driving dimension on a degree of freedom another already owns is
+refused (`SketchDimensionConflict`); Trim refuses an entity any dimension names
+(`SketchDimensionDependency`), Extend refuses a line whose length is Driving
+(`SketchDimensionLocked`), and Offset and Mirror create geometry with no
+dimension. Nothing is remapped.
+
+**The session's drafting state is presentation until Finish.** The modify mode
+(`SketchModifyMode`: Dimension, Trim, Extend, Offset, Mirror), the dimension
+target, the offset distance and preview, the mirror axis, multi-select and the
+dimension visibility (Selected / All / Off) live in `SketchSession` and reach no
+`.forge` byte, history step, checkpoint or fingerprint. Choosing a drawing tool
+ends a mode. Each act lands on the STAGED sketch, so a Finish is still one
+transaction and a Cancel costs nothing.
+
+**The overlay gained two ranges, appended**: `Construction` (pre-dashed
+segments, drawn quieter than `Entities`, so a construction line differs by its
+dash and its weight, never colour alone) and `DimensionReference` (the
+annotation language of `Dimension`, lighter). Every earlier range keeps its
+index; the renderer needed no new pipeline.
+
+**The chrome holds no drafting truth.** `SketchModifyView` (the Modify control
+under the orientation navigator, its palette and the mode capsule) and
+`SketchDimensionLabelsView` (one chip per visible dimension) re-read native on
+every refresh; `SketchDraftingPresentation` is their pure, JVM-tested rules.
+The palette draws what can succeed: Trim and Extend are tap modes on the
+touched stroke and are offered whatever is selected, Dimension and Offset where
+the single selection's kind has them, Make Construction / Make Regular, Mirror
+and Delete over a selection.
+
+**A label owns taps on itself and never on the stroke it measures.** Native's
+annotation names, beside the label anchor, the point on the measured geometry
+the label stands off from (`SketchDimensionAnnotation::attach`, label stride 10
+across JNI). Native cannot know how wide the drawn number is, so the chrome
+pushes the chip's touch box along `label − attach` until the whole box clears
+that point by 8 dp (`standOffCentre`); for a straight edge the direction is
+square to the edge, so the whole edge stays the drawing's. Every chip keeps the
+48 dp floor both ways. Overlapping labels are HIDDEN by priority (the
+selection's own, then Driving, then the older id), never moved, and a label
+whose box would leave the viewport is hidden rather than clamped in, because a
+clamp moves it toward the middle of the view and can stand it back on the
+geometry. The container is not clickable, so a tap beside a label reaches the
+sketch.
+
+**`CADB` v8** (`DATA_PACKAGE_SPEC.md` §7i) carries the role byte on every
+entity and each sketch's dimension table. It is written only when some sketch
+carries drafting truth (a Construction entity, a dimension, or a burned
+dimension id); every other project keeps its v1..v7 bytes and fingerprint (the
+`DRF8` fingerprint block is mixed only for such a body). Reopening restores
+roles and dimensions with no selection and no mode. Not in this stage: a
+persistent constraint solver, a fully-defined state, projected or linked
+edges, drawing sheets and title blocks, and any Spline dimension, Trim target,
+Extend or Offset.
+
 ### What this stage deliberately does not do
 
 CAD → Sculpt: `buildSculptSourceMesh` returns false for a CAD Body, the freeze
@@ -3133,9 +3214,11 @@ Sculpt over a CAD Body, the stale-source rule over a CAD edit, and the
 `CADB`+`SCUL` file combination — and each deserves its own approval. Since
 `CAD-VERTICAL-SLICE-R1` holes, face-supported sketches, arcs, splines and the
 Add / Cut booleans exist, and since `CAD-V6-REVOLVE-NEWBODY-E2E-R1` a Revolve
-New Body; fillets, chamfers, shells, a Revolve Add/Cut or later Revolve, sweeps,
-lofts, patterns, sketch mirrors, offsets, trims, constraints, Intersect, feature
-delete/reorder and suppression are absent and are not drawn anywhere.
+New Body, and since `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` Construction geometry,
+persistent dimensions, snaps, and sketch Trim, Extend, Offset and Mirror;
+fillets, chamfers, shells, a Revolve Add/Cut or later Revolve, sweeps, lofts,
+patterns, a constraint solver, Intersect, feature delete/reorder and
+suppression are absent and are not drawn anywhere.
 
 ## Sculpt domain
 

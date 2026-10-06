@@ -719,6 +719,41 @@ on the host, with no device, and is the fast native loop.
   `cad_bad_feature_kind_v7`). **Not this stage:** a Revolve Add or Cut, a
   later Revolve feature, a sketch on a revolved face, an axis that is not a
   sketch edge, a two-sided or symmetric sweep, and a constraint solver.
+- **Sketch drafting is authored geometry plus derived numbers, and no solver**
+  (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`). An entity carries a ROLE
+  (`Regular` / `Construction`); material topology ignores Construction in
+  exactly two places (`extractClosedProfiles` and the arrangement's source
+  edges), while snap, Trim and Extend derive the SAME arrangement over
+  `cadSketchAllCurvesView`. Construction stays selectable, snappable,
+  dimensionable and a valid Revolve or Mirror axis, and is drawn DASHED and
+  quieter, never told apart by colour alone. A **dimension stores no number**:
+  its value is derived from the authored geometry on every read, a Driving
+  edit rewrites geometry through ONE path (`applySketchDimensionValue`) and
+  stores nothing else, a second Driving dimension on an owned degree of freedom
+  is refused (`SketchDimensionConflict`), Trim refuses an entity a dimension
+  names (`SketchDimensionDependency`), Extend refuses a Driving length
+  (`SketchDimensionLocked`), and Offset and Mirror copy no dimension — nothing
+  is remapped. Trim, Extend, Offset and Mirror are pure functions from one
+  sketch to another applied to the STAGED sketch, so Finish stays one
+  transaction and Cancel costs nothing; the modify mode, target, preview,
+  multi-select and dimension visibility are session presentation, never truth.
+  The palette's **Mirror** reflects selected sketch ENTITIES across a straight
+  sketch edge into new entities — a different act from `MIRROR-01`'s body
+  Mirror, which it neither replaces nor calls. The **sketch actions palette** (the Modify control under the orientation
+  navigator) draws only what can succeed; Trim and Extend are tap modes on the
+  touched stroke and are offered WHATEVER is selected. **A dimension label owns
+  taps on itself and never on the stroke it measures**: native reports the
+  point on the geometry each label stands off from
+  (`SketchDimensionAnnotation::attach`), the chip's 48 dp box is pushed along
+  that direction until it clears it by 8 dp (`standOffCentre`), overlapping
+  labels are HIDDEN by priority (the selection's own, then Driving, then the
+  older id) and never moved, and a box that would leave the viewport is hidden,
+  never clamped back over the geometry. **`CADB` gains version 8** (a role byte
+  on every entity and each sketch's dimension table), written ONLY when a
+  sketch carries drafting truth; every v1..v7 project keeps its bytes and its
+  fingerprint. **Not this stage:** a persistent constraint solver, a
+  fully-defined state, projected or linked edges, drawing sheets and title
+  blocks, and any Spline dimension, Trim target, Extend or Offset.
 - **The preview IS the candidate** (`CAD-VERTICAL-SLICE-R1`). `SketchSession`
   evaluates ONE candidate, latest-only, keyed by a revision every authoring
   change bumps (region, distance, extent, operation, flip); the renderer draws
@@ -998,8 +1033,12 @@ on the host, with no device, and is the fast native loop.
   `cad_fragment_support` (a sketch on a FRAGMENT side, v6 FACE code 4);
   `CAD-V6-REVOLVE-NEWBODY-E2E-R1` added the four **`CADB` v7** fixtures
   (`cad_revolve_full`, `cad_revolve_partial`, and the two the decoder must
-  refuse, `cad_revolve_bad_axis` and `cad_bad_feature_kind`) — a
-  **sixty-one**-fixture corpus in
+  refuse, `cad_revolve_bad_axis` and `cad_bad_feature_kind`);
+  `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` added the five **`CADB` v8** fixtures
+  (`cad_construction_v8`, `cad_dimension_driving_v8`,
+  `cad_dimension_reference_v8`, and the two the decoder must refuse,
+  `cad_bad_dimension_ref_v8` and `cad_dimension_conflict_v8`) — a
+  **sixty-six**-fixture corpus in
   which every older fixture is byte-for-byte unchanged. Every corrupt fixture is CONSTRUCTED
   by the PowerShell builder with the bad value in place, never generated and
   then mutated.
@@ -1438,6 +1477,13 @@ on the host, with no device, and is the fast native loop.
   *Construction Body* (an editable CAD-like object), *Imported Mesh* (a body
   whose geometry came from a file and has no parameters behind it), *CAD Body*
   (a body made by extruding a sketch; its sketch and depth are editable),
+  *sketch actions palette* (the Modify control's palette under the
+  orientation navigator: Select multiple, Dimension, Make Construction / Make
+  Regular, Trim, Extend, Offset, Mirror, Delete and the Dimensions visibility;
+  never a "bottom toolbar"), *Construction* (sketch geometry that is drawn,
+  snapped to and dimensioned but never bounds material), *Driving* /
+  *Reference* dimension (a persistent sketch dimension whose value can be typed
+  to change the geometry / one that only reads it, written in parentheses),
   *Sketch* (the editing context between New Sketch and Extrude, on a
   *workplane* XY, XZ or YZ, with the seven sketch tools Select, Line, Polyline,
   Rectangle, Circle, Arc and Spline on the Tool Rail and *Finish Sketch* /
