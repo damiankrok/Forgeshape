@@ -1,42 +1,56 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.95.0
-**Updated:** 2026-10-05
-**Latest closeout:** **`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1` —
-`PASS-CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E`** (2026-10-05). **TECH PASS / OWNER
-PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
-`feature/cad-v6-s2-owner-feedback-multiface-r1` from the previous task head
-`d66dd89`; `main` stays `6c9f156` and `feature/cad-v6-sketch-face-r1` stays
-`bbae765`; no FullSharded; S3 not started. Record:
-`artifacts/cad-v6-s2-owner-feedback-multiface/SUMMARY.md` (BEFORE.md first).
+**Status Version:** 0.96.0
+**Updated:** 2026-10-06
+**Latest closeout:** **`CAD-V6-REVOLVE-NEWBODY-E2E-R1` —
+`PASS-CAD-V6-REVOLVE-NEWBODY-E2E`** (2026-10-06). **TECH PASS / OWNER PHYSICAL
+REVIEW REQUIRED / NOT MERGED.** Task branch `feature/cad-v6-revolve-newbody-r1`
+from the MULTIFACE head `3e2443f`; `main` stays `6c9f156`,
+`feature/cad-v6-sketch-face-r1` stays `bbae765` and the MULTIFACE branch stays
+`3e2443f`; no FullSharded; S3 not started. Record:
+`artifacts/cad-v6-revolve-newbody/SUMMARY.md` (BEFORE.md first).
 
-- **The 16-area limit is gone for fill selections.** `kMaxPlanarFaceSelection`
-  was the loop-region cap (16); it is now `kMaxArrangementFaces` = S + 2K =
-  1024 + 2·4096 = 9216, the bound Euler's formula gives on the bounded faces of
-  any arrangement within its own caps, so every cell of a sketch that derives
-  can be chosen. `kMaxProfileRegions` stays 16 for `LoopRegions`. No `CADB`
-  layout or version change (the v6 count was always a u32); fixtures 57/57
-  byte-identical, verdicts 57/57 unchanged.
-- **"Several profiles are closed — choose one" over a chosen selection is
-  fixed.** The first Extrude of a new CAD project (`commitFirstCadProject`)
-  read the loop-region anchor a face selection never sets, so it refused EVERY
-  fill selection (`AmbiguousProfile` on the owner's sketch) while the preview
-  was `Ok`. It now asks the session (`selectionChosen`/`unchosenStatus`).
-  A valid non-empty selection always reports its count on the status line.
-- **Device-proven** (`CadMultiFaceOwnerTest`, Home → New Project → CAD, real
-  window taps): taps 1..18 each resolve and count, all 24 cells select,
-  remove/re-add around the old cap restores the set, the first Extrude commits
-  20 cells (3.2 m³, one body), a pinched 17-cell set's refused commit names
-  its own reason and a fix commits.
-- **Gates.** Host `HOST_SELFTESTS_OK (4024 checks, 0 failed)`; JVM 120/120;
-  debug/release/androidTest green; release guard PASS; `CI DEVICE`
-  `37365134653` (attempt 2) on `e9960fb`: **PASS 69/69** (9 classes);
-  `CI FAST` `37365137933` on `e9960fb`: success, corpus 57/57.
-- **OWNER APK.** `ci-fast-evidence` artifact `11368352590` (zip SHA-256
-  `c91a62b2…01cc5`, expires 2026-10-19),
-  `app/build/outputs/apk/debug/app-debug.apk`.
+- **Revolve New Body exists.** A CAD body's first feature has a kind
+  (`Extrude` or `Revolve`); a Revolve sweeps the same selection an Extrude
+  would (regions with holes or exact planar faces) about a SEMANTIC axis edge
+  (`{entityId, edgeLocalIndex}` of a Line, Polyline segment or Rectangle side;
+  curves refused, no nearest-edge fallback) by an exact angle in degrees
+  (0.001..360, default 360) and a direction. Full turns close their seam with
+  no caps, partial turns carry caps, a crossing axis is refused
+  (`RevolveProfileCrossesAxis`), touching is legal, and every revolved solid
+  passes `cadKernelValidateSolid`. New Body only; revolved faces host nothing.
+- **UI.** Ready → precision surface **Revolve…** → tap an axis edge → a 3/4
+  view, the ring with a draggable handle (whole degrees, no orbit), the angle
+  on a canvas label that types exact values, Flip / Change axis / Extrude
+  instead, and the toolbar's Revolve commit (withdrawn while refused). Commit,
+  Edit (the feature row reopens it in Ready) and the first-project bootstrap
+  are each one transaction.
+- **`CADB` v7** (kind byte after every feature id + the Revolve payload),
+  written only when a body revolves; v1..v6 projects keep bytes and
+  fingerprint. Four new fixtures; corpus **61/61** byte-identical between the
+  C++ writer and the independent PowerShell builder; the 57 older fixtures'
+  bytes and verdicts unchanged.
+- **Gates.** Host `HOST_SELFTESTS_OK (4064 checks, 0 failed)`; JVM 128/128;
+  `CI DEVICE` `37391067580` on `6507f2b`: **PASS 83/83** (11 classes incl.
+  `CadRevolveOwnerTest` 9/9); `CI FAST` `37391069710` on `6507f2b`: success
+  (debug/release/androidTest builds, JVM, release guard, corpus 61/61,
+  `git diff --check`).
+- **OWNER APK.** `ci-fast-evidence` artifact `11381820030` of `CI FAST`
+  `37391069710` (product `6507f2b`), `app/build/outputs/apk/debug/app-debug.apk`,
+  13,647,374 bytes, SHA-256
+  `d41ad54af67f86e8d92177b1e542b932ee15ac3e1c4c836b02deecd91a2f99f6`; artifact
+  expires 2026-10-19T23:59:13Z.
 
-**Previous closeout:** **`CAD-V6-S2-OWNER-CORRECTION-E2E-R1` —
+**Previous closeout:** **`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1` —
+`PASS-CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E`** (2026-10-05). TECH PASS / OWNER
+PHYSICAL REVIEW REQUIRED / NOT MERGED; branch
+`feature/cad-v6-s2-owner-feedback-multiface-r1` at `3e2443f`. The 16-area cap
+on fill selections became the arrangement's own bound (9216) and the first
+project's Extrude stopped refusing fill selections (`AmbiguousProfile`);
+`CI DEVICE` `37365134653` PASS 69/69. Record:
+`artifacts/cad-v6-s2-owner-feedback-multiface/SUMMARY.md`.
+
+**Earlier closeout:** **`CAD-V6-S2-OWNER-CORRECTION-E2E-R1` —
 `PASS-CAD-V6-S2-OWNER-CORRECTION-E2E`** (2026-10-02). **TECH PASS / OWNER
 PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
 `feature/cad-v6-s2-owner-correction-e2e-r1` from the R2 head `b264cfe`; `main`
@@ -1900,7 +1914,7 @@ lives in Git history; only what still constrains the code is kept here.
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
 **Next Stage:** the OWNER physical-device review of the
-`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1` APK; the Delete → Undo → Redo owner
+`CAD-V6-REVOLVE-NEWBODY-E2E-R1` APK; the Delete → Undo → Redo owner
 verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See *Next Stage*.
 
 ## Current state
@@ -4695,20 +4709,20 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: OWNER physical-device review of the
-`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1` APK** (`ci-fast-evidence` artifact
-`11368352590` of `CI FAST` `37365137933`, product `e9960fb`) against the
-checklist in `artifacts/cad-v6-s2-owner-feedback-multiface/SUMMARY.md`, which
-carries the previous task's HUD3D checklist forward. Nothing merges to
+`CAD-V6-REVOLVE-NEWBODY-E2E-R1` APK** (`ci-fast-evidence` artifact
+`11381820030` of `CI FAST` `37391069710`, product `6507f2b`) against the
+checklist in `artifacts/cad-v6-revolve-newbody/SUMMARY.md`, which carries the
+MULTIFACE and HUD3D checklists forward. Nothing merges to
 `feature/cad-v6-sketch-face-r1` or `main` before that verdict; OWNER-TUNABLE
-dock sizes may be adjusted from it. `CAD-V6-S3` (retained-sketch mobile UX)
-waits for it. The v6 branch merges to `main` only after the completed v6
+ring, handle and dock sizes may be adjusted from it. `CAD-V6-S3`
+(retained-sketch mobile UX) waits for it. The v6 branch merges to `main` only after the completed v6
 migration passes the Tier-5 aggregate once.
 
 `FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
 recorded debt, not authorised work. The Council's other OWNER decisions are
 still open (`COUNCIL_FINDINGS.md` §5, `NEXT_VERTICAL_SLICE_OPTIONS.md`).
 
-Do not start Revolve, Through All, To Object, Intersect, a Hole feature,
+Do not start a Revolve Add/Cut or later Revolve feature, Through All, To Object, Intersect, a Hole feature,
 fillet, chamfer, shell, a pattern, a constraint solver, CAD → Sculpt, Stage024,
 `CAD-A4` or Stage 026 from this status. A second third-party library needs its
 own gate.

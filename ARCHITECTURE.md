@@ -3112,7 +3112,7 @@ or a Cancel. Off the handle, a still finger is a region tap and a travelled one
 navigates, exactly as in an Extrude's Ready. Once an axis is set,
 `revolveViewPose` leans the camera to a 3/4 pose that sees the ring square to
 the axis — presentation only. JNI exposes it as `cadRevolveToolState` (24
-slots) plus seven acts; Android draws the precision surface's Revolve section
+slots) plus six acts; Android draws the precision surface's Revolve section
 (`SketchEditorView`), the toolbar's Revolve commit (`GlobalToolbarView`) and the
 angle as canvas chrome at the projected half-angle point
 (`CadRevolveAngleLabelView`), and decides visibility through the pure

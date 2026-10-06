@@ -823,6 +823,31 @@ drawing. Finishing applies the edit as one Undo step, and everything after it
 is rebuilt in order — deepen the first extrusion and an Add standing on its top
 face rises with it. Saving and reopening keep the whole chain.
 
+**Revolving a region instead of extruding it** (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`).
+A new CAD body can also be made by turning the chosen region about a straight
+edge of its own sketch. Draw the region and, if you want an axis apart from it,
+a Line; after *Finish Sketch* open the exact fields and tap **Revolve…**. The
+status line asks you to choose an axis: tap any straight edge of the sketch — a
+Line, one segment of a Polyline, or one side of a Rectangle; a circle, arc or
+spline is not an axis and says so. The view leans so the turn can be seen, and
+the preview shows a **full turn (360°)**: the axis is drawn across the region,
+with a ring, a handle on it and the angle written beside the ring. Drag the
+handle round the ring to change the angle in whole degrees — dragging it never
+turns the camera — or tap the angle and type an exact one (37.5° stays
+37.5°). **Flip direction** turns the other way with the same angle, **Change axis** picks
+another edge, and **Extrude instead** goes back to the extrusion with the same
+region chosen. A region that crosses the axis line cannot be revolved and the
+status line says so; the *Revolve* button is not offered until it can succeed.
+A region that merely touches the axis makes a solid with no hole. *Revolve* in
+the toolbar makes the body as one Undo step — in a new project it creates the
+project. The revolved body's *Shape* panel lists it as a Revolve; tap the row
+to reopen it with its axis, angle and direction, change them, and finish as one
+Undo step. Saving and reopening keep the axis, the angle and the direction.
+
+Not yet: a revolve that adds to or cuts from an existing body, a later feature
+on a revolved body, sketching on a revolved body's faces, and an axis that is
+not an edge of the sketch.
+
 What a CAD Body does **not** offer yet: *Start Sculpting*. It is absent for one,
 because the way back from Sculpt over a sketch needs its own design; every other
 body sculpts as before.
@@ -1987,9 +2012,10 @@ by typing exact values and pressing Apply**: there are no handles that change a
 body's *dimensions*. A sketch is lines, polylines, rectangles, circles, arcs
 and splines on one of the three principal planes or on a flat face of a CAD
 body; its regions may have holes; a CAD body is a first New Body extrusion plus
-up to fifteen Add and Cut extrusions on its own flat faces, each reopenable. There
+up to fifteen Add and Cut extrusions on its own flat faces, each reopenable, or
+a single Revolve New Body about a straight sketch edge. There
 is no Through All or Up To Face extent, no Intersect, no deleting or reordering
-a feature, and no fillet, chamfer, shell, revolve, sweep, loft, pattern, feature
+a feature, and no fillet, chamfer, shell, sweep, loft, pattern, feature
 mirror, offset, trim or constraint solver, no custom construction plane, no
 sketch on the inside of a Cut, and no sketch on a
 curved or imported surface; a polygon profile's points are not numerically
