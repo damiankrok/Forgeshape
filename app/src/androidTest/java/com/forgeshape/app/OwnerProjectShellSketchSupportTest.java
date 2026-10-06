@@ -420,6 +420,8 @@ public final class OwnerProjectShellSketchSupportTest {
         assertTrue("the spatial support chooser is up", NativeViewport.supportChooserActive());
         assertEquals("the status asks for a support", string(R.string.status_support_chooser),
                 statusLine());
+        assertFalse("no Edit Sketch chip stands on a face the user is choosing",
+                shown(R.id.cad_canvas_edit_sketch));
     }
 
     /** Aim, then commit, on the pixel a world point projects to -- real taps. */
@@ -580,8 +582,15 @@ public final class OwnerProjectShellSketchSupportTest {
         for (long h : after) {
             if (Arrays.binarySearch(before, h) < 0) hit = h;
         }
-        // Taken back by a real tap that toggles exactly that cell.
-        tapFace(hit);
+        // Taken back by a real tap: at the same pixel when nothing stands on
+        // it now, else wherever the cell can be reached.
+        final float[] window = viewportToWindow(at);
+        if (blockerAt(window) == null) {
+            realTap(window);
+        }
+        if (Arrays.binarySearch(selected(), hit) >= 0) {
+            tapFace(hit);
+        }
         assertEquals("and it was taken back", before.length, selected().length);
         return hit;
     }
@@ -599,28 +608,100 @@ public final class OwnerProjectShellSketchSupportTest {
                 info[NativeViewport.SKETCH_REGION_ON_SCREEN] != 0.0);
         final float x = (float) info[NativeViewport.SKETCH_REGION_SCREEN_X];
         final float y = (float) info[NativeViewport.SKETCH_REGION_SCREEN_Y];
-        final float[][] tries = {{0, 0}, {12, 0}, {-12, 0}, {0, 12}, {0, -12}, {20, 20},
-                {-20, -20}, {20, -20}, {-20, 20}, {30, 0}, {-30, 0}, {0, 30}, {0, -30}};
-        for (float[] d : tries) {
-            final float px = x + d[0];
-            final float py = y + d[1];
-            if (headDistance(px, py) < 48.0f) continue;
-            final long[] before = selected();
-            final boolean wasOn = Arrays.binarySearch(before, handle) >= 0;
-            realTap(viewportToWindow(new float[]{px, py}));
-            final long[] after = selected();
-            final boolean isOn = Arrays.binarySearch(after, handle) >= 0;
-            if (isOn != wasOn && after.length == before.length + (wasOn ? -1 : 1)) {
-                return;
-            }
-            if (!Arrays.equals(after, before)) {
-                // Another cell answered: take that tap back.
-                realTap(viewportToWindow(new float[]{px, py}));
-                assertTrue("a stray toggle is undone", Arrays.equals(before, selected()));
+        final StringBuilder why = new StringBuilder();
+        for (float radius : new float[]{0, 10, 20, 32, 46, 62, 80}) {
+            for (int k = 0; k < (radius == 0 ? 1 : 8); k++) {
+                final double a = k * Math.PI / 4.0;
+                final float px = x + radius * (float) Math.cos(a);
+                final float py = y + radius * (float) Math.sin(a);
+                if (headDistance(px, py) < 48.0f) {
+                    why.append("[head]");
+                    continue;
+                }
+                final float[] window = viewportToWindow(new float[]{px, py});
+                final String blocker = blockerAt(window);
+                if (blocker != null) {
+                    why.append("[").append(blocker).append("]");
+                    continue;
+                }
+                final long[] before = selected();
+                final boolean wasOn = Arrays.binarySearch(before, handle) >= 0;
+                realTap(window);
+                final long[] after = selected();
+                final boolean isOn = Arrays.binarySearch(after, handle) >= 0;
+                if (isOn != wasOn && after.length == before.length + (wasOn ? -1 : 1)) {
+                    return;
+                }
+                why.append("[other cell]");
+                if (!Arrays.equals(after, before)) {
+                    // Another cell answered: take that tap back.
+                    realTap(window);
+                    assertTrue("a stray toggle is undone", Arrays.equals(before, selected()));
+                }
             }
         }
-        throw new AssertionError("cell " + handle + " could not be tapped at its interior");
+        throw new AssertionError("cell " + handle + " could not be tapped near (" + x + ", " + y
+                + "): " + why);
     }
+
+    /**
+     * What chrome a window pixel would reach instead of the viewport, or null
+     * when the viewport receives it: off the viewport, or under a clickable
+     * view or a canvas HUD view that takes Downs.
+     */
+    private String blockerAt(final float[] window) {
+        return onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final float density = activity.getResources().getDisplayMetrics().density;
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final View root = activity.getWindow().getDecorView();
+            final int[] vp = new int[2];
+            final int[] rp = new int[2];
+            viewport.getLocationInWindow(vp);
+            root.getLocationInWindow(rp);
+            final float vx = window[0] - (vp[0] - rp[0]);
+            final float vy = window[1] - (vp[1] - rp[1]);
+            if (vx < 8 * density || vy < 8 * density || vx > viewport.getWidth() - 8 * density
+                    || vy > viewport.getHeight() - 8 * density) {
+                return "off-viewport";
+            }
+            final View owner = clickableAt(root, window[0] + rp[0], window[1] + rp[1]);
+            if (owner == null || owner == viewport) {
+                return null;
+            }
+            return owner.getId() != View.NO_ID
+                    ? activity.getResources().getResourceEntryName(owner.getId())
+                    : owner.getClass().getSimpleName();
+        });
+    }
+
+    private static View clickableAt(View view, float wx, float wy) {
+        if (view.getVisibility() != View.VISIBLE) {
+            return null;
+        }
+        final int[] at = new int[2];
+        view.getLocationInWindow(at);
+        if (wx < at[0] || wy < at[1] || wx >= at[0] + view.getWidth()
+                || wy >= at[1] + view.getHeight()) {
+            return null;
+        }
+        if (view instanceof android.view.ViewGroup) {
+            final android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = group.getChildCount() - 1; i >= 0; i--) {
+                final View hit = clickableAt(group.getChildAt(i), wx, wy);
+                if (hit != null) {
+                    return hit;
+                }
+            }
+        }
+        return view.isClickable() || HUD_DOWN_TAKERS.contains(view.getId())
+                || view.getId() == R.id.viewport_surface ? view : null;
+    }
+
+    /** Canvas HUD views that take a Down whether or not they are clickable. */
+    private static final Set<Integer> HUD_DOWN_TAKERS = new HashSet<>(
+            Arrays.asList(R.id.cad_extrude_depth_value, R.id.cad_extrude_second_value,
+                    R.id.cad_extrude_depth_editor, R.id.cad_extrude_second_editor,
+                    R.id.cad_extrude_panel, R.id.cad_canvas_edit_sketch));
 
     /** px from the extrude arrow's drawn head; infinite while there is none. */
     private static float headDistance(float x, float y) {

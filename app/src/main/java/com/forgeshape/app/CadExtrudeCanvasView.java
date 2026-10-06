@@ -972,7 +972,11 @@ final class CadExtrudeCanvasView extends FrameLayout {
         // to nothing else. Every condition below is one `sketchBeginEdit` would
         // refuse, so the control is absent rather than shown and then refused.
         final long body = NativeViewport.sceneActiveBodyId();
-        if (body == NativeViewport.NO_OBJECT
+        // Nor while the spatial support chooser is up
+        // (`MODELING-R1-OWNER-CORRECTION`): the viewport then belongs to
+        // choosing a plane or a face, and a chip standing on the body's sketch
+        // anchor would take the very tap that chooses the face under it.
+        if (body == NativeViewport.NO_OBJECT || NativeViewport.supportChooserActive()
                 || !NativeViewport.cadBodySketchAnchor(body, bodyAnchor)) {
             hide();
             return;
