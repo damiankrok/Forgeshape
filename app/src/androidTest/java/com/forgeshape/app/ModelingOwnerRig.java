@@ -117,6 +117,18 @@ final class ModelingOwnerRig {
      * the point receives it.
      */
     void touchView(final BiFunction<ForgeShapeActivity, EditorWorkspaceView, View> finder) {
+        // A control inside a scrolling surface is brought on screen first, the
+        // way a user scrolls to it, so the touch lands on the control and not
+        // on whatever is under the place it would be if the list were taller.
+        doOnWorkspace(scenario, (activity, workspace) -> {
+            final View target = finder.apply(activity, workspace);
+            if (target != null) {
+                target.requestRectangleOnScreen(
+                        new android.graphics.Rect(0, 0, target.getWidth(), target.getHeight()), true);
+            }
+            return null;
+        });
+        settleLayout();
         doOnWorkspace(scenario, (activity, workspace) -> {
             final View target = finder.apply(activity, workspace);
             assertNotNull("the view to touch exists", target);
@@ -128,6 +140,9 @@ final class ModelingOwnerRig {
             root.getLocationInWindow(rp);
             final float x = at[0] - rp[0] + target.getWidth() * 0.5f;
             final float y = at[1] - rp[1] + target.getHeight() * 0.5f;
+            final View hit = clickableAt(root, x + rp[0], y + rp[1]);
+            assertTrue("the touch lands on the control, not on " + hit,
+                    hit == target || isDescendant(hit, target));
             final long down = SystemClock.uptimeMillis();
             dispatch(root, down, down, MotionEvent.ACTION_DOWN, x, y);
             dispatch(root, down, down + 60L, MotionEvent.ACTION_UP, x, y);
@@ -219,6 +234,17 @@ final class ModelingOwnerRig {
             }
         }
         return view.isClickable() || view.getId() == R.id.viewport_surface ? view : null;
+    }
+
+    private static boolean isDescendant(View view, View ancestor) {
+        View at = view;
+        while (at != null) {
+            if (at == ancestor) {
+                return true;
+            }
+            at = at.getParent() instanceof View ? (View) at.getParent() : null;
+        }
+        return false;
     }
 
     static void collectById(View view, int id, List<View> out) {
