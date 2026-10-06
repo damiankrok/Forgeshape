@@ -316,7 +316,9 @@ public final class CadParametricHistoryOwnerTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final EditText field = workspace.sketchEditor().findViewById(R.id.field_extrude_depth);
             field.setText(Double.toString(POCKET_DEPTH));
-            workspace.sketchEditor().findViewById(R.id.sketch_extrude_commit).performClick();
+            final View commit = workspace.findViewById(R.id.sketch_extrude_commit);
+            assertNotNull("the precision surface's Extrude", commit);
+            commit.performClick();
             return null;
         });
         settleLayout();
