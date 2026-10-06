@@ -31,7 +31,9 @@ import java.util.List;
 
 /**
  * Surface on the device ({@code MODELING-FOUNDATIONS-R1} C), on the OWNER's own
- * path and by real window touches: Home → New Project → Surface, a sketch drawn
+ * path, by real window touches on every Surface control, History row and
+ * Undo/Redo (the sketch chrome -- Finish Sketch and the Modify palette -- is
+ * pressed by its semantic id, as the CAD device classes press it): Home → New Project → Surface, a sketch drawn
  * with the ordinary sketch tools, and Finish Sketch answered on the Surface
  * surface with a Patch, an Extruded, a Revolved or a Lofted surface; then Trim,
  * Stitch and Thicken; an earlier feature edited through the History with its
@@ -91,7 +93,7 @@ public final class SurfaceOwnerTest {
         dragSketch(rule.getScenario(), 0.0, 0.0, 0.5, 0.0);
         final long circle = selectedEntity();
         assertEquals(NativeViewport.CAD_OK, rig.applyOnUi(() -> NativeViewport.sketchApplyCircle(circle, 0.5)));
-        rig.touchId(R.id.finish_sketch);
+        rig.press(R.id.finish_sketch);
         assertTrue("Trim is offered over a coplanar patch", rig.shown(R.id.surface_create_trim));
         assertFalse("Loft is not offered without a first section", rig.shown(R.id.surface_create_loft));
         rig.touchId(R.id.surface_create_trim);
@@ -103,7 +105,7 @@ public final class SurfaceOwnerTest {
         // A tube on the same square, 1 m, then Stitch.
         newSketchOnBody("0");
         drawSquare(2.0);
-        rig.touchId(R.id.finish_sketch);
+        rig.press(R.id.finish_sketch);
         setField(R.id.field_surface_distance, "1");
         rig.touchId(R.id.surface_create_extrude);
         assertEquals(3, state(NativeViewport.SURFACE_STATE_FEATURES), 0.0);
@@ -148,7 +150,7 @@ public final class SurfaceOwnerTest {
         selectTool(rule.getScenario(), R.id.tool_rail_line);
         placeLine(2.0, 0.0, 3.0, 0.0);
         placeLine(3.0, 0.0, 3.0, 1.0);
-        rig.touchId(R.id.finish_sketch);
+        rig.press(R.id.finish_sketch);
         assertFalse("an open chain fills nothing: no Patch", rig.shown(R.id.surface_create_patch));
         setField(R.id.field_surface_distance, "0.5");
         rig.touchId(R.id.surface_create_extrude);
@@ -217,7 +219,7 @@ public final class SurfaceOwnerTest {
         newSurfaceProject();
         selectTool(rule.getScenario(), R.id.tool_rail_line);
         placeLine(1.0, 0.0, 1.0, 1.0);
-        rig.touchId(R.id.finish_sketch);
+        rig.press(R.id.finish_sketch);
         assertFalse("no axis yet: Revolve is not offered", rig.shown(R.id.surface_create_revolve));
         // Back to the sketch: draw the axis and mark it Construction.
         rig.on((a, w) -> {
@@ -228,8 +230,8 @@ public final class SurfaceOwnerTest {
         selectTool(rule.getScenario(), R.id.tool_rail_line);
         placeLine(0.0, -1.0, 0.0, 2.0);
         openPalette();
-        rig.touchId(R.id.sketch_action_construction);
-        rig.touchId(R.id.finish_sketch);
+        rig.press(R.id.sketch_action_construction);
+        rig.press(R.id.finish_sketch);
         assertTrue("one Construction line is the axis: Revolve is offered", rig.shown(R.id.surface_create_revolve));
         setField(R.id.field_surface_angle, "360");
         rig.touchId(R.id.surface_create_revolve);
@@ -242,7 +244,7 @@ public final class SurfaceOwnerTest {
         // The first section: a circle kept, not yet a feature.
         newSketchOnBody("0");
         drawCircle(3.0, 0.0, 0.5);
-        rig.touchId(R.id.finish_sketch);
+        rig.press(R.id.finish_sketch);
         assertFalse(rig.shown(R.id.surface_create_loft));
         rig.touchId(R.id.surface_create_section);
         assertEquals(1, state(NativeViewport.SURFACE_STATE_FEATURES), 0.0);
@@ -254,7 +256,7 @@ public final class SurfaceOwnerTest {
         NativeViewport.surfaceSketchState(0.5, 360, false, sketch);
         assertEquals("the sketch stands at its offset", 1.0, sketch[NativeViewport.SURFACE_SKETCH_OFFSET], 0.0);
         drawCircle(3.0, 0.0, 0.3);
-        rig.touchId(R.id.finish_sketch);
+        rig.press(R.id.finish_sketch);
         assertTrue("Loft is offered from the kept section", rig.shown(R.id.surface_create_loft));
         rig.touchId(R.id.surface_create_loft);
         assertEquals(2, state(NativeViewport.SURFACE_STATE_FEATURES), 0.0);
@@ -293,7 +295,7 @@ public final class SurfaceOwnerTest {
     }
 
     private void finishAs(int createId) {
-        rig.touchId(R.id.finish_sketch);
+        rig.press(R.id.finish_sketch);
         assertTrue("the Surface surface offers it", rig.shown(createId));
         rig.touchId(createId);
         assertEquals("the sketch is over: " + rig.statusLine(), NativeViewport.SKETCH_INACTIVE, sketchState());
@@ -331,7 +333,7 @@ public final class SurfaceOwnerTest {
     private void openPalette() {
         final boolean open = rig.on((a, w) -> w.sketchModify().paletteOpen());
         if (!open) {
-            rig.touchId(R.id.sketch_modify_toggle);
+            rig.press(R.id.sketch_modify_toggle);
         }
         assertTrue("the palette is open", rig.on((a, w) -> w.sketchModify().paletteOpen()));
     }
