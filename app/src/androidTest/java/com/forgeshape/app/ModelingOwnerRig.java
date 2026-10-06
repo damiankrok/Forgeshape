@@ -117,18 +117,40 @@ final class ModelingOwnerRig {
      * the point receives it.
      */
     void touchView(final BiFunction<ForgeShapeActivity, EditorWorkspaceView, View> finder) {
-        // A control inside a scrolling surface is brought on screen first, the
-        // way a user scrolls to it, so the touch lands on the control and not
-        // on whatever is under the place it would be if the list were taller.
-        doOnWorkspace(scenario, (activity, workspace) -> {
-            final View target = finder.apply(activity, workspace);
-            if (target != null) {
-                target.requestRectangleOnScreen(
-                        new android.graphics.Rect(0, 0, target.getWidth(), target.getHeight()), true);
+        // A control inside a scrolling or growing surface is brought on screen
+        // first, the way a user scrolls to it and waits for a surface to finish
+        // opening, so the touch lands on the control and not on whatever is
+        // under the place it will be. Bounded: a control still not under its
+        // own centre after that is occluded, and the failure says by what.
+        String why = "";
+        for (int attempt = 0; attempt < 6; attempt++) {
+            doOnWorkspace(scenario, (activity, workspace) -> {
+                final View target = finder.apply(activity, workspace);
+                if (target != null) {
+                    target.requestRectangleOnScreen(
+                            new android.graphics.Rect(0, 0, target.getWidth(), target.getHeight()), true);
+                }
+                return null;
+            });
+            settleLayout();
+            why = onWorkspace(scenario, (activity, workspace) -> {
+                final View target = finder.apply(activity, workspace);
+                if (target == null || !target.isShown()) {
+                    return "absent";
+                }
+                final View root = activity.getWindow().getDecorView();
+                final int[] at = new int[2];
+                target.getLocationInWindow(at);
+                final View hit = clickableAt(root, at[0] + target.getWidth() * 0.5f,
+                        at[1] + target.getHeight() * 0.5f);
+                return hit == target || isDescendant(hit, target) ? "" : describeChain(target, hit);
+            });
+            if (why.isEmpty()) {
+                break;
             }
-            return null;
-        });
-        settleLayout();
+            SystemClock.sleep(200);
+        }
+        assertTrue("the touch lands on the control: " + why, why.isEmpty());
         doOnWorkspace(scenario, (activity, workspace) -> {
             final View target = finder.apply(activity, workspace);
             assertNotNull("the view to touch exists", target);
@@ -140,15 +162,29 @@ final class ModelingOwnerRig {
             root.getLocationInWindow(rp);
             final float x = at[0] - rp[0] + target.getWidth() * 0.5f;
             final float y = at[1] - rp[1] + target.getHeight() * 0.5f;
-            final View hit = clickableAt(root, x + rp[0], y + rp[1]);
-            assertTrue("the touch lands on the control, not on " + hit,
-                    hit == target || isDescendant(hit, target));
             final long down = SystemClock.uptimeMillis();
             dispatch(root, down, down, MotionEvent.ACTION_DOWN, x, y);
             dispatch(root, down, down + 60L, MotionEvent.ACTION_UP, x, y);
             return null;
         });
         settleLayout();
+    }
+
+    /** Where the target and each ancestor stand, for an occlusion failure. */
+    private static String describeChain(View target, View hit) {
+        final StringBuilder out = new StringBuilder("hit=").append(hit).append(" chain:");
+        View at = target;
+        while (at != null) {
+            final int[] p = new int[2];
+            at.getLocationInWindow(p);
+            out.append(" [").append(at.getClass().getSimpleName()).append(' ')
+                    .append(p[0]).append(',').append(p[1]).append(' ')
+                    .append(at.getWidth()).append('x').append(at.getHeight())
+                    .append(" sy=").append(at.getScrollY())
+                    .append(" a=").append(at.getAlpha()).append(" s=").append(at.getScaleY()).append(']');
+            at = at.getParent() instanceof View ? (View) at.getParent() : null;
+        }
+        return out.toString();
     }
 
     void touchId(final int id) {
