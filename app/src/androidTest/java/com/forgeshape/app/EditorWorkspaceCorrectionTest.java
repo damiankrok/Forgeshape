@@ -609,11 +609,15 @@ public final class EditorWorkspaceCorrectionTest {
     public void uir4b08_everyAnchoredSurfaceSharesOneMotionContract() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final AnchoredSurfaceView[] surfaces = workspace.anchoredSurfaces();
+            // Eight since `MODELING-FOUNDATIONS-R1` added a body's History
+            // and the Surface sketch's Finish choices, each on the shared
+            // contract like the rest.
             final AnchoredSurfaceView[] expected = {
                     workspace.objectsPopover(), workspace.addPrimitivePalette(),
                     workspace.propertyInspector(), workspace.displayPopover(),
-                    workspace.projectPopover(), workspace.historyNavigator()};
-            assertEquals("the six surfaces that grow out of a control",
+                    workspace.projectPopover(), workspace.historyNavigator(),
+                    workspace.featureHistory(), workspace.surfaceFinish()};
+            assertEquals("the eight surfaces that grow out of a control",
                     expected.length, surfaces.length);
             for (int i = 0; i < expected.length; i++) {
                 assertNotNull("anchored surface " + i + " exists", expected[i]);

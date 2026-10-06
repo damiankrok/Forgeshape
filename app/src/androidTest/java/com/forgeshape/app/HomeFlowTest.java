@@ -137,8 +137,12 @@ public final class HomeFlowTest {
                     workspace.newProjectChooserVisible());
             assertNotNull(workspace.findViewById(R.id.new_project_cad));
             assertNotNull(workspace.findViewById(R.id.new_project_sculpt));
-            assertEquals("two ways to begin, and the way not to",
-                    3, countClickable(workspace.findViewById(R.id.new_project_chooser_panel)));
+            // CAD, Sculpt, and since `MODELING-FOUNDATIONS-R1` Freeform and
+            // Surface: four ways to begin, and the way not to.
+            assertNotNull(workspace.findViewById(R.id.new_project_freeform));
+            assertNotNull(workspace.findViewById(R.id.new_project_surface));
+            assertEquals("four ways to begin, and the way not to",
+                    5, countClickable(workspace.findViewById(R.id.new_project_chooser_panel)));
             assertFalse("choosing is not creating", NativeViewport.projectOpen());
             return null;
         });
