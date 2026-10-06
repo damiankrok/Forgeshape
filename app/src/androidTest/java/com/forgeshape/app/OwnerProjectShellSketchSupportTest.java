@@ -213,7 +213,10 @@ public final class OwnerProjectShellSketchSupportTest {
         setCamera(0.7f, 0.9f, 8.0f);
         tapWorldTwice(0.0, 0.0, 1.0);
         assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
-        drawExactSquare(0.6);
+        // The far cap's sketch is (u, v) = (x, y) at z = 1, about the cap's
+        // centre (0, 0, 1) -- asserted, so the pocket's centre is known.
+        assertSketchOriginAt(0.0, 0.0, 1.0);
+        final double[] pocket = drawExactSquare(0.6);
         finishSketch();
         commitExtrude(NativeViewport.OPERATION_CUT, "0.4");
         assertEquals("the Cut changed the SAME body", base, NativeViewport.sceneActiveBodyId());
@@ -224,13 +227,13 @@ public final class OwnerProjectShellSketchSupportTest {
         // The pocket's floor (z = 0.6), seen almost straight down its mouth.
         openNewSketchFromDrawer();
         setCamera(0.08f, 0.12f, 8.0f);
-        final List<String> chooser = tapWorldTwice(0.12, 0.12, 0.6);
+        final List<String> chooser = tapWorldTwice(pocket[0] + 0.12, pocket[1] + 0.12, 0.6);
         fact("oss03.chooser", chooser.toString());
         assertEquals("a sketch opens on the Cut's floor", NativeViewport.SKETCH_EDITING,
                 sketchState());
         assertEquals(1.0, sketchViewState()[NativeViewport.SKETCH_VIEW_FACE_SUPPORTED], 0.0);
         // The floor's frame: its centre, facing OUT of the material (+Z).
-        assertSketchOriginAt(0.0, 0.0, 0.6);
+        assertSketchOriginAt(pocket[0], pocket[1], 0.6);
         drawExactSquare(0.2);
         finishSketch();
         commitExtrude(NativeViewport.OPERATION_ADD, "0.1");
@@ -263,7 +266,7 @@ public final class OwnerProjectShellSketchSupportTest {
         assertEquals("nothing chosen for the user", 0, selected().length);
         // Nearly face-on, a little off-axis so the extrude arrow is a short
         // line rather than a point on the cells.
-        setCamera(0.3f, 0.3f, 9.0f);
+        setCamera(0.3f, 0.3f, 14.0f);
 
         // The node where the circles at (-1, 0) and (0, 0) cross below the
         // axis: four cells meet there. Each is found by a real tap that is
@@ -287,7 +290,13 @@ public final class OwnerProjectShellSketchSupportTest {
         for (long handle : all) {
             if (handle == aOnly || handle == bOnly) continue;
             final String mark = mark();
-            tapFace(handle);
+            if (handle == lens) {
+                tapFace(handle, px, py + 0.07);
+            } else if (handle == outside) {
+                tapFace(handle, px, py - 0.07);
+            } else {
+                tapFace(handle);
+            }
             final List<String> tokens = tokensSince(mark);
             expected.add(handle);
             taps++;
@@ -454,7 +463,7 @@ public final class OwnerProjectShellSketchSupportTest {
      * a metre (a shorter one can snap to a single grid point and place
      * nothing), then typed exact about the same centre.
      */
-    private void drawExactSquare(double side) {
+    private double[] drawExactSquare(double side) {
         selectTool(rule.getScenario(), R.id.tool_rail_rectangle);
         final double drag = Math.max(side, 1.0) / 2;
         dragSketch(rule.getScenario(), -drag, -drag, drag, drag);
@@ -464,6 +473,12 @@ public final class OwnerProjectShellSketchSupportTest {
         final long id = (long) drawn[NativeViewport.SKETCH_ENTITY_ID];
         assertEquals(NativeViewport.CAD_OK, applyOnUi(() ->
                 NativeViewport.sketchApplyRectangle(id, side, side)));
+        assertTrue(NativeViewport.sketchSelectedEntity(drawn));
+        fact("square", Arrays.toString(drawn));
+        assertEquals("exact width", side, drawn[NativeViewport.SKETCH_ENTITY_VALUES + 2], 1e-9);
+        // The centre the drag snapped to, in the sketch's own (u, v).
+        return new double[]{drawn[NativeViewport.SKETCH_ENTITY_VALUES],
+                drawn[NativeViewport.SKETCH_ENTITY_VALUES + 1]};
     }
 
     private void finishSketch() {
@@ -614,8 +629,18 @@ public final class OwnerProjectShellSketchSupportTest {
         assertTrue(NativeViewport.sketchProfileInfo(handle, info));
         assertTrue("cell " + handle + " is on screen",
                 info[NativeViewport.SKETCH_REGION_ON_SCREEN] != 0.0);
-        final float x = (float) info[NativeViewport.SKETCH_REGION_SCREEN_X];
-        final float y = (float) info[NativeViewport.SKETCH_REGION_SCREEN_Y];
+        tapFaceNear(handle, (float) info[NativeViewport.SKETCH_REGION_SCREEN_X],
+                (float) info[NativeViewport.SKETCH_REGION_SCREEN_Y]);
+    }
+
+    /** The same, around a sketch point already known to lie in the cell. */
+    private void tapFace(long handle, double u, double v) {
+        final float[] at = new float[2];
+        assertTrue(NativeViewport.sketchScreenPoint(u, v, at));
+        tapFaceNear(handle, at[0], at[1]);
+    }
+
+    private void tapFaceNear(long handle, float x, float y) {
         final StringBuilder why = new StringBuilder();
         for (float radius : new float[]{0, 10, 20, 32, 46, 62, 80}) {
             for (int k = 0; k < (radius == 0 ? 1 : 8); k++) {
