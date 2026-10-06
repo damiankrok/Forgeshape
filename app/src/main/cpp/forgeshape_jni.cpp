@@ -5810,13 +5810,15 @@ const forgeshape::SurfaceBody* surfaceBodyLocked(jlong bodyId) {
     return object != nullptr ? object->surfaceOrNull() : nullptr;
 }
 
-forgeshape::SurfaceCreateRequest surfaceRequest(jint kind, jdouble value, jboolean keepInside) {
+// Fills `out` rather than returning it: this helper stands inside the JNI
+// file's C-linkage block, where a C++ return type draws -Wreturn-type-c-linkage.
+void fillSurfaceRequest(jint kind, jdouble value, jboolean keepInside, forgeshape::SurfaceCreateRequest* out) {
     forgeshape::SurfaceCreateRequest request;
     forgeshape::surfaceCreateKindFromCode(static_cast<int>(kind), &request.kind);
     if (request.kind == forgeshape::SurfaceCreateKind::Extrude) request.distance = value;
     if (request.kind == forgeshape::SurfaceCreateKind::Revolve) request.angleDegrees = value;
     request.keepInside = keepInside == JNI_TRUE;
-    return request;
+    *out = request;
 }
 }  // namespace
 
@@ -5888,9 +5890,11 @@ Java_com_forgeshape_app_NativeViewport_surfaceSketchState(JNIEnv* env, jclass, j
             forgeshape::SurfaceStatus why = forgeshape::SurfaceStatus::NotSketching;
             if (active) {
                 const jdouble value = kind == 3 ? angle : distance;
+                forgeshape::SurfaceCreateRequest request;
+                fillSurfaceRequest(kind, value, keepInside, &request);
                 why = forgeshape::surfaceCandidateFromSketch(
                     body != nullptr ? &body->state() : nullptr, sketch.sketch(), sketch.planeOffset(),
-                    forgeshape::surfaceChosenCurves(sketch), surfaceRequest(kind, value, keepInside), nullptr);
+                    forgeshape::surfaceChosenCurves(sketch), request, nullptr);
             }
             v[2 + kind] = surfaceCode(why);
         }
@@ -5913,9 +5917,11 @@ Java_com_forgeshape_app_NativeViewport_surfaceCommitSketch(JNIEnv*, jclass, jint
         std::lock_guard<std::mutex> lock(g_stateMutex);
         if (forgeshape::sculptSession().inSculptMode()) return kSurfaceRefusedInSculpt;
         firstProject = !forgeshape::constructionScene().hasProject();
+        forgeshape::SurfaceCreateRequest request;
+        fillSurfaceRequest(kind, value, keepInside, &request);
         status = forgeshape::surfaceCommitSketch(forgeshape::sketchSession(), forgeshape::constructionScene(),
                                                  forgeshape::sculptSession(), forgeshape::constructionHistory(),
-                                                 surfaceRequest(kind, value, keepInside), &body, &report);
+                                                 request, &body, &report);
         if (status == forgeshape::SurfaceStatus::Ok) {
             forgeshape::supportChooser().cancel();
             endSketchView();
