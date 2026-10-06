@@ -301,6 +301,11 @@
     <item name="sketch_plane_by_name" type="id" />
     <!-- Project actions (APP-H1): start a new project from an open one. -->
     <item name="project_new" type="id" />
+    <!-- MODELING-R1-OWNER-CORRECTION: the ForgeShape mark's capsule and its drawer -->
+    <item name="toolbar_mark_group" type="id" />
+    <item name="project_new_sketch" type="id" />
+    <item name="project_drawer_header" type="id" />
+    <item name="project_drawer_scroll" type="id" />
 
     <!--
       The presentation-only host for the complete trailing context cluster.

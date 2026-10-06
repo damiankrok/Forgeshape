@@ -312,6 +312,9 @@
     <dimen name="start_page_padding">28dp</dimen>
     <dimen name="start_page_max_width">520dp</dimen>
     <dimen name="start_page_mark_size">40dp</dimen>
+    <!-- The project drawer the ForgeShape mark opens: wide enough for its
+         longest row at body size, and narrower than any supported phone. -->
+    <dimen name="project_drawer_min_width">260dp</dimen>
     <!-- The decorative corner motif's floor; it grows with the window. -->
     <dimen name="start_page_motif_size">200dp</dimen>
 

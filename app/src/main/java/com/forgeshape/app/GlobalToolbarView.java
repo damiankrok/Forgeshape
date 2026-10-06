@@ -15,11 +15,11 @@ import android.widget.TextView;
  * The mode-independent controls at the top of the Editor Workspace.
  *
  * <p>It carries only what is true in every mode <b>and</b> is not something the
- * user works from: what is being edited, the mode transitions (Start
- * Sculpting / Resume Sculpt / Back to Construction, Finish Sketch / Extrude,
- * Back to Home), Export, the project and Display openers, the chrome hide
- * control, and the status and error message. The scene itself is the Objects
- * capsule's.
+ * user works from: the ForgeShape mark that opens the project drawer, what is
+ * being edited, the mode transitions (Start Sculpting / Resume Sculpt / Back
+ * to Construction, Finish Sketch / Extrude, Back to Home), Export, the Display
+ * opener, the chrome hide control, and the status and error message. The
+ * scene itself is the Objects capsule's.
  *
  * <p><b>It is not a bar.</b> This container is transparent and draws nothing of
  * its own; what the user sees is two floating control <i>groups</i> with the
@@ -92,7 +92,16 @@ final class GlobalToolbarView extends LinearLayout {
     /** The sketch state {@link #showContext} last drew. */
     private int sketchState = NativeViewport.SKETCH_INACTIVE;
     private final TextView exportAction;
-    private final ImageView projectActionsButton;
+    /**
+     * The ForgeShape mark, the ONE project door (`MODELING-R1-OWNER-CORRECTION`):
+     * the leading control of the row, top-left, opening the project drawer
+     * that grows out of it. Its id is still {@code project_actions_button}
+     * because an id names the act -- opening the project actions -- and that
+     * act did not change; only where it stands and what it is drawn as did.
+     */
+    private final ImageView projectMark;
+    /** The mark's own floating capsule, ahead of the editing group. */
+    private final LinearLayout markGroup;
     private final TextView backToHomeButton;
     /** Whether the CAD bootstrap is open: no project yet, so the project and
      *  export controls are withdrawn and Back to Home is drawn. */
@@ -152,6 +161,33 @@ final class GlobalToolbarView extends LinearLayout {
         addView(controlsRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
+
+        // The ForgeShape mark: the project drawer's door, in the top-left
+        // corner where the product's own name belongs, and the first thing in
+        // the row so nothing a mode adds can push it off. A fixed-width icon
+        // control in a capsule of its own -- the 48 dp floor is its hit area,
+        // reached with padding, and the transition arithmetic below reserves
+        // its width before anything else is fitted. The mark is the product's
+        // own geometry (an extruded profile), the drawable the start page
+        // already wears, never a generic menu or folder glyph.
+        markGroup = EditorControlStyles.controlGroup(context);
+        markGroup.setId(R.id.toolbar_mark_group);
+        projectMark = EditorControlStyles.iconButton(context,
+                R.id.project_actions_button, R.drawable.ic_forgeshape_mark,
+                context.getString(R.string.project_drawer_open));
+        projectMark.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                actions.onProjectActionsRequested();
+            }
+        });
+        markGroup.addView(projectMark, new LinearLayout.LayoutParams(
+                EditorControlStyles.dimen(context, R.dimen.icon_button_size),
+                EditorControlStyles.dimen(context, R.dimen.icon_button_size)));
+        final LinearLayout.LayoutParams markParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        markParams.rightMargin = gap;
+        controlsRow.addView(markGroup, markParams);
 
         editingGroup = EditorControlStyles.controlGroup(context);
         editingGroup.setId(R.id.toolbar_editing_group);
@@ -369,28 +405,10 @@ final class GlobalToolbarView extends LinearLayout {
         });
         utilityGroup.addView(exportAction, EditorControlStyles.wrap(0));
 
-        // The project actions sit here for the same reason Display does: a
-        // project is mode-independent — saving it means the same thing in
-        // Construction and in Sculpt — so it belongs to neither the Tool Rail
-        // nor either inspector body. It is placed immediately after Export
-        // because the two are the same family of thought (what happens to this
-        // work outside the viewport), and the ordering says which of them is
-        // real: Export is the recessed, reserved one, and this is not.
-        //
-        // An ICON control, not a chip: the utility group is uniformly tertiary,
-        // and a second labelled chip beside Export would read as a second
-        // reserved action. Its own surface carries the two prose names.
-        projectActionsButton = EditorControlStyles.iconButton(context,
-                R.id.project_actions_button, R.drawable.ic_project,
-                context.getString(R.string.project_actions));
-        projectActionsButton.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                actions.onProjectActionsRequested();
-            }
-        });
-        utilityGroup.addView(projectActionsButton,
-                EditorControlStyles.iconButtonParams(context, gap));
+        // The project actions are NOT here any more
+        // (`MODELING-R1-OWNER-CORRECTION`): the ForgeShape mark at the leading
+        // end of the row is their one door, and a second opener in this group
+        // would be two answers to "where is my project".
 
         // Objects is deliberately NOT here any more. Which body is being edited
         // is true in every mode, but it is also the fact the user works FROM,
@@ -492,28 +510,35 @@ final class GlobalToolbarView extends LinearLayout {
 
         final LinearLayout.LayoutParams slotParams =
                 (LinearLayout.LayoutParams) statusSlot.getLayoutParams();
-        int taken = utilityGroup.getMeasuredWidth()
+        final int utility = utilityGroup.getMeasuredWidth()
                 + slotParams.leftMargin + slotParams.rightMargin;
+        // The mark is fixed-width and comes first: its width is reserved
+        // before the transition is given anything, exactly as the utility
+        // group's is, so no transition label can push the project door away.
+        int mark = 0;
+        if (markGroup.getVisibility() != GONE) {
+            markGroup.measure(unspecified, unspecified);
+            final LinearLayout.LayoutParams markParams =
+                    (LinearLayout.LayoutParams) markGroup.getLayoutParams();
+            mark = markGroup.getMeasuredWidth() + markParams.leftMargin + markParams.rightMargin;
+        }
         // An inline status shares the row rather than sitting under it, so it
         // has a floor there — otherwise a long transition label would take the
         // whole row and the one line carrying a rejection would measure to
         // nothing on exactly the window that has no second line to put it on.
-        if (statusInline && statusMessage.getVisibility() == VISIBLE) {
-            taken += EditorControlStyles.dimen(getContext(),
-                    R.dimen.toolbar_status_min_width);
-        }
-
-        int budget = rowWidth - taken
-                - editingGroup.getPaddingLeft() - editingGroup.getPaddingRight();
+        final int statusFloor = statusInline && statusMessage.getVisibility() == VISIBLE
+                ? EditorControlStyles.dimen(getContext(), R.dimen.toolbar_status_min_width) : 0;
+        int label = 0;
         if (contextLabel.getVisibility() == VISIBLE) {
             contextLabel.measure(unspecified, unspecified);
             final LinearLayout.LayoutParams labelParams =
                     (LinearLayout.LayoutParams) contextLabel.getLayoutParams();
-            budget -= contextLabel.getMeasuredWidth()
+            label = contextLabel.getMeasuredWidth()
                     + labelParams.leftMargin + labelParams.rightMargin;
         }
-        budget = Math.max(budget, EditorControlStyles.dimen(getContext(),
-                R.dimen.toolbar_transition_min_width));
+        final int budget = ToolbarRowBudget.transitionBudget(rowWidth, mark, utility, statusFloor,
+                label, editingGroup.getPaddingLeft() + editingGroup.getPaddingRight(),
+                EditorControlStyles.dimen(getContext(), R.dimen.toolbar_transition_min_width));
 
         applyTransitionLabel(transition, budget);
         if (transition.getMaxWidth() != budget) {
@@ -647,9 +672,9 @@ final class GlobalToolbarView extends LinearLayout {
      * Draws the toolbar for the CAD bootstrap (APP-H1), or for a project.
      *
      * <p>While the bootstrap is open there is no project: nothing to save, open,
-     * copy, import into or export, so the project control and Export are
-     * withdrawn rather than drawn and then refused, and Back to Home is the one
-     * way out. Display and Hide UI stay: both act on the viewport, which is
+     * copy, import into or export, so the ForgeShape mark (the project drawer's
+     * door) and Export are withdrawn rather than drawn and then refused, and
+     * Back to Home is the one way out. Display and Hide UI stay: both act on the viewport, which is
      * live. Called before {@link #showContext}, which reads the flag for the
      * context label.
      */
@@ -657,7 +682,7 @@ final class GlobalToolbarView extends LinearLayout {
         bootstrap = open;
         backToHomeButton.setVisibility(open ? VISIBLE : GONE);
         exportAction.setVisibility(open ? GONE : VISIBLE);
-        projectActionsButton.setVisibility(open ? GONE : VISIBLE);
+        markGroup.setVisibility(open ? GONE : VISIBLE);
         applyEditingComposition();
     }
 
@@ -688,7 +713,7 @@ final class GlobalToolbarView extends LinearLayout {
      * that rather than left to assume the old strip.
      */
     View[] occludingSurfaces() {
-        return new View[]{editingGroup, utilityGroup, statusMessage};
+        return new View[]{markGroup, editingGroup, utilityGroup, statusMessage};
     }
 
     /**
@@ -939,9 +964,19 @@ final class GlobalToolbarView extends LinearLayout {
         EditorControlStyles.setIconButtonActive(displaySettingsButton, open);
     }
 
-    /** The same, for the surface the project control opens. */
+    /** The same, for the project drawer the ForgeShape mark opens. */
     void showProjectActionsOpen(boolean open) {
-        EditorControlStyles.setIconButtonActive(projectActionsButton, open);
+        EditorControlStyles.setIconButtonActive(projectMark, open);
+    }
+
+    /** The ForgeShape mark, for verification and for anchoring its drawer. */
+    ImageView projectMark() {
+        return projectMark;
+    }
+
+    /** The mark's capsule, for verification. */
+    View markGroup() {
+        return markGroup;
     }
 
     /**

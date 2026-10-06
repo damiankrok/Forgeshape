@@ -146,6 +146,9 @@
     -->
     <string name="project">Project</string>
     <string name="project_actions">Project actions</string>
+    <!-- The ForgeShape mark's content description: what pressing it opens. -->
+    <string name="project_drawer_open">ForgeShape menu: create, save, open and settings</string>
+    <string name="project_drawer_create">Create</string>
     <string name="project_save">Save Project</string>
     <string name="project_open">Open Saved Project</string>
     <string name="project_open_empty">No saved project yet</string>

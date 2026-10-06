@@ -1338,12 +1338,20 @@ public final class EditorWorkspaceCorrectionTest {
             assertTrue("a first open must have finished waiting for its size",
                     !surface.growthWaitingForSize());
             assertTrue("and must actually have one", surface.getHeight() > 0);
-            if (which == Surface.DISPLAY || which == Surface.PROJECT) {
-                // Both hang UNDER a trailing toolbar control, so both grow from
-                // their own trailing top corner. The project surface is held to
-                // the same rule as the surface the pattern was lifted from.
+            if (which == Surface.DISPLAY) {
+                // It hangs UNDER a trailing toolbar control, so it grows from
+                // its own trailing top corner.
                 assertEquals("the popover grows from its own trailing top corner",
                         (float) surface.getWidth(), surface.anchorPivotX(), 0.5f);
+                assertEquals(0.0f, surface.anchorPivotY(), 0.5f);
+                return null;
+            }
+            if (which == Surface.PROJECT) {
+                // The project drawer hangs UNDER the ForgeShape mark, the
+                // toolbar's LEADING control (`MODELING-R1-OWNER-CORRECTION`), so
+                // it grows from its own leading top corner -- where the mark is.
+                assertEquals("the drawer grows from its own leading top corner",
+                        0.0f, surface.anchorPivotX(), 0.5f);
                 assertEquals(0.0f, surface.anchorPivotY(), 0.5f);
                 return null;
             }

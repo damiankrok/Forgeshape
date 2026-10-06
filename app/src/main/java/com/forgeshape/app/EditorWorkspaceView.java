@@ -837,10 +837,18 @@ final class EditorWorkspaceView extends FrameLayout
         overlayRoot.addView(displayPopover, DisplaySettingsPopoverView.anchoredParams(context,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
 
-        // The project surface is anchored the same way and for the same reason:
-        // its control is in the toolbar, and the overlay is the only place a
-        // panel can hang under a fixed-height row without resizing it.
-        projectPopover = new ProjectActionsPopoverView(context, this);
+        // The project DRAWER hangs from the ForgeShape mark at the toolbar's
+        // leading end (`MODELING-R1-OWNER-CORRECTION`), in the overlay for the
+        // same reason Display's surface is: it is the only place a panel can
+        // hang under a fixed-height row without resizing it. Every row closes
+        // the drawer through the mark's own path before its act runs.
+        projectPopover = new ProjectActionsPopoverView(context, this,
+                new ProjectDrawerPolicy.Closer() {
+                    @Override
+                    public void closeDrawer() {
+                        setProjectPanelOpen(false);
+                    }
+                });
         overlayRoot.addView(projectPopover, ProjectActionsPopoverView.anchoredParams(context,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
 
@@ -2810,6 +2818,11 @@ final class EditorWorkspaceView extends FrameLayout
         // Import creates bodies and makes one active, which Sculpt cannot
         // allow, so it is ABSENT there rather than drawn and then refused.
         projectPopover.showImportAvailable(!sculpting);
+        // New Sketch in the drawer: offered exactly where Add Primitive's New
+        // Sketch could succeed, absent while one is open, while the support
+        // chooser is up, in Sculpt, and before a project exists.
+        projectPopover.showNewSketchAvailable(ProjectDrawerPolicy.newSketchShown(projectOpen,
+                sculpting, sketching, NativeViewport.supportChooserActive()));
         // Stage027 GUARD-2: whether the ACTIVE body is hidden, read from the
         // durable visibility itself. Start/Resume Sculpt are withdrawn over one.
         final boolean activeHidden = projectOpen
@@ -3718,6 +3731,17 @@ final class EditorWorkspaceView extends FrameLayout
         showStatus(context.getString(R.string.status_sketch_started,
                 context.getString(CadFeatureEditorView.planeName(workplane)),
                 context.getString(SKETCH_TOOL_HINTS[tool])), R.attr.fsTextSecondary);
+    }
+
+    /**
+     * The project drawer's New Sketch (`MODELING-R1-OWNER-CORRECTION`): the
+     * SAME path as Add Primitive's tile. The drawer is already closed
+     * ({@link ProjectDrawerPolicy#perform}), so the chooser's planes and faces
+     * are not under it.
+     */
+    @Override
+    public void onNewSketchRequested() {
+        onNewSketchSpatial();
     }
 
     /**
