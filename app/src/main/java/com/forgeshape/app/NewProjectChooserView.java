@@ -10,12 +10,14 @@ import android.view.View;
  * replaces Home rather than floating over it, and its foot carries Back rather
  * than Cancel-over-a-dialog. Two screens in one grammar, one step apart.
  *
- * <p>Exactly two answers, because the product has exactly two ways to make a
- * first body. <b>CAD</b> enters the transient CAD bootstrap — one volatile
- * sketch, landing directly on the flat XY grid — and the first Extrude creates
- * the project. <b>Sculpt</b> seeds a sphere already prepared for a brush,
- * through the product's own Freeze. Neither is a document, a template or a
- * saved project, and both end in the ordinary workspace.
+ * <p>Exactly three answers, because the product has exactly three ways to
+ * make a first body. <b>CAD</b> enters the transient CAD bootstrap — one
+ * volatile sketch, landing directly on the flat XY grid — and the first Extrude
+ * creates the project. <b>Sculpt</b> seeds a sphere already prepared for a
+ * brush, through the product's own Freeze. <b>Freeform</b>
+ * ({@code MODELING-FOUNDATIONS-R1} B) seeds a Freeform Box, a control cage the
+ * smooth surface is subdivided from. None is a document, a template or a saved
+ * project, and all three end in the ordinary workspace.
  *
  * <p>Reached from Home and from an open project's Project surface alike; from
  * an open project Back returns to the workspace unchanged.
@@ -30,6 +32,8 @@ final class NewProjectChooserView extends StartPageView {
         void onNewCadProjectChosen();
 
         void onNewSculptProjectChosen();
+
+        void onNewFreeformProjectChosen();
 
         void onNewProjectCancelled();
     }
@@ -55,6 +59,15 @@ final class NewProjectChooserView extends StartPageView {
                     @Override
                     public void onClick(View v) {
                         listener.onNewSculptProjectChosen();
+                    }
+                });
+        addAction(R.id.new_project_freeform, R.drawable.ic_freeform,
+                context.getString(R.string.new_project_freeform_title),
+                context.getString(R.string.new_project_freeform_description),
+                new OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        listener.onNewFreeformProjectChosen();
                     }
                 });
         addStatusLine();

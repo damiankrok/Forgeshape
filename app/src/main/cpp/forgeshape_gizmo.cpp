@@ -1242,7 +1242,13 @@ GizmoSnapshot GizmoSession::snapshot(const CameraSnapshot& camera, int viewportW
 // 48-unit floor a number this file can state rather than an aspiration.
 GizmoHandle GizmoSession::hitTest(const CameraSnapshot& camera, float screenX, float screenY,
                                   int viewportWidth, int viewportHeight) const {
-    const GizmoSnapshot state = snapshot(camera, viewportWidth, viewportHeight);
+    return gizmoHitTestSnapshot(snapshot(camera, viewportWidth, viewportHeight), camera, screenX,
+                                screenY, viewportWidth, viewportHeight);
+}
+
+GizmoHandle gizmoHitTestSnapshot(const GizmoSnapshot& state, const CameraSnapshot& camera,
+                                 float screenX, float screenY, int viewportWidth,
+                                 int viewportHeight) {
     if (!state.visible || !std::isfinite(screenX) || !std::isfinite(screenY)) {
         return GizmoHandle::None;
     }

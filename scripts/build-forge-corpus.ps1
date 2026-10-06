@@ -2588,6 +2588,136 @@ function New-ObjectStateBadFlagsFile {
     return New-ForgeFile 1 @($scne, $cons) 1
 }
 
+# ---------------------------------------------------------------------------
+# FRFM v1: Freeform control cages (MODELING-FOUNDATIONS-R1 B, DATA_PACKAGE_SPEC.md 7j)
+# ---------------------------------------------------------------------------
+#
+# u32 bodyCount, then per body: u64 ObjectId, u8 subdivision level, u8 symmetry
+# planes (bit0 x = 0, bit1 y = 0, bit2 z = 0), u16 reserved (zero), u32 next
+# vertex / edge / face id, u32 vertex / edge / face count; then every vertex
+# (u32 id, three binary64), every edge (u32 id, u32 v0, u32 v1 with v0 < v1,
+# binary64 crease in [0, 1]) and every face (u32 id, four u32 vertex ids,
+# counter-clockwise from outside and rotated so the smallest id is first). The
+# cage is the whole truth; no derived vertex or triangle is ever written.
+#
+# The cages are spelled out as literal tables: this script implements the
+# LAYOUT, not the modelling tools, so it never reproduces an extrusion -- it
+# writes what the tools are specified to leave behind.
+
+function New-FreeformPayload {
+    param($Bodies)
+    $p = New-ByteBuffer
+    Add-U32 $p ([uint32] $Bodies.Count)
+    foreach ($body in $Bodies) {
+        Add-U64 $p ([uint64] $body.ObjectId)
+        Add-U8  $p $body.Level
+        Add-U8  $p $body.Symmetry
+        Add-U16 $p 0
+        Add-U32 $p ([uint32] $body.NextVertexId)
+        Add-U32 $p ([uint32] $body.NextEdgeId)
+        Add-U32 $p ([uint32] $body.NextFaceId)
+        Add-U32 $p ([uint32] $body.Vertices.Count)
+        Add-U32 $p ([uint32] $body.Edges.Count)
+        Add-U32 $p ([uint32] $body.Faces.Count)
+        foreach ($v in $body.Vertices) {
+            Add-U32 $p ([uint32] $v[0])
+            Add-F64 $p ([double] $v[1])
+            Add-F64 $p ([double] $v[2])
+            Add-F64 $p ([double] $v[3])
+        }
+        foreach ($e in $body.Edges) {
+            Add-U32 $p ([uint32] $e[0])
+            Add-U32 $p ([uint32] $e[1])
+            Add-U32 $p ([uint32] $e[2])
+            Add-F64 $p ([double] $e[3])
+        }
+        foreach ($f in $body.Faces) {
+            foreach ($id in $f) { Add-U32 $p ([uint32] $id) }
+        }
+    }
+    return $p.ToArray()
+}
+
+# The Freeform Box: a 1 m cube, vertices 1..8 at (-,-,-) (+,-,-) (+,+,-)
+# (-,+,-) (-,-,+) (+,-,+) (+,+,+) (-,+,+); edges in first-use order over the
+# faces -Z +Z -Y +Y -X +X; faces 1..6 in that order.
+$script:FreeformBoxVertices = @(
+    @(1, -0.5, -0.5, -0.5), @(2, 0.5, -0.5, -0.5), @(3, 0.5, 0.5, -0.5), @(4, -0.5, 0.5, -0.5),
+    @(5, -0.5, -0.5, 0.5),  @(6, 0.5, -0.5, 0.5),  @(7, 0.5, 0.5, 0.5),  @(8, -0.5, 0.5, 0.5)
+)
+$script:FreeformBoxEdges = @(
+    @(1, 1, 4, 0.0), @(2, 3, 4, 0.0), @(3, 2, 3, 0.0), @(4, 1, 2, 0.0),
+    @(5, 5, 6, 0.0), @(6, 6, 7, 0.0), @(7, 7, 8, 0.0), @(8, 5, 8, 0.0),
+    @(9, 2, 6, 0.0), @(10, 1, 5, 0.0), @(11, 4, 8, 0.0), @(12, 3, 7, 0.0)
+)
+$script:FreeformBoxFaces = @(
+    @(1, 1, 4, 3, 2), @(2, 5, 6, 7, 8), @(3, 1, 2, 6, 5),
+    @(4, 3, 4, 8, 7), @(5, 1, 5, 8, 4), @(6, 2, 3, 7, 6)
+)
+
+function New-FreeformFile {
+    param($Body)
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $frfm = New-Section 'FRFM' 1 $true (New-FreeformPayload @($Body))
+    return New-ForgeFile 1 @($scne, $frfm) 0x10
+}
+
+function New-FreeformBoxBody {
+    param($Faces = $script:FreeformBoxFaces)
+    return [pscustomobject]@{
+        ObjectId = 1; Level = 2; Symmetry = 0
+        NextVertexId = 9; NextEdgeId = 13; NextFaceId = 7
+        Vertices = $script:FreeformBoxVertices; Edges = $script:FreeformBoxEdges; Faces = $Faces
+    }
+}
+
+function New-FreeformBoxFile { return New-FreeformFile (New-FreeformBoxBody) }
+
+# The box with face 1 wound the wrong way round, (1, 2, 3, 4) for (1, 4, 3, 2):
+# each of its four edges is then walked the same way by two faces, which the
+# decoder must refuse as an invalid cage.
+function New-FreeformBadTopologyFile {
+    # The leading comma keeps the one face an array ELEMENT; @(@(...)) alone
+    # would unroll it into five loose integers.
+    $faces = @(, @(1, 1, 2, 3, 4)) + $script:FreeformBoxFaces[1..5]
+    return New-FreeformFile (New-FreeformBoxBody -Faces $faces)
+}
+
+# The box, symmetric about x = 0, its +X face extruded 0.25 m -- and so its -X
+# face too, the region's mirror -- with the four edges of its +Y face creased
+# 0.75, at level 3. The extrusion keeps both end faces' ids (5 and 6) on new
+# vertices 9..16 (one per region vertex, in ascending id order), adds the
+# vertical edges 13..20 by vertex id and the tops 21..28 by old edge id, and
+# one wall per boundary edge as faces 7..14.
+function New-FreeformCreaseSymmetryFile {
+    $vertices = $script:FreeformBoxVertices + @(
+        @(9, -0.75, -0.5, -0.5), @(10, 0.75, -0.5, -0.5), @(11, 0.75, 0.5, -0.5), @(12, -0.75, 0.5, -0.5),
+        @(13, -0.75, -0.5, 0.5), @(14, 0.75, -0.5, 0.5),  @(15, 0.75, 0.5, 0.5),  @(16, -0.75, 0.5, 0.5)
+    )
+    $edges = @(
+        @(1, 1, 4, 0.0), @(2, 3, 4, 0.75), @(3, 2, 3, 0.0), @(4, 1, 2, 0.0),
+        @(5, 5, 6, 0.0), @(6, 6, 7, 0.0), @(7, 7, 8, 0.75), @(8, 5, 8, 0.0),
+        @(9, 2, 6, 0.0), @(10, 1, 5, 0.0), @(11, 4, 8, 0.75), @(12, 3, 7, 0.75),
+        @(13, 1, 9, 0.0), @(14, 2, 10, 0.0), @(15, 3, 11, 0.0), @(16, 4, 12, 0.0),
+        @(17, 5, 13, 0.0), @(18, 6, 14, 0.0), @(19, 7, 15, 0.0), @(20, 8, 16, 0.0),
+        @(21, 9, 12, 0.0), @(22, 10, 11, 0.0), @(23, 14, 15, 0.0), @(24, 13, 16, 0.0),
+        @(25, 10, 14, 0.0), @(26, 9, 13, 0.0), @(27, 12, 16, 0.0), @(28, 11, 15, 0.0)
+    )
+    $faces = @(
+        @(1, 1, 4, 3, 2), @(2, 5, 6, 7, 8), @(3, 1, 2, 6, 5), @(4, 3, 4, 8, 7),
+        @(5, 9, 13, 16, 12), @(6, 10, 11, 15, 14), @(7, 1, 9, 12, 4), @(8, 2, 3, 11, 10),
+        @(9, 6, 14, 15, 7), @(10, 5, 8, 16, 13), @(11, 2, 10, 14, 6), @(12, 1, 5, 13, 9),
+        @(13, 4, 12, 16, 8), @(14, 3, 7, 15, 11)
+    )
+    $body = [pscustomobject]@{
+        ObjectId = 1; Level = 3; Symmetry = 0x01
+        NextVertexId = 17; NextEdgeId = 29; NextFaceId = 15
+        Vertices = $vertices; Edges = $edges; Faces = $faces
+    }
+    return New-FreeformFile $body
+}
+
 # DATA_PACKAGE_SPEC.md 7f promises that the generalized signature IS the 7c one
 # for a feature selecting one region without holes, so no stored token of an
 # earlier fixture moves. Hold the two implementations here to that before a
@@ -2665,6 +2795,9 @@ $fixtures = [ordered]@{
     'cad_dimension_reference_v8.forge'   = (New-CadReferenceDimensionFile)
     'cad_bad_dimension_ref_v8.forge'     = (New-CadDrivingDimensionFile -BadRef)
     'cad_dimension_conflict_v8.forge'    = (New-CadDrivingDimensionFile -Conflict)
+    'freeform_box_v1.forge'              = (New-FreeformBoxFile)
+    'freeform_crease_symmetry_v1.forge'  = (New-FreeformCreaseSymmetryFile)
+    'freeform_bad_topology_v1.forge'     = (New-FreeformBadTopologyFile)
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -2747,6 +2880,10 @@ foreach ($name in @('cad_revolve_full_v7', 'cad_revolve_partial_v7', 'cad_revolv
 Write-Host 'Digests of the CADB v8 fixtures (CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1):'
 foreach ($name in @('cad_construction_v8', 'cad_dimension_driving_v8', 'cad_dimension_reference_v8',
                     'cad_bad_dimension_ref_v8', 'cad_dimension_conflict_v8')) {
+    Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
+}
+Write-Host 'Digests of the FRFM v1 fixtures (MODELING-FOUNDATIONS-R1 B):'
+foreach ($name in @('freeform_box_v1', 'freeform_crease_symmetry_v1', 'freeform_bad_topology_v1')) {
     Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
 }
 Write-Host 'Lineage tokens the v5 fixtures carry (7c / 7f signature):'

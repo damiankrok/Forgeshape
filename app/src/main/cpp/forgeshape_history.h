@@ -84,6 +84,12 @@ struct BodyConstructionState {
     // (see kMaxSketchEntities). Never a vertex: the mesh is regenerated from
     // exactly this, so a step holds the truth and not a product of it.
     CadBodyState cad{};
+    // Meaningful only when `representation` is Freeform
+    // (`MODELING-FOUNDATIONS-R1` B): the control cage, SHARED with the body
+    // and with every other step that captured the same cage. A cage is
+    // immutable once published and an edit replaces the pointer, so sharing it
+    // is exact and keeps 64 steps of a large cage from being 64 copies.
+    std::shared_ptr<const FreeformCage> freeform;
     TransformValues transform{};
     // Stage 018A: the three representation-neutral facts about a body that are
     // project truth and are not geometry.

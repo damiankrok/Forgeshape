@@ -503,6 +503,11 @@ final class NativeViewport {
      * this is the guard behind them.
      */
     static final int SCULPT_REFUSED_HIDDEN_BODY = 4;
+    /**
+     * The active body is a Freeform body: its truth is the control cage, and
+     * Start Sculpting is refused by name (the control is absent for one).
+     */
+    static final int SCULPT_REFUSED_FREEFORM_BODY = 5;
 
     // -----------------------------------------------------------------------
     // The seven sculpt tools.
@@ -3067,12 +3072,13 @@ final class NativeViewport {
 
     static native String cadStatusToken(int code);
 
-    /** 1 Construction, 2 Imported, 3 CAD; 0 for an unknown id. */
+    /** 1 Construction, 2 Imported, 3 CAD, 4 Freeform; 0 for an unknown id. */
     static native int sceneBodyRepresentation(long objectId);
 
     static final int REPRESENTATION_CONSTRUCTION = 1;
     static final int REPRESENTATION_IMPORTED = 2;
     static final int REPRESENTATION_CAD = 3;
+    static final int REPRESENTATION_FREEFORM = 4;
 
     static native boolean sceneActiveBodyIsCad();
 
@@ -3187,4 +3193,110 @@ final class NativeViewport {
      * is not a CAD body.
      */
     static native int cadTimeline(long bodyId, boolean staged, double[] header, double[] rows);
+
+    // -----------------------------------------------------------------------
+    // Freeform/SubD (MODELING-FOUNDATIONS-R1 B)
+    // -----------------------------------------------------------------------
+    //
+    // A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is
+    // derived by Catmull-Clark and never stored. Codes are the native
+    // FreeformStatus codes, plus two transport refusals.
+
+    static final int FREEFORM_OK = 0;
+    static final int FREEFORM_EMPTY_SELECTION = 30;
+    static final int FREEFORM_REFUSED_IN_SCULPT = 100;
+    static final int FREEFORM_REFUSED_IN_SKETCH = 101;
+
+    static final int FREEFORM_FORM_BOX = 0;
+    static final int FREEFORM_FORM_PLANE = 1;
+    static final int FREEFORM_FORM_CYLINDER = 2;
+
+    static final int FREEFORM_ELEMENT_VERTEX = 0;
+    static final int FREEFORM_ELEMENT_EDGE = 1;
+    static final int FREEFORM_ELEMENT_FACE = 2;
+
+    static final int FREEFORM_SYMMETRY_X = 0x01;
+    static final int FREEFORM_SYMMETRY_Y = 0x02;
+    static final int FREEFORM_SYMMETRY_Z = 0x04;
+
+    static final int FREEFORM_MAX_LEVEL = 4;
+
+    static final int FREEFORM_STATE_SIZE = 24;
+    static final int FREEFORM_STATE_ACTIVE = 0;
+    static final int FREEFORM_STATE_BODY = 1;
+    static final int FREEFORM_STATE_ELEMENT = 2;
+    static final int FREEFORM_STATE_MULTI = 3;
+    static final int FREEFORM_STATE_MODE = 4;
+    static final int FREEFORM_STATE_SELECTION_COUNT = 5;
+    static final int FREEFORM_STATE_LEVEL = 6;
+    static final int FREEFORM_STATE_SYMMETRY = 7;
+    static final int FREEFORM_STATE_VERTICES = 8;
+    static final int FREEFORM_STATE_EDGES = 9;
+    static final int FREEFORM_STATE_FACES = 10;
+    static final int FREEFORM_STATE_NEXT_VERTEX = 11;
+    static final int FREEFORM_STATE_NEXT_EDGE = 12;
+    static final int FREEFORM_STATE_NEXT_FACE = 13;
+    static final int FREEFORM_STATE_OPEN = 14;
+    static final int FREEFORM_STATE_DERIVED_QUADS = 15;
+    static final int FREEFORM_STATE_CAPTURING = 16;
+    static final int FREEFORM_STATE_LAST_STATUS = 17;
+    static final int FREEFORM_STATE_CENTROID_X = 18;
+    static final int FREEFORM_STATE_CENTROID_Y = 19;
+    static final int FREEFORM_STATE_CENTROID_Z = 20;
+    static final int FREEFORM_STATE_ACTIVE_IS_FREEFORM = 21;
+    static final int FREEFORM_STATE_DRAGS = 22;
+    static final int FREEFORM_STATE_EDITABLE = 23;
+
+    /** Creates a Freeform Box, Plane or Cylinder as one Undo and makes it active. */
+    static native int freeformCreateBody(int form);
+
+    /** Opens cage editing on the active body. */
+    static native int freeformBeginEdit();
+
+    static native void freeformEndEdit();
+
+    /** Vertex, Edge or Face; changing it clears the selection. */
+    static native int freeformSetElement(int element);
+
+    static native void freeformSetMultiSelect(boolean multi);
+
+    /** Move (0), Rotate (1) or Scale (2). */
+    static native int freeformSetTransformMode(int mode);
+
+    /** Replaces the selection with ids of the current element kind. */
+    static native int freeformSelect(int[] ids);
+
+    static native void freeformClearSelection();
+
+    static native int freeformPushPull(double distance);
+
+    static native int freeformExtrude(double distance);
+
+    static native int freeformInsertLoop(double ratio);
+
+    static native int freeformSetCrease(double weight);
+
+    static native int freeformDeleteFaces();
+
+    static native int freeformSetSymmetry(int symmetry);
+
+    static native int freeformSetLevel(int level);
+
+    /** The session and the active body's cage in one read; 0 when it is Freeform. */
+    static native int freeformState(double[] out);
+
+    /** The selection's ids, ascending; returns how many there are. */
+    static native int freeformSelection(int[] out);
+
+    static native boolean freeformVertexPosition(int id, double[] out);
+
+    /** A cage element's projected point (vertex, edge midpoint, face centroid). */
+    static native boolean freeformElementScreenPoint(int element, int id, float[] out);
+
+    /** A cage gizmo handle's projected grab point, by the gizmo's handle code. */
+    static native boolean freeformGizmoHandlePoint(int handleCode, float[] out);
+
+    static native long freeformMeshDigest();
+
+    static native String freeformStatusToken(int code);
 }

@@ -58,6 +58,16 @@ bool sameSceneConstructionState(const SceneConstructionState& a,
             && !sameCadBodyState(a.bodies[i].cad, b.bodies[i].cad)) {
             return false;
         }
+        // A Freeform body's cage is its shape. The same pointer is the same
+        // cage; different pointers are compared by value, so an edit that
+        // produced an identical cage records nothing.
+        if (a.bodies[i].representation == BodyRepresentation::Freeform) {
+            const auto& x = a.bodies[i].freeform;
+            const auto& y = b.bodies[i].freeform;
+            if (x != y && (x == nullptr || y == nullptr || !sameFreeformCage(*x, *y))) {
+                return false;
+            }
+        }
     }
     return true;
 }
@@ -78,6 +88,8 @@ SceneConstructionState captureSceneConstructionState(const ConstructionScene& sc
             captured.construction = source->captureState();
         } else if (const CadBody* cad = body.cadOrNull()) {
             captured.cad = cad->captureState();
+        } else if (const FreeformBody* freeform = body.freeformOrNull()) {
+            captured.freeform = freeform->cagePointer();
         }
         state.bodies.push_back(captured);
     }
@@ -259,11 +271,22 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
                 // body wearing an imported object's identity.
                 continue;
             }
-            // A Construction Body and a CAD Body are both DERIVED from what
-            // the step holds, so either can be rebuilt from it.
-            body = (wanted.representation == BodyRepresentation::Cad)
-                       ? scene_.makeCadBody(wanted.objectId, wanted.cad)
-                       : scene_.makeBody(wanted.objectId);
+            // A Construction Body, a CAD Body and a Freeform body are all
+            // rebuilt from what the step holds. Every other representation is
+            // named, so an unknown one is skipped rather than silently rebuilt
+            // as a Construction Body wearing its id.
+            if (wanted.representation == BodyRepresentation::Cad) {
+                body = scene_.makeCadBody(wanted.objectId, wanted.cad);
+            } else if (wanted.representation == BodyRepresentation::Freeform) {
+                if (wanted.freeform == nullptr) {
+                    continue;
+                }
+                body = scene_.makeFreeformBody(wanted.objectId, wanted.freeform);
+            } else if (wanted.representation == BodyRepresentation::Construction) {
+                body = scene_.makeBody(wanted.objectId);
+            } else {
+                continue;
+            }
         }
 
         const bool isConstruction = body->hasConstructionSource()
@@ -274,8 +297,14 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
             && wanted.representation == BodyRepresentation::Cad;
         const bool cadDiffers =
             isCad && !sameCadBodyState(body->cadOrNull()->captureState(), wanted.cad);
+        const bool isFreeform = body->freeformOrNull() != nullptr
+            && wanted.representation == BodyRepresentation::Freeform && wanted.freeform != nullptr;
+        const bool freeformDiffers =
+            isFreeform && body->freeformOrNull()->cagePointer() != wanted.freeform
+            && !sameFreeformCage(body->freeformOrNull()->cage(), *wanted.freeform);
         const bool shapeDiffers =
-            (isConstruction && !sameConstructionShape(current, wanted.construction)) || cadDiffers;
+            (isConstruction && !sameConstructionShape(current, wanted.construction)) || cadDiffers
+            || freeformDiffers;
         const bool placementDiffers =
             !sameConstructionPlacement(body->transform().values(), wanted.transform);
         // A body that has never published anything must, whatever its
@@ -288,6 +317,8 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
 
         if (cadDiffers) {
             body->cadOrNull()->restoreState(wanted.cad);
+        } else if (freeformDiffers) {
+            body->freeformOrNull()->restoreCage(wanted.freeform);
         } else if (shapeDiffers) {
             body->construction().restoreState(wanted.construction);
         }

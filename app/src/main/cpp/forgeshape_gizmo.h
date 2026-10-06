@@ -550,6 +550,16 @@ struct GizmoSnapshot {
     float visualScale = kGizmoDefaultVisualScale;
 };
 
+// Which handle of `state`, if any, a pointer at this pixel would grab -- the
+// hit test `GizmoSession::hitTest` runs, as a pure function of a snapshot and
+// the camera, so another owner of a placement (a Freeform cage selection,
+// `MODELING-FOUNDATIONS-R1` B) draws and grabs the SAME instrument by the same
+// rule rather than a second copy of it. See GizmoSession::hitTest for the
+// priority tiers.
+GizmoHandle gizmoHitTestSnapshot(const GizmoSnapshot& state, const CameraSnapshot& camera,
+                                 float screenX, float screenY, int viewportWidth,
+                                 int viewportHeight);
+
 // The one world scale a handle is PLACED at — the camera-derived reference unit
 // times the visual size preference. Every "where is this handle" answer, drawn
 // or hit-tested, goes through this so the two cannot disagree.

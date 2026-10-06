@@ -44,6 +44,7 @@
 #include "forgeshape_construction.h"
 #include "forgeshape_construction_selftest.h"
 #include "forgeshape_display.h"
+#include "forgeshape_freeform_session.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_gizmo_selftest.h"
 #include "forgeshape_glb_import_fixture.h"
@@ -62,6 +63,7 @@
 #include "forgeshape_sketch_ux_selftest.h"
 #include "forgeshape_cad_selftest.h"
 #include "forgeshape_cad_feature_selftest.h"
+#include "forgeshape_freeform_selftest.h"
 #include "forgeshape_sketch_session.h"
 #include "forgeshape_support_chooser.h"
 #include "forgeshape_history.h"
@@ -602,6 +604,32 @@ void runCadFeatureSelfTestsAndLog() {
         FS_LOGI("FORGESHAPE_CAD_FEATURE_SELFTEST_OK (%d checks)", count);
     } else {
         FS_LOGE("FORGESHAPE_CAD_FEATURE_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
+    }
+#endif
+}
+
+// `MODELING-FOUNDATIONS-R1` B: the Freeform control cage, Catmull-Clark, every
+// cage tool, symmetry, the edit session and the FRFM codec. Failures only are
+// logged per check, then the suite token, the bounded subdivision and drag
+// timings and the FRFM corpus digests as this build encodes them.
+void runFreeformSelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxFreeformChecks = 256;
+    static forgeshape::FreeformSelfTestResult results[kMaxFreeformChecks];
+    const int count = forgeshape::runFreeformSelfTests(results, kMaxFreeformChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_FREEFORM_SELFTEST_CASE_FAIL:%s", results[i].name);
+        }
+    }
+    FS_LOGI("FORGESHAPE_FREEFORM_PERFORMANCE %s", forgeshape::freeformPerformanceReport());
+    FS_LOGI("FORGESHAPE_FREEFORM_GOLDEN_SHA256 %s", forgeshape::freeformFixtureDigests());
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_FREEFORM_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_FREEFORM_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
     }
 #endif
 }
@@ -1858,6 +1886,11 @@ void renderThreadMain() {
                 if (forgeshape::importedMeshPreview().visible()
                     || forgeshape::bodyDimensionSession().active()) {
                     renderer.setGizmo(forgeshape::GizmoSnapshot{});
+                } else if (forgeshape::freeformEditSession().active()) {
+                    // The cage's own instrument at the selection, on the
+                    // gizmo's terms (`MODELING-FOUNDATIONS-R1` B).
+                    renderer.setGizmo(forgeshape::freeformEditSession().gizmoSnapshot(
+                        g_camera.snapshot(), g_camera.viewportWidth(), g_camera.viewportHeight()));
                 } else {
                     renderer.setGizmo(forgeshape::gizmoSession().snapshot(
                         g_camera.snapshot(), g_camera.viewportWidth(),
@@ -1885,8 +1918,14 @@ void renderThreadMain() {
                     // mutually exclusive by construction -- a sketch cannot be
                     // open over a body being measured, because the mode refuses
                     // to open in Sculpt and creation is refused in a sketch.
+                    forgeshape::freeformEditSession().reconcile();
                     if (forgeshape::supportChooser().active()) {
                         renderer.setSketchOverlay(forgeshape::supportChooser().overlay());
+                    } else if (forgeshape::freeformEditSession().active()) {
+                        // The cage over the smooth surface: a fourth producer
+                        // for the one overlay slot, in its own revision space.
+                        renderer.setSketchOverlay(
+                            forgeshape::freeformEditSession().overlay(worldPerUnit));
                     } else if (forgeshape::bodyDimensionSession().active()) {
                         forgeshape::LocalBounds bounds;
                         const forgeshape::ConstructionScene& scene =
@@ -2045,6 +2084,7 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     runBodyDimensionsSelfTestsAndLog();
     runMirrorSelfTestsAndLog();
     runCadFeatureSelfTestsAndLog();
+    runFreeformSelfTestsAndLog();
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -2765,6 +2805,9 @@ constexpr jint kSculptRefusedCadBody = 3;
 // GUARD-2 (Stage027): Start or Resume Sculpt refused because the active body
 // is hidden. The control is withdrawn above JNI; this is the guard behind it.
 constexpr jint kSculptRefusedHiddenBody = 4;
+// The active body is a Freeform body (`MODELING-FOUNDATIONS-R1` B): its truth
+// is the control cage, and a Frozen Sculpt Mesh beside it is not this stage.
+constexpr jint kSculptRefusedFreeformBody = 5;
 
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_productMode(JNIEnv*, jclass) {
@@ -2795,6 +2838,7 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
     bool haveSource = false;
     bool froze = false;
     bool cadBody = false;
+    bool freeformBody = false;
     bool sketching = false;
     forgeshape::SculptSession* session = nullptr;
     {
@@ -2816,15 +2860,24 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
             return kSculptRefusedHiddenBody;
         }
         cadBody = body.cadOrNull() != nullptr;
+        freeformBody = body.freeformOrNull() != nullptr;
         sketching = forgeshape::sketchSession().active();
         forgeshape::ConstructionMesh source;
-        haveSource = !cadBody && !sketching && forgeshape::buildSculptSourceMesh(body, &source);
+        haveSource = !cadBody && !freeformBody && !sketching
+                     && forgeshape::buildSculptSourceMesh(body, &source);
         if (haveSource) {
             g_grabbing = false;
             g_strokePending = false;
             session = &forgeshape::sculptSession();
             froze = session->freezeToSculpt(source, objectId, &why);
         }
+    }
+    if (freeformBody) {
+        // The cage is the only truth of a Freeform body; Sculpt is refused by
+        // name and the control is absent for one.
+        FS_LOGE("FORGESHAPE_SCULPT_FREEZE_FAIL:FreeformNotSculptable objectId=%llu",
+                (unsigned long long)objectId);
+        return kSculptRefusedFreeformBody;
     }
     if (cadBody) {
         // `CAD-R0-A1A2` leaves CAD -> Sculpt out, by name. The control is
@@ -5306,6 +5359,381 @@ Java_com_forgeshape_app_NativeViewport_cadTimeline(JNIEnv* env, jclass, jlong bo
     return static_cast<jint>(timeline.rows.size());
 }
 
+// ===========================================================================
+// Freeform/SubD (`MODELING-FOUNDATIONS-R1` B)
+// ===========================================================================
+//
+// Status codes are `FreeformStatus` codes (NativeViewport.FREEFORM_*), plus two
+// transport refusals for the product modes a cage edit cannot run in. The
+// domain decides every rule; what is here is the lock, the mode guards and the
+// log line.
+
+constexpr jint kFreeformRefusedInSculpt = 100;
+constexpr jint kFreeformRefusedInSketch = 101;
+
+namespace {
+
+jint freeformModeRefusalLocked() {
+    if (forgeshape::sculptSession().inSculptMode()) return kFreeformRefusedInSculpt;
+    if (forgeshape::sketchSession().active() || forgeshape::supportChooser().active()) {
+        return kFreeformRefusedInSketch;
+    }
+    return 0;
+}
+
+jint freeformCode(forgeshape::FreeformStatus status) {
+    return static_cast<jint>(forgeshape::freeformStatusCode(status));
+}
+
+void logFreeformAct(const char* act, forgeshape::FreeformStatus status) {
+    if (status == forgeshape::FreeformStatus::Ok) {
+        FS_LOGI("FORGESHAPE_FREEFORM_%s undo=%d", act, (int)forgeshape::constructionHistory().undoDepth());
+    } else {
+        FS_LOGI("FORGESHAPE_FREEFORM_%s_REFUSED:%s", act, forgeshape::freeformStatusName(status));
+    }
+}
+
+// The cage of the ACTIVE body, when it is a Freeform body.
+const forgeshape::FreeformBody* activeFreeformLocked() {
+    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    if (!scene.hasProject()) return nullptr;
+    const forgeshape::SceneObject* body = scene.findBody(scene.activeBodyId());
+    return body != nullptr ? body->freeformOrNull() : nullptr;
+}
+
+}  // namespace
+
+// Creates a Freeform Box (0), Plane (1) or Cylinder (2) as ONE transaction and
+// makes it active. Inside the session-initialization bracket it seeds a new
+// project, recording nothing -- the Sculpt bootstrap's seam.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformCreateBody(JNIEnv*, jclass, jint form) {
+    forgeshape::ObjectId created = forgeshape::kNoObject;
+    forgeshape::FreeformStatus status = forgeshape::FreeformStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const jint refused = freeformModeRefusalLocked();
+        if (refused != 0) {
+            FS_LOGI("FORGESHAPE_FREEFORM_CREATE_REFUSED:%s",
+                    refused == kFreeformRefusedInSculpt ? "in_sculpt_mode" : "in_sketch");
+            return refused;
+        }
+        forgeshape::freeformEditSession().end();
+        status = forgeshape::createFreeformBody(forgeshape::constructionScene(),
+                                                forgeshape::constructionHistory(),
+                                                static_cast<int>(form), &created);
+    }
+    if (status == forgeshape::FreeformStatus::Ok) {
+        FS_LOGI("FORGESHAPE_FREEFORM_BODY_ADDED:%llu form=%d bodies=%d", (unsigned long long)created,
+                (int)form, (int)forgeshape::constructionScene().bodyCount());
+    } else {
+        FS_LOGI("FORGESHAPE_FREEFORM_CREATE_REFUSED:%s", forgeshape::freeformStatusName(status));
+    }
+    return freeformCode(status);
+}
+
+// Opens cage editing on the ACTIVE body. The placement gizmo stands down: the
+// cage has its own instrument.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformBeginEdit(JNIEnv*, jclass) {
+    forgeshape::FreeformStatus status = forgeshape::FreeformStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const jint refused = freeformModeRefusalLocked();
+        if (refused != 0) return refused;
+        const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        status = scene.hasProject() ? forgeshape::freeformEditSession().begin(scene.activeBodyId())
+                                    : forgeshape::FreeformStatus::NotFreeformBody;
+        if (status == forgeshape::FreeformStatus::Ok) {
+            forgeshape::gizmoSession().setActive(false);
+        }
+    }
+    logFreeformAct("EDIT_BEGIN", status);
+    return freeformCode(status);
+}
+
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_freeformEndEdit(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (forgeshape::freeformEditSession().active()) {
+        forgeshape::freeformEditSession().end();
+        FS_LOGI("FORGESHAPE_FREEFORM_EDIT_END");
+    }
+}
+
+// Vertex (0), Edge (1) or Face (2). Changing it clears the selection.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSetElement(JNIEnv*, jclass, jint element) {
+    if (element < 0 || element > 2) return freeformCode(forgeshape::FreeformStatus::OutOfRange);
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return freeformCode(forgeshape::freeformEditSession().setElement(
+            static_cast<forgeshape::FreeformElement>(element)));
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSetMultiSelect(JNIEnv*, jclass, jboolean multi) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::freeformEditSession().setMultiSelect(multi == JNI_TRUE);
+}
+
+// Move (0), Rotate (1) or Scale (2): the gizmo's own mode index.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSetTransformMode(JNIEnv*, jclass, jint mode) {
+    forgeshape::GizmoMode parsed;
+    if (!forgeshape::gizmoModeFromIndex(static_cast<int>(mode), &parsed)) {
+        return freeformCode(forgeshape::FreeformStatus::OutOfRange);
+    }
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return freeformCode(forgeshape::freeformEditSession().setTransformMode(parsed));
+}
+
+// Replaces the selection with ids of the current element kind.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSelect(JNIEnv* env, jclass, jintArray ids) {
+    std::vector<uint32_t> wanted;
+    if (ids != nullptr) {
+        const jsize n = env->GetArrayLength(ids);
+        if (n > static_cast<jsize>(forgeshape::kMaxFreeformEdges)) {
+            return freeformCode(forgeshape::FreeformStatus::OutOfRange);
+        }
+        std::vector<jint> buffer(static_cast<size_t>(n));
+        if (n > 0) env->GetIntArrayRegion(ids, 0, n, buffer.data());
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            return freeformCode(forgeshape::FreeformStatus::OutOfRange);
+        }
+        for (jint id : buffer) {
+            if (id <= 0) return freeformCode(forgeshape::FreeformStatus::IdInvalid);
+            wanted.push_back(static_cast<uint32_t>(id));
+        }
+    }
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return freeformCode(forgeshape::freeformEditSession().select(wanted));
+}
+
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_freeformClearSelection(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::freeformEditSession().clearSelection();
+}
+
+// The typed tools: each ONE transaction over the current selection.
+#define FORGESHAPE_FREEFORM_TOOL(Name, Act, Call)                                     \
+    std::lock_guard<std::mutex> lock(g_stateMutex);                                   \
+    const jint refused = freeformModeRefusalLocked();                                 \
+    if (refused != 0) return refused;                                                 \
+    const forgeshape::FreeformStatus status = forgeshape::freeformEditSession().Call; \
+    logFreeformAct(Act, status);                                                      \
+    return freeformCode(status);
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformPushPull(JNIEnv*, jclass, jdouble distance) {
+    FORGESHAPE_FREEFORM_TOOL(PushPull, "PUSH_PULL", pushPull(distance))
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformExtrude(JNIEnv*, jclass, jdouble distance) {
+    FORGESHAPE_FREEFORM_TOOL(Extrude, "EXTRUDE", extrude(distance))
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformInsertLoop(JNIEnv*, jclass, jdouble ratio) {
+    FORGESHAPE_FREEFORM_TOOL(InsertLoop, "INSERT_LOOP", insertLoop(ratio))
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSetCrease(JNIEnv*, jclass, jdouble weight) {
+    FORGESHAPE_FREEFORM_TOOL(SetCrease, "CREASE", setCrease(weight))
+}
+
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_freeformDeleteFaces(JNIEnv*, jclass) {
+    FORGESHAPE_FREEFORM_TOOL(DeleteFaces, "DELETE_FACES", deleteFaces())
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSetSymmetry(JNIEnv*, jclass, jint symmetry) {
+    if (symmetry < 0 || symmetry > 0xFF) return freeformCode(forgeshape::FreeformStatus::InvalidSymmetry);
+    FORGESHAPE_FREEFORM_TOOL(SetSymmetry, "SYMMETRY", setSymmetry(static_cast<uint8_t>(symmetry)))
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSetLevel(JNIEnv*, jclass, jint level) {
+    FORGESHAPE_FREEFORM_TOOL(SetLevel, "LEVEL", setLevel(static_cast<int>(level)))
+}
+
+#undef FORGESHAPE_FREEFORM_TOOL
+
+// The whole state in ONE locked read (NativeViewport.FREEFORM_STATE_*): the
+// session's presentation and the ACTIVE body's cage, so every slot describes
+// one instant. Returns the active body's representation-neutral verdict: 0 when
+// the active body is a Freeform body, NotFreeformBody otherwise.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformState(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr jsize kSlots = 24;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) {
+        return freeformCode(forgeshape::FreeformStatus::OutOfRange);
+    }
+    jdouble slots[kSlots] = {};
+    forgeshape::FreeformStatus verdict = forgeshape::FreeformStatus::NotFreeformBody;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::FreeformEditSession& session = forgeshape::freeformEditSession();
+        session.reconcile();
+        slots[0] = session.active() ? 1.0 : 0.0;
+        slots[1] = static_cast<double>(session.bodyId());
+        slots[2] = static_cast<double>(static_cast<int>(session.element()));
+        slots[3] = session.multiSelect() ? 1.0 : 0.0;
+        slots[4] = static_cast<double>(forgeshape::gizmoModeIndex(session.transformMode()));
+        slots[5] = static_cast<double>(session.selection().size());
+        slots[16] = session.capturing() ? 1.0 : 0.0;
+        slots[17] = static_cast<double>(forgeshape::freeformStatusCode(session.lastStatus()));
+        slots[22] = static_cast<double>(session.committedDragCount());
+        forgeshape::DVec3 centroid{0.0, 0.0, 0.0};
+        if (session.selectionCentroid(&centroid)) {
+            slots[18] = centroid.x;
+            slots[19] = centroid.y;
+            slots[20] = centroid.z;
+        }
+        if (const forgeshape::FreeformBody* body = activeFreeformLocked()) {
+            verdict = forgeshape::FreeformStatus::Ok;
+            const forgeshape::FreeformCage& cage = body->cage();
+            slots[6] = cage.subdivisionLevel;
+            slots[7] = cage.symmetry;
+            slots[8] = static_cast<double>(cage.vertices.size());
+            slots[9] = static_cast<double>(cage.edges.size());
+            slots[10] = static_cast<double>(cage.faces.size());
+            slots[11] = cage.nextVertexId;
+            slots[12] = cage.nextEdgeId;
+            slots[13] = cage.nextFaceId;
+            slots[14] = forgeshape::freeformCageHasBoundary(cage) ? 1.0 : 0.0;
+            slots[15] = static_cast<double>(static_cast<uint64_t>(cage.faces.size())
+                                            << (2u * cage.subdivisionLevel));
+            slots[21] = 1.0;
+            const forgeshape::SceneObject* object =
+                    forgeshape::constructionScene().findBody(forgeshape::constructionScene().activeBodyId());
+            slots[23] = object != nullptr && object->visible() && !object->locked() ? 1.0 : 0.0;
+        }
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, slots);
+    return freeformCode(verdict);
+}
+
+// The selection's ids, ascending; returns how many there are (the array may be
+// shorter, and only that many are written).
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSelection(JNIEnv* env, jclass, jintArray out) {
+    std::vector<jint> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::freeformEditSession().reconcile();
+        for (uint32_t id : forgeshape::freeformEditSession().selection()) ids.push_back(static_cast<jint>(id));
+    }
+    if (out != nullptr) {
+        const jsize n = std::min(env->GetArrayLength(out), static_cast<jsize>(ids.size()));
+        if (n > 0) env->SetIntArrayRegion(out, 0, n, ids.data());
+    }
+    return static_cast<jint>(ids.size());
+}
+
+// One control vertex of the ACTIVE Freeform body, in body-local binary64.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformVertexPosition(JNIEnv* env, jclass, jint id,
+                                                              jdoubleArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 3 || id <= 0) return JNI_FALSE;
+    jdouble xyz[3];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::FreeformBody* body = activeFreeformLocked();
+        const forgeshape::FreeformVertex* v =
+                body != nullptr ? forgeshape::findFreeformVertex(body->cage(),
+                                                                 forgeshape::FreeformVertexId{
+                                                                         static_cast<uint32_t>(id)})
+                                : nullptr;
+        if (v == nullptr) return JNI_FALSE;
+        xyz[0] = v->position.x;
+        xyz[1] = v->position.y;
+        xyz[2] = v->position.z;
+    }
+    env->SetDoubleArrayRegion(out, 0, 3, xyz);
+    return JNI_TRUE;
+}
+
+// Where a cage element of the ACTIVE Freeform body stands on screen: a
+// vertex, an edge's midpoint, a face's centroid, projected through this
+// frame's camera. False -- nothing written -- when it does not project. What a
+// real-touch verification taps; never a stored coordinate.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformElementScreenPoint(JNIEnv* env, jclass, jint element,
+                                                                  jint id, jfloatArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 2 || element < 0 || element > 2 || id <= 0) {
+        return JNI_FALSE;
+    }
+    jfloat xy[2];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::FreeformBody* body = activeFreeformLocked();
+        forgeshape::DVec3 local;
+        forgeshape::Mat4 model;
+        if (body == nullptr
+            || !forgeshape::freeformSelectionCentroid(body->cage(),
+                                                      static_cast<forgeshape::FreeformElement>(element),
+                                                      {static_cast<uint32_t>(id)}, &local)
+            || !forgeshape::constructionScene().resolveWorldModel(body->objectId(), &model)) {
+            return JNI_FALSE;
+        }
+        const forgeshape::Vec3 world = forgeshape::mat4TransformPoint(model, forgeshape::vec3FromDVec3(local));
+        if (!forgeshape::projectWorldToScreen(g_camera.snapshot(), world, g_camera.viewportWidth(),
+                                              g_camera.viewportHeight(), &xy[0], &xy[1])) {
+            return JNI_FALSE;
+        }
+    }
+    env->SetFloatArrayRegion(out, 0, 2, xy);
+    return JNI_TRUE;
+}
+
+// Where a cage gizmo handle's grab point stands on screen (the gizmo's own
+// handle codes), or false when there is no instrument or it does not project.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformGizmoHandlePoint(JNIEnv* env, jclass, jint handleCode,
+                                                                jfloatArray out) {
+    forgeshape::GizmoHandle handle;
+    if (out == nullptr || env->GetArrayLength(out) < 2
+        || !forgeshape::gizmoHandleFromCode(static_cast<int>(handleCode), &handle)) {
+        return JNI_FALSE;
+    }
+    jfloat xy[2];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::CameraSnapshot camera = g_camera.snapshot();
+        const forgeshape::GizmoSnapshot state = forgeshape::freeformEditSession().gizmoSnapshot(
+                camera, g_camera.viewportWidth(), g_camera.viewportHeight());
+        forgeshape::Vec3 grab{};
+        if (!forgeshape::gizmoHandleGrabPoint(state, handle, &grab)
+            || !forgeshape::projectWorldToScreen(camera, grab, g_camera.viewportWidth(),
+                                                 g_camera.viewportHeight(), &xy[0], &xy[1])) {
+            return JNI_FALSE;
+        }
+    }
+    env->SetFloatArrayRegion(out, 0, 2, xy);
+    return JNI_TRUE;
+}
+
+// The ACTIVE Freeform body's derived-surface digest (FNV-1a 64 over positions
+// and quads), or 0. Equal surfaces, equal digests: determinism as a value.
+JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_freeformMeshDigest(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::FreeformBody* body = activeFreeformLocked();
+    std::shared_ptr<const forgeshape::FreeformMesh> mesh;
+    if (body == nullptr || body->derived(&mesh) != forgeshape::FreeformStatus::Ok) return 0;
+    return static_cast<jlong>(forgeshape::freeformMeshDigest(*mesh));
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformStatusToken(JNIEnv* env, jclass, jint code) {
+    if (code == kFreeformRefusedInSculpt) return env->NewStringUTF("RefusedInSculpt");
+    if (code == kFreeformRefusedInSketch) return env->NewStringUTF("RefusedInSketch");
+    if (code < 0 || code >= forgeshape::kFreeformStatusCount) return env->NewStringUTF("unknown");
+    return env->NewStringUTF(forgeshape::freeformStatusName(static_cast<forgeshape::FreeformStatus>(code)));
+}
+
 // A CAD body's regenerated solid, measured (`CAD-VERTICAL-SLICE-R1`): [0]
 // volume in cubic metres, [1] connected shells, [2] triangles, [3..5] the
 // local-space minimum x/y/z, [6..8] the maximum. What a device test asserts an
@@ -6439,8 +6867,8 @@ Java_com_forgeshape_app_NativeViewport_cadStatusToken(JNIEnv* env, jclass, jint 
 
 // --- the CAD Body ------------------------------------------------------------
 
-// Which representation a body has: 1 Construction, 2 Imported, 3 CAD. Zero for
-// an unknown id.
+// Which representation a body has: 1 Construction, 2 Imported, 3 CAD,
+// 4 Freeform. Zero for an unknown id.
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_sceneBodyRepresentation(JNIEnv*, jclass, jlong objectId) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
@@ -8388,6 +8816,12 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
     // Gizmo reporting, gathered under the lock and logged outside it. `handled`
     // is the arbitration answer: true means this event belonged to a handle and
     // neither the camera nor the selection may see it.
+    // Freeform cage reporting, gathered under the lock and logged outside it.
+    bool freeformTapped = false;
+    bool freeformDragBegan = false;
+    bool freeformDragCommitted = false;
+    bool freeformDragCancelled = false;
+
     bool gizmoHandled = false;
     bool gizmoBegan = false;
     bool gizmoMoved = false;
@@ -8583,6 +9017,41 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
         }
 
         // -------------------------------------------------------------------
+        // Freeform cage arbitration (`MODELING-FOUNDATIONS-R1` B)
+        // -------------------------------------------------------------------
+        //
+        // While a Freeform body's cage is being edited, a Down on the cage
+        // gizmo captures it, and any other single-finger Down arms a TAP that
+        // picks a cage element by id; a finger that travels past the slop
+        // disarms into ordinary navigation (the camera, reset while the tap
+        // was armed, re-anchors where the finger is), and two fingers always
+        // navigate. The session holds the rule; this only routes.
+        bool freeformOwned = false;
+        if (!chooserOwned && !sketchOwned) {
+            forgeshape::FreeformEditSession& freeform = forgeshape::freeformEditSession();
+            freeform.reconcile();
+            if (freeform.active()) {
+                freeformOwned = true;
+                const forgeshape::FreeformTouchResult result = freeform.onTouch(
+                        translated, static_cast<int32_t>(actionPointerId), count > 0 ? pointers : nullptr,
+                        count, g_camera.snapshot(), viewWidth, viewHeight);
+                if (result.consumed) {
+                    g_camera.resetGesture();
+                } else {
+                    g_camera.onTouch(translated, static_cast<int32_t>(actionPointerId),
+                                     count > 0 ? pointers : nullptr, count);
+                }
+                g_selection.resetGesture();
+                freeformTapped = result.tapResolved;
+                freeformDragBegan = result.dragBegan;
+                freeformDragCommitted = result.dragCommitted;
+                freeformDragCancelled = result.dragCancelled;
+                logState = !result.consumed && (translated == forgeshape::TouchAction::Up
+                                                || translated == forgeshape::TouchAction::Cancel);
+            }
+        }
+
+        // -------------------------------------------------------------------
         // Construction gizmo arbitration
         // -------------------------------------------------------------------
         //
@@ -8602,7 +9071,13 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
         // exactly where the first finger found it and records nothing. Trying to
         // do both at once is how a transform ends up half applied.
         forgeshape::GizmoSession& gizmo = forgeshape::gizmoSession();
-        if (gizmo.capturing() && !gizmo.active()) {
+        if (freeformOwned) {
+            // The cage has its own instrument; the placement gizmo stands down.
+            if (gizmo.capturing()) {
+                gizmo.cancelDrag();
+                gizmoCancelled = true;
+            }
+        } else if (gizmo.capturing() && !gizmo.active()) {
             // Defensive: setActive already cancels, so this cannot normally
             // happen. If it ever does, a captured handle with no gizmo behind it
             // is an open transaction the user cannot close.
@@ -8669,8 +9144,8 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 // must not be able to resolve a tap either.
                 g_selection.resetGesture();
             }
-        } else if (gizmo.active() && translated == forgeshape::TouchAction::Down && count == 1 &&
-                   viewWidth > 0 && viewHeight > 0) {
+        } else if (!freeformOwned && gizmo.active() && translated == forgeshape::TouchAction::Down
+                   && count == 1 && viewWidth > 0 && viewHeight > 0) {
             if (gizmo.beginDrag(pointers[0].id, g_camera.snapshot(), pointers[0].x, pointers[0].y,
                                 viewWidth, viewHeight)) {
                 gizmoBegan = true;
@@ -8857,7 +9332,7 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
         // The two conditions are separate because they are separate rules: one
         // is Sculpt's brush arbitration, the other is Construction's handle
         // arbitration, and they are mutually exclusive by product mode.
-        if (!grabHandled && !gizmoHandled && !sketchOwned && !chooserOwned) {
+        if (!grabHandled && !gizmoHandled && !sketchOwned && !chooserOwned && !freeformOwned) {
             g_camera.onTouch(translated, static_cast<int32_t>(actionPointerId),
                              count > 0 ? pointers : nullptr, count);
 
@@ -8946,6 +9421,18 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
     // COMMIT carries how many updates the drag applied AND whether a step was
     // recorded, which is exactly what makes "a drag of any length is one history
     // step, and a tap is none" a thing a captured run states rather than a claim.
+    if (freeformTapped) {
+        FS_LOGI("FORGESHAPE_FREEFORM_TAP selected=%d",
+                (int)forgeshape::freeformEditSession().selection().size());
+    }
+    if (freeformDragBegan) {
+        FS_LOGI("FORGESHAPE_FREEFORM_DRAG_BEGIN:%s",
+                forgeshape::gizmoModeName(forgeshape::freeformEditSession().transformMode()));
+    }
+    if (freeformDragCommitted || freeformDragCancelled) {
+        FS_LOGI("FORGESHAPE_FREEFORM_DRAG_%s undo=%d", freeformDragCommitted ? "COMMIT" : "CANCEL",
+                (int)forgeshape::constructionHistory().undoDepth());
+    }
     if (gizmoBegan) {
         FS_LOGI("FORGESHAPE_GIZMO_DRAG_BEGIN:%s axis=%s objectId=%llu",
                 forgeshape::gizmoModeName(forgeshape::gizmoSession().mode()), gizmoAxis,

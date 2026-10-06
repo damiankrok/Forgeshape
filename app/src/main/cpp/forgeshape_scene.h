@@ -19,6 +19,7 @@
 
 #include "forgeshape_cad_body.h"
 #include "forgeshape_construction.h"
+#include "forgeshape_freeform.h"
 #include "forgeshape_imported_mesh.h"
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
@@ -68,6 +69,12 @@ enum class BodyRepresentation : uint8_t {
     // be a Construction Source with, and no fixed geometry to be an Imported
     // Mesh with.
     Cad = 3,
+    // A quad CONTROL CAGE (`MODELING-FOUNDATIONS-R1` B). The cage is the
+    // truth; the smooth surface is Catmull-Clark-derived from it on every
+    // publish. Its own representation because a cage is neither parameters of
+    // a primitive, nor fixed polygons, nor a sketch, and is edited by tools
+    // none of the others have.
+    Freeform = 4,
 };
 
 const char* bodyRepresentationName(BodyRepresentation representation);
@@ -100,6 +107,15 @@ public:
           cad_(new CadBody(id, std::move(cad))),
           meshStore_(id) {}
 
+    // A Freeform body. Takes the cage by shared pointer: the body and every
+    // history step that captured it share one immutable cage until an edit
+    // replaces it. The caller has validated it.
+    SceneObject(ObjectId id, std::shared_ptr<const FreeformCage> cage)
+        : objectId_(id),
+          representation_(BodyRepresentation::Freeform),
+          meshStore_(id),
+          freeform_(new FreeformBody(id, std::move(cage))) {}
+
     SceneObject(const SceneObject&) = delete;
     SceneObject& operator=(const SceneObject&) = delete;
 
@@ -113,6 +129,11 @@ public:
     }
     bool isImported() const { return representation_ == BodyRepresentation::Imported; }
     bool isCad() const { return representation_ == BodyRepresentation::Cad; }
+    bool isFreeform() const { return representation_ == BodyRepresentation::Freeform; }
+
+    // The Freeform body, or nullptr for any other representation.
+    FreeformBody* freeformOrNull() { return freeform_.get(); }
+    const FreeformBody* freeformOrNull() const { return freeform_.get(); }
 
     // The CAD Body, or nullptr for any other representation. A pointer for the
     // same reason `constructionOrNull()` is one: every call site has to say
@@ -236,6 +257,8 @@ private:
     ConstructionTransform transform_;
     MeshStore meshStore_;
     FrozenSculpt frozen_;
+    // Null for every representation but Freeform, on the same terms.
+    std::unique_ptr<FreeformBody> freeform_;
     // Empty for a Construction Body. Since `IMPORT-01B` an Imported Mesh may
     // also own a Frozen Sculpt Mesh above -- the two live side by side, and
     // this one stays immutable source truth whatever is sculpted from it.
@@ -468,6 +491,11 @@ public:
     // costs no id: the same rule `addImportedBody` follows.
     SceneObject* addCadBody(CadBodyState state, CadStatus* outWhy = nullptr);
 
+    // Appends a Freeform body (`MODELING-FOUNDATIONS-R1` B), minting its id only
+    // after the cage validates, and makes it active. Null -- the scene
+    // untouched, the reason in `outWhy` -- for a cage that does not validate.
+    SceneObject* addFreeformBody(FreeformCage cage, FreeformStatus* outWhy = nullptr);
+
     // Builds a body with an EXPLICIT id, not appended to anything.
     //
     // The id allocator is only ever pushed forward, never rolled back: a redo
@@ -481,6 +509,11 @@ public:
     // rebuild one that was never held. The state is NOT re-validated here: it
     // was authoritative when captured.
     std::unique_ptr<SceneObject> makeCadBody(ObjectId id, const CadBodyState& state);
+
+    // The same for a Freeform body: a cage IS its whole truth, so a step can
+    // rebuild one it holds. Not re-validated: it was authoritative when captured.
+    std::unique_ptr<SceneObject> makeFreeformBody(ObjectId id,
+                                                  std::shared_ptr<const FreeformCage> cage);
 
     // Where a body sits in scene order, or bodyCount() when it is not present.
     size_t indexOfBody(ObjectId id) const;

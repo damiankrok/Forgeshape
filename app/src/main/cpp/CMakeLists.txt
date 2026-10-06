@@ -76,6 +76,9 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_construction.cpp
     forgeshape_demo_mesh.cpp
     forgeshape_display.cpp
+    forgeshape_freeform.cpp
+    forgeshape_freeform_subdivision.cpp
+    forgeshape_freeform_session.cpp
     forgeshape_gizmo.cpp
     forgeshape_glb_import_fixture.cpp
     forgeshape_glb_roundtrip.cpp
@@ -95,6 +98,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_project_bootstrap.cpp
     forgeshape_project_bytes.cpp
     forgeshape_project_document.cpp
+    forgeshape_project_freeform.cpp
     forgeshape_project_state.cpp
     forgeshape_render_mesh.cpp
     forgeshape_render_recovery.cpp
@@ -127,6 +131,7 @@ set(FORGESHAPE_SELFTEST_SOURCES
     forgeshape_cad_v6_selftest.cpp
     forgeshape_sketch_ux_selftest.cpp
     forgeshape_construction_selftest.cpp
+    forgeshape_freeform_selftest.cpp
     forgeshape_cone_capsule_selftest.cpp
     forgeshape_gltf_export_selftest.cpp
     forgeshape_gltf_import_selftest.cpp

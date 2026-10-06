@@ -13,4 +13,34 @@
     <item name="regeneration_issue_rows" type="id" />
     <item name="regeneration_issue_fix" type="id" />
     <item name="regeneration_issue_cancel" type="id" />
+    <!-- Freeform -->
+    <item name="new_project_freeform" type="id" />
+    <item name="add_freeform_box" type="id" />
+    <item name="add_freeform_plane" type="id" />
+    <item name="add_freeform_cylinder" type="id" />
+    <item name="freeform_editor" type="id" />
+    <item name="freeform_counts" type="id" />
+    <item name="freeform_element_vertex" type="id" />
+    <item name="freeform_element_edge" type="id" />
+    <item name="freeform_element_face" type="id" />
+    <item name="freeform_multi_select" type="id" />
+    <item name="freeform_mode_move" type="id" />
+    <item name="freeform_mode_rotate" type="id" />
+    <item name="freeform_mode_scale" type="id" />
+    <item name="field_freeform_distance" type="id" />
+    <item name="freeform_push_pull" type="id" />
+    <item name="freeform_extrude" type="id" />
+    <item name="freeform_delete_faces" type="id" />
+    <item name="field_freeform_ratio" type="id" />
+    <item name="freeform_insert_loop" type="id" />
+    <item name="field_freeform_crease" type="id" />
+    <item name="freeform_set_crease" type="id" />
+    <item name="freeform_symmetry_x" type="id" />
+    <item name="freeform_symmetry_y" type="id" />
+    <item name="freeform_symmetry_z" type="id" />
+    <item name="freeform_level_0" type="id" />
+    <item name="freeform_level_1" type="id" />
+    <item name="freeform_level_2" type="id" />
+    <item name="freeform_level_3" type="id" />
+    <item name="freeform_level_4" type="id" />
 </resources>

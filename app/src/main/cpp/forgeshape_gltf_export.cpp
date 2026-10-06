@@ -1,11 +1,13 @@
 #include "forgeshape_gltf_export.h"
 
+
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <vector>
 
 #include "forgeshape_construction.h"
+#include "forgeshape_freeform_subdivision.h"
 #include "forgeshape_sculpt.h"
 
 namespace forgeshape {
@@ -245,6 +247,21 @@ GlbExportStatus captureGlbExportScene(const ConstructionScene& scene, ProjectKin
                                         static_cast<uint32_t>(source.vertices.size()),
                                         source.indices.data(),
                                         static_cast<uint32_t>(source.indices.size()),
+                                        SurfaceShading::Smooth, &exported.render,
+                                        /*renderBothSides=*/false);
+            }
+        } else if (const FreeformBody* freeform = body.freeformOrNull()) {
+            // The smooth surface derived NOW from the cage at its stored level
+            // (`MODELING-FOUNDATIONS-R1` B) -- the surface the user sees, never
+            // the cage itself and never a GPU buffer. An open cage is a sheet,
+            // so its material is double-sided.
+            std::shared_ptr<const FreeformMesh> mesh;
+            if (freeform->derived(&mesh) == FreeformStatus::Ok && mesh != nullptr) {
+                exported.doubleSided = mesh->render.renderBothSides;
+                built = buildRenderMesh(mesh->render.vertices.data(),
+                                        static_cast<uint32_t>(mesh->render.vertices.size()),
+                                        mesh->render.indices.data(),
+                                        static_cast<uint32_t>(mesh->render.indices.size()),
                                         SurfaceShading::Smooth, &exported.render,
                                         /*renderBothSides=*/false);
             }

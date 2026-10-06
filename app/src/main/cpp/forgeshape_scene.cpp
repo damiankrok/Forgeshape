@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "forgeshape_cad_face.h"
+#include "forgeshape_freeform_subdivision.h"
 
 namespace forgeshape {
 
@@ -161,6 +162,29 @@ std::unique_ptr<SceneObject> ConstructionScene::makeCadBody(ObjectId id,
         nextObjectId_ = id + 1;
     }
     return std::unique_ptr<SceneObject>(new SceneObject(id, state));
+}
+
+std::unique_ptr<SceneObject> ConstructionScene::makeFreeformBody(
+        ObjectId id, std::shared_ptr<const FreeformCage> cage) {
+    if (id >= nextObjectId_) {
+        nextObjectId_ = id + 1;
+    }
+    return std::unique_ptr<SceneObject>(new SceneObject(id, std::move(cage)));
+}
+
+SceneObject* ConstructionScene::addFreeformBody(FreeformCage cage, FreeformStatus* outWhy) {
+    const FreeformStatus why = validateFreeformCage(cage);
+    if (outWhy != nullptr) {
+        *outWhy = why;
+    }
+    if (why != FreeformStatus::Ok) {
+        return nullptr;  // refused before an id is minted; the scene is untouched
+    }
+    const ObjectId id = nextObjectId_++;
+    bodies_.push_back(std::unique_ptr<SceneObject>(
+            new SceneObject(id, std::make_shared<const FreeformCage>(std::move(cage)))));
+    activeBodyId_ = id;
+    return bodies_.back().get();
 }
 
 CadStatus ConstructionScene::validateCadFaceSupport(const TopoRef& support) const {
@@ -372,6 +396,7 @@ const char* bodyRepresentationName(BodyRepresentation representation) {
         case BodyRepresentation::Construction: return "Construction";
         case BodyRepresentation::Imported: return "Imported";
         case BodyRepresentation::Cad: return "Cad";
+        case BodyRepresentation::Freeform: return "Freeform";
     }
     return "unknown";
 }
@@ -397,6 +422,22 @@ MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy) {
                                         mesh.indices.data(),
                                         static_cast<uint32_t>(mesh.indices.size()), outWhy,
                                         mesh.renderBothSides);
+    }
+    if (const FreeformBody* freeform = body.freeformOrNull()) {
+        // The smooth surface, derived NOW from the cage at its stored level.
+        // An open cage publishes two-sided, because it is a sheet.
+        std::shared_ptr<const FreeformMesh> mesh;
+        if (freeform->derived(&mesh) != FreeformStatus::Ok || mesh == nullptr) {
+            if (outWhy != nullptr) {
+                *outWhy = MeshValidation::EmptyVertices;
+            }
+            return kNoMeshRevision;
+        }
+        return body.meshStore().publish(mesh->render.vertices.data(),
+                                        static_cast<uint32_t>(mesh->render.vertices.size()),
+                                        mesh->render.indices.data(),
+                                        static_cast<uint32_t>(mesh->render.indices.size()), outWhy,
+                                        mesh->render.renderBothSides);
     }
     const ImportedMesh* imported = body.importedOrNull();
     if (imported == nullptr) {
@@ -435,6 +476,12 @@ bool buildSculptSourceMesh(const SceneObject& body, ConstructionMesh* out) {
     }
     if (body.cadOrNull() != nullptr) {
         // Deliberately unsupported in `CAD-R0-A1A2`; see the header.
+        return false;
+    }
+    if (body.freeformOrNull() != nullptr) {
+        // Not this stage (`MODELING-FOUNDATIONS-R1`): the cage stays the only
+        // truth of a Freeform body, and a sculpt copy of its derived surface
+        // would need a stale-source rule an owner has not decided.
         return false;
     }
     const ImportedMesh* imported = body.importedOrNull();

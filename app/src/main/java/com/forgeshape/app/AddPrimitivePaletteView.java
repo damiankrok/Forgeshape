@@ -53,6 +53,13 @@ final class AddPrimitivePaletteView extends AnchoredSurfaceView {
          * by-name plane list stays as a fallback.
          */
         void onNewSketchSpatial();
+
+        /**
+         * A Freeform body (`MODELING-FOUNDATIONS-R1` B) of the given
+         * {@code NativeViewport.FREEFORM_FORM_*}: a control cage the smooth
+         * surface is subdivided from.
+         */
+        void onAddFreeformChosen(int form);
     }
 
     /** Two rather than three: each tile carries a 26 dp silhouette above its
@@ -82,6 +89,17 @@ final class AddPrimitivePaletteView extends AnchoredSurfaceView {
             R.drawable.ic_primitive_box, R.drawable.ic_primitive_cylinder,
             R.drawable.ic_primitive_sphere, R.drawable.ic_primitive_cone,
             R.drawable.ic_primitive_capsule, R.drawable.ic_primitive_plane
+    };
+
+    /** The three Freeform creation forms, indexed by {@code NativeViewport.FREEFORM_FORM_*}. */
+    private static final int[] FREEFORM_IDS = {
+            R.id.add_freeform_box, R.id.add_freeform_plane, R.id.add_freeform_cylinder
+    };
+    private static final int[] FREEFORM_LABELS = {
+            R.string.add_freeform_box, R.string.add_freeform_plane, R.string.add_freeform_cylinder
+    };
+    private static final int[] FREEFORM_ICONS = {
+            R.drawable.ic_freeform, R.drawable.ic_primitive_plane, R.drawable.ic_primitive_cylinder
     };
 
     /** The three planes, indexed by {@code NativeViewport.WORKPLANE_*}. */
@@ -133,6 +151,32 @@ final class AddPrimitivePaletteView extends AnchoredSurfaceView {
                 }
             });
             row.addView(tile, EditorControlStyles.evenShare(kind % COLUMNS == 0 ? 0 : gap));
+        }
+        // Freeform: three cages, a peer category of the shapes. A Freeform body
+        // has no primitive parameters -- its truth is the cage -- so these are
+        // never the shape editor's six.
+        shapesSection.addView(EditorControlStyles.sectionLabel(context,
+                        context.getString(R.string.new_project_freeform_title)),
+                EditorControlStyles.rowParams(EditorControlStyles.dimen(context, R.dimen.section_gap)));
+        for (int form = 0; form < FREEFORM_IDS.length; form++) {
+            if (form % COLUMNS == 0) {
+                row = new LinearLayout(context);
+                row.setOrientation(HORIZONTAL);
+                shapesSection.addView(row, EditorControlStyles.rowParams(gap));
+            }
+            final int chosen = form;
+            final View tile = buildTile(context, FREEFORM_IDS[form], FREEFORM_ICONS[form],
+                    context.getString(FREEFORM_LABELS[form]));
+            tile.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    listener.onAddFreeformChosen(chosen);
+                }
+            });
+            row.addView(tile, EditorControlStyles.evenShare(form % COLUMNS == 0 ? 0 : gap));
+        }
+        if (FREEFORM_IDS.length % COLUMNS != 0) {
+            row.addView(new View(context), EditorControlStyles.evenShare(gap));
         }
         // The second category, on its own row and at the same tile height, so
         // it reads as a peer of the shapes and not as a footer.

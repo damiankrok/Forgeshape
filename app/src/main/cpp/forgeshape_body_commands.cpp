@@ -229,6 +229,12 @@ BodyCommandStatus duplicateSceneBody(ObjectId id, ConstructionScene& scene,
     if (const CadBody* cad = source->cadOrNull()) {
         cadState = cad->captureState();
     }
+    FreeformCage freeformCopy;
+    if (const FreeformBody* freeform = source->freeformOrNull()) {
+        // The cage's own values: the copy gets its own cage, so editing one
+        // never reaches the other.
+        freeformCopy = freeform->cage();
+    }
     ImportedMesh importedCopy;
     if (const ImportedMesh* imported = source->importedOrNull()) {
         // The arrays are COPIED, never shared: an Imported Mesh IS its
@@ -264,6 +270,10 @@ BodyCommandStatus duplicateSceneBody(ObjectId id, ConstructionScene& scene,
                 // mints -- so a state that somehow no longer closes a profile
                 // costs no ObjectId, exactly as a fresh Extrude would not.
                 copy = scene.addCadBody(cadState);
+                break;
+            }
+            case BodyRepresentation::Freeform: {
+                copy = scene.addFreeformBody(std::move(freeformCopy));
                 break;
             }
         }

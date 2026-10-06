@@ -75,6 +75,18 @@ const ProjectSculptBody* findSculptBody(const ProjectDocument& document, ObjectI
     return nullptr;
 }
 
+const ProjectFreeformBody* findFreeformBody(const ProjectDocument& document, ObjectId id) {
+    if (!document.hasFreeform) {
+        return nullptr;
+    }
+    for (const ProjectFreeformBody& body : document.freeform.bodies) {
+        if (body.objectId == id) {
+            return &body;
+        }
+    }
+    return nullptr;
+}
+
 const ProjectCadBody* findCadBody(const ProjectDocument& document, ObjectId id) {
     if (!document.hasCad) {
         return nullptr;
@@ -93,7 +105,8 @@ bool runtimeCanEvaluateProject(const ProjectDocument& document) {
     for (const ProjectBodyPlacement& placement : document.scene.bodies) {
         if (findConstructionBody(document, placement.objectId) == nullptr
             && findImportedBody(document, placement.objectId) == nullptr
-            && findCadBody(document, placement.objectId) == nullptr) {
+            && findCadBody(document, placement.objectId) == nullptr
+            && findFreeformBody(document, placement.objectId) == nullptr) {
             return false;
         }
     }
@@ -168,6 +181,14 @@ ProjectDocument captureProjectDocument(const ConstructionScene& scene, ProjectKi
             record.state = cad->captureState();
             document.cad.bodies.push_back(std::move(record));
             document.hasCad = true;
+        } else if (const FreeformBody* freeform = body.freeformOrNull()) {
+            // The control cage and nothing derived: the smooth surface is
+            // regenerated from exactly this on load.
+            ProjectFreeformBody record;
+            record.objectId = body.objectId();
+            record.cage = freeform->cage();
+            document.freeform.bodies.push_back(std::move(record));
+            document.hasFreeform = true;
         }
 
         const FrozenSculpt& frozen = body.frozenSculpt();
@@ -232,10 +253,11 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
                 findConstructionBody(document, placement.objectId);
         const ProjectImportedBody* imported = findImportedBody(document, placement.objectId);
         const ProjectCadBody* cad = findCadBody(document, placement.objectId);
+        const ProjectFreeformBody* freeform = findFreeformBody(document, placement.objectId);
 
         // Proven above by runtimeCanEvaluateProject; re-checked here because
         // the pointers are about to be dereferenced.
-        if (shape == nullptr && imported == nullptr && cad == nullptr) {
+        if (shape == nullptr && imported == nullptr && cad == nullptr && freeform == nullptr) {
             return ProjectCodecStatus::MissingRequiredSection;
         }
 
@@ -247,6 +269,12 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
             // below regenerates the mesh through the one CAD path and is the
             // second proof.
             body.reset(new SceneObject(placement.objectId, cad->state));
+        } else if (freeform != nullptr) {
+            // validateProjectDocument has held the cage to the domain's own
+            // rule; the publish below derives its surface and is the second
+            // proof.
+            body.reset(new SceneObject(placement.objectId,
+                                       std::make_shared<const FreeformCage>(freeform->cage)));
         } else if (imported != nullptr) {
             // Rebuilt through the same `ImportedMesh::build` an import goes
             // through, so a loaded object is exactly as validated as a freshly
@@ -720,6 +748,33 @@ uint64_t projectSemanticFingerprint(const ConstructionScene& scene, ProjectKind 
             }
         } else if (const CadBody* cad = body.cadOrNull()) {
             mixCad(hash, cad->state());
+        } else if (const FreeformBody* freeform = body.freeformOrNull()) {
+            // Every value the `FRFM` record carries, so a cage edit of any kind
+            // -- a moved vertex, a crease, a level, a symmetry plane -- moves
+            // the fingerprint and earns a checkpoint.
+            const FreeformCage& cage = freeform->cage();
+            mixU64(hash, 0x4652464Dull);  // "FRFM"
+            mixU64(hash, cage.subdivisionLevel);
+            mixU64(hash, cage.symmetry);
+            mixU64(hash, cage.nextVertexId);
+            mixU64(hash, cage.nextEdgeId);
+            mixU64(hash, cage.nextFaceId);
+            for (const FreeformVertex& v : cage.vertices) {
+                mixU64(hash, idOf(v.id));
+                mixDouble(hash, v.position.x);
+                mixDouble(hash, v.position.y);
+                mixDouble(hash, v.position.z);
+            }
+            for (const FreeformEdge& e : cage.edges) {
+                mixU64(hash, idOf(e.id));
+                mixU64(hash, idOf(e.v0));
+                mixU64(hash, idOf(e.v1));
+                mixDouble(hash, e.crease);
+            }
+            for (const FreeformFace& f : cage.faces) {
+                mixU64(hash, idOf(f.id));
+                for (FreeformVertexId v : f.loop) mixU64(hash, idOf(v));
+            }
         }
         mixTransform(hash, body.transform().values());
         // Stage 018A. All three are project truth -- they reach `.forge` bytes

@@ -344,6 +344,12 @@ final class EditorWorkspaceView extends FrameLayout
     /** The sketch's precision surface, and a CAD Body's (CAD-R0-A1A2). */
     private final SketchEditorView sketchEditor;
     private final CadFeatureEditorView cadEditor;
+    /** The Freeform cage context surface (`MODELING-FOUNDATIONS-R1` B). */
+    private final FreeformEditorView freeformEditor;
+    /** Reused across reads; native fills the FREEFORM_STATE_* slots. */
+    private final double[] nativeFreeform = new double[NativeViewport.FREEFORM_STATE_SIZE];
+    /** The cage drag count last refreshed for, on the gizmo's own terms. */
+    private long lastKnownFreeformDrags;
     /**
      * The Relative Scale precision-surface body (Stage 020M).
      *
@@ -603,6 +609,19 @@ final class EditorWorkspaceView extends FrameLayout
                                 reportUnretainedStrokes();
                             }
 
+                            // A cage tap changes the selection the context
+                            // surface draws its tools for; a committed cage drag
+                            // changed the project and re-reads everything.
+                            NativeViewport.freeformState(nativeFreeform);
+                            if (nativeFreeform[NativeViewport.FREEFORM_STATE_ACTIVE] != 0.0) {
+                                final long drags = (long) nativeFreeform[NativeViewport.FREEFORM_STATE_DRAGS];
+                                if (drags != lastKnownFreeformDrags) {
+                                    lastKnownFreeformDrags = drags;
+                                    onNativeStateChanged();
+                                    return;
+                                }
+                                freeformEditor.refreshFromNative();
+                            }
                             NativeViewport.gizmoState(nativeGizmo);
                             final long commits =
                                     (long) nativeGizmo[NativeViewport.GIZMO_COMMITTED_DRAGS];
@@ -864,6 +883,7 @@ final class EditorWorkspaceView extends FrameLayout
         sculptContext = new SculptContextView(context, this);
         sketchEditor = new SketchEditorView(context, this, this);
         cadEditor = new CadFeatureEditorView(context, this);
+        freeformEditor = new FreeformEditorView(context, this);
         relativeScaleEditor = new RelativeScaleEditorView(context, this);
 
         // The two sketch-only surfaces that stand IN the viewport
@@ -1503,6 +1523,27 @@ final class EditorWorkspaceView extends FrameLayout
         }
         addPrimitivePalette.setOpen(open);
         objectsCapsule.showAddOpen(addPrimitivePalette.isOpen());
+    }
+
+    /**
+     * Creates a Freeform body (`MODELING-FOUNDATIONS-R1` B) as ONE native
+     * transaction and opens it on its cage: Shape is what a Freeform body IS.
+     */
+    @Override
+    public void onAddFreeformChosen(int form) {
+        final int created = NativeViewport.freeformCreateBody(form);
+        setAddPrimitiveOpen(false, null);
+        if (created != NativeViewport.FREEFORM_OK) {
+            showStatus(getContext().getString(FreeformPresentation.refusalMessage(created),
+                    NativeViewport.freeformStatusToken(created)), R.attr.fsTextError);
+            return;
+        }
+        // A new Freeform body opens on its cage: Shape is what the body IS.
+        uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+        finishEditing();
+        onNativeStateChanged();
+        showStatus(getContext().getString(R.string.status_freeform_added,
+                BodyLabels.of(getContext(), NativeViewport.sceneActiveBodyId())), R.attr.fsTextSuccess);
     }
 
     /**
@@ -2363,6 +2404,30 @@ final class EditorWorkspaceView extends FrameLayout
                 R.attr.fsTextSuccess);
     }
 
+    /**
+     * New Project → Freeform: a Freeform Box seeded inside the session
+     * initialization bracket, so the project starts with an empty history like
+     * every other; a refusal closes the project again.
+     */
+    @Override
+    public void onNewFreeformProjectChosen() {
+        setNewProjectChooserOpen(false);
+        NativeViewport.beginSessionInitialization();
+        final int created = NativeViewport.freeformCreateBody(NativeViewport.FREEFORM_FORM_BOX);
+        NativeViewport.endSessionInitialization();
+        if (created != NativeViewport.FREEFORM_OK) {
+            NativeViewport.closeProject();
+            syncFromNative();
+            showStatus(getContext().getString(R.string.freeform_refused_other,
+                    NativeViewport.freeformStatusToken(created)), R.attr.fsTextError);
+            return;
+        }
+        uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+        noteProjectUnpersisted();
+        finishEditing();
+        syncFromNative();
+    }
+
     @Override
     public void onNewProjectCancelled() {
         setNewProjectChooserOpen(false);
@@ -2611,6 +2676,10 @@ final class EditorWorkspaceView extends FrameLayout
         final int sketchState = (int) nativeSketch[NativeViewport.SKETCH_STATE];
         final boolean sketching = sketchState != NativeViewport.SKETCH_INACTIVE;
         final boolean cad = NativeViewport.sceneActiveBodyIsCad();
+        // A Freeform body (`MODELING-FOUNDATIONS-R1` B): its context names it,
+        // Start Sculpting is absent over it, and Shape opens its cage.
+        final boolean freeform = projectOpen && NativeViewport.sceneBodyRepresentation(
+                NativeViewport.sceneActiveBodyId()) == NativeViewport.REPRESENTATION_FREEFORM;
         final boolean bootstrap = !projectOpen
                 && (sketching || NativeViewport.supportChooserActive());
 
@@ -2625,7 +2694,7 @@ final class EditorWorkspaceView extends FrameLayout
         // durable visibility itself. Start/Resume Sculpt are withdrawn over one.
         final boolean activeHidden = projectOpen
                 && !NativeViewport.sceneBodyVisible(NativeViewport.sceneActiveBodyId());
-        toolbar.showContext(sculpting, hasFrozenMesh, imported, cad, sketchState,
+        toolbar.showContext(sculpting, hasFrozenMesh, imported, cad, freeform, sketchState,
                 (int) nativeSketch[NativeViewport.SKETCH_PLANE], activeHidden);
         if (sketchState == NativeViewport.SKETCH_READY) {
             refreshExtrudeReadiness();
@@ -2707,6 +2776,7 @@ final class EditorWorkspaceView extends FrameLayout
             sketchEditor.refreshFromNative();
             cadEditor.refreshFromNative();
         }
+        refreshFreeformEdit(projectOpen, sculpting, sketching);
         refreshSketchViewportSurfaces(sketching);
         objectsCapsule.refreshFromNative();
         refreshTransformGizmo(sculpting);
@@ -3323,6 +3393,11 @@ final class EditorWorkspaceView extends FrameLayout
             // Shape, for a CAD Body, is its sketch and its extrusion.
             inspector.setBody(cadEditor,
                     context.getString(R.string.inspector_shape_title_for_body, body));
+        } else if (NativeViewport.sceneBodyRepresentation(NativeViewport.sceneActiveBodyId())
+                == NativeViewport.REPRESENTATION_FREEFORM) {
+            // Shape, for a Freeform body, is its control cage.
+            inspector.setBody(freeformEditor,
+                    context.getString(R.string.inspector_cage_title_for_body, body));
         } else {
             inspector.setBody(shapeEditor,
                     context.getString(R.string.inspector_shape_title_for_body, body));
@@ -4764,6 +4839,7 @@ final class EditorWorkspaceView extends FrameLayout
             bodyDimensionLabels.closeEditor();
             relativeScaleOpen = false;
         }
+        refreshFreeformEdit(NativeViewport.projectOpen(), false, isSketching());
         showActiveInspectorBody(false);
         // Transform is the entry that owns direct manipulation, so the handles
         // and their Move/Rotate selector arrive with it and leave with it. This
@@ -4844,7 +4920,9 @@ final class EditorWorkspaceView extends FrameLayout
                             ? R.string.status_cad_no_sculpt
                             : status == NativeViewport.SCULPT_REFUSED_HIDDEN_BODY
                                     ? R.string.status_sculpt_hidden_body
-                                    : R.string.status_sculpt_prepare_failed),
+                                    : status == NativeViewport.SCULPT_REFUSED_FREEFORM_BODY
+                                            ? R.string.sculpt_refused_freeform_body
+                                            : R.string.status_sculpt_prepare_failed),
                     R.attr.fsTextError);
             return;
         }
@@ -5906,6 +5984,34 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         toolbar.showStatus(message, colorAttr);
+    }
+
+    /**
+     * Opens or closes native cage editing to match the workspace
+     * (`MODELING-FOUNDATIONS-R1` B): open exactly while Shape is held over a
+     * visible, unlocked Freeform body in Construction, closed otherwise. Native
+     * holds the session; this only asks for it, and reads back what it got.
+     */
+    private void refreshFreeformEdit(boolean projectOpen, boolean sculpting, boolean sketching) {
+        NativeViewport.freeformState(nativeFreeform);
+        final FreeformPresentation.State state = new FreeformPresentation.State(nativeFreeform);
+        final boolean wanted = FreeformPresentation.editWanted(projectOpen, sculpting, sketching,
+                uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_SHAPE, state);
+        if (wanted && !state.active) {
+            NativeViewport.freeformBeginEdit();
+        } else if (!wanted && state.active) {
+            NativeViewport.freeformEndEdit();
+        }
+        NativeViewport.freeformState(nativeFreeform);
+        lastKnownFreeformDrags = (long) nativeFreeform[NativeViewport.FREEFORM_STATE_DRAGS];
+        if (nativeFreeform[NativeViewport.FREEFORM_STATE_ACTIVE_IS_FREEFORM] != 0.0) {
+            freeformEditor.refreshFromNative();
+        }
+    }
+
+    /** The Freeform cage context surface, for verification. */
+    FreeformEditorView freeformEditor() {
+        return freeformEditor;
     }
 
     @Override

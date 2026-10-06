@@ -818,6 +818,17 @@ final class GlobalToolbarView extends LinearLayout {
      */
     void showContext(boolean sculpting, boolean hasFrozenMesh, boolean imported, boolean cad,
                      int sketchState, int workplane, boolean activeHidden) {
+        showContext(sculpting, hasFrozenMesh, imported, cad, false, sketchState, workplane,
+                activeHidden);
+    }
+
+    /**
+     * @param freeform whether the ACTIVE body is a Freeform body
+     *        (`MODELING-FOUNDATIONS-R1` B). It names the context and withdraws
+     *        Start Sculpting, which is refused by name for one below JNI.
+     */
+    void showContext(boolean sculpting, boolean hasFrozenMesh, boolean imported, boolean cad,
+                     boolean freeform, int sketchState, int workplane, boolean activeHidden) {
         final Context context = getContext();
         final boolean sketching = sketchState != NativeViewport.SKETCH_INACTIVE;
         contextLabel.setText(sketching
@@ -828,6 +839,7 @@ final class GlobalToolbarView extends LinearLayout {
                         sculpting ? R.string.context_sculpt
                                   : imported ? R.string.context_imported_mesh
                                              : cad ? R.string.context_cad_body
+                                                   : freeform ? R.string.context_freeform
                                                    : R.string.context_construction));
         contextLabel.setContentDescription(contextLabel.getText());
 
@@ -844,8 +856,8 @@ final class GlobalToolbarView extends LinearLayout {
         // succeed is not drawn.
         // And not in the CAD bootstrap either: there is no body to sculpt yet.
         // And not over a hidden body (GUARD-2): the native entry refuses it.
-        freezeButton.setVisibility(!sculpting && !hasFrozenMesh && !cad && !sketching && !bootstrap
-                && !activeHidden ? VISIBLE : GONE);
+        freezeButton.setVisibility(!sculpting && !hasFrozenMesh && !cad && !freeform && !sketching
+                && !bootstrap && !activeHidden ? VISIBLE : GONE);
         resumeButton.setVisibility(!sculpting && hasFrozenMesh && !sketching && !bootstrap
                 && !activeHidden ? VISIBLE : GONE);
         finishSketchButton.setVisibility(

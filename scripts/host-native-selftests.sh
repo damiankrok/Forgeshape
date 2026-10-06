@@ -75,6 +75,7 @@ cat > "$MAIN" <<'EOF'
 #include "forgeshape_camera_selftest.h"
 #include "forgeshape_cone_capsule_selftest.h"
 #include "forgeshape_construction_selftest.h"
+#include "forgeshape_freeform_selftest.h"
 #include "forgeshape_gizmo_selftest.h"
 #include "forgeshape_gltf_export_selftest.h"
 #include "forgeshape_gltf_import_selftest.h"
@@ -143,6 +144,11 @@ int main(int argc, char** argv) {
     suite<CadFeatureSelfTestResult>("CAD_FEATURE", runCadFeatureSelfTests);
     if (!gFilter || std::strstr("CAD_FEATURE", gFilter)) {
         std::printf("FORGESHAPE_CAD_FEATURE_PERFORMANCE %s\n", cadFeaturePerformanceReport());
+    }
+    suite<FreeformSelfTestResult>("FREEFORM", runFreeformSelfTests);
+    if (!gFilter || std::strstr("FREEFORM", gFilter)) {
+        std::printf("FORGESHAPE_FREEFORM_PERFORMANCE %s\n", freeformPerformanceReport());
+        std::printf("FORGESHAPE_FREEFORM_GOLDEN_SHA256 %s\n", freeformFixtureDigests());
     }
     std::printf("%s (%d checks, %d failed)\n", gFailures ? "HOST_SELFTESTS_FAIL" : "HOST_SELFTESTS_OK",
                 gChecks, gFailures);

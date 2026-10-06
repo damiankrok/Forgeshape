@@ -1,10 +1,12 @@
 #include "forgeshape_glb_roundtrip.h"
 
+
 #include <cmath>
 #include <cstdio>
 #include <vector>
 
 #include "forgeshape_construction.h"
+#include "forgeshape_freeform_subdivision.h"
 #include "forgeshape_gltf_export.h"
 #include "forgeshape_render_mesh.h"
 #include "forgeshape_sculpt.h"
@@ -69,6 +71,15 @@ SourceGeometry evaluateSourceGeometry(const SceneObject& body, ProjectKind kind)
                                     static_cast<uint32_t>(mesh.vertices.size()),
                                     mesh.indices.data(),
                                     static_cast<uint32_t>(mesh.indices.size()),
+                                    SurfaceShading::Smooth, &surfaces,
+                                    /*renderBothSides=*/false);
+        }    } else if (const FreeformBody* freeform = body.freeformOrNull()) {
+        std::shared_ptr<const FreeformMesh> mesh;
+        if (freeform->derived(&mesh) == FreeformStatus::Ok && mesh != nullptr) {
+            built = buildRenderMesh(mesh->render.vertices.data(),
+                                    static_cast<uint32_t>(mesh->render.vertices.size()),
+                                    mesh->render.indices.data(),
+                                    static_cast<uint32_t>(mesh->render.indices.size()),
                                     SurfaceShading::Smooth, &surfaces,
                                     /*renderBothSides=*/false);
         }

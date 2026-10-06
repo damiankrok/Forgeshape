@@ -60,6 +60,7 @@
 
 #include "forgeshape_cad_body.h"
 #include "forgeshape_construction.h"
+#include "forgeshape_freeform.h"
 #include "forgeshape_imported_mesh.h"
 #include "forgeshape_object_id.h"
 #include "forgeshape_transform.h"
@@ -99,6 +100,10 @@ constexpr uint8_t kHeaderFlagHasImported = 0x04u;
 // and the CADB section's required bit says it again past the header. A build
 // that cannot regenerate a sketch cannot open a file that needs one.
 constexpr uint8_t kHeaderFlagHasCad = 0x08u;
+// bit4: an `FRFM` section is present (`MODELING-FOUNDATIONS-R1` B). On CADB's
+// terms: a build that predates Freeform sees an unknown header bit and refuses
+// the file (`BadHeader`) rather than opening it with bodies missing.
+constexpr uint8_t kHeaderFlagHasFreeform = 0x10u;
 
 // FourCCs as four ASCII bytes in file order. Compared byte by byte rather than
 // packed into an integer, so nothing about the comparison depends on the host's
@@ -108,6 +113,11 @@ constexpr char kSectionTagConstruction[4] = {'C', 'O', 'N', 'S'};
 constexpr char kSectionTagSculpt[4] = {'S', 'C', 'U', 'L'};
 constexpr char kSectionTagImported[4] = {'I', 'M', 'P', 'T'};
 constexpr char kSectionTagCad[4] = {'C', 'A', 'D', 'B'};
+constexpr char kSectionTagFreeform[4] = {'F', 'R', 'F', 'M'};
+
+// `FRFM` v1 (`MODELING-FOUNDATIONS-R1` B): one record per Freeform body, its
+// control cage and nothing derived. DATA_PACKAGE_SPEC.md §7j.
+constexpr uint16_t kFreeformSectionVersion = 1;
 
 constexpr uint16_t kSceneSectionVersion = 1;
 // Stage 018A: version 2 adds, per body, a FLAGS byte and a NAME.
@@ -455,6 +465,19 @@ struct ProjectCadRecord {
     std::vector<ProjectCadBody> bodies;  // scene order; only CAD bodies
 };
 
+// FRFM, per body whose representation is Freeform (`MODELING-FOUNDATIONS-R1`
+// B): the control cage -- ids, binary64 positions, creases, face loops, the
+// high-water marks, the subdivision level and the symmetry planes. The smooth
+// surface is regenerated on load and never stored.
+struct ProjectFreeformBody {
+    ObjectId objectId = kNoObject;
+    FreeformCage cage;
+};
+
+struct ProjectFreeformRecord {
+    std::vector<ProjectFreeformBody> bodies;  // scene order; only Freeform bodies
+};
+
 // A complete project, decoded or about to be encoded. Plain data with no
 // identity of its own: two documents that compare equal produce byte-identical
 // files, which is the deterministic-writer rule stated as a property.
@@ -469,6 +492,8 @@ struct ProjectDocument {
     ProjectImportedRecord imported;
     bool hasCad = false;
     ProjectCadRecord cad;
+    bool hasFreeform = false;
+    ProjectFreeformRecord freeform;
 };
 
 // True when the two documents carry the same project semantics, field for
