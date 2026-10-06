@@ -118,8 +118,18 @@ constexpr double kSketchDimensionAngleRadiusUnits = 44.0;
 constexpr double kSketchDimensionLabelClearUnits = 22.0;
 
 // One dimension's annotation in sketch coordinates: line segments as point
-// pairs (extension lines, dimension line or arc, arrowheads, leaders), and the
-// point its label is centred on. Presentation only; never stored.
+// pairs (extension lines, dimension line or arc, arrowheads, leaders), the
+// point its label is centred on, and the point the label stands OFF from.
+// Presentation only; never stored.
+//
+// `attach` lies on the geometry the label belongs to (a linear dimension's
+// measured points' midpoint, a radial leader's point on the curve, an angle
+// arc's middle), and `label - attach` is the direction the label stands off in.
+// Native cannot know how big the drawn label is, so the chrome pushes the
+// label's touch box further along that direction until the WHOLE box clears
+// `attach`: a label owns taps on itself, never on the stroke it measures. Equal
+// to `label` where no direction is honest (two parallel edges' angle), and then
+// nothing is pushed.
 struct SketchDimensionAnnotation {
     SketchDimensionId id = kNoSketchDimension;
     SketchDimensionKind kind = SketchDimensionKind::LineLength;
@@ -127,6 +137,7 @@ struct SketchDimensionAnnotation {
     double value = 0.0;
     std::vector<SketchPoint> segments;  // pairs
     SketchPoint label{};
+    SketchPoint attach{};
 };
 
 // Builds the annotation. Deterministic in the geometry and `worldPerUnit`:

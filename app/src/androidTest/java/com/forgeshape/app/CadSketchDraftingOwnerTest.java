@@ -14,6 +14,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -63,7 +64,17 @@ import java.util.List;
  * <p>Geometry is laid out in units of {@code D}: 60 dp of the sketch view in
  * metres, measured at run time, so every snap aperture (24 dp, inner 8 dp,
  * guides 12 dp) and every hit tolerance (24 dp) is respected on any screen.
- * The scenes stand LEFT of the sketch origin, clear of the trailing column.
+ * The scenes stand LEFT of the sketch origin, clear of the trailing column,
+ * and are spaced so that no label stands on a neighbour a later tap aims at.
+ *
+ * <p><b>Every touch states its precondition before it is made.</b> A tap goes
+ * to ONE stated point, which must project onto the viewport with no clickable
+ * chrome over it (a label, the Modify column, the rail) -- there is no search
+ * over candidate points. A drag needs that only of its DOWN: the view that
+ * takes the Down receives the rest of the gesture, exactly as for a finger. A
+ * selection a journey depends on is made by a real tap, and cleared by a real
+ * tap on empty drawing; the native selection door is used only to read labels
+ * and to clean up between cases.
  */
 @RunWith(AndroidJUnit4.class)
 public final class CadSketchDraftingOwnerTest {
@@ -131,8 +142,8 @@ public final class CadSketchDraftingOwnerTest {
         capture("01_regular_fill");
 
         selectTool(rule.getScenario(), R.id.tool_rail_select);
-        tapEntity(square, rect[1], rect[2] + 0.5 * rect[4], rect[1] + 0.3 * rect[3],
-                rect[2] + 0.5 * rect[4]);
+        // The top edge's middle: nothing is dimensioned, so no label stands anywhere.
+        tapEntity(square, rect[1], rect[2] + 0.5 * rect[4]);
         assertArrayEquals("the tap selected the rectangle", new long[]{square}, selection());
         openPalette();
         assertEquals("the palette names what the toggle will do", string(R.string.sketch_make_construction),
@@ -169,7 +180,7 @@ public final class CadSketchDraftingOwnerTest {
                 (int) sketchStateValue(NativeViewport.SKETCH_PROFILE_COUNT));
         pressInSketchEditor(R.id.sketch_revolve_begin);
         assertEquals(1.0, revolveState()[NativeViewport.REVOLVE_ACTIVE], 0.0);
-        tapRevolveAxis(axis, -3.0 * D, -D, -3.0 * D, D);
+        tapRevolveAxis(axis, -3.0 * D, 0.0);
         final double[] chosen = revolveState();
         assertEquals("the construction line is the axis", axis,
                 (long) chosen[NativeViewport.REVOLVE_AXIS_ENTITY]);
@@ -196,15 +207,21 @@ public final class CadSketchDraftingOwnerTest {
         testName = "dr02";
         newCadSketch();
         selectTool(rule.getScenario(), R.id.tool_rail_line);
-        final long line = placeLine(-3.0 * D, 2.0 * D, -1.5 * D, 2.0 * D);
+        // A column of four, each a label band apart: the line's Length stands
+        // above it and its Angle (0 degrees, under 45) below its start, the
+        // rectangle's Width below it and its Height to its right, the circle's
+        // diameter down and right -- so every tap below aims at a stroke no
+        // label stands on, which is the product's own guarantee for the stroke
+        // a label measures and this scene's spacing for its neighbours.
+        final long line = placeLine(-3.0 * D, 2.8 * D, -1.5 * D, 2.8 * D);
         final double[] rect = drawRectangle(-3.0 * D, 0.4 * D, -1.5 * D, 1.4 * D);
-        final double[] circle = drawCircle(-2.25 * D, -0.6 * D, 0.45 * D);
-        final long arc = drawArc(-3.0 * D, -2.4 * D, -1.5 * D, -2.4 * D, -2.25 * D, -1.9 * D);
+        final double[] circle = drawCircle(-2.25 * D, -1.5 * D, 0.45 * D);
+        final long arc = drawArc(-3.0 * D, -3.6 * D, -1.5 * D, -3.6 * D, -2.25 * D, -3.1 * D);
         final long rectangle = (long) rect[0];
         final long disk = (long) circle[0];
 
         selectTool(rule.getScenario(), R.id.tool_rail_select);
-        tapEntity(line, -2.6 * D, 2.0 * D, -2.0 * D, 2.0 * D);
+        tapEntity(line, -2.25 * D, 2.8 * D);
         openPalette();
         pressAction(R.id.sketch_action_dimension);
         assertEquals(NativeViewport.MODIFY_DIMENSION, (int) draft()[NativeViewport.SKETCH_DRAFT_MODE]);
@@ -217,16 +234,15 @@ public final class CadSketchDraftingOwnerTest {
         press(R.id.sketch_dimension_kind_length);
         press(R.id.sketch_dimension_kind_angle);
         // In Dimension mode a tap on the drawing chooses the next target.
-        tapEntityPoints(rectangle, rectPoints(rect));
+        tapEntity(rectangle, rect[1], rect[2] + 0.5 * rect[4]);
         assertEquals(rectangle, (long) draft()[NativeViewport.SKETCH_DRAFT_DIM_TARGET_ENTITY]);
         press(R.id.sketch_dimension_kind_width);
         press(R.id.sketch_dimension_kind_height);
-        tapEntityPoints(disk, circlePoints(circle));
+        tapEntity(disk, circle[1], circle[2] + circle[3]);
         assertTrue(shown(R.id.sketch_dimension_kind_diameter));
         press(R.id.sketch_dimension_kind_diameter);
         final double[] arcValues = entity(arc);
-        tapEntityPoints(arc, new double[][]{{arcValues[7], arcValues[8]}, {arcValues[2], arcValues[3]},
-                {arcValues[4], arcValues[5]}});
+        tapEntity(arc, arcValues[7], arcValues[8]);
         assertFalse("an arc has nothing to drive", shown(R.id.sketch_dimension_driving));
         press(R.id.sketch_dimension_kind_arc_radius);
         press(R.id.sketch_dimension_kind_sweep);
@@ -317,10 +333,10 @@ public final class CadSketchDraftingOwnerTest {
         testName = "dr03";
         newCadSketch();
         selectTool(rule.getScenario(), R.id.tool_rail_line);
-        final long line = placeLine(-3.0 * D, 2.0 * D, -1.6 * D, 2.6 * D);
+        final long line = placeLine(-3.0 * D, 2.4 * D, -1.6 * D, 3.0 * D);
         final double[] rect = drawRectangle(-3.0 * D, 0.2 * D, -1.4 * D, 1.2 * D);
-        final double[] circle = drawCircle(-2.2 * D, -0.8 * D, 0.45 * D);
-        final long arc = drawArc(-3.0 * D, -2.5 * D, -1.5 * D, -2.5 * D, -2.25 * D, -2.0 * D);
+        final double[] circle = drawCircle(-2.2 * D, -1.4 * D, 0.45 * D);
+        final long arc = drawArc(-3.0 * D, -3.4 * D, -1.5 * D, -3.4 * D, -2.25 * D, -2.9 * D);
         final long rectangle = (long) rect[0];
         final long disk = (long) circle[0];
         assertEquals(NativeViewport.CAD_OK, applyOnUi(() -> {
@@ -342,22 +358,21 @@ public final class CadSketchDraftingOwnerTest {
             return s;
         }));
         assertEquals("nine dimensions", 9, dimensions().length);
-        NativeViewport.sketchSelectEntity(0);
-        refresh();
+        // Empty drawing, a label band clear of the rectangle and the circle.
+        clearSelectionByTap(-2.9 * D, -0.6 * D);
 
         // Selected (the default) with nothing selected: no labels at all.
         assertEquals(NativeViewport.DIM_VISIBILITY_SELECTED, (int) draft()[NativeViewport.SKETCH_DRAFT_DIM_VISIBILITY]);
         assertEquals(0, nativeLabelCount());
-        selectTool(rule.getScenario(), R.id.tool_rail_select);
-        tapEntity(line, -2.3 * D, 2.3 * D, -2.0 * D, 2.43 * D);
+        tapEntity(line, -2.3 * D, 2.7 * D);
         assertEquals("Selected shows the line's four", 4, nativeLabelCount());
+        assertCollisionPolicy("selected", 4);
         capture("08_visibility_selected");
 
         setVisibility(R.id.sketch_dimensions_all);
         assertEquals("All shows nine", 9, nativeLabelCount());
-        final int drawn = visibleLabelCount();
-        fact("all.visible_chips", drawn);
-        assertTrue("at least four of nine stand, the rest hidden as collisions: " + drawn, drawn >= 4);
+        fact("all.visible_chips", visibleLabelCount());
+        assertCollisionPolicy("all", 9);
         assertNoChipOverlap();
         assertLabelsAttached("all");
         capture("09_visibility_all");
@@ -368,24 +383,20 @@ public final class CadSketchDraftingOwnerTest {
         capture("10_visibility_off");
         setVisibility(R.id.sketch_dimensions_all);
 
-        // A real pinch and a real two-finger pan: every label follows its anchor.
+        // A real pinch and a real two-finger pan: every label follows its
+        // anchor and the collision policy holds at every view.
         pinch(1.35f);
         assertLabelsAttached("pinch_out");
+        assertCollisionPolicy("pinch_out", 9);
         assertNoChipOverlap();
         pinch(0.8f);
         assertLabelsAttached("pinch_in");
+        assertCollisionPolicy("pinch_in", 9);
         twoFingerPan(-30f, 40f);
         assertLabelsAttached("pan");
+        assertCollisionPolicy("pan", 9);
         assertNoChipOverlap();
         capture("11_after_zoom_pan");
-
-        // Geometry beside a label is still the sketch's.
-        NativeViewport.sketchSelectEntity(0);
-        refresh();
-        final float[] nearLabel = edgePointNearLabel(rectangle, dimensionId(dimensions(), NativeViewport.DIM_RECTANGLE_WIDTH));
-        assertNotNull("a point of the rectangle near its label is reachable", nearLabel);
-        realGesture(new float[][]{nearLabel});
-        assertArrayEquals("the tap beside the label selected the rectangle", new long[]{rectangle}, selection());
     }
 
     // =======================================================================
@@ -536,7 +547,7 @@ public final class CadSketchDraftingOwnerTest {
 
         // Delete the dimension from its own label.
         selectTool(rule.getScenario(), R.id.tool_rail_select);
-        tapEntity(line, -1.8 * D, 0.0, -1.3 * D, 0.0);
+        tapEntity(line, -1.8 * D, 0.0);
         openLabelEditor(lengthId);
         press(R.id.sketch_dimension_delete);
         assertEquals(0, dimensions().length);
@@ -569,9 +580,11 @@ public final class CadSketchDraftingOwnerTest {
         final long toLine = placeLine(-2.5 * D, 1.3 * D, -1.5 * D, 1.3 * D);
         final double[] circle = drawCircle(-0.2 * D, -1.3 * D, 0.5 * D);
         selectTool(rule.getScenario(), R.id.tool_rail_line);
+        // The line just drawn stays selected, as it does for a user: Extend is
+        // offered with it, and its length label stands above it, clear of the
+        // stroke the second tap lands on.
         final long toCircle = placeLine(-2.5 * D, circle[2], -1.5 * D, circle[2]);
-        NativeViewport.sketchSelectEntity(0);
-        refresh();
+        assertArrayEquals(new long[]{toCircle}, selection());
         openPalette();
         pressAction(R.id.sketch_action_extend);
         capture("15_extend_mode");
@@ -612,17 +625,20 @@ public final class CadSketchDraftingOwnerTest {
 
         // Line: a drag, then an exact value.
         selectTool(rule.getScenario(), R.id.tool_rail_select);
-        tapEntity(line, -2.6 * D, 2.2 * D, -2.0 * D, 2.2 * D);
+        tapEntity(line, -2.6 * D, 2.2 * D);
         openPalette();
         pressAction(R.id.sketch_action_offset);
         assertEquals(line, (long) draft()[NativeViewport.SKETCH_DRAFT_OFFSET_SOURCE]);
         assertEquals("the default preview is valid", NativeViewport.CAD_OK, (int) draft()[NativeViewport.SKETCH_DRAFT_OFFSET_STATUS]);
         assertTrue("Confirm stands over a valid preview", shown(R.id.sketch_modify_confirm));
-        realDrag(-2.25 * D, 2.2 * D, -2.25 * D, 1.7 * D);
+        // Up, toward the line's left (+v) side, ending wherever the finger
+        // ends -- over the line's own length label too: the drag belongs to
+        // the viewport that took its Down.
+        realDrag(-2.25 * D, 2.2 * D, -2.25 * D, 2.7 * D);
         final double dragged = draft()[NativeViewport.SKETCH_DRAFT_OFFSET_DISTANCE];
         fact("offset.dragged", dragged);
-        assertTrue("the drag set a negative (right-side) distance: " + dragged,
-                dragged < -0.2 * D && dragged > -0.8 * D);
+        assertTrue("the drag set a positive (left) distance: " + dragged,
+                dragged > 0.2 * D && dragged < 0.8 * D);
         assertEquals("a drag creates nothing", 4, sketchEntityCount());
         capture("17_offset_preview_drag");
         typeOffset("0.123");
@@ -638,8 +654,7 @@ public final class CadSketchDraftingOwnerTest {
 
         // Cancel creates nothing.
         final int count = sketchEntityCount();
-        NativeViewport.sketchSelectEntity((long) circle[0]);
-        refresh();
+        selectByTap((long) circle[0], circle[1] - circle[3], circle[2]);
         openPalette();
         pressAction(R.id.sketch_action_offset);
         typeOffset("0.05");
@@ -648,8 +663,7 @@ public final class CadSketchDraftingOwnerTest {
         assertEquals(NativeViewport.MODIFY_NONE, (int) draft()[NativeViewport.SKETCH_DRAFT_MODE]);
 
         // Circle, outward.
-        NativeViewport.sketchSelectEntity((long) circle[0]);
-        refresh();
+        selectByTap((long) circle[0], circle[1] - circle[3], circle[2]);
         openPalette();
         pressAction(R.id.sketch_action_offset);
         typeOffset("0.05");
@@ -659,9 +673,8 @@ public final class CadSketchDraftingOwnerTest {
         assertEquals(circle[2], oc[3], EXACT);
         assertEquals(circle[3] + 0.05, oc[4], EXACT);
 
-        // Rectangle, outward.
-        NativeViewport.sketchSelectEntity((long) rect[0]);
-        refresh();
+        // Rectangle, outward: its left edge's middle.
+        selectByTap((long) rect[0], rect[1] - 0.5 * rect[3], rect[2]);
         openPalette();
         pressAction(R.id.sketch_action_offset);
         typeOffset("0.04");
@@ -672,9 +685,9 @@ public final class CadSketchDraftingOwnerTest {
         assertEquals(rect[3] + 0.08, orr[4], EXACT);
         assertEquals(rect[4] + 0.08, orr[5], EXACT);
 
-        // Polyline: the left side of +u then +v is +v then -u.
-        NativeViewport.sketchSelectEntity(polyline);
-        refresh();
+        // Polyline: the left side of +u then +v is +v then -u. Its first
+        // segment's middle.
+        selectByTap(polyline, -2.5 * D, -2.4 * D);
         openPalette();
         pressAction(R.id.sketch_action_offset);
         typeOffset("0.05");
@@ -714,17 +727,16 @@ public final class CadSketchDraftingOwnerTest {
             s |= NativeViewport.sketchSetModifyMode(NativeViewport.MODIFY_NONE);
             return s;
         }));
-        NativeViewport.sketchSelectEntity(0);
-        refresh();
+        // Empty drawing above the line's upper end, well clear of the axis.
+        clearSelectionByTap(-2.9 * D, 2.6 * D);
 
-        selectTool(rule.getScenario(), R.id.tool_rail_select);
         openPalette();
         press(R.id.sketch_action_select_multiple);
         assertEquals(1.0, draft()[NativeViewport.SKETCH_DRAFT_MULTI_SELECT], 0.0);
         closePalette();
-        tapEntity(line, -2.55 * D, 1.3 * D, -2.4 * D, 1.2 * D);
-        tapEntity((long) circle[0], circle[1], circle[2] + circle[3], circle[1] - circle[3], circle[2]);
-        tapEntity((long) rect[0], rect[1], rect[2] - 0.5 * rect[4], rect[1] - 0.5 * rect[3], rect[2]);
+        tapEntity(line, -2.55 * D, 1.3 * D);
+        tapEntity((long) circle[0], circle[1], circle[2] + circle[3]);
+        tapEntity((long) rect[0], rect[1], rect[2] - 0.5 * rect[4]);
         assertEquals("three selected", 3, selection().length);
         assertEquals(string(R.string.status_sketch_selection_count, 3), statusLine());
         capture("19_multi_select");
@@ -733,7 +745,7 @@ public final class CadSketchDraftingOwnerTest {
         pressAction(R.id.sketch_action_mirror);
         assertEquals(NativeViewport.MODIFY_MIRROR, (int) draft()[NativeViewport.SKETCH_DRAFT_MODE]);
         assertFalse("no Confirm before an axis", shown(R.id.sketch_modify_confirm));
-        tapEntityAt(axis, -1.5 * D, 0.6 * D, -1.5 * D, -0.6 * D);
+        tapEntityAt(axis, -1.5 * D, 0.6 * D);
         assertEquals(1.0, draft()[NativeViewport.SKETCH_DRAFT_MIRROR_AXIS_SET], 0.0);
         assertEquals(axis, (long) draft()[NativeViewport.SKETCH_DRAFT_MIRROR_AXIS_ENTITY]);
         assertTrue("Confirm stands over the preview", shown(R.id.sketch_modify_confirm));
@@ -777,16 +789,16 @@ public final class CadSketchDraftingOwnerTest {
         openPalette();
         pressAction(R.id.sketch_action_construction);
         // Width and height Driving; the construction line's length Reference,
-        // chosen through the Driving / Reference chip.
-        NativeViewport.sketchSelectEntity((long) rect[0]);
-        refresh();
+        // chosen through the Driving / Reference chip. Each entity is chosen
+        // by a real tap: the rectangle on its bottom edge, right of where the
+        // diagonal crosses it, the diagonal on its upper run, clear of the
+        // rectangle's own labels.
+        selectByTap((long) rect[0], rect[1] + 0.3 * rect[3], rect[2] - 0.5 * rect[4]);
         openPalette();
         pressAction(R.id.sketch_action_dimension);
         press(R.id.sketch_dimension_kind_width);
         press(R.id.sketch_dimension_kind_height);
-        selectTool(rule.getScenario(), R.id.tool_rail_select);
-        NativeViewport.sketchSelectEntity(diagonal);
-        refresh();
+        selectByTap(diagonal, -1.125 * D, 0.875 * D);
         openPalette();
         pressAction(R.id.sketch_action_dimension);
         press(R.id.sketch_dimension_driving);
@@ -824,7 +836,7 @@ public final class CadSketchDraftingOwnerTest {
         settleLayout();
         final long reopened = NativeViewport.sceneActiveBodyId();
         assertEquals("the same identity", body, reopened);
-        editSketchOf(reopened);
+        editSketchFromCanvas(reopened);
         assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
         assertArrayEquals("the same entities", ids, entityIds());
         for (int i = 0; i < ids.length; i++) {
@@ -865,8 +877,7 @@ public final class CadSketchDraftingOwnerTest {
         final long diagonal = placeLine(-3.0 * D, -1.0 * D, -0.5 * D, 1.5 * D);
         openPalette();
         pressAction(R.id.sketch_action_construction);
-        NativeViewport.sketchSelectEntity((long) rect[0]);
-        refresh();
+        selectByTap((long) rect[0], rect[1] + 0.3 * rect[3], rect[2] - 0.5 * rect[4]);
         openPalette();
         pressAction(R.id.sketch_action_dimension);
         press(R.id.sketch_dimension_kind_width);
@@ -879,16 +890,20 @@ public final class CadSketchDraftingOwnerTest {
         final double v0 = rect[3] * rect[4] * depth;
         assertEquals(v0, measure(body)[NativeViewport.CAD_MEASURE_VOLUME], 1e-6 * v0);
 
-        // A drafting edit: a new driving width, a trim of the construction
-        // line's stub, a construction toggle. One Finish, one Extrude.
-        editSketchOf(body);
+        // A drafting edit: a new driving width, then a trim of the construction
+        // diagonal's stub below the rectangle. One Finish, one Extrude.
+        editSketchFromCanvas(body);
         focusEntity((long) rect[0]);
         final double width = round3(1.9 * D);
         typeOnLabel(dimensionId(dimensions(), NativeViewport.DIM_RECTANGLE_WIDTH),
                 LengthUnit.present(java.math.BigDecimal.valueOf(width)));
+        // Trim is offered with the rectangle still selected. The stub runs
+        // from the diagonal's start to where it crosses the widened
+        // rectangle's bottom edge; the tap is on it, nearer the diagonal than
+        // the edge, above the Width label standing below that edge.
         openPalette();
         pressAction(R.id.sketch_action_trim);
-        tapAt(-2.75 * D, -0.75 * D);
+        tapAt(-2.6 * D, -0.6 * D);
         assertEquals(string(R.string.status_sketch_trimmed), statusLine());
         press(R.id.sketch_modify_done);
         press(R.id.finish_sketch);
@@ -903,21 +918,17 @@ public final class CadSketchDraftingOwnerTest {
         capture("23_regenerated");
 
         // Making the only profile Construction is refused by name at Finish.
-        editSketchOf(body);
-        NativeViewport.sketchSelectEntity((long) rect[0]);
-        refresh();
+        editSketchFromCanvas(body);
+        final double[] wide = entity((long) rect[0]);
+        selectByTap((long) rect[0], wide[2], wide[3] + 0.5 * wide[5]);
         openPalette();
         pressAction(R.id.sketch_action_construction);
         press(R.id.finish_sketch);
         assertEquals("Finish refused: no regular profile", NativeViewport.SKETCH_EDITING, sketchState());
         assertNotEquals(NativeViewport.CAD_OK, NativeViewport.sketchLastStatus());
         fact("lost_profile", NativeViewport.sketchLastStatus() + " '" + statusLine() + "'");
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            NativeViewport.sketchCancel();
-            workspace.onNativeStateChanged();
-            return null;
-        });
-        settleLayout();
+        press(R.id.cancel_sketch);
+        assertEquals("Cancel ends the edit", NativeViewport.SKETCH_INACTIVE, sketchState());
         assertEquals("Cancel cost the body nothing", regenerated,
                 measure(body)[NativeViewport.CAD_MEASURE_VOLUME], 0.0);
         fact("diagonal", diagonal);
@@ -932,15 +943,16 @@ public final class CadSketchDraftingOwnerTest {
         final long axis = placeLine(-3.0 * D, -D, -3.0 * D, D);
         openPalette();
         pressAction(R.id.sketch_action_construction);
-        NativeViewport.sketchSelectEntity((long) square[0]);
-        refresh();
+        // The square's right edge's middle: the selected axis's own length
+        // label stands at the left edge of the view, beside the axis.
+        selectByTap((long) square[0], square[1] + 0.5 * square[3], square[2]);
         openPalette();
         pressAction(R.id.sketch_action_dimension);
         press(R.id.sketch_dimension_kind_width);
         press(R.id.sketch_modify_done);
         press(R.id.finish_sketch);
         pressInSketchEditor(R.id.sketch_revolve_begin);
-        tapRevolveAxis(axis, -3.0 * D, -D, -3.0 * D, D);
+        tapRevolveAxis(axis, -3.0 * D, 0.0);
         press(R.id.revolve_sketch);
         assertTrue(NativeViewport.projectOpen());
         final long body = NativeViewport.sceneActiveBodyId();
@@ -948,7 +960,11 @@ public final class CadSketchDraftingOwnerTest {
         final double v0 = measure(body)[NativeViewport.CAD_MEASURE_VOLUME];
         assertEquals(2.0 * Math.PI * r * square[3] * square[4], v0, v0 * PAPPUS_TOLERANCE);
 
-        editSketchOf(body);
+        // A revolved body carries no extrude arrow, so no canvas Edit Sketch
+        // control stands over it (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`); its retained
+        // sketch is reached from the precision surface's Edit Sketch, the path
+        // a user takes.
+        editSketchFromInspector();
         focusEntity((long) square[0]);
         final double width = round3(1.4 * D);
         typeOnLabel(dimensionId(dimensions(), NativeViewport.DIM_RECTANGLE_WIDTH),
@@ -1016,6 +1032,147 @@ public final class CadSketchDraftingOwnerTest {
         final long body = NativeViewport.sceneActiveBodyId();
         final double block = cells * cell * cell * depth;
         assertEquals(block, measure(body)[NativeViewport.CAD_MEASURE_VOLUME], 1e-6 * block);
+    }
+
+    // =======================================================================
+    // DEV-DR-13 — a dimension label's touch box
+    // =======================================================================
+
+    /**
+     * A label owns taps on ITSELF and nothing else. Two labels that used to
+     * reach back over the stroke they measure -- a rectangle's Height, standing
+     * off a VERTICAL edge, and a circle's Diameter, off the curve at 45 degrees
+     * -- are tapped as a user taps: on the label (it opens), just inside its
+     * near side (still the label's), on the very point of the stroke it
+     * measures (the drawing's: the entity is selected), and just beyond its far
+     * side (the drawing's: empty space clears the selection). Every point's
+     * owner is asserted BEFORE the touch, from the window's own hit order.
+     */
+    @Test
+    public void devDr13_a_label_owns_its_own_box_and_the_stroke_it_measures_stays_tappable() {
+        testName = "dr13";
+        newCadSketch();
+        final double[] rect = drawRectangle(-2.75 * D, -0.5 * D, -1.25 * D, 0.5 * D);
+        final long rectangle = (long) rect[0];
+        openPalette();
+        pressAction(R.id.sketch_action_dimension);
+        press(R.id.sketch_dimension_kind_height);
+        press(R.id.sketch_modify_done);
+        final double[] circle = drawCircle(-2.25 * D, -2.5 * D, 0.5 * D);
+        final long disk = (long) circle[0];
+        openPalette();
+        pressAction(R.id.sketch_action_dimension);
+        press(R.id.sketch_dimension_kind_diameter);
+        press(R.id.sketch_modify_done);
+        final double[][] dims = dimensions();
+        final long heightId = dimensionId(dims, NativeViewport.DIM_RECTANGLE_HEIGHT);
+        final long diameterId = dimensionId(dims, NativeViewport.DIM_CIRCLE_DIAMETER);
+        // All: the labels stand with nothing selected, so a tap that clears the
+        // selection does not also clear the label it is measured against.
+        setVisibility(R.id.sketch_dimensions_all);
+        clearSelectionByTap(-3.0 * D, -1.25 * D);
+        assertCollisionPolicy("all", 2);
+        assertLabelsAttached("all");
+        capture("26_label_boxes");
+
+        labelOwnsOnlyItsBox("height", heightId, rectangle);
+        labelOwnsOnlyItsBox("diameter", diameterId, disk);
+    }
+
+    /** The four taps of DEV-DR-13 against one label and the entity it measures. */
+    private void labelOwnsOnlyItsBox(String name, long dimensionId, long entity) {
+        final float[] box = layoutBox(dimensionId);
+        assertNotNull(name + ": the label stands", box);
+        final float[] attach = attachPoint(dimensionId);
+        final float density = (float) (dpM * pixelsPerMeter());
+        fact(name + ".box", Arrays.toString(box) + " attach " + Arrays.toString(attach));
+        assertFalse(name + ": the label's box does not cover the point of the stroke it measures",
+                attach[0] >= box[0] && attach[0] <= box[2] && attach[1] >= box[1] && attach[1] <= box[3]);
+        final float cx = 0.5f * (box[0] + box[2]);
+        final float cy = 0.5f * (box[1] + box[3]);
+        // The unit direction the label stands off in, from the stroke.
+        final float dx = cx - attach[0];
+        final float dy = cy - attach[1];
+        final float r = (float) Math.hypot(dx, dy);
+        final float ux = dx / r;
+        final float uy = dy / r;
+        // The box's reach along that direction, each side of its centre.
+        final float reach = 0.5f * (Math.abs(ux) * (box[2] - box[0]) + Math.abs(uy) * (box[3] - box[1]));
+
+        // 1. On the label: it opens.
+        final float[] centre = {cx, cy};
+        assertEquals(name + ": the label owns its centre", R.id.sketch_dimension_label_item, ownerAt(centre));
+        realGesture(new float[][]{centre});
+        assertEquals(name + ": a tap on the label opens it", dimensionId, editingDimension());
+        closeLabelEditor();
+
+        // 2. The label's own point nearest the stroke, 4 dp in: still the label's.
+        final float inset = 4f * density;
+        final float[] inside = {Math.max(box[0] + inset, Math.min(attach[0], box[2] - inset)),
+                Math.max(box[1] + inset, Math.min(attach[1], box[3] - inset))};
+        assertEquals(name + ": its point nearest the stroke, 4 dp in, is the label's",
+                R.id.sketch_dimension_label_item, ownerAt(inside));
+        realGesture(new float[][]{inside});
+        assertEquals(name + ": and opens it", dimensionId, editingDimension());
+        closeLabelEditor();
+
+        // 3. On the stroke it measures: the drawing's.
+        clearSelectionByTap(-3.0 * D, -1.25 * D);
+        assertEquals(name + ": the stroke beside the label is the viewport's", R.id.viewport_surface,
+                ownerAt(attach));
+        realGesture(new float[][]{attach});
+        assertArrayEquals(name + ": the tap on the stroke selected the entity", new long[]{entity}, selection());
+        assertEquals(name + ": and opened no label", 0L, editingDimension());
+
+        // 4. Just beyond its far side, on empty drawing: the drawing's.
+        final float out = reach + 6f * density;
+        final float[] beyond = {cx + ux * out, cy + uy * out};
+        assertEquals(name + ": 6 dp beyond its far side is the viewport's", R.id.viewport_surface,
+                ownerAt(beyond));
+        realGesture(new float[][]{beyond});
+        assertEquals(name + ": empty drawing beyond the label clears the selection", 0, selection().length);
+        assertEquals(name + ": and opened no label", 0L, editingDimension());
+    }
+
+    /** {left, top, right, bottom} of a standing label, viewport px, or null. */
+    private float[] layoutBox(long dimensionId) {
+        final float[] rows = labelLayout();
+        final int s = SketchDimensionLabelsView.LAYOUT_STRIDE;
+        for (int i = 0; i < rows.length / s; i++) {
+            if ((long) rows[i * s] == dimensionId && rows[i * s + 2] != 0f) {
+                return new float[]{rows[i * s + 4], rows[i * s + 5], rows[i * s + 6], rows[i * s + 7]};
+            }
+        }
+        return null;
+    }
+
+    /** Native's attach point of a label, viewport px. */
+    private static float[] attachPoint(long dimensionId) {
+        final double[] out = nativeLabels();
+        for (int o = 0; o < out.length; o += NativeViewport.SKETCH_LABEL_STRIDE) {
+            if ((long) out[o + NativeViewport.SKETCH_LABEL_ID] == dimensionId) {
+                return new float[]{(float) out[o + NativeViewport.SKETCH_LABEL_ATTACH_X],
+                        (float) out[o + NativeViewport.SKETCH_LABEL_ATTACH_Y]};
+            }
+        }
+        fail("dimension " + dimensionId + " has a label");
+        return null;
+    }
+
+    /** The id of the view a finger at this viewport pixel lands on, by the window's own hit order. */
+    private int ownerAt(float[] at) {
+        return onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final int[] vp = new int[2];
+            viewport.getLocationInWindow(vp);
+            final View owner = clickableAt(activity.getWindow().getDecorView(), at[0] + vp[0], at[1] + vp[1]);
+            return owner == null ? View.NO_ID : owner.getId();
+        });
+    }
+
+    private long editingDimension() {
+        return onWorkspace(rule.getScenario(),
+                (activity, workspace) -> workspace.sketchDimensionLabels().editingDimensionId());
     }
 
     // -----------------------------------------------------------------------
@@ -1127,14 +1284,14 @@ public final class CadSketchDraftingOwnerTest {
      */
     private void snapCase(String name, double su, double sv, double tu, double tv, float offXdp,
                           float offYdp, int expectedKind, double expectU, double expectV) {
-        // Nothing selected: the selected line's own length label would stand
-        // over the very points this case aims at.
-        NativeViewport.sketchSelectEntity(0);
-        refresh();
+        // The DOWN must be free for a finger. The target need only be on the
+        // viewport: a line being dragged out belongs to the view that took its
+        // Down, so a label standing over the target cannot take the gesture --
+        // exactly as on the device, where the reference line drawn last is
+        // still selected and its length label stands in the drawing.
         final float[] from = sketchPoint(su, sv);
-        final float[] to = sketchPoint(tu, tv);
-        assertNotNull(name + ": the start is reachable " + lastBlock, from);
-        assertNotNull(name + ": the target is reachable " + lastBlock, to);
+        assertNotNull(name + ": the start is free for a finger " + lastBlock, from);
+        final float[] to = sketchPointOnViewport(tu, tv);
         final float density = (float) (dpM * pixelsPerMeter());
         to[0] += offXdp * density;
         to[1] += offYdp * density;
@@ -1181,23 +1338,38 @@ public final class CadSketchDraftingOwnerTest {
         return areas;
     }
 
-    /** Opens a committed CAD body's sketch for editing, through the canvas control. */
-    private void editSketchOf(long body) {
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.onNativeStateChanged();
-            return null;
-        });
-        settleLayout();
-        if (shown(R.id.cad_canvas_edit_sketch)) {
-            press(R.id.cad_canvas_edit_sketch);
-        } else {
-            fact("edit_sketch", "canvas control not shown; native begin");
-            assertEquals(NativeViewport.CAD_OK, applyOnUi(() -> NativeViewport.sketchBeginEdit(body)));
-        }
+    /**
+     * Opens an extruded CAD body's sketch for editing through the canvas Edit
+     * Sketch control standing on it -- which must be there: no native door.
+     */
+    private void editSketchFromCanvas(long body) {
+        refresh();
+        assertEquals(body, NativeViewport.sceneActiveBodyId());
+        assertTrue("the canvas Edit Sketch control stands on the extruded body",
+                shown(R.id.cad_canvas_edit_sketch));
+        press(R.id.cad_canvas_edit_sketch);
+        reachEditing();
+    }
+
+    /**
+     * Opens the active CAD body's sketch for editing through the precision
+     * surface: its toggle, then Edit Sketch -- both pressed as a user presses.
+     */
+    private void editSketchFromInspector() {
+        refresh();
+        assertEquals("no sketch is open yet", NativeViewport.SKETCH_INACTIVE, sketchState());
+        press(R.id.precision_toggle);
+        assertTrue("the precision surface offers Edit Sketch", shown(R.id.edit_cad_sketch));
+        press(R.id.edit_cad_sketch);
+        reachEditing();
+    }
+
+    /** From an opened edit, the drawn sketch: Back to Sketch when it opened staged in Ready. */
+    private void reachEditing() {
         if (sketchState() == NativeViewport.SKETCH_READY) {
             press(R.id.back_to_sketch);
         }
-        assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
+        assertEquals("the retained sketch is open for drawing", NativeViewport.SKETCH_EDITING, sketchState());
     }
 
     // -----------------------------------------------------------------------
@@ -1358,12 +1530,91 @@ public final class CadSketchDraftingOwnerTest {
         });
     }
 
-    /** Every drawn label stands centred on its projected anchor (unless clamped at an edge). */
-    private void assertLabelsAttached(String when) {
+    /** The label view's last layout rows (SketchDimensionLabelsView.LAYOUT_STRIDE). */
+    private float[] labelLayout() {
+        return onWorkspace(rule.getScenario(),
+                (activity, workspace) -> workspace.sketchDimensionLabels().labelLayout());
+    }
+
+    /** Native's label rows, stride SKETCH_LABEL_STRIDE. */
+    private static double[] nativeLabels() {
         final double[] out = new double[NativeViewport.SKETCH_LABEL_MAX * NativeViewport.SKETCH_LABEL_STRIDE];
         final int count = NativeViewport.sketchDimensionLabels(out);
+        return Arrays.copyOf(out, count * NativeViewport.SKETCH_LABEL_STRIDE);
+    }
+
+    private static boolean boxesMeet(float[] rows, int a, int b) {
+        final int s = SketchDimensionLabelsView.LAYOUT_STRIDE;
+        return rows[a * s + 4] < rows[b * s + 6] && rows[b * s + 4] < rows[a * s + 6]
+                && rows[a * s + 5] < rows[b * s + 7] && rows[b * s + 5] < rows[a * s + 7];
+    }
+
+    /**
+     * The collision policy, as a statement about EVERY label rather than a
+     * count: a label stands unless it has a stated reason not to. A label is
+     * hidden as a collision only when a STANDING label of higher priority
+     * claims an overlapping box; one hidden as off the viewport really has a
+     * box that leaves it; and no two standing labels meet. So a label whose
+     * box conflicts with nothing never disappears, and an unrelated one cannot.
+     */
+    private void assertCollisionPolicy(String when, int expectedRows) {
+        final float[] rows = labelLayout();
+        final int s = SketchDimensionLabelsView.LAYOUT_STRIDE;
+        final int n = rows.length / s;
+        assertEquals(when + ": one layout row per native label", expectedRows, n);
+        final int[] size = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            return new int[]{viewport.getWidth(), viewport.getHeight()};
+        });
+        final StringBuilder record = new StringBuilder();
+        int standing = 0;
+        for (int i = 0; i < n; i++) {
+            final long id = (long) rows[i * s];
+            final boolean shown = rows[i * s + 2] != 0f;
+            final int why = (int) rows[i * s + 3];
+            record.append(id).append(shown ? ":shown " : ":hidden" + why + " ");
+            final boolean inside = rows[i * s + 4] >= 0f && rows[i * s + 5] >= 0f
+                    && rows[i * s + 6] <= size[0] && rows[i * s + 7] <= size[1];
+            if (shown) {
+                standing++;
+                assertTrue(when + ": standing label " + id + " lies wholly on the viewport", inside);
+                for (int j = 0; j < n; j++) {
+                    if (j != i && rows[j * s + 2] != 0f) {
+                        assertFalse(when + ": standing labels " + id + " and " + (long) rows[j * s]
+                                + " never meet", boxesMeet(rows, i, j));
+                    }
+                }
+                continue;
+            }
+            if (why == SketchDimensionLabelsView.HIDDEN_OFF_VIEWPORT) {
+                assertFalse(when + ": label " + id + " hidden as off the viewport really leaves it", inside);
+            } else if (why == SketchDimensionLabelsView.HIDDEN_COLLISION) {
+                boolean claimed = false;
+                for (int j = 0; j < n; j++) {
+                    claimed |= j != i && rows[j * s + 2] != 0f && rows[j * s + 1] >= rows[i * s + 1]
+                            && boxesMeet(rows, i, j);
+                }
+                assertTrue(when + ": label " + id + " is hidden only by a standing label of higher "
+                        + "priority whose box it meets", claimed);
+            } else {
+                assertEquals(when + ": label " + id + " is hidden for a stated reason",
+                        SketchDimensionLabelsView.HIDDEN_DOES_NOT_PROJECT, why);
+            }
+        }
+        fact("policy." + when, standing + "/" + n + " " + record.toString().trim());
+        assertTrue(when + ": labels stand", standing > 0);
+    }
+
+    /**
+     * Every drawn label is attached to what it measures: its box centre lies
+     * on the ray from native's attach point (on the geometry) through native's
+     * anchor, no nearer than the anchor, and the box clears the attach point --
+     * the label owns taps on itself and never on its own stroke.
+     */
+    private void assertLabelsAttached(String when) {
+        final double[] out = nativeLabels();
+        final int count = out.length / NativeViewport.SKETCH_LABEL_STRIDE;
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final float density = activity.getResources().getDisplayMetrics().density;
             final View viewport = workspace.findViewById(R.id.viewport_surface);
             final int[] vp = new int[2];
             viewport.getLocationInWindow(vp);
@@ -1375,52 +1626,34 @@ public final class CadSketchDraftingOwnerTest {
                 if (chip == null) continue;
                 final float ax = (float) out[o + NativeViewport.SKETCH_LABEL_X];
                 final float ay = (float) out[o + NativeViewport.SKETCH_LABEL_Y];
+                final float tx = (float) out[o + NativeViewport.SKETCH_LABEL_ATTACH_X];
+                final float ty = (float) out[o + NativeViewport.SKETCH_LABEL_ATTACH_Y];
                 final Rect box = boundsOf(chip);
-                if (ax < 80 * density || ay < 80 * density || ax > viewport.getWidth() - 80 * density
-                        || ay > viewport.getHeight() - 80 * density) {
-                    continue;
+                box.offset(-vp[0], -vp[1]);
+                final float cx = box.exactCenterX();
+                final float cy = box.exactCenterY();
+                final float rx = ax - tx;
+                final float ry = ay - ty;
+                final float r = (float) Math.hypot(rx, ry);
+                if (r > 0.5f) {
+                    final float along = ((cx - tx) * rx + (cy - ty) * ry) / r;
+                    final float off = Math.abs((cx - tx) * ry - (cy - ty) * rx) / r;
+                    assertTrue(when + ": label " + id + " stands on its ray (off " + off + " px)", off <= 3f);
+                    assertTrue(when + ": label " + id + " is never pulled nearer than its anchor",
+                            along >= r - 3f);
+                    assertFalse(when + ": label " + id + " " + box.toShortString()
+                                    + " stands clear of the geometry it measures at (" + tx + ", " + ty + ")",
+                            box.contains(Math.round(tx), Math.round(ty)));
+                } else {
+                    assertEquals(when + ": label " + id + " x", ax, cx, 3.0f);
+                    assertEquals(when + ": label " + id + " y", ay, cy, 3.0f);
                 }
-                assertEquals(when + ": label " + id + " x", ax + vp[0], box.exactCenterX(), 3.0f);
-                assertEquals(when + ": label " + id + " y", ay + vp[1], box.exactCenterY(), 3.0f);
                 checked++;
             }
             fact("attached." + when, checked + "/" + count);
             assertTrue(when + ": some labels were checked", checked > 0);
             return null;
         });
-    }
-
-    /** A point on the rectangle's top edge closest to a label yet under no chrome. */
-    private float[] edgePointNearLabel(long rectangle, long labelDimension) {
-        final double[] r = entity(rectangle);
-        final double[] out = new double[NativeViewport.SKETCH_LABEL_MAX * NativeViewport.SKETCH_LABEL_STRIDE];
-        final int count = NativeViewport.sketchDimensionLabels(out);
-        float lx = Float.NaN;
-        float ly = Float.NaN;
-        for (int i = 0; i < count; i++) {
-            final int o = i * NativeViewport.SKETCH_LABEL_STRIDE;
-            if ((long) out[o + NativeViewport.SKETCH_LABEL_ID] == labelDimension) {
-                lx = (float) out[o + NativeViewport.SKETCH_LABEL_X];
-                ly = (float) out[o + NativeViewport.SKETCH_LABEL_Y];
-            }
-        }
-        assertFalse("the label projects", Float.isNaN(lx));
-        float[] best = null;
-        double bestDistance = Double.MAX_VALUE;
-        for (int k = 0; k <= 20; k++) {
-            final double u = r[2] - 0.5 * r[4] + r[4] * k / 20.0;
-            for (double v : new double[]{r[3] - 0.5 * r[5], r[3] + 0.5 * r[5]}) {
-                final float[] at = sketchPoint(u, v);
-                if (at == null) continue;
-                final double d = Math.hypot(at[0] - lx, at[1] - ly);
-                if (d < bestDistance) {
-                    bestDistance = d;
-                    best = at;
-                }
-            }
-        }
-        fact("near_label", best == null ? "none" : Arrays.toString(best) + " d=" + bestDistance);
-        return best;
     }
 
     // -----------------------------------------------------------------------
@@ -1551,21 +1784,46 @@ public final class CadSketchDraftingOwnerTest {
     // Real window touches
     // -----------------------------------------------------------------------
 
+    /** Why the last point asked of {@link #sketchPoint} was refused, for the failure message. */
     private String lastBlock = "";
 
+    /**
+     * The viewport pixel of a sketch point a finger can put a DOWN on: it
+     * projects, stands on the viewport, and no clickable chrome (a label, the
+     * Modify column, the rail) is over it. Null otherwise, with the reason in
+     * {@link #lastBlock}.
+     */
     private float[] sketchPoint(double u, double v) {
         final float[] at = new float[2];
         if (!NativeViewport.sketchScreenPoint(u, v, at)) {
-            lastBlock += "[(" + u + "," + v + ") does not project]";
+            lastBlock = "(" + u + "," + v + ") does not project";
             return null;
         }
         return viewportPoint(at);
     }
 
-    /** A still real tap at a sketch point that must be reachable. */
+    /**
+     * The viewport pixel of a sketch point a gesture already in progress may
+     * pass over or end on: it need only project onto the viewport. Chrome there
+     * is irrelevant -- every later event of a gesture goes to the view that
+     * took its DOWN, which is exactly how a finger dragging out a line over a
+     * label behaves.
+     */
+    private float[] sketchPointOnViewport(double u, double v) {
+        final float[] at = new float[2];
+        assertTrue("(" + u + ", " + v + ") projects", NativeViewport.sketchScreenPoint(u, v, at));
+        final boolean on = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            return at[0] >= 0 && at[1] >= 0 && at[0] < viewport.getWidth() && at[1] < viewport.getHeight();
+        });
+        assertTrue("(" + u + ", " + v + ") -> " + Arrays.toString(at) + " is on the viewport", on);
+        return at;
+    }
+
+    /** A still real tap at a sketch point that must be free for a finger. */
     private void tapAt(double u, double v) {
         final float[] at = sketchPoint(u, v);
-        assertNotNull("(" + u + ", " + v + ") is reachable: " + lastBlock, at);
+        assertNotNull("(" + u + ", " + v + ") is free for a tap: " + lastBlock, at);
         realGesture(new float[][]{at});
     }
 
@@ -1573,9 +1831,13 @@ public final class CadSketchDraftingOwnerTest {
         tapAt(u, v);
     }
 
-    /** A still real tap on an entity at the first reachable of two points; asserts it is selected. */
-    private void tapEntity(long id, double u0, double v0, double u1, double v1) {
-        tapEntityAt(id, u0, v0, u1, v1);
+    /**
+     * A still real tap ON an entity at ONE stated point, which must be free
+     * for a finger; then, outside a modify mode, the entity must be selected,
+     * and in Dimension mode it must be the target.
+     */
+    private void tapEntity(long id, double u, double v) {
+        tapEntityAt(id, u, v);
         final double[] state = draft();
         final int mode = (int) state[NativeViewport.SKETCH_DRAFT_MODE];
         if (mode == NativeViewport.MODIFY_NONE) {
@@ -1589,64 +1851,32 @@ public final class CadSketchDraftingOwnerTest {
         }
     }
 
-    /** Like {@link #tapEntity}, over any number of candidate points on the entity. */
-    private void tapEntityPoints(long id, double[][] points) {
-        float[] at = null;
-        for (double[] p : points) {
-            at = sketchPoint(p[0], p[1]);
-            if (at != null) break;
-        }
-        assertNotNull("entity " + id + " is reachable: " + lastBlock, at);
-        realGesture(new float[][]{at});
-        fact("tap." + id, Arrays.toString(at));
-        final double[] state = draft();
-        final int mode = (int) state[NativeViewport.SKETCH_DRAFT_MODE];
-        if (mode == NativeViewport.MODIFY_DIMENSION) {
-            assertEquals("the tap chose the dimension target", id,
-                    (long) state[NativeViewport.SKETCH_DRAFT_DIM_TARGET_ENTITY]);
-        } else if (mode == NativeViewport.MODIFY_NONE) {
-            boolean in = false;
-            for (long s : selection()) in |= s == id;
-            assertTrue("the tap chose entity " + id, in);
-        }
-    }
-
-    /** Eight points on a circle {id, cu, cv, r}. */
-    private static double[][] circlePoints(double[] c) {
-        final double[][] out = new double[8][];
-        for (int k = 0; k < 8; k++) {
-            final double t = Math.PI * 0.5 + k * Math.PI / 4.0;
-            out[k] = new double[]{c[1] + c[3] * Math.cos(t), c[2] + c[3] * Math.sin(t)};
-        }
-        return out;
-    }
-
-    /** Points along the four edges of a rectangle {id, cu, cv, w, h}. */
-    private static double[][] rectPoints(double[] r) {
-        final double hw = 0.5 * r[3];
-        final double hh = 0.5 * r[4];
-        return new double[][]{{r[1], r[2] + hh}, {r[1] - 0.3 * r[3], r[2] + hh}, {r[1] + 0.3 * r[3], r[2] + hh},
-                {r[1] - hw, r[2]}, {r[1] + hw, r[2]}, {r[1], r[2] - hh}, {r[1] - 0.3 * r[3], r[2] - hh}};
-    }
-
-    private void tapEntityAt(long id, double u0, double v0, double u1, double v1) {
-        float[] at = null;
-        for (double t : new double[]{0.0, 1.0, 0.5}) {
-            at = sketchPoint(u0 + (u1 - u0) * t, v0 + (v1 - v0) * t);
-            if (at != null) break;
-        }
-        assertNotNull("entity " + id + " is reachable: " + lastBlock, at);
+    /** A still real tap at ONE stated point on an entity, free for a finger; nothing asserted after. */
+    private void tapEntityAt(long id, double u, double v) {
+        final float[] at = sketchPoint(u, v);
+        assertNotNull("entity " + id + " at (" + u + ", " + v + ") is free for a tap: " + lastBlock, at);
         realGesture(new float[][]{at});
         fact("tap." + id, Arrays.toString(at));
     }
 
-    private void tapRevolveAxis(long id, double u0, double v0, double u1, double v1) {
-        float[] at = null;
-        for (double t : new double[]{0.5, 0.35, 0.65, 0.2, 0.8}) {
-            at = sketchPoint(u0 + (u1 - u0) * t, v0 + (v1 - v0) * t);
-            if (at != null) break;
-        }
-        assertNotNull("the axis is reachable: " + lastBlock, at);
+    /** The Select tool, then a real tap on an entity; it alone is selected. */
+    private void selectByTap(long id, double u, double v) {
+        selectTool(rule.getScenario(), R.id.tool_rail_select);
+        tapEntity(id, u, v);
+        assertArrayEquals("the tap selected exactly entity " + id, new long[]{id}, selection());
+    }
+
+    /** The Select tool, then a real tap on EMPTY drawing: the selection clears, as a user clears it. */
+    private void clearSelectionByTap(double u, double v) {
+        selectTool(rule.getScenario(), R.id.tool_rail_select);
+        tapAt(u, v);
+        assertEquals("a tap on empty drawing clears the selection", 0, selection().length);
+    }
+
+    /** A real tap on the Revolve axis at ONE stated point; the axis is chosen. */
+    private void tapRevolveAxis(long id, double u, double v) {
+        final float[] at = sketchPoint(u, v);
+        assertNotNull("the axis at (" + u + ", " + v + ") is free for a tap: " + lastBlock, at);
         realGesture(new float[][]{at});
         assertEquals("the tap chose the axis", id, (long) revolveState()[NativeViewport.REVOLVE_AXIS_ENTITY]);
     }
@@ -1680,12 +1910,15 @@ public final class CadSketchDraftingOwnerTest {
         return (float) Math.hypot(x - (bx + dx * t), y - (by + dy * t));
     }
 
-    /** A real drag between two sketch points, both of which must be reachable. */
+    /**
+     * A real drag between two sketch points. The DOWN must be free for a
+     * finger; the rest of the path need only be on the viewport, because the
+     * view that takes the Down receives every later event of the gesture.
+     */
     private void realDrag(double u0, double v0, double u1, double v1) {
         final float[] from = sketchPoint(u0, v0);
-        final float[] to = sketchPoint(u1, v1);
-        assertNotNull("drag start (" + u0 + ", " + v0 + ") is reachable: " + lastBlock, from);
-        assertNotNull("drag end (" + u1 + ", " + v1 + ") is reachable: " + lastBlock, to);
+        assertNotNull("drag start (" + u0 + ", " + v0 + ") is free for a finger: " + lastBlock, from);
+        final float[] to = sketchPointOnViewport(u1, v1);
         realGesture(path(from, to, 8));
     }
 
@@ -1715,9 +1948,11 @@ public final class CadSketchDraftingOwnerTest {
             if (owner == null || owner == viewport) {
                 return null;
             }
-            return "under " + owner.getClass().getSimpleName() + "#" + owner.getId();
+            return "under " + owner.getClass().getSimpleName() + " "
+                    + (owner.getId() != View.NO_ID ? activity.getResources().getResourceEntryName(owner.getId())
+                    : "(no id)");
         });
-        lastBlock = block == null ? "" : lastBlock + "[" + at[0] + "," + at[1] + " " + block + "]";
+        lastBlock = block == null ? "" : "[" + at[0] + "," + at[1] + " " + block + "]";
         return block == null ? at : null;
     }
 

@@ -751,6 +751,61 @@ void testDimensions(Checks& r) {
         r.check("DR_DIM_19_one_entitys_labels_stand_apart_line_length_and_angle_arc_radius_and_sweep",
                 lines && arcs);
     }
+    // Every label names the point it stands OFF from, on the geometry it
+    // measures, and stands away from it: the chrome pushes the drawn box along
+    // `label - attach` until the whole box clears it, so a label can never own
+    // taps on its own stroke.
+    {
+        const double unit = 0.01;
+        CadSketch s;
+        const SketchEntityId v = add(&s, line(0.0, 0.0, 0.0, 2.0));
+        const SketchEntityId steep = add(&s, line(3.0, 0.0, 3.5, 2.0));
+        const SketchEntityId shallow = add(&s, line(5.0, 0.0, 7.0, 0.3));
+        const SketchEntityId box = add(&s, rectangle(10.0, 0.0, 2.0, 1.0));
+        const SketchEntityId disk = add(&s, circle(15.0, 0.0, 0.8));
+        const SketchEntityId bow = add(&s, arc(19.0, 0.0, 20.0, 1.0, 21.0, 0.0));
+        struct Expect {
+            SketchDimensionKind kind;
+            CadSketchEdgeRef first;
+            SketchPoint attach;
+        };
+        const std::vector<Expect> expect = {
+            {SketchDimensionKind::LineLength, {v, 0}, SketchPoint{0.0, 1.0}},
+            {SketchDimensionKind::LineAngle, {steep, 0}, SketchPoint{NAN, NAN}},
+            {SketchDimensionKind::LineAngle, {shallow, 0}, SketchPoint{NAN, NAN}},
+            {SketchDimensionKind::RectangleWidth, {box, 0}, SketchPoint{10.0, -0.5}},
+            {SketchDimensionKind::RectangleHeight, {box, 0}, SketchPoint{11.0, 0.0}},
+            {SketchDimensionKind::CircleRadius, {disk, 0}, SketchPoint{NAN, NAN}},
+            {SketchDimensionKind::CircleDiameter, {disk, 0}, SketchPoint{NAN, NAN}},
+            {SketchDimensionKind::ArcRadius, {bow, 0}, SketchPoint{20.0, 1.0}},
+            {SketchDimensionKind::ArcSweep, {bow, 0}, SketchPoint{NAN, NAN}},
+        };
+        bool all = true;
+        for (const Expect& e : expect) {
+            const SketchDimensionId id = addDim(&s, e.kind, ref, e.first);
+            SketchDimensionAnnotation a;
+            const bool built = id != kNoSketchDimension
+                               && buildSketchDimensionAnnotation(s, *findSketchDimension(s, id), unit, &a);
+            const double away = built ? std::hypot(a.label.u - a.attach.u, a.label.v - a.attach.v) : 0.0;
+            bool on = built && std::isfinite(a.attach.u) && std::isfinite(a.attach.v) && away > 10.0 * unit;
+            if (on && std::isfinite(e.attach.u)) {
+                on = nearPoint(a.attach, e.attach, 1e-9);
+            }
+            if (on && e.kind == SketchDimensionKind::CircleRadius) {
+                on = near(std::hypot(a.attach.u - 15.0, a.attach.v), 0.8, 1e-9);
+            }
+            if (on && e.kind == SketchDimensionKind::LineAngle) {
+                // Square off the line for a small angle, on the arc for a large one.
+                const SketchLine& l = *findSketchEntity(s, e.first.entityId)->line();
+                const double lu = l.end.u - l.start.u;
+                const double lv = l.end.v - l.start.v;
+                const double cross = (a.attach.u - l.start.u) * lv - (a.attach.v - l.start.v) * lu;
+                on = e.first.entityId == shallow ? near(cross, 0.0, 1e-9) : true;
+            }
+            all = all && on;
+        }
+        r.check("DR_DIM_20_every_label_stands_off_a_point_on_the_geometry_it_measures", all);
+    }
 }
 
 // ---------------------------------------------------------------------------

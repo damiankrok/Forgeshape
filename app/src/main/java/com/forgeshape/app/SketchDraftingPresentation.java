@@ -62,14 +62,17 @@ final class SketchDraftingPresentation {
      * <ul>
      *   <li>nothing selected: Select multiple, Dimension, Trim, Extend, Offset;</li>
      *   <li>ONE entity: Select multiple, Dimension and Offset (where its kind
-     *       has them), Make Construction / Make Regular, Mirror, Delete;</li>
-     *   <li>several: Select multiple, Make Construction / Make Regular, Mirror,
-     *       Delete.</li>
+     *       has them), Trim, Extend, Make Construction / Make Regular, Mirror,
+     *       Delete;</li>
+     *   <li>several: Select multiple, Trim, Extend, Make Construction / Make
+     *       Regular, Mirror, Delete.</li>
      * </ul>
      *
-     * <p>Trim and Extend are tap modes that act on what the finger touches, so
-     * they are offered while nothing is selected; with a selection the palette
-     * offers what acts ON the selection.
+     * <p>Trim and Extend are tap modes that act on what the finger touches,
+     * never on the selection, so they are offered WHATEVER is selected: a
+     * selection cannot make them fail, and every drawing tool leaves what it
+     * just drew selected, so withdrawing them there would hide Trim exactly
+     * when a user has finished drawing the lines to trim.
      */
     static boolean[] paletteActions(int sketchState, int selectionCount, int singleEntityKind) {
         final boolean[] shown = new boolean[ACTION_COUNT];
@@ -77,10 +80,10 @@ final class SketchDraftingPresentation {
             return shown;
         }
         shown[ACTION_SELECT_MULTIPLE] = true;
+        shown[ACTION_TRIM] = true;
+        shown[ACTION_EXTEND] = true;
         if (selectionCount <= 0) {
             shown[ACTION_DIMENSION] = true;
-            shown[ACTION_TRIM] = true;
-            shown[ACTION_EXTEND] = true;
             shown[ACTION_OFFSET] = true;
             return shown;
         }
@@ -163,6 +166,57 @@ final class SketchDraftingPresentation {
             case NativeViewport.DIM_EDGE_ANGLE: return R.string.dimension_kind_edge_angle;
             default: return R.string.dimension_kind_length;
         }
+    }
+
+    /**
+     * The gap, in dp, kept between a label's touch box and the point on the
+     * geometry it stands off from: the stroke and a finger's width beside it on
+     * the label's side stay the drawing's.
+     */
+    static final float LABEL_STROKE_CLEAR_DP = 8.0f;
+
+    /**
+     * Where a label's touch box is centred: on the ray from {@code attach}
+     * (the point on the measured geometry, see {@code SketchDimensionAnnotation})
+     * through native's anchor, at the anchor's own distance or further -- just
+     * far enough that the WHOLE {@code width} x {@code height} box clears
+     * {@code attach} by {@code clearPx} along that ray. Native places the anchor
+     * in reference units without knowing how wide the drawn number is, so a
+     * label standing off a VERTICAL edge would otherwise reach back over the
+     * edge by half its width. The box's reach back along the ray is its support
+     * {@code (|dx| w + |dy| h) / 2}; for a straight edge the ray is square to
+     * the edge, so clearing {@code attach} clears the whole edge's line.
+     *
+     * <p>A label is only ever pushed AWAY from what it measures, never sideways
+     * and never back; with no honest direction (the anchor IS the attach point)
+     * it stands at the anchor.
+     */
+    static float[] standOffCentre(float anchorX, float anchorY, float attachX, float attachY,
+                                  float width, float height, float clearPx) {
+        final float dx = anchorX - attachX;
+        final float dy = anchorY - attachY;
+        final float distance = (float) Math.hypot(dx, dy);
+        if (!(distance > 0.5f) || !Float.isFinite(distance)) {
+            return new float[] {anchorX, anchorY};
+        }
+        final float ux = dx / distance;
+        final float uy = dy / distance;
+        final float support = 0.5f * (Math.abs(ux) * width + Math.abs(uy) * height);
+        final float stand = Math.max(distance, support + clearPx);
+        return new float[] {attachX + ux * stand, attachY + uy * stand};
+    }
+
+    /**
+     * Whether a box centred at {@code (cx, cy)} lies wholly on a viewport of
+     * {@code viewportWidth} x {@code viewportHeight}. A label that does not is
+     * HIDDEN rather than clamped in: a clamp moves it toward the middle of the
+     * view, which can stand it back over the very geometry it was pushed off.
+     */
+    static boolean boxInside(float cx, float cy, float width, float height, int viewportWidth,
+                             int viewportHeight) {
+        return viewportWidth > 0 && viewportHeight > 0
+                && cx - 0.5f * width >= 0.0f && cy - 0.5f * height >= 0.0f
+                && cx + 0.5f * width <= viewportWidth && cy + 0.5f * height <= viewportHeight;
     }
 
     /**

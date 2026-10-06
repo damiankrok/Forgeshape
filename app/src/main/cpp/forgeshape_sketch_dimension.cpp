@@ -502,6 +502,7 @@ void linear(SketchDimensionAnnotation* out, const SketchPoint& a, const SketchPo
     }
     const SketchPoint mid{(da.u + db.u) * 0.5, (da.v + db.v) * 0.5};
     out->label = add(mid, nu, nv, kSketchDimensionLabelClearUnits * 0.5 * unit);
+    out->attach = SketchPoint{(a.u + b.u) * 0.5, (a.v + b.v) * 0.5};
 }
 
 // An angle arc about `centre` from angle `from` sweeping `sweep` radians at
@@ -530,6 +531,7 @@ void angular(SketchDimensionAnnotation* out, const SketchPoint& centre, double f
     const double middle = from + sweep * 0.5;
     out->label = add(centre, std::cos(middle), std::sin(middle),
                      radius + kSketchDimensionLabelClearUnits * unit);
+    out->attach = add(centre, std::cos(middle), std::sin(middle), radius);
 }
 
 // A radial leader from `centre` through the curve point at `angle` (radius r),
@@ -547,6 +549,7 @@ void radial(SketchDimensionAnnotation* out, const SketchPoint& centre, double an
         arrow(&out->segments, start, -du, -dv, arrowSize);
     }
     out->label = add(centre, du, dv, r + (kSketchDimensionLabelClearUnits + 8.0) * unit);
+    out->attach = onCurve;
 }
 
 }  // namespace
@@ -624,6 +627,8 @@ bool buildSketchDimensionAnnotation(const CadSketch& sketch, const SketchDimensi
                 const double off = 2.0 * kSketchDimensionLabelClearUnits * unit;
                 built.label = SketchPoint{line.start.u + du * along + dv * off,
                                           line.start.v + dv * along - du * off};
+                // Off the LINE, square to it: the box clears the stroke.
+                built.attach = SketchPoint{line.start.u + du * along, line.start.v + dv * along};
             }
             break;
         }
@@ -680,6 +685,8 @@ bool buildSketchDimensionAnnotation(const CadSketch& sketch, const SketchDimensi
                 const double inside = std::max(
                         0.0, radius - (2.0 * kSketchDimensionLabelClearUnits + 6.0) * unit);
                 built.label = add(centre, std::cos(middle), std::sin(middle), inside);
+                // Inward from the arc: the box clears the curve it measures.
+                built.attach = add(centre, std::cos(middle), std::sin(middle), radius);
             } else {
                 const double ring = radius + kSketchDimensionOffsetUnits * unit;
                 for (double angle : {start, start + sweep}) {
@@ -711,6 +718,7 @@ bool buildSketchDimensionAnnotation(const CadSketch& sketch, const SketchDimensi
                 // joins the two edges and the label stands on it.
                 segment(&built.segments, midA, midB);
                 built.label = SketchPoint{(midA.u + midB.u) * 0.5, (midA.v + midB.v) * 0.5};
+                built.attach = built.label;
                 break;
             }
             // The vertex: where the two infinite lines meet.
@@ -734,7 +742,8 @@ bool buildSketchDimensionAnnotation(const CadSketch& sketch, const SketchDimensi
             return false;
         }
     }
-    if (!std::isfinite(built.label.u) || !std::isfinite(built.label.v)) {
+    if (!std::isfinite(built.label.u) || !std::isfinite(built.label.v)
+        || !std::isfinite(built.attach.u) || !std::isfinite(built.attach.v)) {
         return false;
     }
     *out = std::move(built);

@@ -5983,14 +5983,17 @@ Java_com_forgeshape_app_NativeViewport_sketchSetDimensionVisibility(JNIEnv*, jcl
     }
 }
 
-// The labels of every dimension shown now, stride SKETCH_LABEL_STRIDE (8):
+// The labels of every dimension shown now, stride SKETCH_LABEL_STRIDE (10):
 //   [0] id  [1] kind  [2] mode (0 Driving, 1 Reference)  [3] value (m or deg)
 //   [4] screen x  [5] screen y  [6] 1 when the anchor projects  [7] first entity
+//   [8] attach screen x  [9] attach screen y -- the point on the measured
+//   geometry the label stands off from (the anchor itself when it does not
+//   project), so the chrome can keep the label's whole touch box clear of it.
 // Placed from the SAME scale the overlay was built with this frame. Returns the
 // number of labels; writes as many as fit.
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchDimensionLabels(JNIEnv* env, jclass, jdoubleArray out) {
-    constexpr int kStride = 8;
+    constexpr int kStride = 10;
     std::vector<jdouble> values;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
@@ -6010,6 +6013,15 @@ Java_com_forgeshape_app_NativeViewport_sketchDimensionLabels(JNIEnv* env, jclass
             values.push_back(static_cast<double>(y));
             values.push_back(projects ? 1.0 : 0.0);
             values.push_back(d != nullptr ? static_cast<double>(d->first.entityId) : 0.0);
+            float ax = x;
+            float ay = y;
+            if (!s.sketchToScreen(g_camera.snapshot(), a.attach, g_camera.viewportWidth(),
+                                  g_camera.viewportHeight(), &ax, &ay)) {
+                ax = x;
+                ay = y;
+            }
+            values.push_back(static_cast<double>(ax));
+            values.push_back(static_cast<double>(ay));
         }
     }
     const jint count = static_cast<jint>(values.size() / kStride);

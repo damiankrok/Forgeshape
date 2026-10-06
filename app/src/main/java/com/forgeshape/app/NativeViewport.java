@@ -2468,7 +2468,7 @@ final class NativeViewport {
     static final int TAP_ACT_EXTEND = 2;
 
     /** Stride of {@link #sketchDimensionLabels}. */
-    static final int SKETCH_LABEL_STRIDE = 8;
+    static final int SKETCH_LABEL_STRIDE = 10;
     static final int SKETCH_LABEL_ID = 0;
     static final int SKETCH_LABEL_KIND = 1;
     static final int SKETCH_LABEL_MODE = 2;
@@ -2477,6 +2477,9 @@ final class NativeViewport {
     static final int SKETCH_LABEL_Y = 5;
     static final int SKETCH_LABEL_PROJECTS = 6;
     static final int SKETCH_LABEL_ENTITY = 7;
+    /** The point on the measured geometry the label stands off from (screen px). */
+    static final int SKETCH_LABEL_ATTACH_X = 8;
+    static final int SKETCH_LABEL_ATTACH_Y = 9;
     /** The most labels a refresh reads; the domain caps dimensions at 512. */
     static final int SKETCH_LABEL_MAX = 512;
 

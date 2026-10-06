@@ -34,14 +34,22 @@ import java.util.List;
  * label opens a value field — a Reference opens Delete alone, because its value
  * is measured and has nothing to drive.
  *
+ * <p><b>A label never stands on the stroke it measures.</b> Native's anchor is
+ * in reference units and does not know how wide the number is drawn, so each
+ * chip stands off the measured geometry along native's own direction just far
+ * enough that its whole touch box clears it
+ * ({@link SketchDraftingPresentation#standOffCentre}). The label owns taps on
+ * itself and never on the edge, circle or arc it dimensions.
+ *
  * <p><b>Overlapping labels are HIDDEN, never moved</b>: the selection's own
  * dimensions claim their box first, then Driving, then the older id
  * ({@link SketchDraftingPresentation#resolveVisible}). A label that does not
- * project is not drawn at a guessed point.
+ * project, or whose box does not lie wholly on the viewport, is not drawn at a
+ * guessed or clamped point either.
  *
  * <p>The container is not clickable and claims no touch of its own; each chip
- * is a 48 dp target and nothing else, so a tap beside a label still reaches the
- * sketch.
+ * is a 48 dp target (both ways) and nothing else, so a tap beside a label still
+ * reaches the sketch.
  *
  * <p><b>Holds no dimension.</b> Values, modes and anchors are re-read from the
  * session on every refresh.
@@ -67,6 +75,18 @@ final class SketchDimensionLabelsView extends FrameLayout {
     private final LinearLayout editor;
     private final EditText field;
     private final TextView apply;
+
+    /**
+     * The last refresh's layout, one row per native label, for verification:
+     * {id, priority, shown (1/0), why hidden (HIDDEN_*), left, top, right,
+     * bottom} with the box in viewport pixels. Re-written on every refresh.
+     */
+    static final int LAYOUT_STRIDE = 8;
+    static final int HIDDEN_NOT = 0;
+    static final int HIDDEN_DOES_NOT_PROJECT = 1;
+    static final int HIDDEN_OFF_VIEWPORT = 2;
+    static final int HIDDEN_COLLISION = 3;
+    private float[] layout = new float[0];
 
     /** The dimension the editor is open on, or 0. */
     private long editingId;
@@ -153,6 +173,8 @@ final class SketchDimensionLabelsView extends FrameLayout {
         while (pool.size() <= index) {
             final TextView chip = EditorControlStyles.chip(getContext(),
                     R.id.sketch_dimension_label_item, "");
+            // The 48 dp floor both ways: a short "0°" is still a whole target.
+            chip.setMinimumWidth(EditorControlStyles.dimen(getContext(), R.dimen.control_height));
             chip.setOnClickListener(v -> {
                 final Object tag = v.getTag(R.id.sketch_dimension_label_item);
                 if (tag instanceof double[]) {
@@ -180,6 +202,12 @@ final class SketchDimensionLabelsView extends FrameLayout {
         final LengthUnit unit = host.uiState().displayUnit();
         final Context context = getContext();
         final int floor = EditorControlStyles.dimen(context, R.dimen.control_height);
+        final float clearPx = SketchDraftingPresentation.LABEL_STROKE_CLEAR_DP
+                * context.getResources().getDisplayMetrics().density;
+        final int viewportWidth = anchorSpace.viewportWidth();
+        final int viewportHeight = anchorSpace.viewportHeight();
+        final int[] hiddenWhy = new int[count];
+        final int[] basePriority = new int[count];
         final float[] cx = new float[count];
         final float[] cy = new float[count];
         final float[] w = new float[count];
@@ -203,26 +231,36 @@ final class SketchDimensionLabelsView extends FrameLayout {
                             : R.string.sketch_dimension_driving_description,
                     context.getString(SketchDraftingPresentation.kindName(kind)), text));
             chip.setAlpha(reference ? 0.72f : 1.0f);
-            chip.setTag(R.id.sketch_dimension_label_item, new double[] {
-                    id, kind, reference ? 1.0 : 0.0, value,
-                    labels[o + NativeViewport.SKETCH_LABEL_X], labels[o + NativeViewport.SKETCH_LABEL_Y]});
             chip.setTag("dimension:" + id);
             projects[i] = labels[o + NativeViewport.SKETCH_LABEL_PROJECTS] != 0.0;
-            cx[i] = (float) labels[o + NativeViewport.SKETCH_LABEL_X];
-            cy[i] = (float) labels[o + NativeViewport.SKETCH_LABEL_Y];
             anchorSpace.measureUnderParent(chip);
             w[i] = SketchDraftingPresentation.touchExtent(chip.getMeasuredWidth(), floor);
             h[i] = SketchDraftingPresentation.touchExtent(chip.getMeasuredHeight(), floor);
+            final float[] centre = SketchDraftingPresentation.standOffCentre(
+                    (float) labels[o + NativeViewport.SKETCH_LABEL_X],
+                    (float) labels[o + NativeViewport.SKETCH_LABEL_Y],
+                    (float) labels[o + NativeViewport.SKETCH_LABEL_ATTACH_X],
+                    (float) labels[o + NativeViewport.SKETCH_LABEL_ATTACH_Y], w[i], h[i], clearPx);
+            cx[i] = centre[0];
+            cy[i] = centre[1];
+            chip.setTag(R.id.sketch_dimension_label_item, new double[] {
+                    id, kind, reference ? 1.0 : 0.0, value, cx[i], cy[i]});
             boolean ofSelection = false;
             for (int s = 0; s < selected; s++) {
                 ofSelection = ofSelection || selection[s] == entity;
             }
             priority[i] = SketchDraftingPresentation.priority(ofSelection, !reference, id);
+            basePriority[i] = priority[i];
             if (!projects[i]) {
+                hiddenWhy[i] = HIDDEN_DOES_NOT_PROJECT;
+            } else if (!SketchDraftingPresentation.boxInside(cx[i], cy[i], w[i], h[i], viewportWidth,
+                    viewportHeight)) {
+                hiddenWhy[i] = HIDDEN_OFF_VIEWPORT;
+            }
+            if (hiddenWhy[i] != HIDDEN_NOT) {
                 // A label with nowhere honest to stand claims no box either.
                 priority[i] = Integer.MIN_VALUE;
-                w[i] = 0.0f;
-                h[i] = 0.0f;
+                projects[i] = false;
             }
             if (id == editingId) {
                 editingStillShown = projects[i];
@@ -230,7 +268,15 @@ final class SketchDimensionLabelsView extends FrameLayout {
                 editingY = cy[i];
             }
         }
-        final boolean[] visible = SketchDraftingPresentation.resolveVisible(cx, cy, w, h, priority);
+        // Only labels that stand honestly take part: a hidden one claims no box.
+        final float[] rw = new float[count];
+        final float[] rh = new float[count];
+        for (int i = 0; i < count; i++) {
+            rw[i] = projects[i] ? w[i] : 0.0f;
+            rh[i] = projects[i] ? h[i] : 0.0f;
+        }
+        final boolean[] visible = SketchDraftingPresentation.resolveVisible(cx, cy, rw, rh, priority);
+        final float[] rows = new float[count * LAYOUT_STRIDE];
         for (int i = 0; i < pool.size(); i++) {
             final TextView chip = pool.get(i);
             final boolean show = i < count && projects[i] && visible[i];
@@ -239,9 +285,24 @@ final class SketchDimensionLabelsView extends FrameLayout {
                     : 0L;
             chip.setVisibility(show && id != editingId ? VISIBLE : GONE);
             if (show) {
-                anchorSpace.measureAndPlace(chip, cx[i], cy[i], 1.0f);
+                // Centred with NO clamp: boxInside proved the whole box fits.
+                anchorSpace.placeCentred(chip, cx[i], cy[i], chip.getMeasuredWidth(),
+                        chip.getMeasuredHeight());
+            }
+            if (i < count) {
+                final int r = i * LAYOUT_STRIDE;
+                rows[r] = id;
+                rows[r + 1] = basePriority[i];
+                rows[r + 2] = show ? 1.0f : 0.0f;
+                rows[r + 3] = show ? HIDDEN_NOT
+                        : hiddenWhy[i] != HIDDEN_NOT ? hiddenWhy[i] : HIDDEN_COLLISION;
+                rows[r + 4] = cx[i] - 0.5f * w[i];
+                rows[r + 5] = cy[i] - 0.5f * h[i];
+                rows[r + 6] = cx[i] + 0.5f * w[i];
+                rows[r + 7] = cy[i] + 0.5f * h[i];
             }
         }
+        layout = rows;
         if (editingId != 0) {
             if (!editingStillShown) {
                 closeEditor();
@@ -249,6 +310,11 @@ final class SketchDimensionLabelsView extends FrameLayout {
                 anchorSpace.measureAndPlace(editor, editingX, editingY, 1.0f);
             }
         }
+    }
+
+    /** The last refresh's layout rows ({@link #LAYOUT_STRIDE}), for verification. */
+    float[] labelLayout() {
+        return layout.clone();
     }
 
     /** The number of labels currently drawn, for verification. */
@@ -320,6 +386,7 @@ final class SketchDimensionLabelsView extends FrameLayout {
     }
 
     private void close() {
+        layout = new float[0];
         closeEditor();
         for (TextView chip : pool) {
             chip.setVisibility(GONE);

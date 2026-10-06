@@ -69,8 +69,9 @@ public final class SketchDraftingPresentationTest {
             assertTrue(shown[SketchDraftingPresentation.ACTION_CONSTRUCTION]);
             assertTrue(shown[SketchDraftingPresentation.ACTION_MIRROR]);
             assertTrue(shown[SketchDraftingPresentation.ACTION_DELETE]);
-            assertFalse("Trim acts on what the finger touches, not the selection",
+            assertTrue("Trim acts on what the finger touches, so a selection never withdraws it",
                     shown[SketchDraftingPresentation.ACTION_TRIM]);
+            assertTrue(shown[SketchDraftingPresentation.ACTION_EXTEND]);
         }
         final boolean[] spline = SketchDraftingPresentation.paletteActions(EDITING, 1,
                 NativeViewport.SKETCH_ENTITY_KIND_SPLINE);
@@ -81,7 +82,7 @@ public final class SketchDraftingPresentationTest {
     }
 
     @Test
-    public void severalEntitiesOfferOnlyActsOnTheWholeSelection() {
+    public void severalEntitiesOfferActsOnTheWholeSelectionAndTheTapModes() {
         final boolean[] shown = SketchDraftingPresentation.paletteActions(EDITING, 3, -1);
         assertTrue(shown[SketchDraftingPresentation.ACTION_SELECT_MULTIPLE]);
         assertTrue(shown[SketchDraftingPresentation.ACTION_CONSTRUCTION]);
@@ -89,8 +90,9 @@ public final class SketchDraftingPresentationTest {
         assertTrue(shown[SketchDraftingPresentation.ACTION_DELETE]);
         assertFalse(shown[SketchDraftingPresentation.ACTION_DIMENSION]);
         assertFalse(shown[SketchDraftingPresentation.ACTION_OFFSET]);
-        assertFalse(shown[SketchDraftingPresentation.ACTION_TRIM]);
-        assertFalse(shown[SketchDraftingPresentation.ACTION_EXTEND]);
+        assertTrue("the tap modes do not depend on the selection",
+                shown[SketchDraftingPresentation.ACTION_TRIM]);
+        assertTrue(shown[SketchDraftingPresentation.ACTION_EXTEND]);
     }
 
     @Test
@@ -234,6 +236,49 @@ public final class SketchDraftingPresentationTest {
         for (boolean visible : SketchDraftingPresentation.resolveVisible(x, y, w, h, p)) {
             assertTrue(visible);
         }
+    }
+
+    @Test
+    public void aLabelStandsOffTheStrokeItMeasuresByItsWholeBox() {
+        final float clear = 8f * 2.625f;
+        final float w = 210f;  // an 80 dp chip at xxhdpi
+        final float h = 126f;  // the 48 dp floor
+        // Off a VERTICAL edge (attach on the edge, anchor 41 dp to its right):
+        // the half WIDTH reaches back, so the box is pushed until its left side
+        // clears the edge by the stated gap.
+        final float[] vertical = SketchDraftingPresentation.standOffCentre(
+                500f + 107.6f, 1000f, 500f, 1000f, w, h, clear);
+        assertEquals(1000f, vertical[1], 1e-3f);
+        assertEquals("the box's near side is the clearance off the edge",
+                500f + clear, vertical[0] - 0.5f * w, 1e-3f);
+        // Off a HORIZONTAL edge the half HEIGHT reaches back, already clear at
+        // native's 41 dp: the anchor is kept, never pulled in.
+        final float[] horizontal = SketchDraftingPresentation.standOffCentre(
+                500f, 1000f - 107.6f, 500f, 1000f, w, h, clear);
+        assertEquals(500f, horizontal[0], 1e-3f);
+        assertEquals(1000f - 107.6f, horizontal[1], 1e-3f);
+        // Diagonal: the box's corner support along the ray clears the attach.
+        final float d = 107.6f / (float) Math.sqrt(2.0);
+        final float[] diagonal = SketchDraftingPresentation.standOffCentre(
+                500f + d, 1000f - d, 500f, 1000f, w, h, clear);
+        final float ux = (float) Math.sqrt(0.5);
+        final float along = (diagonal[0] - 500f) * ux - (diagonal[1] - 1000f) * ux;
+        assertEquals("pushed only along the ray", diagonal[0] - 500f, -(diagonal[1] - 1000f), 1e-3f);
+        assertEquals(0.5f * (ux * w + ux * h) + clear, along, 1e-2f);
+        // No honest direction: the anchor itself.
+        assertArrayEquals(new float[] {40f, 50f},
+                SketchDraftingPresentation.standOffCentre(40f, 50f, 40f, 50f, w, h, clear), 0f);
+    }
+
+    @Test
+    public void aLabelThatWouldLeaveTheViewportIsHiddenNotClamped() {
+        assertTrue(SketchDraftingPresentation.boxInside(200f, 200f, 210f, 126f, 1080, 2400));
+        assertFalse("the left edge", SketchDraftingPresentation.boxInside(100f, 200f, 210f, 126f, 1080, 2400));
+        assertFalse("the top edge", SketchDraftingPresentation.boxInside(200f, 60f, 210f, 126f, 1080, 2400));
+        assertFalse("the right edge", SketchDraftingPresentation.boxInside(1000f, 200f, 210f, 126f, 1080, 2400));
+        assertFalse("the bottom edge", SketchDraftingPresentation.boxInside(200f, 2350f, 210f, 126f, 1080, 2400));
+        assertTrue("exactly touching fits", SketchDraftingPresentation.boxInside(105f, 63f, 210f, 126f, 1080, 2400));
+        assertFalse("no viewport yet", SketchDraftingPresentation.boxInside(200f, 200f, 210f, 126f, 0, 0));
     }
 
     @Test
