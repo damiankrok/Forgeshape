@@ -2290,6 +2290,24 @@ final class NativeViewport {
     static final int CAD_REVOLVE_PAYLOAD_MISMATCH = 71;
     static final int CAD_REVOLVE_LATER_FEATURE_UNSUPPORTED = 72;
     static final int CAD_REVOLVE_NEEDS_AXIS = 73;
+    // `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`, appended in the native order.
+    static final int CAD_SKETCH_DIMENSION_INVALID = 74;
+    static final int CAD_SKETCH_DIMENSION_CONFLICT = 75;
+    static final int CAD_SKETCH_DIMENSION_DEPENDENCY = 76;
+    static final int CAD_SKETCH_DIMENSION_LOCKED = 77;
+    static final int CAD_SKETCH_DIMENSION_READ_ONLY = 78;
+    static final int CAD_SKETCH_DIMENSION_VALUE_INVALID = 79;
+    static final int CAD_TRIM_SPLINE_UNSUPPORTED = 80;
+    static final int CAD_DRAFTING_NO_TARGET = 81;
+    static final int CAD_EXTEND_UNSUPPORTED = 82;
+    static final int CAD_EXTEND_NO_TARGET = 83;
+    static final int CAD_EXTEND_AMBIGUOUS = 84;
+    static final int CAD_OFFSET_SPLINE_UNSUPPORTED = 85;
+    static final int CAD_OFFSET_INVALID = 86;
+    static final int CAD_OFFSET_MITER_LIMIT = 87;
+    static final int CAD_OFFSET_SELF_INTERSECTING = 88;
+    static final int CAD_MIRROR_AXIS_INVALID = 89;
+    static final int CAD_MIRROR_NOTHING_SELECTED = 90;
 
     /**
      * What an extrusion does to material (`CAD-VERTICAL-SLICE-R1`), in the
@@ -2364,6 +2382,180 @@ final class NativeViewport {
     static final int SKETCH_VIEW_QUARTER_TURNS = 3;
     static final int SKETCH_VIEW_FACE_SUPPORTED = 4;
     static final int SKETCH_VIEW_PLANE_SWITCHABLE = 5;
+
+    // -----------------------------------------------------------------------
+    // Sketch drafting (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`)
+    // -----------------------------------------------------------------------
+    //
+    // The selection set, the Construction role, the modify modes and the
+    // retained dimensions all live in the ONE native session. Java reads them on
+    // every refresh and holds none of them.
+
+    /** What the last snap landed on: slot {@link #SKETCH_LAST_SNAP}. */
+    static final int SNAP_NONE = 0;
+    static final int SNAP_GRID = 1;
+    static final int SNAP_ENDPOINT = 2;
+    static final int SNAP_INTERSECTION = 3;
+    static final int SNAP_MIDPOINT = 4;
+    static final int SNAP_CENTER = 5;
+    static final int SNAP_ORIGIN = 6;
+    static final int SNAP_HORIZONTAL_GUIDE = 7;
+    static final int SNAP_VERTICAL_GUIDE = 8;
+
+    /** The modify modes, as the native SketchModifyMode index. */
+    static final int MODIFY_NONE = 0;
+    static final int MODIFY_DIMENSION = 1;
+    static final int MODIFY_TRIM = 2;
+    static final int MODIFY_EXTEND = 3;
+    static final int MODIFY_OFFSET = 4;
+    static final int MODIFY_MIRROR = 5;
+
+    /** Dimension kinds, as the native SketchDimensionKind index. */
+    static final int DIM_LINE_LENGTH = 0;
+    static final int DIM_LINE_ANGLE = 1;
+    static final int DIM_LINE_HORIZONTAL = 2;
+    static final int DIM_LINE_VERTICAL = 3;
+    static final int DIM_RECTANGLE_WIDTH = 4;
+    static final int DIM_RECTANGLE_HEIGHT = 5;
+    static final int DIM_CIRCLE_RADIUS = 6;
+    static final int DIM_CIRCLE_DIAMETER = 7;
+    static final int DIM_EDGE_LENGTH = 8;
+    static final int DIM_ARC_RADIUS = 9;
+    static final int DIM_ARC_SWEEP = 10;
+    static final int DIM_EDGE_ANGLE = 11;
+    static final int DIM_KIND_COUNT = 12;
+    /** Dimension modes as {@link #sketchAddDimension} takes them. */
+    static final int DIM_MODE_DRIVING = 0;
+    static final int DIM_MODE_REFERENCE = 1;
+
+    /** Dimension visibility, as the native SketchDimensionVisibility index. */
+    static final int DIM_VISIBILITY_SELECTED = 0;
+    static final int DIM_VISIBILITY_ALL = 1;
+    static final int DIM_VISIBILITY_OFF = 2;
+
+    /** Slots of {@link #sketchDraftingState}. */
+    static final int SKETCH_DRAFT_SIZE = 25;
+    static final int SKETCH_DRAFT_MODE = 0;
+    static final int SKETCH_DRAFT_SELECTION_COUNT = 1;
+    static final int SKETCH_DRAFT_MULTI_SELECT = 2;
+    static final int SKETCH_DRAFT_CONSTRUCTION_TARGET = 3;
+    static final int SKETCH_DRAFT_DIM_TARGET_ENTITY = 4;
+    static final int SKETCH_DRAFT_DIM_TARGET_EDGE = 5;
+    static final int SKETCH_DRAFT_DIM_AWAIT_SECOND = 6;
+    static final int SKETCH_DRAFT_OFFSET_SOURCE = 7;
+    static final int SKETCH_DRAFT_OFFSET_DISTANCE = 8;
+    static final int SKETCH_DRAFT_OFFSET_STATUS = 9;
+    static final int SKETCH_DRAFT_MIRROR_AXIS_SET = 10;
+    static final int SKETCH_DRAFT_MIRROR_AXIS_ENTITY = 11;
+    static final int SKETCH_DRAFT_MIRROR_AXIS_EDGE = 12;
+    static final int SKETCH_DRAFT_DIM_VISIBILITY = 13;
+    static final int SKETCH_DRAFT_DIM_COUNT = 14;
+    static final int SKETCH_DRAFT_LAST_DELETED_DIMS = 15;
+    static final int SKETCH_DRAFT_TRIM_CONVERTED_RECTANGLE = 16;
+    static final int SKETCH_DRAFT_LAST_SNAP = 17;
+    static final int SKETCH_DRAFT_GUIDE_H = 18;
+    static final int SKETCH_DRAFT_GUIDE_V = 19;
+    static final int SKETCH_DRAFT_CONSTRUCTION_COUNT = 20;
+    static final int SKETCH_DRAFT_SINGLE_ROLE = 21;
+    /** Advances on every Trim or Extend that landed, so each is reported once. */
+    static final int SKETCH_DRAFT_TAP_ACT_SERIAL = 22;
+    /** The single selection's SKETCH_ENTITY_KIND_*, or -1. */
+    static final int SKETCH_DRAFT_SINGLE_KIND = 23;
+    /** Which tap act last landed: {@link #TAP_ACT_TRIM} or {@link #TAP_ACT_EXTEND}. */
+    static final int SKETCH_DRAFT_TAP_ACT = 24;
+    static final int TAP_ACT_NONE = 0;
+    static final int TAP_ACT_TRIM = 1;
+    static final int TAP_ACT_EXTEND = 2;
+
+    /** Stride of {@link #sketchDimensionLabels}. */
+    static final int SKETCH_LABEL_STRIDE = 8;
+    static final int SKETCH_LABEL_ID = 0;
+    static final int SKETCH_LABEL_KIND = 1;
+    static final int SKETCH_LABEL_MODE = 2;
+    static final int SKETCH_LABEL_VALUE = 3;
+    static final int SKETCH_LABEL_X = 4;
+    static final int SKETCH_LABEL_Y = 5;
+    static final int SKETCH_LABEL_PROJECTS = 6;
+    static final int SKETCH_LABEL_ENTITY = 7;
+    /** The most labels a refresh reads; the domain caps dimensions at 512. */
+    static final int SKETCH_LABEL_MAX = 512;
+
+    /** Stride of {@link #sketchDimensions}. */
+    static final int SKETCH_DIM_STRIDE = 8;
+    static final int SKETCH_DIM_ID = 0;
+    static final int SKETCH_DIM_KIND = 1;
+    static final int SKETCH_DIM_MODE = 2;
+    static final int SKETCH_DIM_FIRST_ENTITY = 3;
+    static final int SKETCH_DIM_FIRST_EDGE = 4;
+    static final int SKETCH_DIM_SECOND_ENTITY = 5;
+    static final int SKETCH_DIM_SECOND_EDGE = 6;
+    static final int SKETCH_DIM_VALUE = 7;
+
+    /** Size of {@link #sketchEntityValues}: the entity slots plus role and a point. */
+    static final int SKETCH_ENTITY_VALUES_SIZE = 9;
+    static final int SKETCH_ENTITY_ROLE = 6;
+    static final int SKETCH_ENTITY_EXTRA_U = 7;
+    static final int SKETCH_ENTITY_EXTRA_V = 8;
+
+    /** The selection, in the order it was made. Returns the count. */
+    static native int sketchSelection(long[] out);
+
+    /** Whether a Select tap adds to and removes from the selection. */
+    static native void sketchSetMultiSelect(boolean on);
+
+    /** Adds the entity to the selection or removes it. */
+    static native boolean sketchToggleSelectEntity(long entityId);
+
+    /** Make Construction / Make Regular for the whole selection, as one act. */
+    static native int sketchToggleConstruction();
+
+    /** Enters or leaves a modify mode ({@code MODIFY_*}). */
+    static native int sketchSetModifyMode(int mode);
+
+    /** The drafting state; {@link #SKETCH_DRAFT_SIZE} slots. */
+    static native void sketchDraftingState(double[] out);
+
+    /** The dimension kinds the Dimension mode's target supports. */
+    static native int sketchDimensionTargetKinds(int[] out);
+
+    /** Chooses the Dimension mode's target edge directly (the panel's path). */
+    static native int sketchSetDimensionTarget(long entityId, int edge);
+
+    /** The next straight-edge tap becomes an angle's second edge. */
+    static native int sketchBeginDimensionAngle();
+
+    /** Adds a dimension of {@code kind} ({@code DIM_*}) and {@code mode} on the target. */
+    static native int sketchAddDimension(int kind, int mode);
+
+    /** Removes a dimension; the geometry is untouched. */
+    static native int sketchRemoveDimension(long dimensionId);
+
+    /** THE Driving edit: metres for a length, degrees for an angle. */
+    static native int sketchApplyDimensionValue(long dimensionId, double value);
+
+    /** Selected / All / Off ({@code DIM_VISIBILITY_*}). */
+    static native void sketchSetDimensionVisibility(int visibility);
+
+    /** The shown labels, stride {@link #SKETCH_LABEL_STRIDE}. Returns the count. */
+    static native int sketchDimensionLabels(double[] out);
+
+    /** Every retained dimension, stride {@link #SKETCH_DIM_STRIDE}. Returns the count. */
+    static native int sketchDimensions(double[] out);
+
+    /** Every entity id in stored order. Returns the count. */
+    static native int sketchEntityIds(long[] out);
+
+    /** One entity by id; {@link #SKETCH_ENTITY_VALUES_SIZE} slots. */
+    static native boolean sketchEntityValues(long entityId, double[] out);
+
+    /** The Offset mode's signed distance, metres, as typed. */
+    static native int sketchSetOffsetDistance(double meters);
+
+    /** Creates the offset previewed now; the mode ends. */
+    static native int sketchConfirmOffset();
+
+    /** Creates the mirror previewed now; the mode ends. */
+    static native int sketchConfirmMirror();
 
     /** Slots of {@link #sketchLineDimension}. */
     static final int SKETCH_DIMENSION_SIZE = 4;

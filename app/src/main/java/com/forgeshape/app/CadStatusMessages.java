@@ -101,9 +101,62 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_cad_revolve_zero_radius);
             case NativeViewport.CAD_REVOLVE_COMPONENTS_OVERLAP:
                 return context.getString(R.string.status_cad_revolve_components_overlap);
+            // `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`: dimensions and the modify
+            // tools. Each says what to change, never the arithmetic.
+            case NativeViewport.CAD_SKETCH_DIMENSION_INVALID:
+                return context.getString(R.string.status_sketch_dimension_invalid);
+            case NativeViewport.CAD_SKETCH_DIMENSION_CONFLICT:
+                return context.getString(R.string.status_sketch_dimension_conflict);
+            case NativeViewport.CAD_SKETCH_DIMENSION_DEPENDENCY:
+                return context.getString(R.string.status_sketch_dimension_dependency);
+            case NativeViewport.CAD_SKETCH_DIMENSION_LOCKED:
+                return context.getString(R.string.status_sketch_dimension_locked);
+            case NativeViewport.CAD_SKETCH_DIMENSION_READ_ONLY:
+                return context.getString(R.string.status_sketch_dimension_read_only);
+            case NativeViewport.CAD_SKETCH_DIMENSION_VALUE_INVALID:
+                return context.getString(R.string.status_sketch_dimension_value_invalid);
+            case NativeViewport.CAD_TRIM_SPLINE_UNSUPPORTED:
+                return context.getString(R.string.status_sketch_trim_spline);
+            case NativeViewport.CAD_DRAFTING_NO_TARGET:
+                return context.getString(R.string.status_sketch_no_target);
+            case NativeViewport.CAD_EXTEND_UNSUPPORTED:
+                return context.getString(R.string.status_sketch_extend_unsupported);
+            case NativeViewport.CAD_EXTEND_NO_TARGET:
+                return context.getString(R.string.status_sketch_extend_no_target);
+            case NativeViewport.CAD_EXTEND_AMBIGUOUS:
+                return context.getString(R.string.status_sketch_extend_ambiguous);
+            case NativeViewport.CAD_OFFSET_SPLINE_UNSUPPORTED:
+                return context.getString(R.string.status_sketch_offset_spline);
+            case NativeViewport.CAD_OFFSET_INVALID:
+                return context.getString(R.string.status_sketch_offset_invalid);
+            case NativeViewport.CAD_OFFSET_MITER_LIMIT:
+                return context.getString(R.string.status_sketch_offset_miter);
+            case NativeViewport.CAD_OFFSET_SELF_INTERSECTING:
+                return context.getString(R.string.status_sketch_offset_self_intersecting);
+            case NativeViewport.CAD_MIRROR_AXIS_INVALID:
+                return context.getString(R.string.status_sketch_mirror_axis_invalid);
+            case NativeViewport.CAD_MIRROR_NOTHING_SELECTED:
+                return context.getString(R.string.status_sketch_mirror_nothing);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));
         }
+    }
+
+    /**
+     * A Delete refusal: a dimension that names a deleted AND a kept entity is
+     * the one refusal whose sentence differs from Trim's.
+     */
+    static String describeDelete(Context context, int code) {
+        return code == NativeViewport.CAD_SKETCH_DIMENSION_DEPENDENCY
+                ? context.getString(R.string.status_sketch_delete_dependency)
+                : describe(context, code);
+    }
+
+    /** What a landed sketch Delete says: the dimensions it took, when it took any. */
+    static String deleted(Context context, int removedDimensions) {
+        return removedDimensions > 0
+                ? context.getString(R.string.status_sketch_deleted_dimensions, removedDimensions)
+                : context.getString(R.string.status_sketch_entity_deleted);
     }
 }

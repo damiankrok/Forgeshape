@@ -71,6 +71,8 @@ final class EditorWorkspaceView extends FrameLayout
         SketchEditorView.OnSketchAction,
         SketchOrientationNavigatorView.OnOrientationAction,
         SketchDimensionLabelView.OnDimensionAction,
+        SketchModifyView.OnModifyAction,
+        SketchDimensionLabelsView.OnDimensionLabelAction,
         CadExtrudeCanvasView.OnCanvasExtrudeAction,
         CadRevolveAngleLabelView.OnRevolveAngleAction,
         BodyDimensionLabelsView.OnDimensionAction,
@@ -352,6 +354,13 @@ final class EditorWorkspaceView extends FrameLayout
     private final SketchOrientationNavigatorView sketchNavigator;
     private final SketchDimensionLabelView sketchDimension;
     /**
+     * The sketch actions entry under the navigator and the persistent
+     * dimension labels (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`). Drawing-only,
+     * like the two above, and stateless: both re-read native on every refresh.
+     */
+    private final SketchModifyView sketchModify;
+    private final SketchDimensionLabelsView sketchDimensionLabels;
+    /**
      * The canvas extrude cluster and the retained-sketch chip (`CAD-UX-S1`).
      *
      * <p>Unlike the two surfaces above it is NOT a sketch-only control: it
@@ -388,6 +397,10 @@ final class EditorWorkspaceView extends FrameLayout
     /** The last sketch refusal the status line reported, so a gesture that
      *  repeats the same refusal does not repeat the sentence. */
     private int lastReportedSketchStatus = NativeViewport.CAD_OK;
+    /** The drafting state, reused; and what of it was last reported. */
+    private final double[] nativeDraft = new double[NativeViewport.SKETCH_DRAFT_SIZE];
+    private long lastReportedTapAct;
+    private int lastReportedSelectionCount;
 
     /** Reused across reads; native fills it with the authoritative state. */
     private final double[] nativeSculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
@@ -817,6 +830,19 @@ final class EditorWorkspaceView extends FrameLayout
                 SketchOrientationNavigatorView.anchoredParams(context));
         sketchDimension = new SketchDimensionLabelView(context, this, anchorSpace, this);
         overlayRoot.addView(sketchDimension, SketchDimensionLabelView.anchoredParams());
+        // The persistent dimension labels fill the overlay (they stand wherever
+        // the annotations land) and are not clickable themselves, so a touch
+        // between labels reaches the sketch. Added BEFORE the Modify column so
+        // the palette is never under a label.
+        sketchDimensionLabels = new SketchDimensionLabelsView(context, this, anchorSpace, this);
+        overlayRoot.addView(sketchDimensionLabels, SketchDimensionLabelsView.anchoredParams());
+        // The sketch actions entry stands directly UNDER the orientation
+        // navigator, in the same trailing column: its top follows the
+        // navigator's bottom whenever the navigator is laid out again.
+        sketchModify = new SketchModifyView(context, this, this);
+        overlayRoot.addView(sketchModify, SketchOrientationNavigatorView.anchoredParams(context));
+        sketchNavigator.addOnLayoutChangeListener(
+                (v, l, t, r, b, ol, ot, or, ob) -> placeSketchModifyUnderNavigator());
         cadExtrudeCanvas = new CadExtrudeCanvasView(context, this, anchorSpace, this);
         overlayRoot.addView(cadExtrudeCanvas, CadExtrudeCanvasView.anchoredParams());
         cadRevolveAngle = new CadRevolveAngleLabelView(context, this, anchorSpace, this);
@@ -3302,6 +3328,9 @@ final class EditorWorkspaceView extends FrameLayout
                     (int) nativeSketch[NativeViewport.SKETCH_STATE]);
         }
         sketchNavigator.setVisibility(drawing ? VISIBLE : GONE);
+        // Both decide for themselves from native (drawn only while Editing).
+        sketchModify.refreshFromNative();
+        sketchDimensionLabels.refreshFromNative();
         if (drawing) {
             sketchNavigator.refreshFromNative();
             // The same state answers the Line dimension (SketchChromePolicy):
@@ -3614,8 +3643,245 @@ final class EditorWorkspaceView extends FrameLayout
         final int last = (int) nativeSketch[NativeViewport.SKETCH_LAST_STATUS];
         if (last != NativeViewport.CAD_OK && last != lastReportedSketchStatus) {
             showStatus(CadStatusMessages.describe(getContext(), last), R.attr.fsTextError);
+        } else if (last == NativeViewport.CAD_OK) {
+            reportDraftingGesture();
         }
         lastReportedSketchStatus = last;
+    }
+
+    /**
+     * Reports a drafting act a sketch GESTURE landed (`CAD-SKETCH-DRAFTING-
+     * TOOLKIT-E2E-R1`): a Trim or an Extend once each, a multi-selection's
+     * count, and the snap a placement landed on (announced for accessibility;
+     * the marker itself is drawn below JNI). Verdicts only — nothing here
+     * repeats what the chrome already shows.
+     */
+    private void reportDraftingGesture() {
+        final Context context = getContext();
+        NativeViewport.sketchDraftingState(nativeDraft);
+        final long serial = (long) nativeDraft[NativeViewport.SKETCH_DRAFT_TAP_ACT_SERIAL];
+        final int selection = (int) nativeDraft[NativeViewport.SKETCH_DRAFT_SELECTION_COUNT];
+        if (serial != lastReportedTapAct) {
+            lastReportedTapAct = serial;
+            lastReportedSelectionCount = selection;
+            final int act = (int) nativeDraft[NativeViewport.SKETCH_DRAFT_TAP_ACT];
+            if (act == NativeViewport.TAP_ACT_TRIM) {
+                showStatus(context.getString(
+                        nativeDraft[NativeViewport.SKETCH_DRAFT_TRIM_CONVERTED_RECTANGLE] != 0.0
+                                ? R.string.status_sketch_trim_rectangle
+                                : R.string.status_sketch_trimmed), R.attr.fsTextSuccess);
+            } else if (act == NativeViewport.TAP_ACT_EXTEND) {
+                showStatus(context.getString(R.string.status_sketch_extended), R.attr.fsTextSuccess);
+            }
+            noteProjectMaybeDirty();
+            return;
+        }
+        if (selection != lastReportedSelectionCount) {
+            lastReportedSelectionCount = selection;
+            if (selection > 1) {
+                showStatus(context.getString(R.string.status_sketch_selection_count, selection),
+                        R.attr.fsTextSecondary);
+            }
+        }
+        final int snap = SketchDraftingPresentation.snapDescription(
+                (int) nativeDraft[NativeViewport.SKETCH_DRAFT_LAST_SNAP]);
+        if (snap != 0 && (int) nativeDraft[NativeViewport.SKETCH_DRAFT_LAST_SNAP]
+                != NativeViewport.SNAP_GRID) {
+            announceForAccessibility(context.getString(snap));
+        }
+    }
+
+    /** Keeps the sketch actions column directly under the orientation navigator. */
+    private void placeSketchModifyUnderNavigator() {
+        final FrameLayout.LayoutParams params =
+                (FrameLayout.LayoutParams) sketchModify.getLayoutParams();
+        if (params == null) {
+            return;
+        }
+        final int top = sketchNavigator.getBottom() - overlayRoot.getPaddingTop()
+                + EditorControlStyles.dimen(getContext(), R.dimen.row_gap);
+        if (sketchNavigator.getVisibility() == VISIBLE && params.topMargin != top) {
+            params.topMargin = top;
+            sketchModify.setLayoutParams(params);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Sketch drafting (CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1)
+    // -----------------------------------------------------------------------
+
+    /** Re-reads everything after a drafting act that changed native state. */
+    private void afterDraftingAct() {
+        syncFromNative();
+        noteProjectMaybeDirty();
+    }
+
+    @Override
+    public void onSketchModifyAction(int action) {
+        final Context context = getContext();
+        switch (action) {
+            case SketchDraftingPresentation.ACTION_DIMENSION:
+                enterModifyMode(NativeViewport.MODIFY_DIMENSION);
+                return;
+            case SketchDraftingPresentation.ACTION_TRIM:
+                enterModifyMode(NativeViewport.MODIFY_TRIM);
+                return;
+            case SketchDraftingPresentation.ACTION_EXTEND:
+                enterModifyMode(NativeViewport.MODIFY_EXTEND);
+                return;
+            case SketchDraftingPresentation.ACTION_OFFSET:
+                enterModifyMode(NativeViewport.MODIFY_OFFSET);
+                return;
+            case SketchDraftingPresentation.ACTION_MIRROR:
+                enterModifyMode(NativeViewport.MODIFY_MIRROR);
+                return;
+            case SketchDraftingPresentation.ACTION_CONSTRUCTION: {
+                NativeViewport.sketchDraftingState(nativeDraft);
+                final boolean toConstruction =
+                        nativeDraft[NativeViewport.SKETCH_DRAFT_CONSTRUCTION_TARGET] != 0.0;
+                final int status = NativeViewport.sketchToggleConstruction();
+                if (status != NativeViewport.CAD_OK) {
+                    showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+                    sketchModify.refreshFromNative();
+                    return;
+                }
+                afterDraftingAct();
+                showStatus(context.getString(toConstruction
+                                ? R.string.status_sketch_construction_on
+                                : R.string.status_sketch_construction_off),
+                        R.attr.fsTextSecondary);
+                return;
+            }
+            case SketchDraftingPresentation.ACTION_DELETE: {
+                final int status = NativeViewport.sketchDeleteSelected();
+                if (status != NativeViewport.CAD_OK) {
+                    showStatus(CadStatusMessages.describeDelete(context, status),
+                            R.attr.fsTextError);
+                    sketchModify.refreshFromNative();
+                    return;
+                }
+                NativeViewport.sketchDraftingState(nativeDraft);
+                afterDraftingAct();
+                showStatus(CadStatusMessages.deleted(context,
+                                (int) nativeDraft[NativeViewport.SKETCH_DRAFT_LAST_DELETED_DIMS]),
+                        R.attr.fsTextSecondary);
+                return;
+            }
+            default:
+                sketchModify.refreshFromNative();
+        }
+    }
+
+    private void enterModifyMode(int mode) {
+        final int status = NativeViewport.sketchSetModifyMode(mode);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+        }
+        syncFromNative();
+    }
+
+    @Override
+    public void onSketchModifyModeEnd(boolean confirm) {
+        final Context context = getContext();
+        NativeViewport.sketchDraftingState(nativeDraft);
+        final int mode = (int) nativeDraft[NativeViewport.SKETCH_DRAFT_MODE];
+        if (confirm && mode == NativeViewport.MODIFY_OFFSET) {
+            final double distance = nativeDraft[NativeViewport.SKETCH_DRAFT_OFFSET_DISTANCE];
+            final int status = NativeViewport.sketchConfirmOffset();
+            if (status != NativeViewport.CAD_OK) {
+                showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+                sketchModify.refreshFromNative();
+                return;
+            }
+            afterDraftingAct();
+            showStatus(context.getString(R.string.status_sketch_offset,
+                    uiState().displayUnit().formatWithUnit(Math.abs(distance))), R.attr.fsTextSuccess);
+            return;
+        }
+        if (confirm && mode == NativeViewport.MODIFY_MIRROR) {
+            final int status = NativeViewport.sketchConfirmMirror();
+            if (status != NativeViewport.CAD_OK) {
+                showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+                sketchModify.refreshFromNative();
+                return;
+            }
+            afterDraftingAct();
+            showStatus(context.getString(R.string.status_sketch_mirrored), R.attr.fsTextSuccess);
+            return;
+        }
+        NativeViewport.sketchSetModifyMode(NativeViewport.MODIFY_NONE);
+        syncFromNative();
+    }
+
+    @Override
+    public void onSketchDimensionKindChosen(int kind, int mode) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchAddDimension(kind, mode);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            sketchModify.refreshFromNative();
+            return;
+        }
+        afterDraftingAct();
+        showStatus(context.getString(R.string.status_sketch_dimension_added), R.attr.fsTextSuccess);
+    }
+
+    @Override
+    public void onSketchDimensionAngleRequested() {
+        final int status = NativeViewport.sketchBeginDimensionAngle();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+        }
+        sketchModify.refreshFromNative();
+    }
+
+    @Override
+    public void onSketchOffsetDistanceEntered(double meters) {
+        final int status = NativeViewport.sketchSetOffsetDistance(meters);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+        }
+        finishEditing();
+        refreshSketchViewportSurfaces(true);
+    }
+
+    @Override
+    public void onSketchDimensionVisibilityChosen(int visibility) {
+        NativeViewport.sketchSetDimensionVisibility(visibility);
+        refreshSketchViewportSurfaces(true);
+    }
+
+    @Override
+    public void onSketchMultiSelectToggled(boolean on) {
+        NativeViewport.sketchSetMultiSelect(on);
+        refreshSketchViewportSurfaces(true);
+    }
+
+    @Override
+    public void onSketchDimensionValueEntered(long dimensionId, int kind, double value) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchApplyDimensionValue(dimensionId, value);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        sketchDimensionLabels.closeEditor();
+        afterDraftingAct();
+        showStatus(context.getString(R.string.status_sketch_dimension_applied),
+                R.attr.fsTextSuccess);
+    }
+
+    @Override
+    public void onSketchDimensionDeleteRequested(long dimensionId) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchRemoveDimension(dimensionId);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        afterDraftingAct();
+        showStatus(context.getString(R.string.status_sketch_dimension_removed),
+                R.attr.fsTextSecondary);
     }
 
     @Override
@@ -4061,6 +4327,16 @@ final class EditorWorkspaceView extends FrameLayout
     /** The selected Line's dimension label, for verification. */
     SketchDimensionLabelView sketchDimensionLabel() {
         return sketchDimension;
+    }
+
+    /** The sketch actions entry and palette, for verification. */
+    SketchModifyView sketchModify() {
+        return sketchModify;
+    }
+
+    /** The persistent dimension labels, for verification. */
+    SketchDimensionLabelsView sketchDimensionLabels() {
+        return sketchDimensionLabels;
     }
 
     // -----------------------------------------------------------------------

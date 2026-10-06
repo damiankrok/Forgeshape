@@ -778,11 +778,15 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     private void onDeleteEntity() {
         final int status = NativeViewport.sketchDeleteSelected();
         if (status != NativeViewport.CAD_OK) {
-            host.showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            host.showStatus(CadStatusMessages.describeDelete(getContext(), status),
+                    R.attr.fsTextError);
             return;
         }
+        final double[] draft = new double[NativeViewport.SKETCH_DRAFT_SIZE];
+        NativeViewport.sketchDraftingState(draft);
         refreshFromNative();
-        host.showStatus(getContext().getString(R.string.status_sketch_entity_deleted),
+        host.showStatus(CadStatusMessages.deleted(getContext(),
+                        (int) draft[NativeViewport.SKETCH_DRAFT_LAST_DELETED_DIMS]),
                 R.attr.fsTextSecondary);
     }
 

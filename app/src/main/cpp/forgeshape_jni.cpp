@@ -4258,7 +4258,8 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_sketchTool(JNIEnv*
 //   [6] chosen profile anchor id                  [7] extrude depth, metres
 //   [8] extrude direction index                   [9] last status code
 //   [10] 1 while a polyline is being placed       [11] entities placed by touch
-//   [12] last snap kind (0 none, 1 grid, 2 endpoint)
+//   [12] last snap kind (0 none, 1 grid, 2 endpoint, 3 intersection,
+//        4 midpoint, 5 centre, 6 origin, 7 horizontal guide, 8 vertical guide)
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchState(JNIEnv* env, jclass, jdoubleArray out) {
     constexpr jsize kSize = 13;
@@ -5739,6 +5740,409 @@ Java_com_forgeshape_app_NativeViewport_sketchApplyLineLength(JNIEnv*, jclass, jl
     }
     FS_LOGI("FORGESHAPE_SKETCH_LINE_LENGTH id=%lld length=%.6f %s", (long long)entityId,
             (double)lengthMeters, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// ---------------------------------------------------------------------------
+// Sketch drafting (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`)
+// ---------------------------------------------------------------------------
+//
+// The selection SET, the Construction role, the modify modes and the retained
+// dimensions. The Java layer holds none of it: every read below is derived on
+// the call from the one session, and every act is a native act that answers a
+// `CadStatus` code. Nothing here is project truth until the sketch's one commit.
+
+namespace {
+
+// The camera-derived scale the sketch overlay is BUILT with this frame (the
+// render loop's `gizmoWorldScale` at the world origin), so a label placed from
+// it stands exactly on the annotation the renderer drew.
+double sketchOverlayWorldPerUnit() {
+    float worldPerUnit = 0.0f;
+    forgeshape::gizmoWorldScale(g_camera.snapshot(), forgeshape::Vec3{0.0f, 0.0f, 0.0f},
+                                g_camera.viewportHeight(), &worldPerUnit);
+    return static_cast<double>(worldPerUnit);
+}
+
+}  // namespace
+
+// The whole selection, in the order it was made. Returns the count; writes at
+// most `out.length` ids.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSelection(JNIEnv* env, jclass, jlongArray out) {
+    std::vector<jlong> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        for (forgeshape::SketchEntityId id : forgeshape::sketchSession().selectedEntityIds()) {
+            ids.push_back(static_cast<jlong>(id));
+        }
+    }
+    if (out != nullptr && !ids.empty()) {
+        const jsize n = std::min<jsize>(env->GetArrayLength(out), static_cast<jsize>(ids.size()));
+        env->SetLongArrayRegion(out, 0, n, ids.data());
+    }
+    return static_cast<jint>(ids.size());
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetMultiSelect(JNIEnv*, jclass, jboolean on) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::sketchSession().setMultiSelect(on == JNI_TRUE);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchToggleSelectEntity(JNIEnv*, jclass, jlong entityId) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::sketchSession().toggleSelect(static_cast<forgeshape::SketchEntityId>(entityId))
+                   ? JNI_TRUE
+                   : JNI_FALSE;
+}
+
+// The ONE construction act for the selection (Make Construction when any
+// selected entity is Regular, else Make Regular).
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchToggleConstruction(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    forgeshape::SketchEntityRole applied = forgeshape::SketchEntityRole::Regular;
+    size_t count = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().toggleSelectionConstruction(&applied);
+        count = forgeshape::sketchSession().selectedEntityIds().size();
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_CONSTRUCTION %s role=%s selected=%d", forgeshape::cadStatusName(status),
+            forgeshape::sketchEntityRoleName(applied), (int)count);
+    return cadCode(status);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetModifyMode(JNIEnv*, jclass, jint mode) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::NotSketching;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (mode >= 0 && mode < forgeshape::kSketchModifyModeCount) {
+            status = forgeshape::sketchSession().setModifyMode(
+                    static_cast<forgeshape::SketchModifyMode>(mode));
+        }
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_MODIFY_MODE %d %s", (int)mode, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// The drafting state, in NativeViewport's SKETCH_DRAFT_* slots:
+//   [0] modify mode            [1] selection count      [2] multi-select (1/0)
+//   [3] construction target (0 Regular, 1 Construction) for the selection
+//   [4] dimension target entity  [5] its edge  [6] awaiting the angle's 2nd edge
+//   [7] offset source  [8] offset distance m  [9] offset preview status code
+//   [10] mirror axis set  [11] axis entity  [12] axis edge
+//   [13] dimension visibility (0 Selected, 1 All, 2 Off)  [14] dimension count
+//   [15] dimensions the last delete removed  [16] last trim converted a rectangle
+//   [17] last snap kind  [18] horizontal guide (1/0)  [19] vertical guide (1/0)
+//   [20] construction entity count  [21] the single selection's role (-1 none)
+//   [22] the tap-act serial (advances on every Trim or Extend that landed)
+//   [23] the single selection's entity kind (-1 none)
+//   [24] which tap act last landed (0 none, 1 Trim, 2 Extend)
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchDraftingState(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr jsize kSize = 25;
+    if (out == nullptr || env->GetArrayLength(out) < kSize) {
+        return;
+    }
+    jdouble v[kSize] = {};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SketchSession& s = forgeshape::sketchSession();
+        v[0] = static_cast<double>(static_cast<int>(s.modifyMode()));
+        v[1] = static_cast<double>(s.selectedEntityIds().size());
+        v[2] = s.multiSelect() ? 1.0 : 0.0;
+        v[3] = s.selectionConstructionTarget() == forgeshape::SketchEntityRole::Construction ? 1.0 : 0.0;
+        forgeshape::CadSketchEdgeRef target;
+        if (s.dimensionTarget(&target)) {
+            v[4] = static_cast<double>(target.entityId);
+            v[5] = static_cast<double>(target.edgeLocalIndex);
+        }
+        v[6] = s.dimensionAwaitingSecondEdge() ? 1.0 : 0.0;
+        v[7] = static_cast<double>(s.offsetSource());
+        v[8] = s.offsetDistance();
+        v[9] = static_cast<double>(forgeshape::cadStatusCode(s.offsetPreviewStatus()));
+        forgeshape::CadSketchEdgeRef axis;
+        if (s.mirrorAxis(&axis)) {
+            v[10] = 1.0;
+            v[11] = static_cast<double>(axis.entityId);
+            v[12] = static_cast<double>(axis.edgeLocalIndex);
+        }
+        v[13] = static_cast<double>(static_cast<int>(s.dimensionVisibility()));
+        v[14] = static_cast<double>(s.sketch().dimensions.size());
+        v[15] = static_cast<double>(s.lastDeletedDimensionCount());
+        v[16] = s.lastTrimConvertedRectangle() ? 1.0 : 0.0;
+        v[17] = static_cast<double>(static_cast<int>(s.lastSnapKind()));
+        v[18] = s.lastSnap().horizontalGuide ? 1.0 : 0.0;
+        v[19] = s.lastSnap().verticalGuide ? 1.0 : 0.0;
+        int construction = 0;
+        for (const forgeshape::SketchEntity& e : s.sketch().entities) {
+            construction += e.construction() ? 1 : 0;
+        }
+        v[20] = static_cast<double>(construction);
+        v[21] = -1.0;
+        v[23] = -1.0;
+        if (const forgeshape::SketchEntity* one =
+                    forgeshape::findSketchEntity(s.sketch(), s.selectedEntityId())) {
+            v[21] = one->construction() ? 1.0 : 0.0;
+            v[23] = static_cast<double>(static_cast<int>(one->kind()));
+        }
+        v[22] = static_cast<double>(s.tapActSerial());
+        v[24] = static_cast<double>(static_cast<int>(s.lastTapAct()));
+    }
+    env->SetDoubleArrayRegion(out, 0, kSize, v);
+}
+
+// The dimension kinds the Dimension mode's target supports, in enum order.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchDimensionTargetKinds(JNIEnv* env, jclass, jintArray out) {
+    std::vector<jint> kinds;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        for (forgeshape::SketchDimensionKind kind : forgeshape::sketchSession().dimensionTargetKinds()) {
+            kinds.push_back(static_cast<jint>(kind));
+        }
+    }
+    if (out != nullptr && !kinds.empty()) {
+        const jsize n = std::min<jsize>(env->GetArrayLength(out), static_cast<jsize>(kinds.size()));
+        env->SetIntArrayRegion(out, 0, n, kinds.data());
+    }
+    return static_cast<jint>(kinds.size());
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetDimensionTarget(JNIEnv*, jclass, jlong entityId,
+                                                                jint edge) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return cadCode(forgeshape::sketchSession().setDimensionTarget(forgeshape::CadSketchEdgeRef{
+            static_cast<forgeshape::SketchEntityId>(entityId), static_cast<uint32_t>(edge < 0 ? 0 : edge)}));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchBeginDimensionAngle(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return cadCode(forgeshape::sketchSession().beginDimensionAngle());
+}
+
+// Adds a dimension of `kind` (SketchDimensionKind index) and `mode` (0 Driving,
+// 1 Reference) on the Dimension mode's target.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchAddDimension(JNIEnv*, jclass, jint kind, jint mode) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::SketchDimensionInvalid;
+    forgeshape::SketchDimensionId id = forgeshape::kNoSketchDimension;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (kind >= 0 && kind < forgeshape::kSketchDimensionKindCount && (mode == 0 || mode == 1)) {
+            status = forgeshape::sketchSession().addDimension(
+                    static_cast<forgeshape::SketchDimensionKind>(kind),
+                    mode == 0 ? forgeshape::SketchDimensionMode::Driving
+                              : forgeshape::SketchDimensionMode::Reference,
+                    &id);
+        }
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_DIMENSION_ADD kind=%d mode=%d id=%u %s", (int)kind, (int)mode,
+            (unsigned)id, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchRemoveDimension(JNIEnv*, jclass, jlong id) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().removeDimension(static_cast<forgeshape::SketchDimensionId>(id));
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_DIMENSION_REMOVE id=%lld %s", (long long)id, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// THE Driving edit: metres for a length kind, degrees for an angle kind.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchApplyDimensionValue(JNIEnv*, jclass, jlong id,
+                                                                 jdouble value) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().applyDimensionValue(
+                static_cast<forgeshape::SketchDimensionId>(id), value);
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_DIMENSION_VALUE id=%lld value=%.6f %s", (long long)id, (double)value,
+            forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetDimensionVisibility(JNIEnv*, jclass, jint visibility) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (visibility >= 0 && visibility < forgeshape::kSketchDimensionVisibilityCount) {
+        forgeshape::sketchSession().setDimensionVisibility(
+                static_cast<forgeshape::SketchDimensionVisibility>(visibility));
+    }
+}
+
+// The labels of every dimension shown now, stride SKETCH_LABEL_STRIDE (8):
+//   [0] id  [1] kind  [2] mode (0 Driving, 1 Reference)  [3] value (m or deg)
+//   [4] screen x  [5] screen y  [6] 1 when the anchor projects  [7] first entity
+// Placed from the SAME scale the overlay was built with this frame. Returns the
+// number of labels; writes as many as fit.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchDimensionLabels(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr int kStride = 8;
+    std::vector<jdouble> values;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SketchSession& s = forgeshape::sketchSession();
+        for (const forgeshape::SketchDimensionAnnotation& a :
+             s.visibleDimensionAnnotations(sketchOverlayWorldPerUnit())) {
+            float x = 0.0f;
+            float y = 0.0f;
+            const bool projects = s.sketchToScreen(g_camera.snapshot(), a.label, g_camera.viewportWidth(),
+                                                   g_camera.viewportHeight(), &x, &y);
+            const forgeshape::SketchDimension* d = forgeshape::findSketchDimension(s.sketch(), a.id);
+            values.push_back(static_cast<double>(a.id));
+            values.push_back(static_cast<double>(static_cast<int>(a.kind)));
+            values.push_back(a.mode == forgeshape::SketchDimensionMode::Driving ? 0.0 : 1.0);
+            values.push_back(a.value);
+            values.push_back(static_cast<double>(x));
+            values.push_back(static_cast<double>(y));
+            values.push_back(projects ? 1.0 : 0.0);
+            values.push_back(d != nullptr ? static_cast<double>(d->first.entityId) : 0.0);
+        }
+    }
+    const jint count = static_cast<jint>(values.size() / kStride);
+    if (out != nullptr && count > 0) {
+        const jsize fit = (env->GetArrayLength(out) / kStride) * kStride;
+        const jsize n = std::min<jsize>(fit, static_cast<jsize>(values.size()));
+        if (n > 0) env->SetDoubleArrayRegion(out, 0, n, values.data());
+    }
+    return count;
+}
+
+// Every retained dimension of the sketch, stride 8, for verification:
+//   [0] id [1] kind [2] mode [3] first entity [4] first edge [5] second entity
+//   [6] second edge [7] derived value
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchDimensions(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr int kStride = 8;
+    std::vector<jdouble> values;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::CadSketch& sketch = forgeshape::sketchSession().sketch();
+        for (const forgeshape::SketchDimension& d : sketch.dimensions) {
+            double value = NAN;
+            forgeshape::sketchDimensionValue(sketch, d, &value);
+            values.push_back(static_cast<double>(d.id));
+            values.push_back(static_cast<double>(static_cast<int>(d.kind)));
+            values.push_back(d.mode == forgeshape::SketchDimensionMode::Driving ? 0.0 : 1.0);
+            values.push_back(static_cast<double>(d.first.entityId));
+            values.push_back(static_cast<double>(d.first.edgeLocalIndex));
+            values.push_back(static_cast<double>(d.second.entityId));
+            values.push_back(static_cast<double>(d.second.edgeLocalIndex));
+            values.push_back(value);
+        }
+    }
+    const jint count = static_cast<jint>(values.size() / kStride);
+    if (out != nullptr && count > 0) {
+        const jsize fit = (env->GetArrayLength(out) / kStride) * kStride;
+        const jsize n = std::min<jsize>(fit, static_cast<jsize>(values.size()));
+        if (n > 0) env->SetDoubleArrayRegion(out, 0, n, values.data());
+    }
+    return count;
+}
+
+// Every entity id of the sketch in stored order. Returns the count.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchEntityIds(JNIEnv* env, jclass, jlongArray out) {
+    std::vector<jlong> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        for (const forgeshape::SketchEntity& e : forgeshape::sketchSession().sketch().entities) {
+            ids.push_back(static_cast<jlong>(e.id()));
+        }
+    }
+    if (out != nullptr && !ids.empty()) {
+        const jsize n = std::min<jsize>(env->GetArrayLength(out), static_cast<jsize>(ids.size()));
+        env->SetLongArrayRegion(out, 0, n, ids.data());
+    }
+    return static_cast<jint>(ids.size());
+}
+
+// One entity's values by id, in SKETCH_ENTITY_* slots plus [6] role (0/1),
+// [7] [8] an arc's through-point (or a polyline/spline's first point).
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchEntityValues(JNIEnv* env, jclass, jlong entityId,
+                                                          jdoubleArray out) {
+    constexpr jsize kSize = 9;
+    if (out == nullptr || env->GetArrayLength(out) < kSize) {
+        return JNI_FALSE;
+    }
+    jdouble v[kSize] = {};
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SketchEntity* e = forgeshape::findSketchEntity(
+                forgeshape::sketchSession().sketch(), static_cast<forgeshape::SketchEntityId>(entityId));
+        if (e != nullptr) {
+            found = true;
+            v[0] = static_cast<double>(e->id());
+            v[1] = static_cast<double>(static_cast<int>(e->kind()));
+            v[6] = e->construction() ? 1.0 : 0.0;
+            if (const forgeshape::SketchLine* line = e->line()) {
+                v[2] = line->start.u; v[3] = line->start.v; v[4] = line->end.u; v[5] = line->end.v;
+            } else if (const forgeshape::SketchRectangle* r = e->rectangle()) {
+                v[2] = r->center.u; v[3] = r->center.v; v[4] = r->width; v[5] = r->height;
+            } else if (const forgeshape::SketchCircle* c = e->circle()) {
+                v[2] = c->center.u; v[3] = c->center.v; v[4] = c->radius;
+            } else if (const forgeshape::SketchPolyline* p = e->polyline()) {
+                v[2] = static_cast<double>(p->vertices.size()); v[3] = p->closed ? 1.0 : 0.0;
+                v[4] = p->vertices.back().u; v[5] = p->vertices.back().v;
+                v[7] = p->vertices.front().u; v[8] = p->vertices.front().v;
+            } else if (const forgeshape::SketchArc* a = e->arc()) {
+                v[2] = a->start.u; v[3] = a->start.v; v[4] = a->end.u; v[5] = a->end.v;
+                v[7] = a->mid.u; v[8] = a->mid.v;
+            } else if (const forgeshape::SketchSpline* sp = e->spline()) {
+                v[2] = static_cast<double>(sp->points.size());
+                v[7] = sp->points.front().u; v[8] = sp->points.front().v;
+            }
+        }
+    }
+    if (!found) {
+        return JNI_FALSE;
+    }
+    env->SetDoubleArrayRegion(out, 0, kSize, v);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetOffsetDistance(JNIEnv*, jclass, jdouble meters) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return cadCode(forgeshape::sketchSession().setOffsetDistance(meters));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchConfirmOffset(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    std::vector<forgeshape::SketchEntityId> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().confirmOffset(&ids);
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_OFFSET %s created=%d", forgeshape::cadStatusName(status), (int)ids.size());
+    return cadCode(status);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchConfirmMirror(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    std::vector<forgeshape::SketchEntityId> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().confirmMirror(&ids);
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_MIRROR %s created=%d", forgeshape::cadStatusName(status), (int)ids.size());
     return cadCode(status);
 }
 

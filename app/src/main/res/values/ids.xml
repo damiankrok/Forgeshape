@@ -572,4 +572,44 @@
     <item name="field_relative_scale_y" type="id" />
     <item name="field_relative_scale_z" type="id" />
     <item name="apply_relative_scale" type="id" />
+    <!-- CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1: the sketch actions entry, its
+         palette, the modify-mode capsule and the persistent dimension labels. -->
+    <item name="sketch_modify" type="id" />
+    <item name="sketch_modify_toggle" type="id" />
+    <item name="sketch_actions_palette" type="id" />
+    <item name="sketch_action_select_multiple" type="id" />
+    <item name="sketch_action_dimension" type="id" />
+    <item name="sketch_action_construction" type="id" />
+    <item name="sketch_action_trim" type="id" />
+    <item name="sketch_action_extend" type="id" />
+    <item name="sketch_action_offset" type="id" />
+    <item name="sketch_action_mirror" type="id" />
+    <item name="sketch_action_delete" type="id" />
+    <item name="sketch_dimensions_selected" type="id" />
+    <item name="sketch_dimensions_all" type="id" />
+    <item name="sketch_dimensions_off" type="id" />
+    <item name="sketch_modify_mode" type="id" />
+    <item name="sketch_modify_mode_title" type="id" />
+    <item name="sketch_dimension_kind_length" type="id" />
+    <item name="sketch_dimension_kind_angle" type="id" />
+    <item name="sketch_dimension_kind_horizontal" type="id" />
+    <item name="sketch_dimension_kind_vertical" type="id" />
+    <item name="sketch_dimension_kind_width" type="id" />
+    <item name="sketch_dimension_kind_height" type="id" />
+    <item name="sketch_dimension_kind_radius" type="id" />
+    <item name="sketch_dimension_kind_diameter" type="id" />
+    <item name="sketch_dimension_kind_edge_length" type="id" />
+    <item name="sketch_dimension_kind_arc_radius" type="id" />
+    <item name="sketch_dimension_kind_sweep" type="id" />
+    <item name="sketch_dimension_kind_edge_angle" type="id" />
+    <item name="sketch_dimension_driving" type="id" />
+    <item name="field_sketch_offset_distance" type="id" />
+    <item name="sketch_modify_confirm" type="id" />
+    <item name="sketch_modify_done" type="id" />
+    <item name="sketch_dimension_labels" type="id" />
+    <item name="sketch_dimension_label_item" type="id" />
+    <item name="sketch_dimension_value_editor" type="id" />
+    <item name="field_sketch_dimension_value" type="id" />
+    <item name="apply_sketch_dimension_value" type="id" />
+    <item name="sketch_dimension_delete" type="id" />
 </resources>

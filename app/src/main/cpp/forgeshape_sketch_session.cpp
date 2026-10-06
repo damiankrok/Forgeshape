@@ -1557,6 +1557,8 @@ CadStatus SketchSession::trimAt(const SketchPoint& point, double toleranceMeters
     }
     sketch_ = plan.result;
     lastTrimConvertedRectangle_ = plan.rectangleConverted;
+    lastTapAct_ = TapAct::Trim;
+    ++tapActSerial_;
     // A piece that kept the id stays selectable as it was; anything the trim
     // removed or replaced leaves the selection.
     selectedIds_.erase(std::remove_if(selectedIds_.begin(), selectedIds_.end(),
@@ -1580,6 +1582,8 @@ CadStatus SketchSession::extendAt(const SketchPoint& point, double toleranceMete
         return fail(why);
     }
     sketch_ = plan.result;
+    lastTapAct_ = TapAct::Extend;
+    ++tapActSerial_;
     if (outPlan != nullptr) *outPlan = std::move(plan);
     touchCandidate();
     return fail(CadStatus::Ok);

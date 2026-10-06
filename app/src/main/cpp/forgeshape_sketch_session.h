@@ -514,6 +514,12 @@ public:
                        SketchExtendPlan* outPlan = nullptr);
     // The last applied Trim converted a Rectangle to Lines.
     bool lastTrimConvertedRectangle() const { return lastTrimConvertedRectangle_; }
+    // Which tap act last LANDED (Trim or Extend) and a serial that advances on
+    // every one, so the shell reports each act once without diffing geometry.
+    // Presentation bookkeeping: never truth, never a history step.
+    enum class TapAct : uint8_t { None, Trim, Extend };
+    TapAct lastTapAct() const { return lastTapAct_; }
+    uint64_t tapActSerial() const { return tapActSerial_; }
 
     // Offset mode.
     CadStatus setOffsetSource(SketchEntityId id);
@@ -970,6 +976,8 @@ private:
     // (Trim) or be added (Extend), in sketch coordinates. Empty when none.
     std::vector<SketchPoint> modifyPreview_;
     bool lastTrimConvertedRectangle_ = false;
+    TapAct lastTapAct_ = TapAct::None;
+    uint64_t tapActSerial_ = 0;
     SketchPoint rawCursor_{};
     // Presentation; survives a new sketch, like the grid toggle survives a frame.
     SketchDimensionVisibility dimensionVisibility_ = SketchDimensionVisibility::Selected;
