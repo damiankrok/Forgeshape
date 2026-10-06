@@ -2013,7 +2013,7 @@ int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
             // Five ranges since SKETCH-UX-R1: the dimension annotation is its
             // own, so the renderer draws it in the annotation weight rather
             // than as geometry. It is EMPTY here, because nothing is selected.
-            bool ranged = overlay->ranges.size() == 5
+            bool ranged = overlay->ranges.size() == kSketchOverlayRangesPerFrame
                           && overlay->ranges[0].style == SketchOverlayStyle::GridMinor
                           && overlay->ranges[3].style == SketchOverlayStyle::Entities
                           && overlay->ranges[3].vertexCount > 0
@@ -2060,7 +2060,7 @@ int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
         {
             const SketchOverlayPtr overlay = session.overlay(0.002f);
             r.check("CADR0_14_the_extrude_preview_is_drawn_while_ready",
-                    overlay->ranges.size() == 5 && overlay->ranges[3].vertexCount > 40);
+                    overlay->ranges.size() == kSketchOverlayRangesPerFrame && overlay->ranges[3].vertexCount > 40);
         }
         // Back to editing keeps the sketch; finishing again re-extracts.
         session.backToEditing();

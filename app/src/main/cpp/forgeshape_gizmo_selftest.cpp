@@ -631,7 +631,8 @@ int runGizmoSelfTests(GizmoSelfTestResult* out, int maxOut) {
         // sixth value: this check and the walk both fail, and the mapping's own
         // switch warns at compile time.
         r.check("overlay_the_style_count_states_the_whole_enum",
-                static_cast<int>(SketchOverlayStyle::Dimension) + 1 == kSketchOverlayStyleCount);
+                static_cast<int>(SketchOverlayStyle::DimensionReference) + 1
+                        == kSketchOverlayStyleCount);
 
         // EVERY value the enum can take, on EVERY ground: mapped, finite, and
         // drawn at an alpha something can actually be seen at.

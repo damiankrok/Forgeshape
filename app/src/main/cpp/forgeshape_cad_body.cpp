@@ -99,38 +99,6 @@ bool revolveDirectionFromIndex(int index, RevolveDirection* out) {
 
 int revolveDirectionIndex(RevolveDirection direction) { return static_cast<int>(direction); }
 
-bool sameCadSketchEdgeRef(const CadSketchEdgeRef& a, const CadSketchEdgeRef& b) {
-    return a.entityId == b.entityId && a.edgeLocalIndex == b.edgeLocalIndex;
-}
-
-std::vector<SketchStraightEdge> sketchEntityStraightEdges(const SketchEntity& entity) {
-    std::vector<SketchStraightEdge> edges;
-    if (const SketchLine* line = entity.line()) {
-        edges.push_back(SketchStraightEdge{0u, line->start, line->end});
-    } else if (const SketchPolyline* polyline = entity.polyline()) {
-        // The AUTHORED segments, exactly as the stroke is drawn: vertices[i] ->
-        // vertices[i+1], and a closed polyline's closing segment last.
-        const size_t n = polyline->vertices.size();
-        for (size_t i = 0; i + 1 < n; ++i) {
-            edges.push_back(SketchStraightEdge{static_cast<uint32_t>(i), polyline->vertices[i],
-                                               polyline->vertices[i + 1]});
-        }
-        if (polyline->closed && n >= 3) {
-            edges.push_back(SketchStraightEdge{static_cast<uint32_t>(n - 1), polyline->vertices[n - 1],
-                                               polyline->vertices[0]});
-        }
-    } else if (const SketchRectangle* rectangle = entity.rectangle()) {
-        // The same counter-clockwise corners, and so the same edge numbering, a
-        // rectangle's extruded side faces already wear.
-        const std::vector<SketchPoint> corners = rectangleProfilePolygon(*rectangle);
-        for (uint32_t k = 0; k < 4u; ++k) {
-            edges.push_back(SketchStraightEdge{k, corners[k], corners[(k + 1u) % 4u]});
-        }
-    }
-    // A circle, an arc and a spline offer no straight edge.
-    return edges;
-}
-
 CadStatus resolveRevolveAxis(const CadSketch& sketch, const CadSketchEdgeRef& ref,
                              RevolveAxis2D* out) {
     if (ref.entityId == kNoSketchEntity) {
@@ -624,9 +592,23 @@ uint32_t appendCadLaterFeatureWithSketch(CadBodyState* state, CadFeatureOperatio
     return featureId;
 }
 
+bool cadBodyStateUsesDrafting(const CadBodyState& state) {
+    for (const CadSketchRecord& record : state.sketches) {
+        if (cadSketchHasDraftingData(record.sketch)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
     // A Revolve has no encoding below v7 (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`).
     if (state.baseKind != CadFeatureKind::Extrude) {
+        return false;
+    }
+    // A Construction role or a sketch dimension has no encoding below v8
+    // (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`).
+    if (cadBodyStateUsesDrafting(state)) {
         return false;
     }
     const size_t later = state.laterFeatures.size();
@@ -1619,6 +1601,16 @@ CadStatus CadBody::applyState(const CadBodyState& requested, bool* outChanged) {
         || requested.nextSketchId < state_.nextSketchId) {
         ++rejectedUpdates_;
         return CadStatus::HighWaterInvalid;
+    }
+    // The same rule for each retained sketch's dimension ids
+    // (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`): a sketch the edit keeps may not
+    // hand a freed dimension id on along this branch.
+    for (const CadSketchRecord& current : state_.sketches) {
+        const CadSketchRecord* next = findCadSketchRecord(requested, current.sketchId);
+        if (next != nullptr && next->sketch.nextDimensionId < current.sketch.nextDimensionId) {
+            ++rejectedUpdates_;
+            return CadStatus::HighWaterInvalid;
+        }
     }
     // Regenerate ONCE into a scratch mesh: the only proof a state is usable is
     // that the whole path runs, and running it here is what makes the refusal

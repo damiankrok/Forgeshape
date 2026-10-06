@@ -194,9 +194,16 @@ included) and the raw point:
    both may apply at once; a free coordinate falls to the grid
 7. Grid
 
-Tolerance: 24 dp in world units at pointer-down. The first non-empty priority
-level wins; within it the smallest distance; then the candidate's semantic
-order (entity id, edge/point index; arrangement node order). The arrangement
+Tolerance: 24 dp in world units at pointer-down. The priority is applied in
+TWO apertures, inner (8 dp) first, then the whole 24 dp: the first non-empty
+level within an aperture wins; within it the smallest distance; then the
+candidate's semantic order (entity id, edge/point index; arrangement node
+order). (Amended during implementation: a single 24 dp aperture let a far
+intersection beat an exact centre under the finger at coarse zoom, which broke
+existing drawing tests and would break real drawing the same way.) Guides
+capture within half the point tolerance (12 dp). A drag never snaps its end
+onto its own start (no zero-size entity), and a rectangle's own anchor is not
+a guide source. The arrangement
 is cached per sketch content, so a pointer move costs a bounded scan of
 precomputed points, never a re-derivation. Guides are drawn dashed while
 active and create NO persistent relation. Markers: endpoint square,

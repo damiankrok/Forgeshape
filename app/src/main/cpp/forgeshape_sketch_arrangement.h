@@ -219,9 +219,11 @@ struct SketchArrangement {
     ArrangementStats stats;
 };
 
-// Derives the arrangement of every supported curve in the sketch. Pure,
-// deterministic, bounded by the caps above; independent of the order of
-// `sketch.entities`.
+// Derives the arrangement of every supported REGULAR curve in the sketch --
+// Construction entities take no part in material topology
+// (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`); a drafting query that wants them as
+// cutters passes `cadSketchAllCurvesView(sketch)`. Pure, deterministic,
+// bounded by the caps above; independent of the order of `sketch.entities`.
 SketchArrangement deriveSketchArrangement(const CadSketch& sketch);
 
 // Finds the face whose canonical ref EQUALS `ref`. False (and `*outIndex`

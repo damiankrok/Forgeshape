@@ -62,6 +62,9 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_sketch_arrangement.cpp
     forgeshape_sketch_overlay.cpp
     forgeshape_sketch_session.cpp
+    forgeshape_sketch_dimension.cpp
+    forgeshape_sketch_snap.cpp
+    forgeshape_sketch_drafting.cpp
     forgeshape_support_chooser.cpp
     forgeshape_workplane.cpp
     forgeshape_body_dimension_overlay.cpp

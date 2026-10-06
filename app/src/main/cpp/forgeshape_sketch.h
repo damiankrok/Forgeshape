@@ -271,11 +271,62 @@ enum class CadStatus : uint8_t {
     RevolveLaterFeatureUnsupported,
     // A Revolve was asked for before its axis was chosen.
     RevolveNeedsAxis,
+    // --- `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`: drafting inside Sketch. APPENDED. ---
+    //
+    // A sketch dimension record that cannot be read: an unknown kind or mode,
+    // a zero or out-of-order id, a high-water mark not above every id, a ref
+    // that names no entity or edge, a kind on the wrong target, Driving on a
+    // Reference-only kind, or a second ref on a one-edge kind.
+    SketchDimensionInvalid,
+    // A second Driving dimension on a degree of freedom another one owns
+    // (Radius and Diameter of one circle, two Lengths of one line), or an exact
+    // duplicate of an existing dimension. No solver arbitrates; refused.
+    SketchDimensionConflict,
+    // The act would leave a dimension without the entity it measures, or would
+    // split an entity a dimension names (Trim). Remove the dimension first.
+    SketchDimensionDependency,
+    // The act would change a degree of freedom a Driving dimension owns
+    // (Extend of a line whose length is driving).
+    SketchDimensionLocked,
+    // A typed value for a Reference dimension: it is read-only.
+    SketchDimensionReadOnly,
+    // A typed dimension value outside its domain: non-finite, not a usable
+    // length, or an angle outside (-180, 180]. Refused, never clamped.
+    SketchDimensionValueInvalid,
+    // Trim of a Spline: its interval would have to be cut out of a curve whose
+    // only truth is its interpolation points. Splines still CUT other curves.
+    TrimSplineUnsupported,
+    // A Trim or Extend tap that lands on no entity.
+    DraftingNoTarget,
+    // Extend of a Circle, a Rectangle, a closed Polyline, a Spline, or a
+    // Polyline segment that is not an open end segment.
+    ExtendUnsupported,
+    // Extend found no forward intersection within the sketch range.
+    ExtendNoTarget,
+    // Extend's continuation runs along another curve (collinear or concentric
+    // overlap), so no single target point exists.
+    ExtendAmbiguous,
+    // Offset of a Spline: an offset of an interpolating spline is not a spline
+    // of its points, and a tessellation is never authored truth.
+    OffsetSplineUnsupported,
+    // An offset whose result is degenerate: a radius or size not positive, a
+    // zero distance, a polyline segment that collapses or reverses.
+    OffsetInvalid,
+    // A polyline offset whose miter at a corner exceeds `kOffsetMiterLimit`.
+    // Refused rather than bevelled or rounded.
+    OffsetMiterLimit,
+    // A polyline offset whose result crosses itself.
+    OffsetSelfIntersecting,
+    // A Mirror axis that is not a straight edge of the sketch (a Circle, an
+    // Arc, a Spline, an unresolved ref or a degenerate edge).
+    MirrorAxisInvalid,
+    // Mirror with nothing selected to mirror (the axis is never mirrored).
+    MirrorNothingSelected,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 74;
+constexpr int kCadStatusCount = 91;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);
@@ -480,6 +531,24 @@ enum class SketchEntityKind : uint8_t {
 
 const char* sketchEntityKindName(SketchEntityKind kind);
 
+// What an authored entity IS FOR (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`).
+//
+// A Regular entity is material topology: it closes profiles, cuts planar
+// faces and bounds what is extruded or revolved. A Construction entity is a
+// drafting aid -- a centre line, a reference circle, a mirror axis -- that is
+// still authored, editable, selectable, snappable, dimensionable and usable as
+// a straight axis, but takes NO part in material topology: the profile engine
+// and the planar arrangement skip it by this one field, so a construction
+// rectangle closes nothing and a construction line splits no face. Domain
+// truth, stored on the entity and in `CADB` v8; never a renderer or Java flag.
+// Every record any earlier version wrote is Regular.
+enum class SketchEntityRole : uint8_t {
+    Regular,
+    Construction,
+};
+
+const char* sketchEntityRoleName(SketchEntityRole role);
+
 struct SketchLine {
     SketchPoint start;
     SketchPoint end;
@@ -555,9 +624,14 @@ public:
 
     SketchEntity() = default;
     SketchEntity(SketchEntityId id, Payload payload) : id_(id), payload_(std::move(payload)) {}
+    SketchEntity(SketchEntityId id, Payload payload, SketchEntityRole role)
+        : id_(id), role_(role), payload_(std::move(payload)) {}
 
     SketchEntityId id() const { return id_; }
     SketchEntityKind kind() const { return static_cast<SketchEntityKind>(payload_.index()); }
+    SketchEntityRole role() const { return role_; }
+    void setRole(SketchEntityRole role) { role_ = role; }
+    bool construction() const { return role_ == SketchEntityRole::Construction; }
 
     const SketchLine* line() const { return std::get_if<SketchLine>(&payload_); }
     const SketchPolyline* polyline() const { return std::get_if<SketchPolyline>(&payload_); }
@@ -571,6 +645,7 @@ public:
 
 private:
     SketchEntityId id_ = kNoSketchEntity;
+    SketchEntityRole role_ = SketchEntityRole::Regular;
     Payload payload_{SketchLine{}};
 };
 
@@ -641,6 +716,94 @@ bool sketchSplineSpan(const SketchSpline& spline, uint32_t spanIndex, SketchBezi
 SketchPoint sketchBezierPoint(const SketchBezierSpan& span, double t);
 
 // ---------------------------------------------------------------------------
+// Straight edges, by semantic identity
+// ---------------------------------------------------------------------------
+
+// A straight edge of a sketch, by SEMANTIC identity: the entity that owns it
+// and which of that entity's edges it is -- the same pair a side-face token
+// and a fragment already persist. A Line has edge 0; a Polyline segment i runs
+// vertices[i] -> vertices[i+1] (a closed one's last segment n-1 -> 0); a
+// Rectangle edge k runs between its counter-clockwise corners k -> k+1 from the
+// (-w/2, -h/2) corner (0 bottom, 1 right, 2 top, 3 left). Never a renderer
+// line index, a tessellation sample or a screen point. A Revolve axis, a Mirror
+// axis and a sketch dimension all name an edge this way.
+struct CadSketchEdgeRef {
+    SketchEntityId entityId = kNoSketchEntity;
+    uint32_t edgeLocalIndex = 0;
+};
+
+bool sameCadSketchEdgeRef(const CadSketchEdgeRef& a, const CadSketchEdgeRef& b);
+
+// The straight edges one entity offers, in edge-index order, as (index, start,
+// end). Empty for a Circle, an Arc and a Spline.
+struct SketchStraightEdge {
+    uint32_t edgeLocalIndex = 0;
+    SketchPoint start{};
+    SketchPoint end{};
+};
+std::vector<SketchStraightEdge> sketchEntityStraightEdges(const SketchEntity& entity);
+
+// ---------------------------------------------------------------------------
+// Sketch dimensions (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`)
+// ---------------------------------------------------------------------------
+//
+// A retained, per-sketch technical-drawing dimension. The record says WHAT is
+// measured and whether it DRIVES the geometry; it never stores the number. The
+// value shown is derived from the authored geometry every time
+// (forgeshape_sketch_dimension.h), and a Driving edit writes the geometry
+// through one path and nothing else -- so a dimension can never disagree with
+// the entity it measures. No constraint solver exists: a Driving dimension
+// owns one local degree of freedom of one entity, and two that would own the
+// same one are refused.
+
+using SketchDimensionId = uint32_t;
+constexpr SketchDimensionId kNoSketchDimension = 0;
+
+// How many dimensions one sketch may carry. Bounded so a history step and a
+// `.forge` record stay finite; two per entity of a full sketch.
+constexpr uint32_t kMaxSketchDimensions = 512;
+
+// APPENDED only. The `.forge` codes are separate and file-owned.
+enum class SketchDimensionKind : uint8_t {
+    LineLength,       // Line: |P1 - P0|                       (Driving or Reference)
+    LineAngle,        // Line: direction to +U, (-180, 180]    (Driving or Reference)
+    LineHorizontal,   // Line: |du|                            (Reference)
+    LineVertical,     // Line: |dv|                            (Reference)
+    RectangleWidth,   // Rectangle: width                      (Driving or Reference)
+    RectangleHeight,  // Rectangle: height                     (Driving or Reference)
+    CircleRadius,     // Circle: radius                        (Driving or Reference)
+    CircleDiameter,   // Circle: 2 * radius, the SAME DOF      (Driving or Reference)
+    EdgeLength,       // Polyline segment / Rectangle edge     (Reference)
+    ArcRadius,        // Arc: circumradius                     (Reference)
+    ArcSweep,         // Arc: |sweep| in degrees               (Reference)
+    EdgeAngle,        // two straight edges, [0, 180] degrees  (Reference)
+};
+
+constexpr int kSketchDimensionKindCount = 12;
+
+const char* sketchDimensionKindName(SketchDimensionKind kind);
+
+enum class SketchDimensionMode : uint8_t {
+    Driving,
+    Reference,
+};
+
+const char* sketchDimensionModeName(SketchDimensionMode mode);
+
+struct SketchDimension {
+    SketchDimensionId id = kNoSketchDimension;
+    SketchDimensionKind kind = SketchDimensionKind::LineLength;
+    SketchDimensionMode mode = SketchDimensionMode::Reference;
+    // The measured entity and, for an edge kind, which edge. A Line, Circle,
+    // Rectangle or Arc kind names edge 0.
+    CadSketchEdgeRef first{};
+    // EdgeAngle's second edge; {0, 0} for every other kind.
+    CadSketchEdgeRef second{};
+};
+
+bool sameSketchDimension(const SketchDimension& a, const SketchDimension& b);
+
+// ---------------------------------------------------------------------------
 // The sketch
 // ---------------------------------------------------------------------------
 
@@ -666,9 +829,31 @@ struct CadSketch {
     // in the v1 file.
     bool hasFaceSupport = false;
     TopoRef faceSupport{};
+    // `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`: the retained dimensions, strictly
+    // ascending by id, and the id the next one takes. Stored (`CADB` v8) for
+    // the reason `nextEntityId` is: a reopened sketch must not re-mint an id.
+    // A committed forward edit never lowers it (`CadBody::applyState`); Undo
+    // restores it with the snapshot. Empty and 1 for every earlier sketch.
+    std::vector<SketchDimension> dimensions;
+    SketchDimensionId nextDimensionId = 1;
 };
 
 bool sameCadSketch(const CadSketch& a, const CadSketch& b);
+
+// Whether the sketch says anything only `CADB` v8 can carry: a Construction
+// entity, a dimension, or a dimension high-water mark a legacy read would not
+// derive (1).
+bool cadSketchHasDraftingData(const CadSketch& sketch);
+
+// Every entity whose role is Regular, in order: the sketch material topology
+// is derived from. Ids, plane, support and allocator are kept, dimensions are
+// dropped (they are not topology).
+CadSketch cadSketchMaterialView(const CadSketch& sketch);
+
+// The same sketch with every entity Regular: what drafting intersection
+// queries (snapping, Trim, Extend) derive an arrangement over, because a
+// construction line still cuts for drafting even though it bounds no material.
+CadSketch cadSketchAllCurvesView(const CadSketch& sketch);
 
 // Every per-entity rule, plus the sketch-level ones: the workplane is one of
 // the three, no id is zero, none repeats, every id is below the high-water
@@ -679,10 +864,11 @@ CadStatus validateCadSketch(const CadSketch& sketch);
 // nothing, minting nothing) when the entity or the resulting sketch would be
 // invalid. `outId` receives the minted id on success.
 CadStatus addSketchEntity(CadSketch* sketch, SketchEntity::Payload payload,
-                          SketchEntityId* outId = nullptr);
+                          SketchEntityId* outId = nullptr,
+                          SketchEntityRole role = SketchEntityRole::Regular);
 
-// Replaces one entity's geometry, keeping its id. Refuses on an unknown id or
-// invalid geometry, changing nothing.
+// Replaces one entity's geometry, keeping its id and its role. Refuses on an
+// unknown id or invalid geometry, changing nothing.
 CadStatus replaceSketchEntity(CadSketch* sketch, SketchEntityId id, SketchEntity::Payload payload);
 
 // Removes one entity. Refuses an unknown id, changing nothing. Never touches

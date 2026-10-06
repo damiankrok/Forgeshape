@@ -1410,7 +1410,7 @@ void testCadFoundationOneScale(Recorder& r) {
                                 && zoomed->revision == session.overlayRevision();
         const bool publishable = !zoomed->vertices.empty()
                                  && zoomed->vertices.size() <= kMaxSketchOverlayVertices
-                                 && zoomed->ranges.size() == 5;
+                                 && zoomed->ranges.size() == kSketchOverlayRangesPerFrame;
         r.check("CADFC1_S4_a_a_zoom_rebuild_advances_the_overlay_revision",
                 cached && zoomBumped && publishable);
         // The manipulator's own fact changing alone (the camera moved the
@@ -1488,16 +1488,16 @@ void testCadFoundationLeader(Recorder& r) {
     // It is in the overlay's Dimension range with the frame's facts, and absent
     // without them.
     const SketchOverlayPtr withFacts = session.overlay(0.01f, facts);
-    const uint32_t dimensionWith = withFacts->ranges.size() == 5 ? withFacts->ranges[4].vertexCount : 0u;
+    const uint32_t dimensionWith = withFacts->ranges.size() == kSketchOverlayRangesPerFrame ? withFacts->ranges[4].vertexCount : 0u;
     SketchSession bare;
     readyRectangleSession(&bare, Workplane::XY, 2.0, 1.0, 1.0, 1.0, 0.5);
     const SketchOverlayPtr without = bare.overlay(0.01f);
     r.check("CADFC1_E_c_the_leader_is_drawn_in_the_Dimension_range_only_with_the_frame_facts",
-            withFacts->ranges.size() == 5
+            withFacts->ranges.size() == kSketchOverlayRangesPerFrame
                     && withFacts->ranges[4].style == SketchOverlayStyle::Dimension
                     && dimensionWith == 2u * (2u + 1u + 2u)
                     && overlayHasPointNear(*withFacts, leader.positive.start, 1e-4f)
-                    && without->ranges.size() == 5 && without->ranges[4].vertexCount == 0u);
+                    && without->ranges.size() == kSketchOverlayRangesPerFrame && without->ranges[4].vertexCount == 0u);
     // Symmetric: a leader per side, and the base extension is shared.
     {
         SketchSession sym;
@@ -1507,7 +1507,7 @@ void testCadFoundationLeader(Recorder& r) {
         sym.extrudeViewFacts(camera, w, h, &sf);
         const SketchOverlayPtr o = sym.overlay(0.01f, sf);
         r.check("CADFC1_E_d_symmetric_draws_one_leader_per_side_with_one_shared_base_extension",
-                sf.leaderValid && o->ranges.size() == 5
+                sf.leaderValid && o->ranges.size() == kSketchOverlayRangesPerFrame
                         && o->ranges[4].vertexCount == 2u * (1u + 2u * (1u + 1u + 2u)));
     }
     // Looking straight down the axis still names a perpendicular, never NaN.

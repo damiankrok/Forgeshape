@@ -314,20 +314,8 @@ const char* revolveDirectionName(RevolveDirection direction);
 bool revolveDirectionFromIndex(int index, RevolveDirection* out);
 int revolveDirectionIndex(RevolveDirection direction);
 
-// A straight edge of a sketch, by SEMANTIC identity: the entity that owns it
-// and which of that entity's edges it is -- the same pair a side-face token
-// and a fragment already persist. A Line has edge 0; a Polyline segment i runs
-// vertices[i] -> vertices[i+1] (a closed one's last segment n-1 -> 0); a
-// Rectangle edge k runs between its counter-clockwise corners k -> k+1 from the
-// (-w/2, -h/2) corner (0 bottom, 1 right, 2 top, 3 left). The sketch is named
-// by the feature that owns the ref, so it is not repeated here. Never a
-// renderer line index, a tessellation sample or a screen point.
-struct CadSketchEdgeRef {
-    SketchEntityId entityId = kNoSketchEntity;
-    uint32_t edgeLocalIndex = 0;
-};
-
-bool sameCadSketchEdgeRef(const CadSketchEdgeRef& a, const CadSketchEdgeRef& b);
+// `CadSketchEdgeRef` -- a straight edge by semantic identity -- is declared in
+// forgeshape_sketch.h, beside the sketch dimensions that also name edges.
 
 // An axis edge resolved against its sketch: the edge's two AUTHORED ends, in the
 // entity's canonical order, and the unit direction start -> end. Derived on
@@ -348,16 +336,10 @@ struct RevolveAxis2D {
 CadStatus resolveRevolveAxis(const CadSketch& sketch, const CadSketchEdgeRef& ref,
                              RevolveAxis2D* out);
 
-// The straight edges one entity offers as an axis, in edge-index order, as
-// (index, start, end). Empty for a curve. What the session's axis pick tests a
-// tap against, and what `resolveRevolveAxis` resolves through, so a picked edge
-// and a stored one are read by one rule.
-struct SketchStraightEdge {
-    uint32_t edgeLocalIndex = 0;
-    SketchPoint start{};
-    SketchPoint end{};
-};
-std::vector<SketchStraightEdge> sketchEntityStraightEdges(const SketchEntity& entity);
+// The straight edges one entity offers as an axis are `sketchEntityStraightEdges`
+// (forgeshape_sketch.h): what the session's axis pick tests a tap against, and
+// what `resolveRevolveAxis` resolves through, so a picked edge and a stored one
+// are read by one rule.
 
 // The sweep angle, in DEGREES, binary64. Degrees and not radians because
 // degrees is the product's authored-angle unit already (a transform's rotation
@@ -629,7 +611,7 @@ uint32_t appendCadLaterFeatureWithSketch(CadBodyState* state, CadFeatureOperatio
                                          ExtrudeFeature extrude);
 
 // Whether the state says nothing a `CADB` v1..v5 record cannot: an Extrude base
-// (a Revolve is v7 alone), one sketch per
+// (a Revolve is v7 alone), no drafting truth (v8 alone), one sketch per
 // feature with the ids a legacy read synthesizes (base 1, later features 2..n
 // in chain order), the root sketch the base's and every later sketch on a
 // feature face, the two high-water marks exactly what a legacy read derives,
@@ -641,6 +623,12 @@ bool cadBodyStateLegacyRepresentable(const CadBodyState& state);
 // regenerated like any other since `CAD-V6-S2`, and round-trips only through
 // `CADB` v6.
 bool cadBodyStateUsesPlanarFaces(const CadBodyState& state);
+
+// Whether any retained sketch carries drafting truth -- a Construction entity,
+// a dimension, or a dimension high-water mark above 1
+// (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`). Such a state round-trips only through
+// `CADB` v8, and is never legacy-representable.
+bool cadBodyStateUsesDrafting(const CadBodyState& state);
 
 // Whether any feature is a Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`). Such a
 // state round-trips only through `CADB` v7, and is never legacy-representable.

@@ -313,6 +313,12 @@ ArrangementStatus collectSourceEdges(const CadSketch& sketch, std::vector<Source
     std::vector<const SketchEntity*> entities;
     entities.reserve(sketch.entities.size());
     for (const SketchEntity& entity : sketch.entities) {
+        // Material topology only (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`): a
+        // Construction entity cuts no face and bounds none. Drafting queries
+        // that DO want it as a cutter derive over `cadSketchAllCurvesView`.
+        if (entity.role() != SketchEntityRole::Regular) {
+            continue;
+        }
         entities.push_back(&entity);
     }
     // Semantic order: nothing downstream may depend on the vector's order.

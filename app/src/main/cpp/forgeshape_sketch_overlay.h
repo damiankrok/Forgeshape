@@ -36,6 +36,19 @@ enum class SketchOverlayStyle : uint8_t {
     // geometry, it is never extruded, exported or serialized, and the numeric
     // label beside it is drawn by the shell rather than by these vertices.
     Dimension,
+    // --- `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`. APPENDED, so every range above
+    // keeps its index. ---
+    //
+    // Construction geometry and the transient inference guides. The vertices
+    // are already DASHED (the session emits dash segments), and the range is
+    // drawn quieter than `Entities`, so a construction line differs from
+    // material by its dash AND its weight -- never by colour alone. A selected
+    // construction entity still carries the emphasis tag.
+    Construction,
+    // A REFERENCE (read-only) dimension: the same annotation language as
+    // `Dimension`, lighter, so driving and reference read apart before the
+    // label's parentheses are read.
+    DimensionReference,
 };
 
 // How many values SketchOverlayStyle has, stated beside the enum on purpose.
@@ -46,7 +59,7 @@ enum class SketchOverlayStyle : uint8_t {
 // count is here for the exhaustive case in the gizmo self-test to walk, and a
 // value added above without moving it is caught by the mapping's own switch,
 // which has no `default:`.
-constexpr int kSketchOverlayStyleCount = 5;
+constexpr int kSketchOverlayStyleCount = 7;
 
 // The per-style half of what the renderer pushes to draw ONE overlay range: the
 // two scalars that differ between styles. Everything else in the push -- the
@@ -87,6 +100,13 @@ struct SketchOverlay {
 };
 
 using SketchOverlayPtr = std::shared_ptr<const SketchOverlay>;
+
+// How many ranges every built overlay carries, in this fixed order: the two
+// grid weights, the axes, the entities, the Dimension annotation, then
+// (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`) Construction and DimensionReference.
+// A range with nothing to draw is present and EMPTY, so every range keeps its
+// index whatever the sketch holds.
+constexpr size_t kSketchOverlayRangesPerFrame = 7;
 
 // The largest overlay the renderer will hold. The session bounds itself well
 // below this; the renderer refuses rather than grows past it.

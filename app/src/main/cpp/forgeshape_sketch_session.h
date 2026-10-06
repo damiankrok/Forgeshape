@@ -53,6 +53,9 @@
 #include "forgeshape_input.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sketch.h"
+#include "forgeshape_sketch_dimension.h"
+#include "forgeshape_sketch_drafting.h"
+#include "forgeshape_sketch_snap.h"
 #include "forgeshape_sketch_overlay.h"
 #include "forgeshape_sketch_region.h"
 
@@ -118,12 +121,42 @@ const char* sketchToolName(SketchTool tool);
 bool sketchToolFromIndex(int index, SketchTool* out);
 int sketchToolIndex(SketchTool tool);
 
-// What the last snap landed on, for the overlay's marker.
-enum class SketchSnapKind : uint8_t {
+// What the last snap landed on (`SketchSnapKind`) is declared in
+// forgeshape_sketch_snap.h, with the one priority every snap follows.
+
+// The sketch MODIFY mode (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`). While one is
+// active, a viewport tap in Editing means that mode and nothing else -- never
+// both a selection and a trim -- and choosing a drawing tool ends it. Volatile:
+// never persisted, never a history step.
+enum class SketchModifyMode : uint8_t {
     None,
-    Grid,
-    Endpoint,
+    // Tap an entity (or edge) to choose what to dimension; the kinds it
+    // supports are then offered. An EdgeAngle takes a second straight edge.
+    Dimension,
+    // Tap the bounded interval to remove.
+    Trim,
+    // Tap near the end to extend to the nearest forward intersection.
+    Extend,
+    // Tap the source; drag (or type) the signed distance; Confirm creates.
+    Offset,
+    // With a selection: tap a straight edge as the axis; Confirm creates.
+    Mirror,
 };
+
+constexpr int kSketchModifyModeCount = 6;
+
+const char* sketchModifyModeName(SketchModifyMode mode);
+
+// Which retained dimensions the drawing shows. PRESENTATION, volatile and
+// never persisted; `Selected` (the default) shows the dimensions of the
+// selected entities.
+enum class SketchDimensionVisibility : uint8_t {
+    Selected,
+    All,
+    Off,
+};
+
+constexpr int kSketchDimensionVisibilityCount = 3;
 
 // ---------------------------------------------------------------------------
 // Sizes
@@ -215,16 +248,9 @@ const char* sketchTapOutcomeName(SketchTapOutcome outcome);
 bool sketchEventReachesCamera(SketchSessionState state, bool consumed, int pointerCount,
                               bool readyTapArmed);
 
-// The dimension annotation's proportions, in reference units (dp), so it reads
-// the same at any zoom (`SKETCH-UX-R1` E1). The dimension line stands this far
-// off the stroke it measures -- far enough that the label never sits on the
-// geometry -- the extension lines start a small gap away from the endpoints and
-// overshoot the dimension line, and the end ticks are the technical-drawing
-// slash rather than a filled arrowhead, which reads better at phone sizes.
-constexpr double kSketchDimensionOffsetUnits = 30.0;
-constexpr double kSketchDimensionExtensionGapUnits = 6.0;
-constexpr double kSketchDimensionOvershootUnits = 8.0;
-constexpr double kSketchDimensionTickUnits = 7.0;
+// The dimension annotation's proportions (`kSketchDimensionOffsetUnits` and
+// its three companions) are declared in forgeshape_sketch_dimension.h, beside
+// the retained dimensions that are drawn in the same language.
 
 // The snap marker's half size, in reference units.
 constexpr float kSketchSnapMarkerUnits = 8.0f;
@@ -409,12 +435,103 @@ public:
 
     const CadSketch& sketch() const { return sketch_; }
 
-    SketchEntityId selectedEntityId() const { return selectedEntityId_; }
+    // The ONE selected entity, or kNoSketchEntity when none -- or several --
+    // are selected. Every single-entity surface (the exact-value panel, the
+    // transient Line dimension) reads this.
+    SketchEntityId selectedEntityId() const {
+        return selectedIds_.size() == 1u ? selectedIds_.front() : kNoSketchEntity;
+    }
+    // The whole selection SET (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`), in the
+    // order the entities were added. Volatile; never persisted; separate from
+    // the Ready-state region / planar-face selection.
+    const std::vector<SketchEntityId>& selectedEntityIds() const { return selectedIds_; }
+    bool entitySelected(SketchEntityId id) const;
+    // Selects exactly `id`.
     bool select(SketchEntityId id);
+    // Adds `id` to the set, or removes it when it is already there.
+    bool toggleSelect(SketchEntityId id);
     void clearSelection();
 
-    // Removes the selected entity. An edit-session act, not a history step.
+    // Whether a Select tap ADDS to / removes from the set rather than replacing
+    // it: the mobile stand-in for a keyboard modifier. Volatile.
+    void setMultiSelect(bool on);
+    bool multiSelect() const { return multiSelect_; }
+
+    // Removes every selected entity, and every dimension that named only
+    // them, as one staged act. Refused (`SketchDimensionDependency`) when a
+    // dimension names a selected AND an unselected entity. An edit-session
+    // act, not a history step.
     CadStatus deleteSelected();
+    // How many dimensions the last successful delete removed with it.
+    uint32_t lastDeletedDimensionCount() const { return lastDeletedDimensions_; }
+
+    // --- drafting (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`) -------------------
+
+    // The ONE construction act for the selection: Make Construction when any
+    // selected entity is Regular, Make Regular when all are Construction.
+    // `outApplied` receives the role written. Editing only.
+    CadStatus toggleSelectionConstruction(SketchEntityRole* outApplied = nullptr);
+    // What `toggleSelectionConstruction` would write now (Regular when the
+    // selection is empty).
+    SketchEntityRole selectionConstructionTarget() const;
+
+    // Enters or leaves a modify mode. Editing only (`NotSketching`). Mirror
+    // needs a selection (`MirrorNothingSelected`). Entering Offset with ONE
+    // offsettable entity selected takes it as the source; entering Dimension
+    // with ONE entity selected takes it as the target.
+    CadStatus setModifyMode(SketchModifyMode mode);
+    SketchModifyMode modifyMode() const { return modifyMode_; }
+
+    // Dimension mode: the edge chosen to dimension, if any, and the kinds it
+    // supports. `beginDimensionAngle` makes the next straight-edge tap the
+    // second edge of an EdgeAngle (a Reference dimension).
+    bool dimensionTarget(CadSketchEdgeRef* out) const;
+    std::vector<SketchDimensionKind> dimensionTargetKinds() const;
+    CadStatus setDimensionTarget(const CadSketchEdgeRef& ref);
+    CadStatus beginDimensionAngle();
+    bool dimensionAwaitingSecondEdge() const { return dimensionAwaitSecond_; }
+    // Creates a dimension of `kind` on the target (`SketchDimensionConflict`,
+    // `SketchDimensionInvalid` by name). `outId` receives the new id.
+    CadStatus addDimension(SketchDimensionKind kind, SketchDimensionMode mode,
+                           SketchDimensionId* outId = nullptr);
+    // Removes a dimension; the geometry is untouched.
+    CadStatus removeDimension(SketchDimensionId id);
+    // The ONE Driving edit, through `applySketchDimensionValue`.
+    CadStatus applyDimensionValue(SketchDimensionId id, double value);
+
+    void setDimensionVisibility(SketchDimensionVisibility visibility);
+    SketchDimensionVisibility dimensionVisibility() const { return dimensionVisibility_; }
+    // Whether a dimension is shown under the current visibility (Editing only).
+    bool dimensionVisible(const SketchDimension& dimension) const;
+    // The annotations the drawing shows now, in ascending id order.
+    std::vector<SketchDimensionAnnotation> visibleDimensionAnnotations(double worldPerUnit) const;
+
+    // Trim and Extend at a sketch point (the tap path calls these; the tests
+    // and JNI may too). `outPlan` receives what was applied.
+    CadStatus trimAt(const SketchPoint& point, double toleranceMeters,
+                     SketchTrimPlan* outPlan = nullptr);
+    CadStatus extendAt(const SketchPoint& point, double toleranceMeters,
+                       SketchExtendPlan* outPlan = nullptr);
+    // The last applied Trim converted a Rectangle to Lines.
+    bool lastTrimConvertedRectangle() const { return lastTrimConvertedRectangle_; }
+
+    // Offset mode.
+    CadStatus setOffsetSource(SketchEntityId id);
+    SketchEntityId offsetSource() const { return offsetSource_; }
+    CadStatus setOffsetDistance(double signedMeters);
+    double offsetDistance() const { return offsetDistance_; }
+    // The preview's validity: Ok when Confirm would create the offset.
+    CadStatus offsetPreviewStatus() const;
+    CadStatus confirmOffset(std::vector<SketchEntityId>* outIds = nullptr);
+
+    // Mirror mode.
+    CadStatus setMirrorAxis(const CadSketchEdgeRef& axis);
+    bool mirrorAxis(CadSketchEdgeRef* out) const;
+    CadStatus confirmMirror(std::vector<SketchEntityId>* outIds = nullptr);
+
+    // The last snap's full result (guides included), for the overlay and the
+    // diagnostics.
+    const SketchSnapResult& lastSnap() const { return lastSnap_; }
 
     // Replaces one entity's geometry with EXACT typed values. Never snapped.
     // Refused, changing nothing, when the geometry is invalid.
@@ -772,6 +889,18 @@ private:
         SketchSnapKind kind = SketchSnapKind::None;
     };
 
+    // The Editing-state half of onTouch while a modify mode is active.
+    bool onModifyTouch(TouchAction action, int32_t actionPointerId, const TouchPointer* pointers,
+                       int count, const CameraSnapshot& camera, int viewportWidth,
+                       int viewportHeight);
+    // The tap/drag of a modify mode, at a RAW sketch point.
+    void applyModifyTap(const SketchPoint& raw);
+    void updateModifyPreview(const SketchPoint& raw);
+    void resetModifyState();
+    // The snap candidates for the current sketch, rebuilt only when the sketch
+    // changed since they were built.
+    const SketchSnapCandidates& snapCandidates() const;
+
     // The Ready-state half of onTouch: the extrude arrow, on the gizmo one-
     // pointer contract. Returns true when the manipulator consumed the event.
     bool onExtrudeTouch(TouchAction action, int32_t actionPointerId, const TouchPointer* pointers,
@@ -787,7 +916,7 @@ private:
 
     bool pointerToSketch(const CameraSnapshot& camera, float x, float y, int viewportWidth,
                          int viewportHeight, SnapResult* out);
-    SnapResult snap(const SketchPoint& raw, double snapWorld) const;
+    SnapResult snap(const SketchPoint& raw, double snapWorld);
     SketchEntityId hitTest(const SketchPoint& point, double toleranceWorld) const;
     void placeFromDrag();
     void placeArcThrough(const SketchPoint& through);
@@ -824,7 +953,32 @@ private:
     // The current adaptive minor grid step, in metres. Updated from the camera
     // at pointer-down and when the overlay is rebuilt; never persisted.
     double gridStep_ = kSketchGridSpacingMeters;
-    SketchEntityId selectedEntityId_ = kNoSketchEntity;
+    // The selection SET, in insertion order (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`).
+    std::vector<SketchEntityId> selectedIds_;
+    bool multiSelect_ = false;
+    uint32_t lastDeletedDimensions_ = 0;
+    // The modify mode and its volatile state.
+    SketchModifyMode modifyMode_ = SketchModifyMode::None;
+    bool dimensionTargetSet_ = false;
+    CadSketchEdgeRef dimensionFirst_{};
+    bool dimensionAwaitSecond_ = false;
+    SketchEntityId offsetSource_ = kNoSketchEntity;
+    double offsetDistance_ = 0.0;
+    bool mirrorAxisSet_ = false;
+    CadSketchEdgeRef mirrorAxis_{};
+    // The Trim / Extend preview under the finger: the interval that would go
+    // (Trim) or be added (Extend), in sketch coordinates. Empty when none.
+    std::vector<SketchPoint> modifyPreview_;
+    bool lastTrimConvertedRectangle_ = false;
+    SketchPoint rawCursor_{};
+    // Presentation; survives a new sketch, like the grid toggle survives a frame.
+    SketchDimensionVisibility dimensionVisibility_ = SketchDimensionVisibility::Selected;
+    // The snap cache: candidates derived for `snapSketch_`. Mutable because a
+    // const query may refresh it; it is derived and never compared.
+    mutable bool snapCacheValid_ = false;
+    mutable CadSketch snapSketch_;
+    mutable SketchSnapCandidates snapCache_;
+    SketchSnapResult lastSnap_{};
 
     SketchRegionExtraction regions_;
     // `CAD-V6-S2`: the arrangement derived at Finish and, when the session is

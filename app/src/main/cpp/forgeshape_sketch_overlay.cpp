@@ -55,6 +55,18 @@ bool sketchOverlayStyleWeights(SketchOverlayStyle style, ViewportBackground back
             weights.alpha = kGizmoAxisAlpha * 0.85f;
             mapped = true;
             break;
+        case SketchOverlayStyle::Construction:
+            // The entity level, at a weight between the major grid and a
+            // dimension: clearly a stroke the user drew, clearly not material.
+            weights.neutralLevel = neutral * 0.35f + highlight[0] * 0.65f;
+            weights.alpha = kGizmoAxisAlpha * 0.6f;
+            mapped = true;
+            break;
+        case SketchOverlayStyle::DimensionReference:
+            weights.neutralLevel = neutral * 0.35f + highlight[0] * 0.65f;
+            weights.alpha = kGizmoAxisAlpha * 0.55f;
+            mapped = true;
+            break;
     }
     if (!mapped) {
         // A code that is not a style at all. The renderer skips such a range

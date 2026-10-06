@@ -1,5 +1,7 @@
 #include "forgeshape_sketch.h"
 
+#include "forgeshape_sketch_dimension.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -12,7 +14,7 @@ namespace forgeshape {
 
 // The count is a literal in the header so Java can mirror it; this is what
 // keeps the literal honest when an enumerator is appended.
-static_assert(static_cast<int>(CadStatus::RevolveNeedsAxis) + 1 == kCadStatusCount,
+static_assert(static_cast<int>(CadStatus::MirrorNothingSelected) + 1 == kCadStatusCount,
               "kCadStatusCount must equal the number of CadStatus enumerators");
 
 const char* cadStatusName(CadStatus status) {
@@ -91,6 +93,23 @@ const char* cadStatusName(CadStatus status) {
         case CadStatus::RevolvePayloadMismatch: return "RevolvePayloadMismatch";
         case CadStatus::RevolveLaterFeatureUnsupported: return "RevolveLaterFeatureUnsupported";
         case CadStatus::RevolveNeedsAxis: return "RevolveNeedsAxis";
+        case CadStatus::SketchDimensionInvalid: return "SketchDimensionInvalid";
+        case CadStatus::SketchDimensionConflict: return "SketchDimensionConflict";
+        case CadStatus::SketchDimensionDependency: return "SketchDimensionDependency";
+        case CadStatus::SketchDimensionLocked: return "SketchDimensionLocked";
+        case CadStatus::SketchDimensionReadOnly: return "SketchDimensionReadOnly";
+        case CadStatus::SketchDimensionValueInvalid: return "SketchDimensionValueInvalid";
+        case CadStatus::TrimSplineUnsupported: return "TrimSplineUnsupported";
+        case CadStatus::DraftingNoTarget: return "DraftingNoTarget";
+        case CadStatus::ExtendUnsupported: return "ExtendUnsupported";
+        case CadStatus::ExtendNoTarget: return "ExtendNoTarget";
+        case CadStatus::ExtendAmbiguous: return "ExtendAmbiguous";
+        case CadStatus::OffsetSplineUnsupported: return "OffsetSplineUnsupported";
+        case CadStatus::OffsetInvalid: return "OffsetInvalid";
+        case CadStatus::OffsetMiterLimit: return "OffsetMiterLimit";
+        case CadStatus::OffsetSelfIntersecting: return "OffsetSelfIntersecting";
+        case CadStatus::MirrorAxisInvalid: return "MirrorAxisInvalid";
+        case CadStatus::MirrorNothingSelected: return "MirrorNothingSelected";
     }
     return "unknown";
 }
@@ -113,6 +132,40 @@ const char* sketchEntityKindName(SketchEntityKind kind) {
         case SketchEntityKind::Circle: return "Circle";
         case SketchEntityKind::Arc: return "Arc";
         case SketchEntityKind::Spline: return "Spline";
+    }
+    return "unknown";
+}
+
+const char* sketchEntityRoleName(SketchEntityRole role) {
+    switch (role) {
+        case SketchEntityRole::Regular: return "Regular";
+        case SketchEntityRole::Construction: return "Construction";
+    }
+    return "unknown";
+}
+
+const char* sketchDimensionKindName(SketchDimensionKind kind) {
+    switch (kind) {
+        case SketchDimensionKind::LineLength: return "LineLength";
+        case SketchDimensionKind::LineAngle: return "LineAngle";
+        case SketchDimensionKind::LineHorizontal: return "LineHorizontal";
+        case SketchDimensionKind::LineVertical: return "LineVertical";
+        case SketchDimensionKind::RectangleWidth: return "RectangleWidth";
+        case SketchDimensionKind::RectangleHeight: return "RectangleHeight";
+        case SketchDimensionKind::CircleRadius: return "CircleRadius";
+        case SketchDimensionKind::CircleDiameter: return "CircleDiameter";
+        case SketchDimensionKind::EdgeLength: return "EdgeLength";
+        case SketchDimensionKind::ArcRadius: return "ArcRadius";
+        case SketchDimensionKind::ArcSweep: return "ArcSweep";
+        case SketchDimensionKind::EdgeAngle: return "EdgeAngle";
+    }
+    return "unknown";
+}
+
+const char* sketchDimensionModeName(SketchDimensionMode mode) {
+    switch (mode) {
+        case SketchDimensionMode::Driving: return "Driving";
+        case SketchDimensionMode::Reference: return "Reference";
     }
     return "unknown";
 }
@@ -229,7 +282,7 @@ double polygonSignedAreaTwice(const std::vector<SketchPoint>& polygon) {
 // ---------------------------------------------------------------------------
 
 bool sameSketchEntity(const SketchEntity& a, const SketchEntity& b) {
-    if (a.id() != b.id() || a.kind() != b.kind()) {
+    if (a.id() != b.id() || a.kind() != b.kind() || a.role() != b.role()) {
         return false;
     }
     switch (a.kind()) {
@@ -709,14 +762,62 @@ bool sameTopoRef(const TopoRef& a, const TopoRef& b) {
 }
 
 // ---------------------------------------------------------------------------
+// Straight edges and dimensions
+// ---------------------------------------------------------------------------
+
+bool sameCadSketchEdgeRef(const CadSketchEdgeRef& a, const CadSketchEdgeRef& b) {
+    return a.entityId == b.entityId && a.edgeLocalIndex == b.edgeLocalIndex;
+}
+
+std::vector<SketchStraightEdge> sketchEntityStraightEdges(const SketchEntity& entity) {
+    std::vector<SketchStraightEdge> edges;
+    if (const SketchLine* line = entity.line()) {
+        edges.push_back(SketchStraightEdge{0u, line->start, line->end});
+    } else if (const SketchPolyline* polyline = entity.polyline()) {
+        // The AUTHORED segments, exactly as the stroke is drawn: vertices[i] ->
+        // vertices[i+1], and a closed polyline's closing segment last.
+        const size_t n = polyline->vertices.size();
+        for (size_t i = 0; i + 1 < n; ++i) {
+            edges.push_back(SketchStraightEdge{static_cast<uint32_t>(i), polyline->vertices[i],
+                                               polyline->vertices[i + 1]});
+        }
+        if (polyline->closed && n >= 3) {
+            edges.push_back(SketchStraightEdge{static_cast<uint32_t>(n - 1), polyline->vertices[n - 1],
+                                               polyline->vertices[0]});
+        }
+    } else if (const SketchRectangle* rectangle = entity.rectangle()) {
+        // The same counter-clockwise corners, and so the same edge numbering, a
+        // rectangle's extruded side faces already wear.
+        const std::vector<SketchPoint> corners = rectangleProfilePolygon(*rectangle);
+        for (uint32_t k = 0; k < 4u; ++k) {
+            edges.push_back(SketchStraightEdge{k, corners[k], corners[(k + 1u) % 4u]});
+        }
+    }
+    // A circle, an arc and a spline offer no straight edge.
+    return edges;
+}
+
+bool sameSketchDimension(const SketchDimension& a, const SketchDimension& b) {
+    return a.id == b.id && a.kind == b.kind && a.mode == b.mode
+           && sameCadSketchEdgeRef(a.first, b.first) && sameCadSketchEdgeRef(a.second, b.second);
+}
+
+// ---------------------------------------------------------------------------
 // The sketch
 // ---------------------------------------------------------------------------
 
 bool sameCadSketch(const CadSketch& a, const CadSketch& b) {
     if (a.plane != b.plane || a.nextEntityId != b.nextEntityId
         || a.entities.size() != b.entities.size()
-        || a.hasFaceSupport != b.hasFaceSupport) {
+        || a.hasFaceSupport != b.hasFaceSupport
+        || a.nextDimensionId != b.nextDimensionId
+        || a.dimensions.size() != b.dimensions.size()) {
         return false;
+    }
+    for (size_t i = 0; i < a.dimensions.size(); ++i) {
+        if (!sameSketchDimension(a.dimensions[i], b.dimensions[i])) {
+            return false;
+        }
     }
     if (a.hasFaceSupport && !sameTopoRef(a.faceSupport, b.faceSupport)) {
         return false;
@@ -766,12 +867,54 @@ CadStatus validateCadSketch(const CadSketch& sketch) {
         if (why != CadStatus::Ok) {
             return why;
         }
+        if (entity.role() != SketchEntityRole::Regular
+            && entity.role() != SketchEntityRole::Construction) {
+            return CadStatus::UnknownEntity;
+        }
     }
-    return CadStatus::Ok;
+    // The dimension table resolves against the entities just validated.
+    return validateSketchDimensions(sketch);
+}
+
+bool cadSketchHasDraftingData(const CadSketch& sketch) {
+    if (!sketch.dimensions.empty() || sketch.nextDimensionId != 1u) {
+        return true;
+    }
+    for (const SketchEntity& entity : sketch.entities) {
+        if (entity.role() != SketchEntityRole::Regular) {
+            return true;
+        }
+    }
+    return false;
+}
+
+CadSketch cadSketchMaterialView(const CadSketch& sketch) {
+    CadSketch view;
+    view.plane = sketch.plane;
+    view.nextEntityId = sketch.nextEntityId;
+    view.hasFaceSupport = sketch.hasFaceSupport;
+    view.faceSupport = sketch.faceSupport;
+    view.entities.reserve(sketch.entities.size());
+    for (const SketchEntity& entity : sketch.entities) {
+        if (entity.role() == SketchEntityRole::Regular) {
+            view.entities.push_back(entity);
+        }
+    }
+    return view;
+}
+
+CadSketch cadSketchAllCurvesView(const CadSketch& sketch) {
+    CadSketch view = sketch;
+    view.dimensions.clear();
+    view.nextDimensionId = 1;
+    for (SketchEntity& entity : view.entities) {
+        entity.setRole(SketchEntityRole::Regular);
+    }
+    return view;
 }
 
 CadStatus addSketchEntity(CadSketch* sketch, SketchEntity::Payload payload,
-                          SketchEntityId* outId) {
+                          SketchEntityId* outId, SketchEntityRole role) {
     if (sketch == nullptr) {
         return CadStatus::UnknownEntity;
     }
@@ -780,7 +923,7 @@ CadStatus addSketchEntity(CadSketch* sketch, SketchEntity::Payload payload,
     }
     // Validated with a provisional id BEFORE anything is minted, so a refusal
     // costs no id and leaves the allocator exactly where it was.
-    const SketchEntity candidate(sketch->nextEntityId, std::move(payload));
+    const SketchEntity candidate(sketch->nextEntityId, std::move(payload), role);
     const CadStatus why = validateSketchEntity(candidate);
     if (why != CadStatus::Ok) {
         return why;
@@ -804,7 +947,9 @@ CadStatus replaceSketchEntity(CadSketch* sketch, SketchEntityId id, SketchEntity
         if (entity.id() != id) {
             continue;
         }
-        const SketchEntity candidate(id, std::move(payload));
+        // The geometry is replaced; the entity's identity AND its role are
+        // kept -- a typed value never turns a construction line into material.
+        const SketchEntity candidate(id, std::move(payload), entity.role());
         const CadStatus why = validateSketchEntity(candidate);
         if (why != CadStatus::Ok) {
             return why;
@@ -1177,7 +1322,13 @@ void chainCurves(const CadSketch& sketch, std::vector<LoopCandidate>* loops,
 
 }  // namespace
 
-ProfileExtraction extractClosedProfiles(const CadSketch& sketch) {
+ProfileExtraction extractClosedProfiles(const CadSketch& authored) {
+    // Material topology only (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`): a
+    // Construction entity closes no loop and takes no part in a chain. This
+    // is one of the two places that rule lives -- the planar arrangement's
+    // source edges are the other -- and everything derived from either
+    // (regions, faces, tokens, the solid) inherits it.
+    const CadSketch sketch = cadSketchMaterialView(authored);
     ProfileExtraction out;
     std::vector<LoopCandidate> candidates;
 
