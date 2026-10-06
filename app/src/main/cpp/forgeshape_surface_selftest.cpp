@@ -18,6 +18,8 @@
 #include "forgeshape_scene.h"
 #include "forgeshape_sculpt.h"
 #include "forgeshape_surface.h"
+#include "forgeshape_surface_authoring.h"
+#include "forgeshape_camera.h"
 
 namespace forgeshape {
 namespace {
@@ -759,6 +761,213 @@ void testHistoryAndFormat(Checks& r) {
                 + projectFixtureSha256Hex(b) + " surface_bad_ref_v1=" + projectFixtureSha256Hex(c);
 }
 
+// ---------------------------------------------------------------------------
+// Authoring: a sketch session's Finish, Stitch, Thicken and value edits
+// ---------------------------------------------------------------------------
+
+struct Drawing {
+    SketchSession sketch;
+    CameraController camera;
+    enum : int { kW = 1000, kH = 1000 };
+    bool begin(ObjectId body, double offset = 0.0) {
+        surfaceSketchPurpose() = SurfaceSketchPurpose{true, body};
+        if (sketch.begin(Workplane::XY) != CadStatus::Ok) return false;
+        if (offset != 0.0 && sketch.setPlaneOffset(offset) != CadStatus::Ok) return false;
+        camera.setViewport(kW, kH);
+        const SketchFrame& f = sketch.frame();
+        camera.frameSketchView(f.origin, f.u, f.v, f.n);
+        return true;
+    }
+    bool at(TouchAction action, float x, float y) {
+        TouchPointer p{7, x, y};
+        return sketch.onTouch(action, action == TouchAction::Up ? 7 : -1, &p, 1, camera.snapshot(), kW, kH);
+    }
+    bool drag(SketchTool tool, const SketchPoint& from, const SketchPoint& to) {
+        sketch.setTool(tool);
+        float x0, y0, x1, y1;
+        if (!sketch.sketchToScreen(camera.snapshot(), from, kW, kH, &x0, &y0)
+            || !sketch.sketchToScreen(camera.snapshot(), to, kW, kH, &x1, &y1)) {
+            return false;
+        }
+        bool ok = at(TouchAction::Down, x0, y0);
+        for (int step = 1; step <= 4; ++step) {
+            const float t = step / 4.0f;
+            ok &= at(TouchAction::Move, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
+        }
+        ok &= at(TouchAction::Up, x1, y1);
+        return ok;
+    }
+    // Draws a circle by dragging centre to rim.
+    bool circleAt(double u, double v, double radius) {
+        return drag(SketchTool::Circle, SketchPoint{u, v}, SketchPoint{u + radius, v});
+    }
+    ~Drawing() { surfaceSketchPurpose() = SurfaceSketchPurpose{}; }
+};
+
+SurfaceCreateRequest requestOf(SurfaceCreateKind kind) {
+    SurfaceCreateRequest r;
+    r.kind = kind;
+    return r;
+}
+
+void testAuthoring(Checks& r) {
+    ConstructionScene scene{NoProjectTag{}};
+    ConstructionHistory history(scene);
+    SculptSession sculpt;
+    ObjectId body = kNoObject;
+
+    // 1. New Project -> Surface: an open chain extruded is the first project.
+    {
+        Drawing d;
+        const bool drawn = d.begin(kNoObject) && d.drag(SketchTool::Line, {2.0, 0.0}, {3.0, 0.0})
+                           && d.drag(SketchTool::Line, {3.0, 0.0}, {3.0, 1.0})
+                           && d.sketch.sketch().entities.size() == 2u;
+        SurfaceCreateRequest extrude = requestOf(SurfaceCreateKind::Extrude);
+        extrude.distance = 0.5;
+        const bool loft = surfaceCommitSketch(d.sketch, scene, sculpt, history, requestOf(SurfaceCreateKind::Loft))
+                          == SurfaceStatus::FirstFeatureInvalid;
+        const SurfaceStatus why = surfaceCommitSketch(d.sketch, scene, sculpt, history, extrude, &body);
+        const SceneObject* object = scene.findBody(body);
+        r.check("SURF_AUTH_01_an_open_chain_sketch_becomes_the_first_surface_project",
+                drawn && loft && why == SurfaceStatus::Ok && object != nullptr && object->isSurface()
+                        && scene.bodyCount() == 1u && history.undoDepth() == 0u && !d.sketch.active()
+                        && !surfaceSketchPurpose().active
+                        && object->surfaceOrNull()->state().features[0].kind == SurfaceFeatureKind::ExtrudedSurface
+                        && object->surfaceOrNull()->state().features[0].section.curves.size() == 2u);
+    }
+    SurfaceBody* surface = scene.findBody(body) != nullptr ? scene.findBody(body)->surfaceOrNull() : nullptr;
+    if (surface == nullptr) return;
+
+    // 2. Thicken the wall: one Undo.
+    const SurfaceStatus thick = surfaceThicken(scene, history, body, SurfaceFeatureId{1}, 0.1);
+    r.check("SURF_AUTH_02_thicken_is_one_transaction",
+            thick == SurfaceStatus::Ok && history.undoDepth() == 1u && surface->mesh().solid.triangleCount() > 0u
+                    && surfaceThicken(scene, history, body, SurfaceFeatureId{1}, 0.1) == SurfaceStatus::FeatureConsumed
+                    && history.undoDepth() == 1u);
+
+    // 3. Patch, Trim on its plane, a tube, then Stitch.
+    bool built = true;
+    {
+        Drawing d;
+        built = built && d.begin(body) && d.drag(SketchTool::Rectangle, {-1.0, -1.0}, {1.0, 1.0})
+                && surfaceCommitSketch(d.sketch, scene, sculpt, history, requestOf(SurfaceCreateKind::Patch))
+                           == SurfaceStatus::Ok;
+    }
+    bool noTarget = false;
+    {
+        Drawing d;
+        built = built && d.begin(body, 0.5) && d.circleAt(0.0, 0.0, 0.5);
+        noTarget = surfaceCommitSketch(d.sketch, scene, sculpt, history, requestOf(SurfaceCreateKind::Trim))
+                   == SurfaceStatus::TrimTargetMissing;
+    }
+    {
+        Drawing d;
+        built = built && d.begin(body) && d.circleAt(0.0, 0.0, 0.5)
+                && surfaceCommitSketch(d.sketch, scene, sculpt, history, requestOf(SurfaceCreateKind::Trim))
+                           == SurfaceStatus::Ok;
+    }
+    {
+        Drawing d;
+        SurfaceCreateRequest tube = requestOf(SurfaceCreateKind::Extrude);
+        tube.distance = 1.0;
+        built = built && d.begin(body) && d.drag(SketchTool::Rectangle, {-1.0, -1.0}, {1.0, 1.0})
+                && surfaceCommitSketch(d.sketch, scene, sculpt, history, tube) == SurfaceStatus::Ok;
+    }
+    const std::vector<SurfaceFeatureId> live = surfaceLiveFeatures(surface->mesh());
+    const SurfaceStatus stitched = surfaceStitch(scene, history, body);
+    r.check("SURF_AUTH_03_patch_trim_tube_and_stitch_through_the_sketch_session",
+            built && noTarget && live.size() == 2u && idOf(live[0]) == 4u && idOf(live[1]) == 5u
+                    && stitched == SurfaceStatus::Ok && surface->mesh().stitches.size() == 1u
+                    && history.undoDepth() == 5u);
+
+    // 4. Revolve needs exactly one Construction straight edge.
+    {
+        Drawing d;
+        bool ok = d.begin(body) && d.drag(SketchTool::Line, {6.0, 0.0}, {6.0, 1.0})
+                  && d.drag(SketchTool::Line, {5.0, -1.0}, {5.0, 2.0});
+        const SurfaceStatus none =
+            surfaceCommitSketch(d.sketch, scene, sculpt, history, requestOf(SurfaceCreateKind::Revolve));
+        const SketchEntityId axisId = d.sketch.sketch().entities.size() == 2u ? d.sketch.sketch().entities[1].id() : 0u;
+        ok = ok && d.sketch.select(axisId) && d.sketch.toggleSelectionConstruction() == CadStatus::Ok;
+        d.sketch.clearSelection();
+        const SurfaceStatus revolved =
+            surfaceCommitSketch(d.sketch, scene, sculpt, history, requestOf(SurfaceCreateKind::Revolve));
+        const SurfaceFeature* f = findSurfaceFeature(surface->state(), SurfaceFeatureId{7});
+        r.check("SURF_AUTH_04_revolve_sweeps_about_the_one_construction_edge",
+                ok && none == SurfaceStatus::AxisUnresolved && revolved == SurfaceStatus::Ok && f != nullptr
+                        && f->kind == SurfaceFeatureKind::RevolvedSurface && f->axis.entityId == axisId
+                        && f->section.curves.size() == 1u && f->angleDegrees == 360.0);
+    }
+
+    // 5. A Section, then a Loft drawn where it stands.
+    {
+        Drawing a;
+        bool ok = a.begin(body) && a.circleAt(0.0, 4.0, 0.5);
+        const bool missing = surfaceCommitSketch(a.sketch, scene, sculpt, history, requestOf(SurfaceCreateKind::Loft))
+                             == SurfaceStatus::SectionMissing;
+        ok = ok && surfaceCommitSketch(a.sketch, scene, sculpt, history, requestOf(SurfaceCreateKind::Section))
+                           == SurfaceStatus::Ok;
+        const uint32_t pending = surfacePendingSection(surface->state());
+        Drawing b;
+        ok = ok && b.begin(body, 1.0) && b.sketch.frame().origin.z == 1.0f && b.circleAt(0.0, 4.0, 0.3)
+             && surfaceCommitSketch(b.sketch, scene, sculpt, history, requestOf(SurfaceCreateKind::Loft))
+                        == SurfaceStatus::Ok;
+        const SurfaceFeature& loft = surface->state().features.back();
+        const SurfaceSketchRecord* second = findSurfaceSketch(surface->state(), loft.sectionB.sketchId);
+        r.check("SURF_AUTH_05_a_section_then_a_loft_at_its_typed_offset",
+                ok && missing && pending != 0u && loft.kind == SurfaceFeatureKind::LoftSurface
+                        && loft.section.sketchId == pending && second != nullptr && second->offset == 1.0
+                        && surfacePendingSection(surface->state()) == 0u);
+    }
+
+    // 6. Value edits: one Undo, and a staged failure names its feature and
+    // writes nothing.
+    const size_t depth = history.undoDepth();
+    const uint64_t before = surfaceMeshDigest(surface->mesh());
+    const double volumeBefore = cadSolidVolume(surface->mesh().solid);
+    const SurfaceStatus edited = surfaceApplyValue(scene, history, body, SurfaceValueTarget::Feature, 1u, 0.8);
+    const double volumeAfter = cadSolidVolume(surface->mesh().solid);
+    SurfaceRegenerationReport report;
+    const SurfaceBodyState committed = surface->state();
+    // Moving the patch's sketch off the plane its Trim stands on.
+    const uint32_t patchSketch = findSurfaceFeature(committed, SurfaceFeatureId{3})->section.sketchId;
+    const SurfaceStatus moved =
+        surfaceApplyValue(scene, history, body, SurfaceValueTarget::Sketch, patchSketch, 0.25, &report);
+    SurfaceBodyState staged;
+    surfaceStateWithValue(committed, SurfaceValueTarget::Sketch, patchSketch, 0.25, &staged);
+    SurfaceRegenerationReport stagedReport;
+    regenerateSurfaceBody(staged, nullptr, &stagedReport);
+    const SurfaceTimeline timeline =
+        buildSurfaceTimeline(staged, stagedReport, true, SurfaceValueTarget::Sketch, patchSketch);
+    size_t failedRows = 0;
+    size_t notRebuilt = 0;
+    bool editingMarked = false;
+    for (const SurfaceTimelineRow& row : timeline.rows) {
+        failedRows += row.state == SurfaceTimelineRowState::Failed ? 1u : 0u;
+        notRebuilt += row.state == SurfaceTimelineRowState::NotRegenerated ? 1u : 0u;
+        editingMarked = editingMarked || (row.editing && !row.feature && row.id == patchSketch);
+    }
+    r.check("SURF_AUTH_06_a_value_edit_regenerates_downstream_as_one_undo",
+            edited == SurfaceStatus::Ok && history.undoDepth() == depth + 1u
+                    && near(volumeAfter, volumeBefore * 0.8 / 0.5, 1e-9) && surfaceMeshDigest(surface->mesh()) != before);
+    r.check("SURF_AUTH_07_a_staged_edit_names_its_first_failure_and_writes_nothing",
+            moved == SurfaceStatus::TrimNotCoplanar && idOf(report.failedFeature) == 4u
+                    && sameSurfaceBodyState(surface->state(), committed) && history.undoDepth() == depth + 1u
+                    && failedRows == 1u && notRebuilt == surface->state().features.size() - 4u && editingMarked
+                    && timeline.failedFeature == SurfaceFeatureId{4});
+    const bool undone = history.undo() && near(cadSolidVolume(surface->mesh().solid), volumeBefore, 1e-12);
+    const SurfaceTimeline rows = buildSurfaceTimeline(surface->state(), SurfaceRegenerationReport{});
+    bool ordered = rows.rows.size() == surface->state().sketches.size() + surface->state().features.size();
+    // A sketch row stands before the first feature that reads it.
+    for (size_t i = 0; ordered && i < rows.rows.size(); ++i) {
+        if (!rows.rows[i].feature) continue;
+        bool seen = rows.rows[i].kind == SurfaceFeatureKind::Stitch || rows.rows[i].kind == SurfaceFeatureKind::Thicken;
+        for (size_t j = 0; j < i; ++j) seen = seen || (!rows.rows[j].feature && rows.rows[j].id == rows.rows[i].sketchId);
+        ordered = seen;
+    }
+    r.check("SURF_AUTH_08_undo_restores_and_the_timeline_reads_in_construction_order", undone && ordered);
+}
+
 double micros(const std::function<void()>& work) {
     const auto t0 = std::chrono::steady_clock::now();
     work();
@@ -797,6 +1006,7 @@ int runSurfaceSelfTests(SurfaceSelfTestResult* out, int maxOut) {
     testStitch(r);
     testThicken(r);
     testHistoryAndFormat(r);
+    testAuthoring(r);
     measure(r);
     return std::min(r.count, maxOut);
 }

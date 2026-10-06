@@ -114,9 +114,15 @@ enum class SurfaceStatus : uint8_t {
     TessellationFailed,
     NotSurfaceBody,
     EditInProgress,
+    // Authoring (forgeshape_surface_authoring.h), appended so every earlier
+    // code keeps its number.
+    NotSketching,       // a Surface Finish with no Surface sketch open
+    SectionMissing,     // a Loft with no pending first section
+    TrimTargetMissing,  // a Trim with no live planar patch on the sketch's plane
+    NothingToStitch,    // a Stitch over fewer than two live features
 };
 
-constexpr int kSurfaceStatusCount = 44;
+constexpr int kSurfaceStatusCount = 48;
 
 const char* surfaceStatusName(SurfaceStatus status);
 int surfaceStatusCode(SurfaceStatus status);

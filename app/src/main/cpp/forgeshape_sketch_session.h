@@ -375,6 +375,18 @@ public:
     //                           takes a Cancel and a new support choice.
     CadStatus setSupportPlane(Workplane plane);
 
+    // Moves a WORLD-plane sketch's authoring frame `meters` along the plane's
+    // normal (`MODELING-FOUNDATIONS-R1` C): a Surface section -- the second
+    // section of a Loft -- is drawn where it will stand, so what the finger
+    // places and what the feature lofts are one place. Presentation of the
+    // frame only: the authored (u, v) never move, and the offset reaches the
+    // project only as the Surface sketch record's own offset. The CAD paths
+    // never call it -- a CAD world-plane sketch stays on the origin -- and a
+    // face-supported sketch refuses it (`InvalidWorkplane`), as it refuses a
+    // world plane. Non-finite or beyond 1e5 m is `NonFinite`, never clamped.
+    CadStatus setPlaneOffset(double meters);
+    double planeOffset() const { return planeOffset_; }
+
     // --- the selected line's dimension (`SKETCH-UX-R1` E) ----------------
 
     // The selected entity's length, when it is a straight Line. False for any
@@ -956,6 +968,7 @@ private:
     CadSketch sketch_;
     // The world frame the sketch is authored on. See SketchFrame.
     SketchFrame frame_;
+    double planeOffset_ = 0.0;
     // The current adaptive minor grid step, in metres. Updated from the camera
     // at pointer-down and when the overlay is rebuilt; never persisted.
     double gridStep_ = kSketchGridSpacingMeters;

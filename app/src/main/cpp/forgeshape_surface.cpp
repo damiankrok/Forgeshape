@@ -57,6 +57,10 @@ const char* surfaceStatusName(SurfaceStatus status) {
         case SurfaceStatus::TessellationFailed: return "TessellationFailed";
         case SurfaceStatus::NotSurfaceBody: return "NotSurfaceBody";
         case SurfaceStatus::EditInProgress: return "EditInProgress";
+        case SurfaceStatus::NotSketching: return "NotSketching";
+        case SurfaceStatus::SectionMissing: return "SectionMissing";
+        case SurfaceStatus::TrimTargetMissing: return "TrimTargetMissing";
+        case SurfaceStatus::NothingToStitch: return "NothingToStitch";
     }
     return "unknown";
 }

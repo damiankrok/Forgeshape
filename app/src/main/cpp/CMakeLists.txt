@@ -80,6 +80,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_freeform_subdivision.cpp
     forgeshape_freeform_session.cpp
     forgeshape_surface.cpp
+    forgeshape_surface_authoring.cpp
     forgeshape_gizmo.cpp
     forgeshape_glb_import_fixture.cpp
     forgeshape_glb_roundtrip.cpp

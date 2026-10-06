@@ -125,6 +125,23 @@ double adaptiveSketchGridStep(double worldPerPixel) {
     return step;
 }
 
+CadStatus SketchSession::setPlaneOffset(double meters) {
+    if (state_ == SketchSessionState::Inactive) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (sketch_.hasFaceSupport || editingExistingBody()) {
+        return fail(CadStatus::InvalidWorkplane);
+    }
+    if (!std::isfinite(meters) || std::fabs(meters) > 1.0e5) {
+        return fail(CadStatus::NonFinite);
+    }
+    planeOffset_ = meters;
+    frame_.origin = vec3Scale(frame_.n, static_cast<float>(meters));
+    resetGesture();
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
 CadStatus SketchSession::beginOnFace(const SketchFrame& worldFrame, const TopoRef& support,
                                      const CadBodyState* producerState) {
     if (state_ != SketchSessionState::Inactive) {
@@ -166,6 +183,7 @@ CadStatus SketchSession::begin(Workplane plane) {
     // world-plane sketch behaves exactly as before; a face sketch overrides it.
     const WorkplaneFrame wf = workplaneFrame(plane);
     frame_ = SketchFrame{Vec3{0.0f, 0.0f, 0.0f}, wf.uAxis, wf.vAxis, wf.normal};
+    planeOffset_ = 0.0;
     gridStep_ = kSketchGridSpacingMeters;
     selectedIds_.clear();
     multiSelect_ = false;
@@ -471,7 +489,7 @@ CadStatus SketchSession::setSupportPlane(Workplane plane) {
     }
     sketch_.plane = plane;
     const WorkplaneFrame wf = workplaneFrame(plane);
-    frame_ = SketchFrame{Vec3{0.0f, 0.0f, 0.0f}, wf.uAxis, wf.vAxis, wf.normal};
+    frame_ = SketchFrame{vec3Scale(wf.normal, static_cast<float>(planeOffset_)), wf.uAxis, wf.vAxis, wf.normal};
     resetGesture();
     arcPending_ = false;
     touchOverlay();
