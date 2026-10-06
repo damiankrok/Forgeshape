@@ -57,6 +57,7 @@
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_extrude_tool.h"
 #include "forgeshape_cad_feature.h"
+#include "forgeshape_cad_timeline.h"
 #include "forgeshape_cad_a3_selftest.h"
 #include "forgeshape_sketch_ux_selftest.h"
 #include "forgeshape_cad_selftest.h"
@@ -5198,6 +5199,111 @@ Java_com_forgeshape_app_NativeViewport_cadFeatureInfo(JNIEnv* env, jclass, jlong
     }
     env->SetDoubleArrayRegion(out, 0, kSlots, values);
     return JNI_TRUE;
+}
+
+// The Parametric History of a CAD body (`MODELING-FOUNDATIONS-R1` A): its
+// feature chain read as a timeline, DERIVED on every call and stored nowhere.
+//
+// `staged` asks for the chain an open edit session is staging over this body
+// -- the candidate state and its own latest-only evaluation, so the failing
+// downstream row is the one a commit would refuse by -- and falls back to the
+// committed body when no session edits it. `header` receives [0] the verdict
+// (a CadStatus code), [1] the first failing feature id or 0, [2] the feature
+// the staged edit changes or 0, [3] 1 when the verdict is a real evaluation
+// (0 while the staged sketch is still being drawn), [4] the row count. `rows`
+// receives up to its length / CAD_TIMELINE_ROW_SIZE rows of 27 slots: [0]
+// kind (0 sketch, 1 feature), [1] id, [2] sketch id, [3] the feature a tap
+// edits, [4] ordinal, [5] state (0 Ok, 1 Failed, 2 NotRegenerated, 3 Pending,
+// 4 Unused), [6] the failing status code, [7] editing, [8] entities, [9]
+// dimensions, [10] workplane, [11] on another body's face, [12] on a feature
+// face, [13] support feature, [14] feature kind, [15] operation, [16]
+// selection kind, [17] regions, [18] holes, [19] extent, [20] side, [21] +N
+// distance, [22] -N distance, [23] revolve angle, [24] revolve sense, [25]
+// axis entity, [26] axis edge. Returns the row count, or -1 for a body that is
+// not a CAD body.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_cadTimeline(JNIEnv* env, jclass, jlong bodyId,
+                                                   jboolean staged, jdoubleArray header,
+                                                   jdoubleArray rows) {
+    constexpr jsize kHeaderSlots = 5;
+    constexpr jsize kRowSlots = 27;
+    if (header == nullptr || env->GetArrayLength(header) < kHeaderSlots) {
+        return -1;
+    }
+    forgeshape::CadTimeline timeline;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
+        const forgeshape::SceneObject* object = forgeshape::constructionScene().findBody(id);
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        if (body == nullptr) {
+            return -1;
+        }
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        if (staged == JNI_TRUE && session.editingBodyId() == id) {
+            const bool ready = session.state() == forgeshape::SketchSessionState::Ready;
+            forgeshape::CadRegenerationReport report;
+            if (ready) {
+                const forgeshape::CadCandidateEvaluation& evaluation = session.evaluateCandidate();
+                report.status = evaluation.status;
+                report.failedFeatureId = evaluation.failedFeatureId;
+            }
+            timeline = forgeshape::buildCadTimeline(session.candidateState(), report, ready,
+                                                    session.editingFeatureId());
+        } else {
+            std::shared_ptr<const forgeshape::CadBodyMesh> mesh;
+            forgeshape::CadRegenerationReport report;
+            report.status = body->regenerated(&mesh);
+            timeline = forgeshape::buildCadTimeline(body->state(), report, true, 0);
+        }
+    }
+    const jdouble head[kHeaderSlots] = {
+            static_cast<jdouble>(cadCode(timeline.status)),
+            static_cast<jdouble>(timeline.failedFeatureId),
+            static_cast<jdouble>(timeline.editingFeatureId),
+            timeline.evaluated ? 1.0 : 0.0,
+            static_cast<jdouble>(timeline.rows.size())};
+    env->SetDoubleArrayRegion(header, 0, kHeaderSlots, head);
+    if (rows != nullptr) {
+        const jsize capacity = env->GetArrayLength(rows) / kRowSlots;
+        const jsize count = std::min(capacity, static_cast<jsize>(timeline.rows.size()));
+        std::vector<jdouble> values(static_cast<size_t>(count) * kRowSlots, 0.0);
+        for (jsize i = 0; i < count; ++i) {
+            const forgeshape::CadTimelineRow& row = timeline.rows[static_cast<size_t>(i)];
+            jdouble* v = &values[static_cast<size_t>(i) * kRowSlots];
+            v[0] = row.kind == forgeshape::CadTimelineRowKind::Feature ? 1.0 : 0.0;
+            v[1] = row.id;
+            v[2] = row.sketchId;
+            v[3] = row.editFeatureId;
+            v[4] = row.ordinal;
+            v[5] = static_cast<jdouble>(static_cast<int>(row.state));
+            v[6] = static_cast<jdouble>(cadCode(row.status));
+            v[7] = row.editing ? 1.0 : 0.0;
+            v[8] = row.entityCount;
+            v[9] = row.dimensionCount;
+            v[10] = forgeshape::workplaneIndex(row.plane);
+            v[11] = row.onBodyFace ? 1.0 : 0.0;
+            v[12] = row.onFeatureFace ? 1.0 : 0.0;
+            v[13] = row.supportFeatureId;
+            v[14] = forgeshape::cadFeatureKindIndex(row.featureKind);
+            v[15] = forgeshape::cadFeatureOperationIndex(row.operation);
+            v[16] = row.selection == forgeshape::CadSelectionKind::PlanarFaces ? 1.0 : 0.0;
+            v[17] = row.regionCount;
+            v[18] = row.holeCount;
+            v[19] = forgeshape::extrudeExtentModeIndex(row.extent);
+            v[20] = forgeshape::extrudeDirectionIndex(row.direction);
+            v[21] = row.positiveDistance;
+            v[22] = row.negativeDistance;
+            v[23] = row.angleDegrees;
+            v[24] = forgeshape::revolveDirectionIndex(row.revolveDirection);
+            v[25] = row.axis.entityId;
+            v[26] = row.axis.edgeLocalIndex;
+        }
+        if (count > 0) {
+            env->SetDoubleArrayRegion(rows, 0, count * kRowSlots, values.data());
+        }
+    }
+    return static_cast<jint>(timeline.rows.size());
 }
 
 // A CAD body's regenerated solid, measured (`CAD-VERTICAL-SLICE-R1`): [0]

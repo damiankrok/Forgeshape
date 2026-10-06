@@ -19,6 +19,7 @@
 #include "forgeshape_cad_kernel.h"
 #include "forgeshape_cad_multiface_selftest.h"
 #include "forgeshape_cad_revolve_selftest.h"
+#include "forgeshape_cad_timeline_selftest.h"
 #include "forgeshape_sketch_drafting_selftest.h"
 #include "forgeshape_cad_v6_selftest.h"
 #include "forgeshape_camera.h"
@@ -5820,6 +5821,16 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + draftingPerformance;
+    // The Parametric History (`MODELING-FOUNDATIONS-R1` A): the derived
+    // timeline over this chain, upstream edits through the real session and
+    // the first failing downstream feature, beside the chain they read.
+    std::vector<ArrangementSelfTestCheck> timeline;
+    std::string timelinePerformance;
+    runCadTimelineSelfTests(&timeline, &timelinePerformance);
+    for (const ArrangementSelfTestCheck& check : timeline) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + timelinePerformance;
     // The retained sketch table, the selection variant and `CADB` v6
     // (`CAD-V6-S1`): model and persistence only, wired to no session, JNI or
     // UI path, so -- like the arrangement -- they ride in this suite.

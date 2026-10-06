@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MODELING-FOUNDATIONS-R1: the user-facing words of Parametric History,
+  Freeform and Surface. They report and name; they never instruct where a
+  control already says it. The product never says "T-Spline": Freeform is
+  Catmull-Clark subdivision over a quad control cage.
+-->
+<resources>
+    <!-- Parametric History -->
+    <string name="feature_history">History</string>
+    <string name="feature_history_description">How this body was built, step by step</string>
+    <string name="feature_history_title">History</string>
+    <string name="feature_history_caption">Tap a step to edit it. Later steps rebuild from it.</string>
+    <string name="history_row_sketch">Sketch %1$d</string>
+    <string name="history_row_extrude">Extrude %1$d · %2$s</string>
+    <string name="history_row_revolve">Revolve %1$d</string>
+    <string name="history_detail_sketch_plane">%1$s · %2$d entities</string>
+    <string name="history_detail_sketch_face">On a face · %1$d entities</string>
+    <string name="history_detail_one_side">One Side %1$s</string>
+    <string name="history_detail_symmetric">Symmetric %1$s each side</string>
+    <string name="history_detail_two_sides">Two Sides %1$s / %2$s</string>
+    <string name="history_detail_revolve">%1$s · %2$s</string>
+    <string name="history_revolve_positive">positive sense</string>
+    <string name="history_revolve_negative">negative sense</string>
+    <string name="history_state_failed">Cannot be rebuilt: %1$s</string>
+    <string name="history_state_not_rebuilt">Not rebuilt (after the failing step)</string>
+    <string name="history_state_pending">Rebuilt when the sketch is finished</string>
+    <string name="history_state_unused">Not used by any step</string>
+    <string name="history_row_description">%1$s. %2$s. Double tap to edit.</string>
+    <string name="history_row_description_static">%1$s. %2$s.</string>
+    <string name="status_history_edit_begun">Editing %1$s of %2$s.</string>
+    <string name="regeneration_issue_title">%1$s can no longer be rebuilt</string>
+    <string name="regeneration_issue_hint">Nothing changes until this edit rebuilds every step.</string>
+    <string name="regeneration_issue_fix">Fix</string>
+    <string name="regeneration_issue_cancel">Cancel edit</string>
+</resources>

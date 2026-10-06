@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MODELING-FOUNDATIONS-R1: stable semantic ids of the Parametric History,
+     Freeform and Surface controls. An id names the act, never the label. -->
+<resources>
+    <!-- Parametric History -->
+    <item name="feature_history_action" type="id" />
+    <item name="feature_history" type="id" />
+    <item name="feature_history_list" type="id" />
+    <item name="feature_history_row" type="id" />
+    <item name="regeneration_issue" type="id" />
+    <item name="regeneration_issue_title" type="id" />
+    <item name="regeneration_issue_reason" type="id" />
+    <item name="regeneration_issue_rows" type="id" />
+    <item name="regeneration_issue_fix" type="id" />
+    <item name="regeneration_issue_cancel" type="id" />
+</resources>

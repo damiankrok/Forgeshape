@@ -77,6 +77,8 @@ final class EditorWorkspaceView extends FrameLayout
         CadRevolveAngleLabelView.OnRevolveAngleAction,
         BodyDimensionLabelsView.OnDimensionAction,
         SculptHistoryNavigatorView.OnHistoryStateChosen,
+        FeatureHistoryView.OnHistoryRowChosen,
+        RegenerationIssueView.OnIssueAction,
         AnchoredSurfaceView.OnOpenStateChanged {
 
     /** The three body axes by name, for a status line (Stage 020M). */
@@ -199,6 +201,20 @@ final class EditorWorkspaceView extends FrameLayout
      */
     private final ImageView historyNavigatorAction;
     private final SculptHistoryNavigatorView historyNavigator;
+    // The Parametric History (`MODELING-FOUNDATIONS-R1` A): its control in the
+    // history capsule, the surface it opens, and the card a staged edit that
+    // breaks a later feature raises. All three draw a fresh native read; none
+    // remembers a chain.
+    private final ImageView featureHistoryAction;
+    private final FeatureHistoryView featureHistory;
+    private final RegenerationIssueView regenerationIssue;
+    private final double[] timelineHeader = new double[NativeViewport.TIMELINE_HEADER_SIZE];
+    private final double[] timelineRows =
+            new double[NativeViewport.TIMELINE_MAX_ROWS * NativeViewport.TIMELINE_ROW_SIZE];
+    /** The failure Fix collapsed the card for; it stays collapsed while unchanged. */
+    private String dismissedIssueKey = "";
+    /** Whether the open edit came from a SKETCH row, so Fix returns to the sketch. */
+    private boolean historyEditFromSketch;
     /**
      * The model backing the open navigator, re-read on every refresh.
      *
@@ -740,6 +756,24 @@ final class EditorWorkspaceView extends FrameLayout
         });
         historyGroup.addView(historyNavigatorAction, EditorControlStyles.iconButtonParams(context,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_gap)));
+        // The Parametric History's trigger: the chain of FEATURES this body was
+        // built from, which a CAD (or Surface) body has and a Construction body
+        // does not. It and the Sculpt navigator are never drawn together -- one
+        // lists features outside Sculpt, the other strokes inside it.
+        featureHistoryAction = EditorControlStyles.iconButton(context,
+                R.id.feature_history_action, R.drawable.ic_feature_history,
+                context.getString(R.string.feature_history));
+        featureHistoryAction.setContentDescription(context.getString(R.string.feature_history)
+                + ". " + context.getString(R.string.feature_history_description));
+        featureHistoryAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setFeatureHistoryOpen(!featureHistory.isOpen());
+            }
+        });
+        featureHistoryAction.setVisibility(GONE);
+        historyGroup.addView(featureHistoryAction, EditorControlStyles.iconButtonParams(context,
+                EditorControlStyles.dimen(context, R.dimen.toolbar_gap)));
         bottomRow.addView(historyGroup, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -794,6 +828,20 @@ final class EditorWorkspaceView extends FrameLayout
         overlayRoot.addView(historyNavigator, SculptHistoryNavigatorView.anchoredParams(context,
                 EditorControlStyles.dimen(context, R.dimen.control_height)
                         + EditorControlStyles.dimen(context, R.dimen.row_gap)
+                        + EditorControlStyles.dimen(context, R.dimen.overlay_anchor_gap)));
+        // The Parametric History grows out of the same capsule on the same
+        // terms: bottom trailing, clear of the row it came from.
+        featureHistory = new FeatureHistoryView(context, this);
+        overlayRoot.addView(featureHistory, FeatureHistoryView.anchoredParams(context,
+                EditorControlStyles.dimen(context, R.dimen.control_height)
+                        + EditorControlStyles.dimen(context, R.dimen.row_gap)
+                        + EditorControlStyles.dimen(context, R.dimen.overlay_anchor_gap)));
+        // The regeneration issue card hangs under the toolbar, centred: in Ready
+        // the Tool Rail and the orientation navigator are withdrawn, so the top
+        // of the model is the one place it covers no live control.
+        regenerationIssue = new RegenerationIssueView(context, this);
+        overlayRoot.addView(regenerationIssue, RegenerationIssueView.anchoredParams(context,
+                EditorControlStyles.dimen(context, R.dimen.toolbar_height)
                         + EditorControlStyles.dimen(context, R.dimen.overlay_anchor_gap)));
 
         // Built before the editors that used to own it, and parented by the
@@ -1123,6 +1171,8 @@ final class EditorWorkspaceView extends FrameLayout
             toolbar.showProjectActionsOpen(false);
         } else if (surface == historyNavigator) {
             setHistoryNavigatorOpen(false);
+        } else if (surface == featureHistory) {
+            setFeatureHistoryOpen(false);
         } else {
             surface.setOpen(false);
         }
@@ -1839,6 +1889,8 @@ final class EditorWorkspaceView extends FrameLayout
             objectsCapsule.showAddOpen(false);
             historyNavigator.closeImmediately();
             EditorControlStyles.setIconButtonActive(historyNavigatorAction, false);
+            featureHistory.closeImmediately();
+            EditorControlStyles.setIconButtonActive(featureHistoryAction, false);
             setPrecisionOpen(false);
         }
     }
@@ -2879,6 +2931,158 @@ final class EditorWorkspaceView extends FrameLayout
         undoAction.setEnabled(NativeViewport.historyUndoAvailable());
         redoAction.setEnabled(NativeViewport.historyRedoAvailable());
         refreshHistoryNavigator();
+        refreshFeatureHistory();
+        refreshRegenerationIssue();
+    }
+
+    // -----------------------------------------------------------------------
+    // Parametric History (`MODELING-FOUNDATIONS-R1` A)
+    // -----------------------------------------------------------------------
+    //
+    // A body's feature chain IS its history: native derives the timeline from
+    // it on every read and stores none of it, so this layer draws reads and
+    // keeps no copy. A row opens the editor that already exists for it -- the
+    // staged sketch, the extrusion, the revolve -- and the project changes only
+    // on that editor's one-transaction Finish.
+
+    /** Reads the active body's timeline: committed, or what an open edit stages. */
+    private FeatureHistoryPresentation.Model readTimeline(boolean staged) {
+        if (!NativeViewport.projectOpen()) {
+            return FeatureHistoryPresentation.Model.empty();
+        }
+        final long body = NativeViewport.sceneActiveBodyId();
+        final int count = NativeViewport.cadTimeline(body, staged, timelineHeader, timelineRows);
+        return FeatureHistoryPresentation.fromNative(FeatureHistoryPresentation.DOMAIN_CAD,
+                timelineHeader, timelineRows, count);
+    }
+
+    /** Whether the active body has a feature chain to list. */
+    private boolean activeBodyHasHistory() {
+        return NativeViewport.projectOpen() && NativeViewport.sceneActiveBodyIsCad();
+    }
+
+    /**
+     * Draws the History control exactly when it can succeed, and keeps an open
+     * surface showing what native reports now. Absent while sketching or
+     * sculpting (the chain holds still and a row would be refused), and absent
+     * for a body with no feature chain.
+     */
+    private void refreshFeatureHistory() {
+        final boolean shown = FeatureHistoryPresentation.controlShown(NativeViewport.projectOpen(),
+                isSketching(), isSculpting(), activeBodyHasHistory());
+        featureHistoryAction.setVisibility(shown ? View.VISIBLE : View.GONE);
+        if (!shown) {
+            if (featureHistory.isOpen()) {
+                setFeatureHistoryOpen(false);
+            }
+            return;
+        }
+        if (featureHistory.isOpen()) {
+            featureHistory.showModel(readTimeline(false), uiState.displayUnit());
+        }
+    }
+
+    private void setFeatureHistoryOpen(boolean open) {
+        if (open) {
+            dismissPrimarySurfacesExcept(featureHistory);
+            featureHistory.showModel(readTimeline(false), uiState.displayUnit());
+        }
+        featureHistory.setOpen(open);
+        EditorControlStyles.setIconButtonActive(featureHistoryAction, open);
+    }
+
+    /**
+     * Opens the editor a row names. A SKETCH row reopens that sketch staged in
+     * its aligned view; a FEATURE row reopens its extrusion or revolve staged in
+     * Ready. Either way it is the editor that already exists, every number stays
+     * native, and the project keeps its truth until Finish.
+     */
+    @Override
+    public void onFeatureHistoryRowChosen(FeatureHistoryPresentation.Row row) {
+        final Context context = getContext();
+        if (!row.editable()) {
+            return;
+        }
+        final long bodyId = NativeViewport.sceneActiveBodyId();
+        final boolean sketchRow = row.isSketch();
+        final int status = NativeViewport.sketchBeginEditFeature(bodyId, row.editTarget, !sketchRow);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        historyEditFromSketch = sketchRow;
+        dismissedIssueKey = "";
+        setFeatureHistoryOpen(false);
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        if (!sketchRow) {
+            refreshExtrudeReadiness();
+        }
+        showStatus(context.getString(R.string.status_history_edit_begun,
+                FeatureHistoryText.name(context, row), BodyLabels.of(context, bodyId)),
+                R.attr.fsTextSecondary);
+    }
+
+    /**
+     * Shows the regeneration issue card while a staged edit of an earlier
+     * feature makes a later one impossible, and withdraws it the moment that
+     * stops being true. Read from the staged timeline, so the failing row it
+     * names is the one a Finish would be refused by.
+     */
+    private void refreshRegenerationIssue() {
+        final long editing = NativeViewport.sketchEditingBodyId();
+        if (editing == NativeViewport.NO_OBJECT || !NativeViewport.projectOpen()
+                || editing != NativeViewport.sceneActiveBodyId()) {
+            regenerationIssue.hide();
+            return;
+        }
+        final FeatureHistoryPresentation.Model staged = readTimeline(true);
+        if (FeatureHistoryPresentation.issueShown(staged, true, dismissedIssueKey)) {
+            if (!staged.issueKey().equals(regenerationIssue.shownKey())) {
+                regenerationIssue.showIssue(staged, uiState.displayUnit());
+            }
+        } else {
+            regenerationIssue.hide();
+        }
+    }
+
+    /**
+     * Fix: keep the staged edit and change the value. The card collapses until
+     * the failure changes; an edit that began on a sketch goes back to that
+     * sketch, one that began on a feature opens its exact values.
+     */
+    @Override
+    public void onRegenerationIssueFix() {
+        final FeatureHistoryPresentation.Model staged = readTimeline(true);
+        dismissedIssueKey = staged.issueKey();
+        regenerationIssue.hide();
+        if (historyEditFromSketch) {
+            onBackToSketchRequested();
+        } else if (!inspector.isOpen()) {
+            setPrecisionOpen(true);
+        }
+    }
+
+    /** Cancel edit: the staged copy goes; the body is exactly what it was. */
+    @Override
+    public void onRegenerationIssueCancel() {
+        regenerationIssue.hide();
+        dismissedIssueKey = "";
+        onCancelSketchRequested();
+    }
+
+    /** For verification. */
+    FeatureHistoryView featureHistory() {
+        return featureHistory;
+    }
+
+    ImageView featureHistoryAction() {
+        return featureHistoryAction;
+    }
+
+    RegenerationIssueView regenerationIssue() {
+        return regenerationIssue;
     }
 
     /**
@@ -4603,6 +4807,7 @@ final class EditorWorkspaceView extends FrameLayout
         displayPopover.setMotionAllowed(allowed);
         projectPopover.setMotionAllowed(allowed);
         historyNavigator.setMotionAllowed(allowed);
+        featureHistory.setMotionAllowed(allowed);
     }
 
     // -----------------------------------------------------------------------
@@ -5588,6 +5793,9 @@ final class EditorWorkspaceView extends FrameLayout
         if (keeper != historyNavigator && historyNavigator.isOpen()) {
             setHistoryNavigatorOpen(false);
         }
+        if (keeper != featureHistory && featureHistory.isOpen()) {
+            setFeatureHistoryOpen(false);
+        }
     }
 
     @Override
@@ -5861,7 +6069,7 @@ final class EditorWorkspaceView extends FrameLayout
     AnchoredSurfaceView[] anchoredSurfaces() {
         return new AnchoredSurfaceView[]{
                 objectsPopover, addPrimitivePalette, inspector, displayPopover, projectPopover,
-                historyNavigator};
+                historyNavigator, featureHistory};
     }
 
     /** The direct brush controls, so a test can read the values beside them. */

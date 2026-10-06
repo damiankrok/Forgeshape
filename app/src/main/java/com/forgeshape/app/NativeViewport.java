@@ -3116,4 +3116,75 @@ final class NativeViewport {
 
     /** The exact CAD reason behind the last CAD Apply, as a CAD_* code. */
     static native int cadLastStatus();
+
+    // --- Parametric History (`MODELING-FOUNDATIONS-R1` A) -------------------
+
+    /** Slots of {@link #cadTimeline}'s header. */
+    static final int TIMELINE_HEADER_SIZE = 5;
+    /** The regeneration verdict, a {@code CAD_*} code (Surface: a SURFACE_* code). */
+    static final int TIMELINE_STATUS = 0;
+    /** The first failing feature's id, or 0. */
+    static final int TIMELINE_FAILED_FEATURE = 1;
+    /** The feature a staged edit changes, or 0. */
+    static final int TIMELINE_EDITING_FEATURE = 2;
+    /** 1 when the verdict is a real evaluation, 0 while a staged sketch is drawn. */
+    static final int TIMELINE_EVALUATED = 3;
+    static final int TIMELINE_ROW_COUNT = 4;
+
+    /** Slots of one {@link #cadTimeline} row. */
+    static final int TIMELINE_ROW_SIZE = 27;
+    /** {@link #TIMELINE_KIND_SKETCH} or {@link #TIMELINE_KIND_FEATURE}. */
+    static final int TIMELINE_ROW_KIND = 0;
+    /** The durable id: a sketch id or a feature id. Never a position. */
+    static final int TIMELINE_ROW_ID = 1;
+    static final int TIMELINE_ROW_SKETCH = 2;
+    /** The feature a tap on the row edits; 0 for a sketch no feature consumes. */
+    static final int TIMELINE_ROW_EDIT_FEATURE = 3;
+    static final int TIMELINE_ROW_ORDINAL = 4;
+    /** One of the TIMELINE_STATE_* values. */
+    static final int TIMELINE_ROW_STATE = 5;
+    /** A Failed row's reason, a {@code CAD_*} code. */
+    static final int TIMELINE_ROW_STATUS = 6;
+    static final int TIMELINE_ROW_EDITING = 7;
+    static final int TIMELINE_ROW_ENTITIES = 8;
+    static final int TIMELINE_ROW_DIMENSIONS = 9;
+    static final int TIMELINE_ROW_PLANE = 10;
+    static final int TIMELINE_ROW_ON_BODY_FACE = 11;
+    static final int TIMELINE_ROW_ON_FEATURE_FACE = 12;
+    static final int TIMELINE_ROW_SUPPORT_FEATURE = 13;
+    static final int TIMELINE_ROW_FEATURE_KIND = 14;
+    static final int TIMELINE_ROW_OPERATION = 15;
+    static final int TIMELINE_ROW_PLANAR_FACES = 16;
+    static final int TIMELINE_ROW_REGIONS = 17;
+    static final int TIMELINE_ROW_HOLES = 18;
+    static final int TIMELINE_ROW_EXTENT = 19;
+    static final int TIMELINE_ROW_SIDE = 20;
+    static final int TIMELINE_ROW_POSITIVE = 21;
+    static final int TIMELINE_ROW_NEGATIVE = 22;
+    static final int TIMELINE_ROW_ANGLE = 23;
+    static final int TIMELINE_ROW_REVOLVE_DIRECTION = 24;
+    static final int TIMELINE_ROW_AXIS_ENTITY = 25;
+    static final int TIMELINE_ROW_AXIS_EDGE = 26;
+
+    static final int TIMELINE_KIND_SKETCH = 0;
+    static final int TIMELINE_KIND_FEATURE = 1;
+
+    static final int TIMELINE_STATE_OK = 0;
+    static final int TIMELINE_STATE_FAILED = 1;
+    static final int TIMELINE_STATE_NOT_REGENERATED = 2;
+    static final int TIMELINE_STATE_PENDING = 3;
+    static final int TIMELINE_STATE_UNUSED = 4;
+
+    /** The most rows a CAD timeline can have: one per feature and one per sketch. */
+    static final int TIMELINE_MAX_ROWS = 32;
+
+    /**
+     * A CAD body's feature chain as a TIMELINE of sketch and feature rows in
+     * construction order, derived on every call and stored nowhere. With
+     * {@code staged} and an open edit session over the body, the chain the edit
+     * stages and its own evaluation: the failing downstream row is the one a
+     * commit would be refused by. Returns the row count, or -1 for a body that
+     * is not a CAD body.
+     */
+    static native int cadTimeline(long bodyId, boolean staged, double[] header, double[] rows);
 }

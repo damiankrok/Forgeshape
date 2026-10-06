@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MODELING-FOUNDATIONS-R1: metrics of the History, Freeform and Surface
+     surfaces. Touch targets come from control_height (48 dp), never from here. -->
+<resources>
+    <dimen name="feature_history_width">264dp</dimen>
+    <dimen name="regeneration_issue_width">320dp</dimen>
+</resources>
