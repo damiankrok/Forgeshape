@@ -1,8 +1,47 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.98.0
+**Status Version:** 0.99.0
 **Updated:** 2026-10-06
-**Latest closeout:** **`MODELING-FOUNDATIONS-R1` — `PASS-MODELING-FOUNDATIONS-R1`**
+**Latest closeout:** **`MODELING-R1-OWNER-CORRECTION-PROJECT-SHELL-SKETCH-SUPPORT-PLANAR-R1`
+— `PASS-MODELING-R1-OWNER-SHELL-SKETCH-CORRECTION`** (2026-10-06). **TECH PASS /
+OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
+`feature/modeling-r1-owner-shell-sketch-fix-r1` from exactly `7e02240`; product
+`4a393fc`, DEVICE union and FAST head `01c3942` (test-only after `4a393fc`);
+`main` stays `6c9f156`, `feature/cad-v6-sketch-face-r1` stays `bbae765`, the
+Modeling branch stays `7e02240`; no FullSharded. Record:
+`artifacts/modeling-r1-owner-shell-sketch-fix/SUMMARY.md` (OWNER_FEEDBACK.md,
+BEFORE.md and REPRO_BEFORE.md first).
+
+- **ForgeShape mark + project drawer.** The mark leads the Global Toolbar
+  (top-left, 48 dp, the one project door; the trailing `ic_project` icon is
+  gone) and opens a left drawer: Create (New Sketch, New Project…), Project,
+  Transfer, Import, Application — every row the existing handler, the drawer
+  closed first (`ProjectDrawerPolicy`). Absent only in the CAD bootstrap.
+- **New Sketch on faces.** The drawer's New Sketch is Add Primitive's own path
+  into the spatial chooser. Support eligibility is per face: every flat Extrude
+  face of any operation (a Cut's pocket floor and straight walls included,
+  framed material-outward, valid only where they survived); curved sides and
+  Revolve faces never (partial Revolve caps have no exact frame in R1). The
+  lineage bit stays the frozen R1 rule — no format change. The Edit Sketch chip
+  is withdrawn while the chooser is up (it took the face tap — found on device).
+- **Inner-cell point touch.** Reproduced on the baseline (an edge-connected
+  selection whose two unchosen inner cells meet at a node was
+  `PinchedSelection`); the union loop is now split at that node into one outer
+  and its holes, each with its own vertex ring — one solid, exact area. Add/Cut
+  rules unchanged.
+- **Gates.** Host `HOST_SELFTESTS_OK (4304 checks, 0 failed)` (25 suites, OSS
+  checks in CAD_FEATURE); JVM 179/179; release guard PASS; corpus 72/72
+  byte-identical, verdicts unchanged; focused `OwnerProjectShellSketchSupportTest`
+  `CI DEVICE` `37499163269` PASS 5/5 (six attempts, all recorded); union on
+  `01c3942`: `37507824851` PASS 67/67 (9 classes) + `37513387645` PASS 37/37
+  (`EditorWorkspaceCorrectionTest`; the workflow's 2700 s cap split the union);
+  `CI FAST` `37516245911` success.
+- **OWNER APK.** `ci-fast-evidence` artifact `11437665909` of `CI FAST`
+  `37516245911`, `app/build/outputs/apk/debug/app-debug.apk`, 17,169,462 bytes,
+  SHA-256 `b557827d56c6979cf46c3451894b38717d6c882faa7610cfbc74f088113411cb`;
+  artifact expires 2026-10-20T19:10:54Z.
+
+**Previous closeout:** **`MODELING-FOUNDATIONS-R1` — `PASS-MODELING-FOUNDATIONS-R1`**
 (2026-10-06). **TECH PASS / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task
 branch `feature/modeling-v9-parametric-freeform-surface-r1` from the drafting
 head `a3643b5`; product `30833aa`; `main` stays `6c9f156`,
@@ -4723,13 +4762,15 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: OWNER physical-device review of the
-`MODELING-FOUNDATIONS-R1` APK** (`ci-fast-evidence` artifact `11420511634` of
-`CI FAST` `37478194506`, product `30833aa`, APK SHA-256
-`062df5c8a769932bf85cef40877a97ef00c8a68103ac5ffae11a6319560c0862`) against
-`artifacts/modeling-foundations-r1/SUMMARY.md` — Parametric History, Freeform
-and Surface on a physical device, including the items still UNVERIFIED there —
-together with the still-pending drafting-toolkit and Revolve checklists
-(`artifacts/cad-sketch-drafting-toolkit/SUMMARY.md`,
+`MODELING-R1-OWNER-CORRECTION` APK** (`ci-fast-evidence` artifact `11437665909`
+of `CI FAST` `37516245911`, product `4a393fc`, APK SHA-256
+`b557827d56c6979cf46c3451894b38717d6c882faa7610cfbc74f088113411cb`) against the
+checklist in `artifacts/modeling-r1-owner-shell-sketch-fix/SUMMARY.md` — the
+ForgeShape mark and project drawer, New Sketch on base / Add / Cut faces, and
+the inner-cell selection — together with the still-pending
+`MODELING-FOUNDATIONS-R1`, drafting-toolkit and Revolve checklists
+(`artifacts/modeling-foundations-r1/SUMMARY.md`,
+`artifacts/cad-sketch-drafting-toolkit/SUMMARY.md`,
 `artifacts/cad-v6-revolve-newbody/SUMMARY.md`). Nothing merges to
 `feature/cad-v6-sketch-face-r1` or `main` before that verdict. `CAD-V6-S3`
 (retained-sketch mobile UX) waits for it. The v6 branch merges to `main` only

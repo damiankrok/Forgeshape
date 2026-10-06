@@ -33,6 +33,7 @@ ForgeShapeActivity
         |        +-- AnchoredSurfaceView   one growth, five surfaces
         |                 +-- ObjectsPopoverView / AddPrimitivePaletteView
         |                 +-- DisplaySettingsPopoverView / ProjectActionsPopoverView
+        |                     (the project drawer the ForgeShape mark opens)
         |                 +-- PropertyInspectorView  (+ PrecisionScrollView)
         |                          +-- ConstructionShapeEditorView    what the object IS
         |                          +-- CadFeatureEditorView   what a CAD Body IS: sketch sizes + depth
@@ -183,6 +184,8 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | Tearing the device down and building it again | `Renderer::rebuildDeviceAfterLoss` | it rebuilds the GPU COPY of derived data; the CPU project is not consulted and not touched, and `syncScene` re-uploads from the published revisions |
 | The bounded local diagnostic ring, and its redaction | `DiagnosticLog` (Java, free of Android types) | it carries tokens, never geometry, `.forge` bytes, a path or a `Uri`; `Diagnostics` is the Android half that renders a report |
 | Whether the project surface is open, and what a save or a refused open SAYS | `EditorWorkspaceView` + `ProjectActionsPopoverView` | neither owns the format, the storage or the fail-closed rule; both report an outcome native code decided |
+| What the project drawer holds, in what order, and which ONE handler each row calls | `ProjectDrawerPolicy` (pure Java) | the drawer view builds its rows from `ROWS` and every click goes through `perform`, which closes the drawer first; it adds no save, open or sketch path of its own |
+| How wide the one mode transition may be on the toolbar row | `ToolbarRowBudget` (pure Java), used by `GlobalToolbarView.fitTransitionToRow` | the ForgeShape mark's capsule and the utility group are reserved first; only the transition gives, never below its floor |
 
 ## Platform boundary
 
@@ -793,9 +796,11 @@ is the gap between the two groups**, so a row out of width closes that gap befor
 anything gives up a touch target; a `COMPACT` window also withdraws the context
 label, because the inspector's title already names the mode and the body.
 **The transition is fitted to the row it is in**, in `GlobalToolbarView`'s own
-measure pass: the budget is what is left after the utility group has the width it
-asked for, an inline status has `toolbar_status_min_width`, and the context label
-(where it is drawn) has its bounded share. Unbounded, the button pushed the last
+measure pass: the budget is what is left after the ForgeShape mark's capsule
+(the row's leading, fixed-width project door) and the utility group have the
+widths they asked for, an inline status has `toolbar_status_min_width`, and the
+context label (where it is drawn) has its bounded share — one pure function,
+`ToolbarRowBudget.transitionBudget`. Unbounded, the button pushed the last
 icon control past the window edge in Sculpt Mode; bounded by a single dp constant
 sized against the narrowest supported window, it truncated *Back to Construction*
 in every window including two with 50 dp of unused row beside it. Only that one
@@ -2856,7 +2861,16 @@ regenerated like a LoopRegions one; nothing refuses it any more
   walks each group on the arrangement's own half-edges: a half-edge whose twin
   is also chosen is interior and cancels, the rest chain by successor into
   loops, holes are re-oriented and owned by the smallest containing outer loop
-  of the same group, and a node a group's own loops pass twice is
+  of the same group. A walked loop that passes a node twice — two unchosen
+  cells that are holes of the group and meet at a point, or a hole touching
+  the outer — is SPLIT at that node into simple loops
+  (`MODELING-R1-OWNER-CORRECTION`): the walk already takes the tightest turn
+  inside the union, so each piece lies wholly on one side, every boundary
+  half-edge stays in exactly one piece and the same fragments cancel; each
+  piece becomes the outer or a hole and gets its own vertex ring in
+  `appendPrism`, so the solid is a closed, oriented 2-manifold that only
+  touches itself along a vertical edge (the kernel validates and booleans it as
+  a tool). A group whose pieces are not exactly one outer plus holes is still
   `PinchedSelection` (refused as `PlanarFacesTouchAtPoint`). Groups that touch
   at a point are separate components; the components of every group are
   sorted by the same canonical outer-cycle order as before, so a selection
@@ -2868,9 +2882,17 @@ regenerated like a LoopRegions one; nothing refuses it any more
   whole source edge keeps the legacy token; a proper piece wears a fragment
   token (`CadFaceToken::fragment` with its two `ArrangementCut`s; code
   `0x03 << 56 | FNV-1a64(...)`, file code 4, `CADB` v6 only — so a fragment
-  token anywhere makes a state not legacy-representable). A curved fragment
-  and every face of a Cut are ineligible. `appendPrism` builds the solid for
-  both kinds of selection.
+  token anywhere makes a state not legacy-representable). Support eligibility is
+  per face (`CadFeatureFace::eligible`): a flat cap or straight side of an
+  Extrude is eligible whatever the operation, a curved fragment and every face
+  of a Revolve are not. A Cut's faces are framed material-outward
+  (`materialOutward`: `n` and `v` reversed) and are supports only where they
+  survived — `regenerateCadBody`'s `cadSolidHasFaceOn` (`SupportFaceLost`) for
+  a feature on the same body, `validateCadFaceSupport`'s
+  `cadMeshCarriesFace` over the published regeneration for a `TopoRef`. The
+  lineage signature mixes `lineageEligible`, the frozen R1 bit (0 for every
+  face of a Cut and of a Revolve), so widening eligibility moved no token.
+  `appendPrism` builds the solid for both kinds of selection.
 - *Chooser.* `refreshChosenSupport` (`forgeshape_support_chooser`) re-validates
   an aimed support against the scene at confirm time and recomputes its frame;
   a support that went stale is refused (`FORGESHAPE_SUPPORT_CHOOSER_STALE`),

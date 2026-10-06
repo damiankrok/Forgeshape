@@ -318,6 +318,20 @@ on the host, with no device, and is the fast native loop.
   `sketch_plane_by_name`, the accessibility fallback, never removed. A stylus
   hover highlights a chooser target and never commits; hardware hover is not
   claimed on the emulator.
+- **The ForgeShape mark is the one project door, and its drawer owns no act**
+  (`MODELING-R1-OWNER-CORRECTION`). The mark leads the Global Toolbar row, in
+  a capsule of its own, a 48 dp target whose width `ToolbarRowBudget` reserves
+  before the transition is fitted, so no mode can push it away; it stands over
+  every open project and is withdrawn only in the CAD bootstrap, where there is
+  no project and Back to Home is the way out. No second project opener exists
+  (the trailing `ic_project` icon is gone). The drawer hangs from the mark at
+  the LEADING edge and grows from its leading top corner; every row goes
+  through `ProjectDrawerPolicy.perform`, which closes the drawer FIRST and then
+  calls the ONE handler the workspace already had — New Sketch is Add
+  Primitive's own path into the spatial support chooser, offered only where it
+  can succeed (a project, no sketch, no Sculpt, no chooser). While the chooser
+  is up the viewport belongs to choosing: the retained-sketch Edit Sketch chip
+  is withdrawn so it cannot take the tap meant for a face under it.
 - **The sketch's plane and its VIEW are two different things**
   (`SKETCH-UX-R1` C). The orientation navigator in the sketch's upper trailing
   corner owns both, holds neither, and reads `sketchViewState` on every
@@ -609,9 +623,13 @@ on the host, with no device, and is the fast native loop.
   on the arrangement's own half-edges, ONE EDGE-CONNECTED GROUP at a time
   (`partitionSelectedPlanarFacesBySharedBoundary`: two chosen faces join only
   through a fragment both bound, never through a shared node) — inside a group
-  a shared fragment cancels and a node its boundary passes twice (a hole
-  touching its own outer) is still `PinchedSelection`, refused as
-  `PlanarFacesTouchAtPoint`; groups that meet only at a point are simply
+  a shared fragment cancels, and a union loop that passes a node twice (two
+  unchosen cells meeting at a point, a hole touching its own outer) is SPLIT
+  there into one outer and its holes, each with its own vertex ring
+  (`MODELING-R1-OWNER-CORRECTION`: nothing dropped, no area twice, the same
+  fragments cancel); only a group whose pieces are not one outer plus holes is
+  still `PinchedSelection`, refused as `PlanarFacesTouchAtPoint`. Groups that
+  meet only at a point are simply
   separate components, each prism with its own vertex rings, so the solid
   stays closed and oriented and Add / Cut stay ONE kernel boolean with a
   multi-shell tool. The canonical component order did not change, so every
@@ -663,8 +681,16 @@ on the host, with no device, and is the fast native loop.
   DERIVED from that earlier feature's own prism in double precision, never from
   a boolean result; a size edit upstream carries it, a structural edit or a
   face an earlier Cut carved away is refused (`FeatureSupportInvalid`,
-  `SupportFaceLost`), and nothing is ever retargeted. A Cut's faces and every
-  curved side are ineligible supports. Regeneration is ORDERED and ATOMIC: the
+  `SupportFaceLost`), and nothing is ever retargeted. Eligibility is PER FACE
+  (`MODELING-R1-OWNER-CORRECTION`): every flat face of an Extrude — cap or
+  straight side, Add's or Cut's alike — is a support, a curved side and every
+  face of a Revolve never are. A Cut's faces are framed MATERIAL-OUTWARD (the
+  pocket floor faces up out of the material, a wall into the pocket) and count
+  only where they SURVIVED the chain (`SupportFaceLost` otherwise, and the
+  support chooser can only pick a face the published mesh carries). The bit the
+  lineage signature mixes stays the frozen R1 rule (`lineageEligible`: 0 for a
+  Cut's and a Revolve's faces), so no lineage token, fixture or format byte
+  moved. Regeneration is ORDERED and ATOMIC: the
   base, then each later feature through ONE kernel boolean (`Union` /
   `Difference`), published only when the whole chain passes, otherwise the
   previous state stands and the failing `featureId` is named. The operation
@@ -1530,7 +1556,12 @@ on the host, with no device, and is the fast native loop.
   `Handler`, `Layer`, `Thing` and `Generic` unless the full name makes the
   responsibility genuinely clear. One domain concept has one canonical term.
 - **The UI vocabulary is fixed:** *Editor Workspace* (the whole editor UI),
-  *Global Toolbar* (mode-independent top/global controls), *Tool Rail* (the edge
+  *Global Toolbar* (mode-independent top/global controls), *ForgeShape mark*
+  (the product's own mark at the toolbar's leading end; the ONE door to the
+  project, id `project_actions_button` because that act did not change),
+  *project drawer* (what the mark opens: Create — New Sketch, New Project;
+  Project; Transfer; Import; Application — never a "hamburger menu"),
+  *Tool Rail* (the edge
   tool selector), *Objects capsule* (the resting scene control: the active body's
   name plus creation), *row command strip* (the inline group of Rename,
   Show/Hide, Lock/Unlock, Duplicate and Mirror an Objects row's overflow grows

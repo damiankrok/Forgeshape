@@ -177,8 +177,14 @@ project, with an empty Undo history; Back to Home before that costs nothing.
 
 **Open File…** opens a `.forge` from your files straight into the editor.
 
-Once a project is open, the Project surface offers **New Project…** beside Save,
-Open Saved Project, Save Copy…, Open File…, Share Diagnostics… and Import GLB….
+Once a project is open, the **ForgeShape mark** in the top-left corner opens
+the project drawer, which unfolds from the mark down the left edge: **Create**
+(**New Sketch**, **New Project…**), **Project** (Save Project, Open Saved
+Project), **Transfer** (Save Copy…, Open File…, Share Diagnostics…), **Import a
+mesh** (Import GLB…) and **Application** (Settings…). Tapping the mark again,
+or System Back, closes it; choosing a row closes it and does that thing. The
+mark is not there in a brand-new CAD sketch, before the first Extrude, because
+there is no project yet — **Back to Home** is the way out there.
 Starting a new project or opening one while the current project has changes
 you have not saved asks first — **Save and continue**, **Discard changes**, or
 **Cancel — stay in this project**. Save writes the project to this device and
@@ -200,11 +206,14 @@ The editor is one workspace, and **the model is the workspace**. Everything else
 stands at an edge and is small, and nothing at all sits across the bottom of the
 screen waiting to be used.
 
-There is no bar across the top: the **Global Toolbar**'s controls sit in two small
-floating groups with the model visible between and behind them — an editing group
-on the leading edge carrying what is being edited and the control that crosses
-between constructing and sculpting, and a utility group on the trailing edge
-carrying the viewport's display settings and the control that hides the chrome.
+There is no bar across the top: the **Global Toolbar**'s controls sit in small
+floating groups with the model visible between and behind them — the
+**ForgeShape mark** first, in the top-left corner, which opens the project
+drawer; an editing group beside it carrying what is being edited and the
+control that crosses between constructing and sculpting; and a utility group on
+the trailing edge carrying Export, the viewport's display settings and the
+control that hides the chrome. On a narrow phone the mark and the trailing
+controls keep their full size and only the transition's label gives way.
 
 **The workspace at rest says nothing, and draws nothing to say it.** A status or
 error message appears in a quiet capsule of its own just below the toolbar, sized
@@ -582,10 +591,14 @@ drop. The list is a flat list of objects.
 
 ## Sketching a CAD Body
 
-The **+** offers one more thing beside the six shapes: **New Sketch**. Choosing
-it puts the three principal planes — and, in a CAD project, the flat faces of
+**New Sketch** is in the project drawer under the ForgeShape mark, and the
+**+** offers it too, beside the six shapes. Choosing it closes the drawer and
+puts the three principal planes — and, in a CAD project, the flat faces of
 your CAD bodies — into the viewport as targets: tap one to highlight it, tap it
-again to sketch on it. **Choose a plane by name** under the tile still lists
+again to sketch on it. Every flat face counts: a body's caps and straight
+sides, an Add's faces, and the floor and straight walls of a pocket a Cut left
+behind; a curved side never does, nor does a face a later Cut carved away.
+While you are choosing, nothing else stands on the bodies to take the tap. **Choose a plane by name** under the tile still lists
 **XY** (the front view), **XZ** (the top view) and **YZ** (the side view) for
 anyone who prefers the words. Either way the viewport becomes that plane: the
 camera looks straight at it, the view goes orthographic so equal lengths are
@@ -680,8 +693,11 @@ There is no limit of sixteen: every cell a sketch's curves make can be chosen
 them — *Regions in the extrusion: N.* The first Extrude of a brand-new CAD
 project extrudes the chosen cells like any later one. "Several profiles are
 closed — choose one" is said only when nothing is chosen; an Extrude that is
-refused names its own reason (for example cells that meet only at a point),
-and changing the choice replaces that message with the new count.
+refused names its own reason, and changing the choice replaces that message
+with the new count. Cells that meet only at a point are fine: chosen apart they
+become separate pieces of one body, and a choice that leaves two inner cells
+unchosen where they meet at a point — every cell of a busy sketch but those
+two, say — extrudes as one solid with those two left open.
 What is chosen is hatched as one shape, and a hole it leaves open stays
 empty. The first
 region you choose also turns the view to one the arrow can be dragged in.
