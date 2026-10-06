@@ -46,6 +46,8 @@ final class SurfaceEditorView extends LinearLayout {
     }
 
     private final Host host;
+    /** Which half this instance is: the Finish choices, or the body's tools. */
+    private final boolean finish;
     private final double[] sketchState = new double[NativeViewport.SURFACE_SKETCH_STATE_SIZE];
     private final double[] bodyState = new double[NativeViewport.SURFACE_STATE_SIZE];
     private final double[] timelineHeader = new double[NativeViewport.TIMELINE_HEADER_SIZE];
@@ -55,42 +57,50 @@ final class SurfaceEditorView extends LinearLayout {
 
     private final TextView summary;
 
-    private final LinearLayout finishGroup;
-    private final NumericPropertyRow distanceRow;
-    private final NumericPropertyRow angleRow;
-    private final TextView keepInsideChip;
+    private LinearLayout finishGroup;
+    private NumericPropertyRow distanceRow;
+    private NumericPropertyRow angleRow;
+    private TextView keepInsideChip;
     private final TextView[] createButtons = new TextView[NativeViewport.SURFACE_CREATE_KIND_COUNT + 1];
-    private final TextView blocked;
+    private TextView blocked;
     private boolean keepInside;
 
-    private final LinearLayout bodyGroup;
-    private final NumericPropertyRow offsetRow;
-    private final TextView stitchButton;
-    private final NumericPropertyRow thicknessRow;
-    private final LinearLayout thickenList;
+    private LinearLayout bodyGroup;
+    private NumericPropertyRow offsetRow;
+    private TextView stitchButton;
+    private NumericPropertyRow thicknessRow;
+    private LinearLayout thickenList;
 
-    private final LinearLayout editGroup;
-    private final TextView editTitle;
-    private final NumericPropertyRow valueRow;
-    private final TextView verdict;
-    private final LinearLayout failureRow;
-    private final TextView applyButton;
-    private final TextView fixButton;
+    private LinearLayout editGroup;
+    private TextView editTitle;
+    private NumericPropertyRow valueRow;
+    private TextView verdict;
+    private LinearLayout failureRow;
+    private TextView applyButton;
+    private TextView fixButton;
     private FeatureHistoryPresentation.Row editing;
     private boolean refreshing;
 
-    SurfaceEditorView(Context context, Host host) {
+    /**
+     * @param finish true for the Finish choices over an open Surface sketch
+     *        (hosted by {@link SurfaceFinishView}); false for the body's tools
+     *        (hosted by the precision surface). Each builds only its own
+     *        controls, so no control id stands in the window twice.
+     */
+    SurfaceEditorView(Context context, Host host, boolean finish) {
         super(context);
         this.host = host;
-        setId(R.id.surface_editor);
+        this.finish = finish;
+        setId(finish ? R.id.surface_finish_body : R.id.surface_editor);
         setOrientation(VERTICAL);
         final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap);
         final int smallGap = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
 
-        summary = EditorControlStyles.captionText(context, R.id.surface_summary, "");
+        summary = EditorControlStyles.captionText(context, finish ? View.NO_ID : R.id.surface_summary, "");
         addView(summary, EditorControlStyles.rowParams(0));
 
         // --- Finish: what the open sketch becomes -------------------------
+        if (finish) {
         finishGroup = column(context);
         distanceRow = new NumericPropertyRow(context, R.id.field_surface_distance,
                 context.getString(R.string.surface_distance), true);
@@ -125,6 +135,10 @@ final class SurfaceEditorView extends LinearLayout {
         blocked = EditorControlStyles.captionText(context, R.id.surface_create_blocked, "");
         finishGroup.addView(blocked, EditorControlStyles.rowParams(smallGap));
         addView(finishGroup, EditorControlStyles.rowParams(gap));
+        distanceRow.field().addTextChangedListener(restage);
+        angleRow.field().addTextChangedListener(restage);
+        return;
+        }
 
         // --- The body: the next sketch, Stitch, Thicken, a staged edit ----
         bodyGroup = column(context);
@@ -210,7 +224,12 @@ final class SurfaceEditorView extends LinearLayout {
         bodyGroup.addView(editGroup, EditorControlStyles.rowParams(gap));
         addView(bodyGroup, EditorControlStyles.rowParams(gap));
 
-        final TextWatcher restage = new TextWatcher() {
+        valueRow.field().addTextChangedListener(restage);
+        thicknessRow.field().addTextChangedListener(restage);
+    }
+
+    /** Re-stages on every keystroke: the verdicts are a function of the typed values. */
+    private final TextWatcher restage = new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
 
@@ -224,11 +243,6 @@ final class SurfaceEditorView extends LinearLayout {
                 }
             }
         };
-        valueRow.field().addTextChangedListener(restage);
-        distanceRow.field().addTextChangedListener(restage);
-        angleRow.field().addTextChangedListener(restage);
-        thicknessRow.field().addTextChangedListener(restage);
-    }
 
     private static LinearLayout column(Context context) {
         final LinearLayout column = new LinearLayout(context);
@@ -262,14 +276,12 @@ final class SurfaceEditorView extends LinearLayout {
         refreshing = true;
         try {
             final Context context = getContext();
-            final Double distance = quietLength(distanceRow);
-            final Double angle = quietNumber(angleRow);
-            NativeViewport.surfaceSketchState(distance == null ? Double.NaN : distance,
-                    angle == null ? Double.NaN : angle, keepInside, sketchState);
-            final boolean sketchOpen = SurfacePresentation.sketchOpen(sketchState);
-            finishGroup.setVisibility(sketchOpen ? VISIBLE : GONE);
-            bodyGroup.setVisibility(sketchOpen ? GONE : VISIBLE);
-            if (sketchOpen) {
+            if (finish) {
+                final Double distance = quietLength(distanceRow);
+                final Double angle = quietNumber(angleRow);
+                NativeViewport.surfaceSketchState(distance == null ? Double.NaN : distance,
+                        angle == null ? Double.NaN : angle, keepInside, sketchState);
+                finishGroup.setVisibility(SurfacePresentation.sketchOpen(sketchState) ? VISIBLE : GONE);
                 refreshFinish(context);
             } else {
                 refreshBody(context);
@@ -496,8 +508,11 @@ final class SurfaceEditorView extends LinearLayout {
 
     /** The row that owns a field id, or null. For verification. */
     NumericPropertyRow rowFor(int fieldId) {
-        if (fieldId == R.id.field_surface_distance) return distanceRow;
-        if (fieldId == R.id.field_surface_angle) return angleRow;
+        if (finish) {
+            if (fieldId == R.id.field_surface_distance) return distanceRow;
+            if (fieldId == R.id.field_surface_angle) return angleRow;
+            return null;
+        }
         if (fieldId == R.id.field_surface_offset) return offsetRow;
         if (fieldId == R.id.field_surface_thickness) return thicknessRow;
         if (fieldId == R.id.field_surface_edit_value) return valueRow;

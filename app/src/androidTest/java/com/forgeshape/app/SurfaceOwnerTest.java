@@ -221,12 +221,10 @@ public final class SurfaceOwnerTest {
         placeLine(1.0, 0.0, 1.0, 1.0);
         rig.press(R.id.finish_sketch);
         assertFalse("no axis yet: Revolve is not offered", rig.shown(R.id.surface_create_revolve));
-        // Back to the sketch: draw the axis and mark it Construction.
-        rig.on((a, w) -> {
-            WorkspaceTestSupport.closePrecision(w);
-            return null;
-        });
-        settleLayout();
+        // Finish Sketch again closes the choices and gives the drawing back:
+        // draw the axis and mark it Construction.
+        rig.press(R.id.finish_sketch);
+        assertFalse(rig.on((a, w) -> w.surfaceFinish().isOpen()));
         selectTool(rule.getScenario(), R.id.tool_rail_line);
         placeLine(0.0, -1.0, 0.0, 2.0);
         openPalette();
@@ -408,7 +406,8 @@ public final class SurfaceOwnerTest {
 
     private void setField(final int fieldId, final String text) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final EditText field = workspace.surfaceEditor().rowFor(fieldId).field();
+            final NumericPropertyRow finishRow = workspace.surfaceFinish().body().rowFor(fieldId);
+            final EditText field = (finishRow != null ? finishRow : workspace.surfaceEditor().rowFor(fieldId)).field();
             field.setText(text);
             return null;
         });

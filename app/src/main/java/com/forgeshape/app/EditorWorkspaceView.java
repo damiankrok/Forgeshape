@@ -349,6 +349,8 @@ final class EditorWorkspaceView extends FrameLayout
     private final FreeformEditorView freeformEditor;
     /** The Surface context surface (`MODELING-FOUNDATIONS-R1` C). */
     private final SurfaceEditorView surfaceEditor;
+    /** What Finish Sketch means for a Surface sketch, grown out of the toolbar. */
+    private final SurfaceFinishView surfaceFinish;
     private final double[] nativeSurfaceSketch = new double[NativeViewport.SURFACE_SKETCH_STATE_SIZE];
     /** Reused across reads; native fills the FREEFORM_STATE_* slots. */
     private final double[] nativeFreeform = new double[NativeViewport.FREEFORM_STATE_SIZE];
@@ -842,6 +844,13 @@ final class EditorWorkspaceView extends FrameLayout
         overlayRoot.addView(projectPopover, ProjectActionsPopoverView.anchoredParams(context,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
 
+        // A Surface sketch's Finish choices hang from the toolbar too, where
+        // Finish Sketch is: while a sketch is open the bottom sheet is one row
+        // tall, and a choice of six needs a surface that scrolls.
+        surfaceFinish = new SurfaceFinishView(context, this);
+        overlayRoot.addView(surfaceFinish, SurfaceFinishView.anchoredParams(context,
+                EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
+
         // The Sculpt History navigator, anchored to the BOTTOM trailing corner
         // because its control is in the bottom row rather than the toolbar. It
         // stands off the capsule by one control height plus the shared anchor
@@ -888,7 +897,7 @@ final class EditorWorkspaceView extends FrameLayout
         sketchEditor = new SketchEditorView(context, this, this);
         cadEditor = new CadFeatureEditorView(context, this);
         freeformEditor = new FreeformEditorView(context, this);
-        surfaceEditor = new SurfaceEditorView(context, this);
+        surfaceEditor = new SurfaceEditorView(context, this, false);
         relativeScaleEditor = new RelativeScaleEditorView(context, this);
 
         // The two sketch-only surfaces that stand IN the viewport
@@ -1198,6 +1207,8 @@ final class EditorWorkspaceView extends FrameLayout
             setHistoryNavigatorOpen(false);
         } else if (surface == featureHistory) {
             setFeatureHistoryOpen(false);
+        } else if (surface == surfaceFinish) {
+            surfaceFinish.setOpen(false);
         } else {
             surface.setOpen(false);
         }
@@ -2488,6 +2499,22 @@ final class EditorWorkspaceView extends FrameLayout
         return surfaceEditor;
     }
 
+    /** The Surface Finish surface, for verification. */
+    SurfaceFinishView surfaceFinish() {
+        return surfaceFinish;
+    }
+
+    /** Opens the Finish choices under the toolbar, bounded to half the window. */
+    private void setSurfaceFinishOpen(boolean open) {
+        if (open) {
+            dismissPrimarySurfacesExcept(surfaceFinish);
+            surfaceFinish.setMaxBodyHeightPx(Math.max(getHeight() / 2,
+                    EditorControlStyles.dimen(getContext(), R.dimen.control_height) * 3));
+            surfaceFinish.body().refreshFromNative();
+        }
+        surfaceFinish.setOpen(open);
+    }
+
     @Override
     public void onNewProjectCancelled() {
         setNewProjectChooserOpen(false);
@@ -2838,8 +2865,17 @@ final class EditorWorkspaceView extends FrameLayout
             cadEditor.refreshFromNative();
         }
         refreshFreeformEdit(projectOpen, sculpting, sketching);
-        if (!sculpting && (surfaceSketchOpen() || activeBodyIsSurface())) {
+        if (!sculpting && activeBodyIsSurface()) {
             surfaceEditor.refreshFromNative();
+        }
+        if (surfaceFinish.isOpen()) {
+            if (surfaceSketchOpen()) {
+                surfaceFinish.body().refreshFromNative();
+            } else {
+                // The sketch ended (a commit, Cancel, Back to Home): nothing is
+                // left to finish.
+                surfaceFinish.setOpen(false);
+            }
         }
         refreshSketchViewportSurfaces(sketching);
         objectsCapsule.refreshFromNative();
@@ -3462,13 +3498,6 @@ final class EditorWorkspaceView extends FrameLayout
         final Context context = getContext();
         if (sculpting) {
             inspector.setBody(sculptContext, context.getString(R.string.inspector_sculpt_title));
-            return;
-        }
-        if (isSketching() && surfaceSketchOpen()) {
-            // A Surface sketch: its Finish is a choice of feature, made here.
-            inspector.setBody(surfaceEditor, context.getString(R.string.inspector_surface_finish_title,
-                    context.getString(CadFeatureEditorView.planeName(
-                            (int) nativeSketch[NativeViewport.SKETCH_PLANE]))));
             return;
         }
         if (isSketching()) {
@@ -4274,11 +4303,15 @@ final class EditorWorkspaceView extends FrameLayout
         final Context context = getContext();
         if (surfaceSketchOpen()) {
             // A Surface sketch's Finish is a CHOICE of feature (Patch, Extrude,
-            // Revolve, Loft, Trim, Section), made on the Surface surface; the
-            // sketch stays open and drawable until one of them commits.
+            // Revolve, Loft, Trim, Section), made on the surface that grows out
+            // of the toolbar; the sketch stays open and drawable until one of
+            // them commits. Pressed again, it closes the choices and gives the
+            // drawing back.
             finishEditing();
-            setPrecisionOpen(true);
-            surfaceEditor.refreshFromNative();
+            setSurfaceFinishOpen(!surfaceFinish.isOpen());
+            if (!surfaceFinish.isOpen()) {
+                return;
+            }
             showStatus(context.getString(R.string.surface_finish_summary), R.attr.fsTextSecondary);
             return;
         }
@@ -5000,6 +5033,7 @@ final class EditorWorkspaceView extends FrameLayout
         projectPopover.setMotionAllowed(allowed);
         historyNavigator.setMotionAllowed(allowed);
         featureHistory.setMotionAllowed(allowed);
+        surfaceFinish.setMotionAllowed(allowed);
     }
 
     // -----------------------------------------------------------------------
@@ -5992,6 +6026,9 @@ final class EditorWorkspaceView extends FrameLayout
         if (keeper != featureHistory && featureHistory.isOpen()) {
             setFeatureHistoryOpen(false);
         }
+        if (keeper != surfaceFinish && surfaceFinish.isOpen()) {
+            surfaceFinish.setOpen(false);
+        }
     }
 
     @Override
@@ -6293,7 +6330,7 @@ final class EditorWorkspaceView extends FrameLayout
     AnchoredSurfaceView[] anchoredSurfaces() {
         return new AnchoredSurfaceView[]{
                 objectsPopover, addPrimitivePalette, inspector, displayPopover, projectPopover,
-                historyNavigator, featureHistory};
+                historyNavigator, featureHistory, surfaceFinish};
     }
 
     /** The direct brush controls, so a test can read the values beside them. */

@@ -45,6 +45,9 @@
     <item name="freeform_level_4" type="id" />
     <!-- Surface (MODELING-FOUNDATIONS-R1 C) -->
     <item name="surface_editor" type="id" />
+    <item name="surface_finish" type="id" />
+    <item name="surface_finish_list" type="id" />
+    <item name="surface_finish_body" type="id" />
     <item name="surface_summary" type="id" />
     <item name="field_surface_distance" type="id" />
     <item name="field_surface_angle" type="id" />

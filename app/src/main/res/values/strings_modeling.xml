@@ -86,7 +86,7 @@
     <string name="context_surface">Surface</string>
     <string name="add_surface">Surface</string>
     <string name="inspector_surface_title_for_body">Surface — %1$s</string>
-    <string name="inspector_surface_finish_title">Surface sketch — %1$s</string>
+    <string name="surface_finish_title">Finish as</string>
     <string name="status_surface_sketch">Draw the curves, then Finish Sketch to choose what they make.</string>
     <string name="sculpt_refused_surface_body">A Surface body is built from its features, not sculpted.</string>
     <string name="surface_kind_patch">Patch</string>
