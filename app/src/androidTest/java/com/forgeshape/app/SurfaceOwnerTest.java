@@ -166,7 +166,12 @@ public final class SurfaceOwnerTest {
         setField(R.id.field_surface_thickness, "0.1");
         final List<View> buttons = thickenButtons();
         assertEquals("one live feature can be thickened", 1, buttons.size());
-        rig.touchView((activity, workspace) -> thickenButtons().get(0));
+        rig.touchView((activity, workspace) -> {
+            // Already on the UI thread: collect directly, never through rig.on.
+            final List<View> found = new ArrayList<>();
+            ModelingOwnerRig.collectById(workspace.surfaceEditor(), R.id.surface_thicken, found);
+            return found.isEmpty() ? null : found.get(0);
+        });
         final double thin = 0.19 * 0.5;  // the mitred L profile's area x the height
         assertEquals(thin, state(NativeViewport.SURFACE_STATE_SOLID_VOLUME), TOLERANCE);
         assertEquals("the solid replaced the patch", 0, state(NativeViewport.SURFACE_STATE_PATCHES), 0.0);
