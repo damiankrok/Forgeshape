@@ -44,8 +44,21 @@ DVec3 cadFramePoint(const CadFrame64& frame, double a, double b, double c);
 // One planar face of one feature's own extrusion, in body-local binary64.
 struct CadFeatureFace {
     CadFaceToken token{};
+    // Material-OUTWARD: for an Add or a New Body that is the prism's own
+    // outward frame; for a Cut it is the reverse of the tool's, because what a
+    // Cut leaves behind is the inside of a pocket, facing into it.
     CadFrame64 frame;
+    // Whether a sketch may stand here: the face is FLAT (no curved piece) --
+    // decided per face, whatever the operation (`MODELING-R1-OWNER-CORRECTION`).
+    // Whether a Cut's face survived the boolean is the resolving site's
+    // question, asked of the regenerated solid (`cadSolidHasFaceOn`,
+    // `cadMeshCarriesFace`), never assumed here.
     bool eligible = true;
+    // The eligibility bit the lineage signature mixes (§7c): the FORMAT's
+    // frozen R1 rule -- flat, and never a face of a Cut or of a Revolve -- kept
+    // apart from `eligible` so widening where a sketch may stand moves no
+    // stored lineage token and no corpus byte.
+    bool lineageEligible = true;
 };
 
 // Everything derived about one feature of the chain.

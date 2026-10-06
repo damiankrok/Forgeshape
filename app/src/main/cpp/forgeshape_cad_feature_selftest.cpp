@@ -18,6 +18,7 @@
 #include "forgeshape_cad_feature.h"
 #include "forgeshape_cad_kernel.h"
 #include "forgeshape_cad_multiface_selftest.h"
+#include "forgeshape_owner_shell_selftest.h"
 #include "forgeshape_cad_revolve_selftest.h"
 #include "forgeshape_cad_timeline_selftest.h"
 #include "forgeshape_sketch_drafting_selftest.h"
@@ -1433,13 +1434,17 @@ void testChain(Recorder& r) {
         meshBounds(g.mesh.mesh, lo, hi);
         const uint32_t floor = capIndex(g.mesh, 2u, CadFaceKind::CapFar);
         const uint32_t mouth = capIndex(g.mesh, 2u, CadFaceKind::CapPlane);
+        // Per face (`MODELING-R1-OWNER-CORRECTION`): the flat floor and the
+        // flat mouth are eligible by their own shape, the 32 curved walls are
+        // not; that the mouth was carved away is the mesh's answer.
         bool pocketFaces = g.why == CadStatus::Ok && g.mesh.faces.size() == 6u + 34u;
         for (const CadMeshFace& f : g.mesh.faces) {
-            pocketFaces = pocketFaces && (f.featureId != 2u || !f.eligible);
+            if (f.featureId != 2u) continue;
+            pocketFaces = pocketFaces && f.eligible == (f.token.kind != CadFaceKind::Side);
         }
         r.check("CADVS_OPS_03_blind_cut_removes_exactly_the_pocket",
                 solidOk(g, 4.0 - pocket * 0.5) && nearf(lo[2], 0.0f) && nearf(hi[2], 1.0f));
-        r.check("CADVS_OPS_04_cut_leaves_an_ineligible_floor_and_an_open_mouth",
+        r.check("CADVS_OPS_04_cut_leaves_an_eligible_flat_floor_curved_walls_and_an_open_mouth",
                 pocketFaces && floor < g.mesh.faces.size() && mouth < g.mesh.faces.size()
                         && faceAtZ(g.mesh, floor, 0.5f) && !meshHasFace(g.mesh, mouth));
     }
@@ -1526,18 +1531,21 @@ void testChain(Recorder& r) {
                         && validateCadBodyState(crossBody) == CadStatus::FeatureSupportInvalid);
     }
     {
-        const CadBodyState onPocket = withFeature(cut, CadFeatureOperation::Add, 2u,
-                                                  rectSketch(0.0, 0.0, 0.1, 0.1), oneSide(0.1),
-                                                  CadFaceKind::CapPlane);
+        // The Cut's MOUTH is flat and so eligible, but the Cut carved it away:
+        // a sketch there stands on no material and is refused by name; the
+        // curved walls stay ineligible (`MODELING-R1-OWNER-CORRECTION`).
+        const CadBodyState onMouth = withFeature(cut, CadFeatureOperation::Add, 2u,
+                                                 rectSketch(0.0, 0.0, 0.1, 0.1), oneSide(0.1),
+                                                 CadFaceKind::CapPlane);
         std::vector<CadFace> cutFaces;
-        bool noneEligible = enumerateCadFeatureFaces(cut, 2u, &cutFaces) == CadStatus::Ok
-                            && cutFaces.size() == 34u;
+        bool perFace = enumerateCadFeatureFaces(cut, 2u, &cutFaces) == CadStatus::Ok
+                       && cutFaces.size() == 34u;
         for (const CadFace& f : cutFaces) {
-            noneEligible = noneEligible && !f.eligible;
+            perFace = perFace && f.eligible == (f.token.kind != CadFaceKind::Side);
         }
-        r.check("CADVS_OPS_15_a_sketch_on_a_cut_face_is_refused_the_pocket_is_ineligible",
-                noneEligible && validateCadBodyState(onPocket) == CadStatus::FeatureSupportInvalid
-                        && refusedBy(onPocket, CadStatus::FeatureSupportInvalid, 3u));
+        r.check("CADVS_OPS_15_a_sketch_on_a_cut_away_mouth_is_refused_support_face_lost",
+                perFace && validateCadBodyState(onMouth) == CadStatus::Ok
+                        && refusedBy(onMouth, CadStatus::SupportFaceLost, 3u));
     }
     {
         // Feature 2 cuts the whole top half away, so feature 1's far cap no
@@ -3919,10 +3927,12 @@ void testPlanarRuntime(Recorder& r) {
         r.check("CADV6S2_REG_04_R2_two_cells_meeting_at_a_corner_are_two_valid_components",
                 corner.size() == 2u && validateCadBodyState(pinched) == CadStatus::Ok
                         && pinchedSolid.why == CadStatus::Ok && pinchedSolid.mesh.components == 2u);
-        // The pinch protection is NOT disabled: ONE edge-connected group whose
-        // own boundary passes a node twice -- a frame plus two diagonal cells
-        // of the 2 x 2 grid it surrounds, leaving the other two as holes that
-        // touch at the grid's centre -- is still refused by name.
+        // ONE edge-connected group whose own boundary passes a node twice -- a
+        // frame plus two diagonal cells of the 2 x 2 grid it surrounds, leaving
+        // the other two as holes that touch at the grid's centre -- was refused
+        // until `MODELING-R1-OWNER-CORRECTION`. It is split at that node into
+        // one outer and two holes, each with its own vertex ring: one closed
+        // solid of exactly the chosen area, 12 + 2 = 14 m^2 by 1 m.
         CadSketch grid;
         addRect(&grid, 1.0, 1.0, 4.0, 4.0);
         addRect(&grid, 1.0, 1.0, 2.0, 2.0);
@@ -3944,9 +3954,12 @@ void testPlanarRuntime(Recorder& r) {
                 makeCadBodyState(grid, facesExtrude({frame, bottomLeft, topRight}, 1.0));
         const CadBodyState diagonalOnly =
                 makeCadBodyState(grid, facesExtrude({bottomLeft, topRight}, 1.0));
-        r.check("CADV6S2_REG_04b_R2_a_group_whose_own_boundary_pinches_is_still_refused",
-                gridFound && validateCadBodyState(selfPinched) == CadStatus::PlanarFacesTouchAtPoint
-                        && regen(selfPinched).why == CadStatus::PlanarFacesTouchAtPoint
+        const Regen selfPinchedSolid = regen(selfPinched);
+        r.check("CADV6S2_REG_04b_OSS_a_group_whose_own_boundary_pinches_splits_into_one_solid",
+                gridFound && validateCadBodyState(selfPinched) == CadStatus::Ok
+                        && selfPinchedSolid.why == CadStatus::Ok
+                        && selfPinchedSolid.mesh.components == 1u
+                        && std::fabs(selfPinchedSolid.mesh.volume - 14.0) < 1e-9
                         && validateCadBodyState(diagonalOnly) == CadStatus::Ok
                         && regen(diagonalOnly).mesh.components == 2u);
         // Every arrangement refusal maps to its own v6 name, and a pinch is no
@@ -5794,6 +5807,15 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + fillPerformance;
+    // New Sketch on body faces and the self-touching fill selection
+    // (`MODELING-R1-OWNER-CORRECTION`).
+    std::vector<ArrangementSelfTestCheck> ownerShell;
+    std::string ownerShellPerformance;
+    runOwnerShellSelfTests(&ownerShell, &ownerShellPerformance);
+    for (const ArrangementSelfTestCheck& check : ownerShell) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + ownerShellPerformance;
     // The large fill-bucket selection (`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`).
     std::vector<ArrangementSelfTestCheck> multiface;
     std::string multifacePerformance;

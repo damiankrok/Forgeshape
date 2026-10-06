@@ -658,11 +658,14 @@ void testStatus(Checks& r) {
                         && history.undoDepth() == 0u);
     }
 
-    // A first project of 19 faces on a 6 x 6 grid whose union PINCHES -- the
-    // seven cells (row, col) (1,0) (1,1) (2,0) (2,2) (3,0) (3,1) (3,2) ring
-    // the unchosen (2,1) and meet at one corner -- plus the whole of columns
-    // 4 and 5. The commit refuses with the candidate's own reason, never a
-    // selection message; dropping (2,2) fixes it and the commit succeeds.
+    // A first project of 19 faces on a 6 x 6 grid whose union boundary
+    // touches itself -- the seven cells (row, col) (1,0) (1,1) (2,0) (2,2)
+    // (3,0) (3,1) (3,2) ring the unchosen (2,1) and meet at one corner -- plus
+    // the whole of columns 4 and 5. Refused until
+    // `MODELING-R1-OWNER-CORRECTION`; now the ring is split at that corner into
+    // one outer and its hole, so the candidate is valid, the commit creates the
+    // project, and the solid is exactly 19 cells deep. Toggling (2,2) still
+    // changes only (2,2).
     {
         ConstructionScene empty{NoProjectTag{}};
         ConstructionHistory history(empty);
@@ -682,20 +685,20 @@ void testStatus(Checks& r) {
                 }
             }
         }
-        const CadStatus candidate = d.sketch.evaluateCandidate().status;
-        const CadStatus refused =
-                chosen ? commitFirstCadProject(d.sketch, empty, sculpt, history) : CadStatus::Ok;
-        const bool refusedFresh = chosen && d.sketch.selectedAreaCount() == 19u
-                                  && candidate == CadStatus::PlanarFacesTouchAtPoint
-                                  && refused == candidate && d.sketch.lastStatus() == candidate
-                                  && !empty.hasProject() && d.sketch.selectedAreaCount() == 19u;
-        const bool fixed = refusedFresh && d.sketch.togglePlanarFace(cell(2, 2)) == CadStatus::Ok
-                           && d.sketch.lastStatus() == CadStatus::Ok
-                           && d.sketch.evaluateCandidate().status == CadStatus::Ok;
+        const CadCandidateEvaluation& candidate = d.sketch.evaluateCandidate();
+        const double depth = d.sketch.extrude().depth;
+        const bool valid = chosen && d.sketch.selectedAreaCount() == 19u
+                           && candidate.status == CadStatus::Ok && candidate.mesh != nullptr
+                           && candidate.mesh->components == 2u
+                           && near(candidate.mesh->volume, 19.0 * depth, 1e-9);
+        const bool toggled = valid && d.sketch.togglePlanarFace(cell(2, 2)) == CadStatus::Ok
+                             && d.sketch.selectedAreaCount() == 18u
+                             && d.sketch.togglePlanarFace(cell(2, 2)) == CadStatus::Ok
+                             && d.sketch.selectedAreaCount() == 19u;
         const CadStatus committed =
-                fixed ? commitFirstCadProject(d.sketch, empty, sculpt, history) : CadStatus::NotSketching;
-        r.check("MF_15_a_refused_commit_names_the_current_candidate_reason_and_a_fix_commits",
-                refusedFresh && fixed && committed == CadStatus::Ok && empty.hasProject());
+                toggled ? commitFirstCadProject(d.sketch, empty, sculpt, history) : CadStatus::NotSketching;
+        r.check("MF_15_OSS_a_self_touching_union_is_valid_and_the_first_project_commits_it",
+                valid && toggled && committed == CadStatus::Ok && empty.hasProject());
     }
 
     // The same freshness through the ordinary commit of a live project.
@@ -720,21 +723,21 @@ void testStatus(Checks& r) {
         }
         const size_t bodiesBefore = scene.bodyCount();
         ObjectId id = kNoObject;
-        const CadStatus refused = chosen ? d.sketch.commit(scene, history, &id) : CadStatus::Ok;
-        const bool refusedFresh = refused == CadStatus::PlanarFacesTouchAtPoint
-                                  && d.sketch.lastStatus() == refused && id == kNoObject
-                                  && scene.bodyCount() == bodiesBefore && history.undoDepth() == 0u;
-        const bool fixed = refusedFresh && d.sketch.togglePlanarFace(cell(2, 2)) == CadStatus::Ok
-                           && d.sketch.commit(scene, history, &id) == CadStatus::Ok && id != kNoObject;
-        r.check("MF_15B_the_live_project_commit_names_the_same_current_reason_and_a_fix_commits",
-                refusedFresh && fixed && scene.bodyCount() == bodiesBefore + 1u);
+        const CadStatus committed = chosen ? d.sketch.commit(scene, history, &id) : CadStatus::NotSketching;
+        const SceneObject* body = scene.findBody(id);
+        r.check("MF_15B_OSS_the_live_project_commits_the_same_self_touching_union_as_one_undo",
+                committed == CadStatus::Ok && id != kNoObject && body != nullptr && body->isCad()
+                        && body->cadOrNull()->state().extrude.planarFaces.size() == 19u
+                        && scene.bodyCount() == bodiesBefore + 1u && history.undoDepth() == 1u);
     }
 }
 
 // The device class's own sequence (`CadMultiFaceOwnerTest` DEV-MF-05), on its
 // own 6-column x 4-row grid, pinned here first so the device asserts a fact
-// the host already proved: seventeen cells whose union pinches at one corner,
-// then sixteen once (row 2, col 2) is dropped.
+// the host already proved: seventeen cells whose union touches itself at one
+// corner are VALID since `MODELING-R1-OWNER-CORRECTION` (split there into an
+// outer and its hole), and so are the sixteen left once (row 2, col 2) is
+// dropped.
 void testDevicePattern(Checks& r) {
     Driver d;
     const bool ready = d.finishOn(gridSketch(6, 4));
@@ -745,13 +748,17 @@ void testDevicePattern(Checks& r) {
                            {0, 0}}) {
         chosen = chosen && d.sketch.togglePlanarFace(cells[rc.first * 6 + rc.second]) == CadStatus::Ok;
     }
-    const CadStatus pinched = d.sketch.evaluateCandidate().status;
+    const CadCandidateEvaluation& touching = d.sketch.evaluateCandidate();
+    const double depth = d.sketch.extrude().depth;
+    const bool seventeen = chosen && touching.status == CadStatus::Ok && touching.mesh != nullptr
+                           && touching.mesh->components == 1u
+                           && near(touching.mesh->volume, 17.0 * depth, 1e-9);
     const bool dropped = chosen && d.sketch.togglePlanarFace(cells[2 * 6 + 2]) == CadStatus::Ok;
     const CadCandidateEvaluation& fixed = d.sketch.evaluateCandidate();
-    r.check("MF_15C_the_device_pattern_pinches_at_17_cells_and_extrudes_at_16",
-            chosen && pinched == CadStatus::PlanarFacesTouchAtPoint && dropped
-                    && d.sketch.selectedAreaCount() == 16u && fixed.status == CadStatus::Ok
-                    && fixed.mesh != nullptr && fixed.mesh->components == 1u);
+    r.check("MF_15C_OSS_the_device_pattern_extrudes_at_17_cells_and_at_16",
+            seventeen && dropped && d.sketch.selectedAreaCount() == 16u
+                    && fixed.status == CadStatus::Ok && fixed.mesh != nullptr
+                    && fixed.mesh->components == 1u && near(fixed.mesh->volume, 16.0 * depth, 1e-9));
     d.sketch.cancel();
 }
 

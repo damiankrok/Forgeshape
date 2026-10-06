@@ -43,17 +43,31 @@ DVec3 frameDirection(const CadFrame64& f, double du, double dv, double dw) {
 CadFrame64 sideFrame(const CadFeatureGeometry& g, const SketchPoint& a, const SketchPoint& b,
                      bool hole);
 
+// The frame of a face as the BODY's surface sees it. A Cut's faces are the
+// tool's faces turned inside out -- the pocket's floor faces up out of the
+// material, its walls face into the pocket -- so their normal (and, to stay
+// right-handed, their v) is reversed; u is kept so the in-face axis does not
+// move. Every other feature's faces are the prism's own.
+CadFrame64 materialOutward(const CadFeatureGeometry& g, CadFrame64 frame) {
+    if (g.operation == CadFeatureOperation::Cut) {
+        frame.n = dvec3Scale(frame.n, -1.0);
+        frame.v = dvec3Scale(frame.v, -1.0);
+    }
+    return frame;
+}
+
 // The face of one loop edge in sketch-local terms, placed into the body.
 CadFeatureFace sideFace(const CadFeatureGeometry& g, const ClosedProfile& loop, uint32_t k,
-                        bool hole, bool featureEligible) {
+                        bool hole, bool lineageFeatureEligible) {
     const uint32_t n = static_cast<uint32_t>(loop.polygon.size());
     CadFeatureFace face;
     face.token.kind = CadFaceKind::Side;
     face.token.edgeEntityId = loop.edgeEntityId.size() == n ? loop.edgeEntityId[k] : loop.anchorEntityId;
     face.token.edgeLocalIndex = loop.edgeLocalIndex.size() == n ? loop.edgeLocalIndex[k] : k;
     const bool curved = loop.fromCircle || (loop.edgeCurved.size() == n && loop.edgeCurved[k] != 0u);
-    face.eligible = featureEligible && !curved;
-    face.frame = sideFrame(g, loop.polygon[k], loop.polygon[(k + 1u) % n], hole);
+    face.eligible = g.kind == CadFeatureKind::Extrude && !curved;
+    face.lineageEligible = lineageFeatureEligible && !curved;
+    face.frame = materialOutward(g, sideFrame(g, loop.polygon[k], loop.polygon[(k + 1u) % n], hole));
     return face;
 }
 
@@ -89,10 +103,11 @@ CadFrame64 sideFrame(const CadFeatureGeometry& g, const SketchPoint& a, const Sk
 }
 
 CadFeatureFace capFace(const CadFeatureGeometry& g, const std::vector<SketchPoint>& primaryOuter,
-                       bool onPlane, bool featureEligible) {
+                       bool onPlane, bool lineageFeatureEligible) {
     CadFeatureFace face;
     face.token.kind = onPlane ? CadFaceKind::CapPlane : CadFaceKind::CapFar;
-    face.eligible = featureEligible;
+    face.eligible = true;
+    face.lineageEligible = lineageFeatureEligible;
     const double offset = onPlane ? g.planeCapOffset : g.farCapOffset;
     // The VERTEX MEAN of the first region's outer loop: what R0's cap frame
     // always used, kept so a face-supported dependent does not move.
@@ -108,6 +123,7 @@ CadFeatureFace capFace(const CadFeatureGeometry& g, const std::vector<SketchPoin
     face.frame.n = frameDirection(g.placement, 0.0, 0.0, sign);
     face.frame.u = g.placement.u;
     face.frame.v = sign > 0.0 ? g.placement.v : dvec3Scale(g.placement.v, -1.0);
+    face.frame = materialOutward(g, face.frame);
     return face;
 }
 
@@ -138,7 +154,7 @@ uint64_t featureSignature(const CadFeatureGeometry& g) {
     mixU64(h, g.faces.size());
     for (const CadFeatureFace& face : g.faces) {
         mixU64(h, cadFaceTokenCode(face.token));
-        mixU64(h, face.eligible ? 1u : 0u);
+        mixU64(h, face.lineageEligible ? 1u : 0u);
     }
     return h == 0 ? 1 : h;
 }
@@ -174,7 +190,7 @@ CadFaceToken fragmentSideToken(const FragmentRef& fragment) {
 // The wall's frame stands on the fragment's chord in the (counter-clockwise)
 // polygon -- exactly its one polygon edge when it is straight.
 void appendFragmentSides(CadFeatureGeometry* g, const PlanarProfileLoop& loop, bool hole,
-                         bool featureEligible) {
+                         bool lineageFeatureEligible) {
     const size_t n = loop.polygon.size();
     for (uint32_t k = 0; k < loop.fragments.size(); ++k) {
         // The contiguous run of polygon edges on fragment k: its first edge is
@@ -202,8 +218,9 @@ void appendFragmentSides(CadFeatureGeometry* g, const PlanarProfileLoop& loop, b
         }
         CadFeatureFace face;
         face.token = fragmentSideToken(loop.fragments[k]);
-        face.eligible = featureEligible && loop.fragmentCurved[k] == 0u;
-        face.frame = sideFrame(*g, a, b, hole);
+        face.eligible = g->kind == CadFeatureKind::Extrude && loop.fragmentCurved[k] == 0u;
+        face.lineageEligible = lineageFeatureEligible && loop.fragmentCurved[k] == 0u;
+        face.frame = materialOutward(*g, sideFrame(*g, a, b, hole));
         g->faces.push_back(face);
     }
 }
@@ -226,6 +243,8 @@ CadStatus derivePlanarFeature(CadFeatureGeometry* g) {
         return CadStatus::ProfileNotFound;
     }
     setExtrudeOffsets(g);
+    // The lineage's frozen R1 bit (`lineageEligible`); where a sketch may
+    // stand is decided per face.
     const bool featureEligible = g->operation != CadFeatureOperation::Cut;
     const std::vector<SketchPoint>& primaryOuter = g->planarComponents.front().outer.polygon;
     g->faces.push_back(capFace(*g, primaryOuter, /*onPlane=*/true, featureEligible));
@@ -281,7 +300,8 @@ CadStatus deriveFeature(uint32_t featureId, CadFeatureOperation operation, const
     }
     setExtrudeOffsets(&g);
     // A Cut leaves its faces behind as the inside of a pocket, facing the
-    // other way; none of them may carry a sketch in R1.
+    // other way (`materialOutward`). Whether one may carry a sketch is the
+    // face's own answer; this is only the lineage's frozen R1 bit.
     const bool featureEligible = operation != CadFeatureOperation::Cut;
     const std::vector<ClosedProfile>& loops = g.regions.loops.profiles;
     const ClosedProfile& primaryOuter = loops[g.components.front().outerLoop];
@@ -421,7 +441,9 @@ CadStatus deriveRevolveFeature(CadFeatureGeometry* g) {
         for (const bool start : {true, false}) {
             CadFeatureFace cap;
             cap.token.kind = start ? CadFaceKind::CapPlane : CadFaceKind::CapFar;
+            // Not a support: R1 derives no exact frame for a revolved cap.
             cap.eligible = false;
+            cap.lineageEligible = false;
             cap.frame = g->placement;
             g->faces.push_back(cap);
         }

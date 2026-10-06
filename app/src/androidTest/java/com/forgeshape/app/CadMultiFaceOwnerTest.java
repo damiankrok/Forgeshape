@@ -11,6 +11,7 @@ import static com.forgeshape.app.WorkspaceTestSupport.settleLayout;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -242,8 +243,11 @@ public final class CadMultiFaceOwnerTest {
         tapCell(0);
         assertEquals(regionsSelected(1), statusLine());
         tapCell(0);
-        // Seventeen cells whose union pinches at the corner between (row 1,
-        // col 1) and (row 2, col 2) -- the pattern the host's MF_15C pins.
+        // Seventeen cells whose union touches itself at the corner between
+        // (row 1, col 1) and (row 2, col 2) -- the pattern the host's MF_15C
+        // pins. Refused until MODELING-R1-OWNER-CORRECTION; now the union is
+        // split at that corner into an outer and its hole, so the candidate
+        // is VALID and the status counts the seventeen cells.
         final int[][] pinch = {{0, 1}, {1, 1}, {0, 2}, {2, 2}, {0, 3}, {1, 3}, {2, 3}, {3, 0},
                 {3, 1}, {3, 2}, {3, 3}, {3, 4}, {3, 5}, {0, 5}, {1, 5}, {2, 5}, {0, 0}};
         for (int[] rc : pinch) {
@@ -252,32 +256,22 @@ public final class CadMultiFaceOwnerTest {
         assertEquals(17, selected().length);
         final String touch = onWorkspace(rule.getScenario(),
                 (activity, workspace) -> activity.getString(R.string.status_cad_areas_touch_at_point));
-        assertEquals("the candidate's own refusal", NativeViewport.CAD_PLANAR_FACES_TOUCH_AT_POINT,
+        fact("mf05.seventeen", "candidate=" + candidateStatus() + " status=" + statusLine());
+        assertEquals("a self-touching union is a valid candidate", NativeViewport.CAD_OK,
                 candidateStatus());
-        assertEquals("the status names it", touch, statusLine());
-        assertFalse("a refused candidate withdraws the toolbar's Extrude", extrudeShown());
-        // The precision surface's Extrude still submits: the commit is refused
-        // by the CURRENT reason, never by a selection message.
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final android.widget.EditText field =
-                    workspace.sketchEditor().findViewById(R.id.field_extrude_depth);
-            field.setText("1");
-            workspace.findViewById(R.id.sketch_extrude_commit).performClick();
-            return null;
-        });
-        settleLayout();
-        fact("mf05.refused_commit", "last=" + NativeViewport.sketchLastStatus() + " status="
-                + statusLine());
-        assertEquals(NativeViewport.SKETCH_READY, sketchState());
-        assertFalse(NativeViewport.projectOpen());
-        assertEquals(NativeViewport.CAD_PLANAR_FACES_TOUCH_AT_POINT, NativeViewport.sketchLastStatus());
-        assertEquals("the refused commit reports its own reason", touch, statusLine());
-        assertNoChooseOne("after the refused commit");
-        // Drop (row 2, col 2): valid again, sixteen cells, the count is back.
+        assertEquals("the status counts the cells", regionsSelected(17), statusLine());
+        assertNotEquals("never the point-contact refusal", touch, statusLine());
+        assertTrue("a valid candidate offers the toolbar's Extrude", extrudeShown());
+        final double[] seventeen = candidateMeasure();
+        assertEquals("the preview is the seventeen cells", 17 * cell * cell * depth(), seventeen[0],
+                1e-6 * seventeen[0]);
+        assertEquals(1.0, seventeen[1], 0.0);
+        assertNoChooseOne("with seventeen chosen");
+        // Drop (row 2, col 2): sixteen cells, and the status follows at once.
         tapCell(2 * COLS + 2);
         assertEquals(16, selected().length);
         assertEquals(NativeViewport.CAD_OK, candidateStatus());
-        assertEquals("the stale refusal is gone", regionsSelected(16), statusLine());
+        assertEquals("the status is the current count", regionsSelected(16), statusLine());
         assertTrue(extrudeShown());
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             workspace.findViewById(R.id.extrude_sketch).performClick();

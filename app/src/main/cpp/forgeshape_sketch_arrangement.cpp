@@ -2133,10 +2133,18 @@ double distanceToPolygon(const SketchPoint& p, const std::vector<SketchPoint>& p
 
 // The union of ONE edge-connected group of chosen faces (see
 // `partitionSelectedPlanarFacesBySharedBoundary`), appended to `out` unsorted.
-// Its node bookkeeping is the GROUP's own: a loop of this group passing a node
-// another loop of this group already passed is a genuine pinch of this group's
-// boundary and is refused, while a node another GROUP passes is none of its
-// business -- that is a point contact between two separate components.
+//
+// A union loop that passes one node twice -- two unchosen cells that are holes
+// of the group and meet at a point, or a hole touching the outer boundary --
+// is SPLIT there (`MODELING-R1-OWNER-CORRECTION`), never refused: the walk
+// turns by the tightest turn inside the union, so each piece between two
+// visits of the node is a simple loop wholly on one side, every boundary
+// half-edge stays in exactly one piece, and the pieces bound exactly the region
+// the faces cover. Each piece becomes its own outer or hole loop and gets its
+// own vertex ring in the prism, so the extruded solid is a closed, oriented
+// 2-manifold that merely touches itself along a vertical edge. Only an
+// edge-connected group whose pieces are not one outer plus its holes is still
+// refused as `PinchedSelection`.
 ArrangementStatus mergeEdgeConnectedFaces(const SketchArrangement& arrangement,
                                           const std::vector<size_t>& faceIndices,
                                           std::vector<PlanarProfileComponent>* out) {
@@ -2202,25 +2210,22 @@ ArrangementStatus mergeEdgeConnectedFaces(const SketchArrangement& arrangement,
     std::vector<PlanarProfileLoop> outers;
     std::vector<PlanarProfileLoop> holes;
     std::vector<uint8_t> walked(halfCount, 0);
-    // Every node a union loop of THIS group passes, across all of the group's
-    // loops: within one edge-connected group, a loop revisiting a node -- or a
-    // hole touching its own outer at one -- pinches the boundary. Two GROUPS
-    // meeting at a node never reach this vector together.
-    std::vector<uint8_t> nodeUsed(arrangement.nodes.size(), 0);
+    // The simple loops of the union: every walked loop split at the nodes it
+    // revisits. Deterministic -- the walks start at ascending half-edge ids and
+    // a loop splits in walk order -- and every piece is canonically rotated
+    // below, so the order they are found in never reaches a result.
+    std::vector<std::vector<uint32_t>> simpleLoops;
+    std::vector<int64_t> stackAt(arrangement.nodes.size(), -1);
     for (uint32_t start = 0; start < halfCount; ++start) {
         if (!remains(start) || walked[start] != 0u) continue;
-        std::vector<uint32_t> loop;
-        std::vector<uint32_t> nodesSeen;
+        std::vector<uint32_t> walk;
         uint32_t h = start;
         for (uint32_t guard = 0; guard <= halfCount; ++guard) {
             walked[h] = 1u;
-            const uint32_t node = originNode(h);
-            if (node >= nodeUsed.size() || nodeUsed[node] != 0u) {
-                return ArrangementStatus::PinchedSelection;
+            if (originNode(h) >= arrangement.nodes.size()) {
+                return ArrangementStatus::InvalidSelection;
             }
-            nodeUsed[node] = 1u;
-            nodesSeen.push_back(node);
-            loop.push_back(h);
+            walk.push_back(h);
             uint32_t next = 0;
             if (!nextOnUnion(h, &next)) {
                 return ArrangementStatus::InvalidSelection;
@@ -2231,6 +2236,26 @@ ArrangementStatus mergeEdgeConnectedFaces(const SketchArrangement& arrangement,
         if (h != start) {
             return ArrangementStatus::InvalidSelection;
         }
+        // Split at revisited nodes: a node met again closes the piece that
+        // left it, which therefore starts and ends there.
+        std::vector<uint32_t> stack;
+        for (uint32_t half : walk) {
+            const uint32_t node = originNode(half);
+            if (stackAt[node] >= 0) {
+                const size_t from = static_cast<size_t>(stackAt[node]);
+                std::vector<uint32_t> piece(stack.begin() + static_cast<std::ptrdiff_t>(from),
+                                            stack.end());
+                for (uint32_t popped : piece) stackAt[originNode(popped)] = -1;
+                stack.resize(from);
+                simpleLoops.push_back(std::move(piece));
+            }
+            stackAt[node] = static_cast<int64_t>(stack.size());
+            stack.push_back(half);
+        }
+        for (uint32_t kept : stack) stackAt[originNode(kept)] = -1;
+        simpleLoops.push_back(std::move(stack));
+    }
+    for (std::vector<uint32_t>& loop : simpleLoops) {
         // Canonical rotation: start at the smallest fragment ref.
         size_t best = 0;
         const auto refOf = [&](uint32_t half) {
@@ -2283,6 +2308,12 @@ ArrangementStatus mergeEdgeConnectedFaces(const SketchArrangement& arrangement,
     }
     if (outers.empty()) {
         return ArrangementStatus::InvalidSelection;
+    }
+    // One edge-connected group has a connected interior, so its boundary is
+    // one outer loop and its holes. Pieces that are anything else could not be
+    // extruded as one closed solid honestly, and stay refused by name.
+    if (outers.size() != 1u) {
+        return ArrangementStatus::PinchedSelection;
     }
     std::vector<PlanarProfileComponent> components(outers.size());
     for (size_t i = 0; i < outers.size(); ++i) {

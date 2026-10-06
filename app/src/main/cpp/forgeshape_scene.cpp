@@ -232,6 +232,19 @@ CadStatus ConstructionScene::validateCadFaceSupport(const TopoRef& support) cons
     if (!face.eligible) {
         return CadStatus::NotCadBody;  // a curved side is not a sketch support
     }
+    // A Cut's face is a support only where it SURVIVED the chain
+    // (`MODELING-R1-OWNER-CORRECTION`): the pocket's floor and walls do, the
+    // cap the Cut started from was carved away. Asked of the body's own
+    // published regeneration, the mesh the user sees and picks.
+    CadFeatureView view;
+    if (findCadFeature(producer->cadOrNull()->state(), support.producerLocalFeatureId, &view)
+        && view.operation == CadFeatureOperation::Cut) {
+        std::shared_ptr<const CadBodyMesh> mesh;
+        if (producer->cadOrNull()->regenerated(&mesh) != CadStatus::Ok || mesh == nullptr
+            || !cadMeshCarriesFace(*mesh, face)) {
+            return CadStatus::SupportFaceLost;
+        }
+    }
     return CadStatus::Ok;
 }
 
