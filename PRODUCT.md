@@ -140,7 +140,7 @@ ForgeShape project, damaged, or from a newer ForgeShape — it says so on Home a
 nothing is created.
 
 **New Project** is the next page rather than a box over Home, and it asks which
-representation the project begins in. Exactly two answers, and **Back**:
+representation the project begins in. Exactly four answers, and **Back**:
 
 **CAD** opens a sketch straight away, flat on the XY plane and seen square-on,
 with the grid filling the viewport — there is nothing to pick first. Draw a
@@ -166,6 +166,15 @@ ordinary exact Construction sphere and it was prepared the ordinary way, so
 Sculpt** returns to the same sculpt mesh with the strokes already on it.
 Preparing it is not your first Undo.
 
+**Freeform** begins on a smooth box shaped by its control cage, with the cage
+open under **Shape**. Preparing it is not your first Undo.
+
+**Surface** opens a sketch exactly as CAD does. Draw with the ordinary sketch
+tools — open curves are welcome — and **Finish Sketch** opens a short list of
+what the sketch can make, hanging under the toolbar: a **Patch**, an
+**Extrude**d surface or a **Revolve**d surface. Choosing one creates the
+project, with an empty Undo history; Back to Home before that costs nothing.
+
 **Open File…** opens a `.forge` from your files straight into the editor.
 
 Once a project is open, the Project surface offers **New Project…** beside Save,
@@ -183,9 +192,7 @@ takes the New Project page back to Home, takes a New-CAD sketch back to Home
 (nothing was created, so there is nowhere else to go), and from Home leaves the
 app.
 
-Neither choice is a document, a template or a saved project, and neither closes
-anything off: both representations stay one control apart for the life of the
-body.
+None of the four is a document, a template or a saved project.
 
 ## The Editor Workspace
 
@@ -929,6 +936,72 @@ Driving dimension or trimming regenerates the same body as one Undo step.
 Not yet: a constraint solver that keeps relations, a "fully defined" state,
 projecting edges of other bodies into a sketch, drawing sheets and title
 blocks, and dimensioning, trimming, extending or offsetting a spline.
+
+## How a body was built — the History
+
+A CAD body and a Surface body keep the steps they were built from, and the
+**History** control in the history capsule (beside Undo and Redo) lists them:
+one row per sketch and per feature, in the order they were made — *Sketch 1*,
+*Extrude 1 · New Body*, *Cut 2*, *Revolve 1*, or for a Surface body *Extruded
+Surface 1*, *Thicken 2* — each with its values on a second line. A filled dot
+marks a step that rebuilds. The control is there only for a CAD or Surface body,
+and not while sketching or sculpting.
+
+Tapping a row edits that step without touching the project yet: a CAD sketch
+reopens as a sketch, a CAD feature reopens its exact values, and a Surface
+feature opens its one value (a distance, an angle, a thickness, or a sketch's
+offset) on the Surface panel. Every later step is rebuilt from the edit as you
+type. If the edit would make a LATER step impossible, that step is named — a
+cross on its row, the reason in words, the steps after it marked as not
+rebuilt — and the commit is withdrawn until the edit works again; **Fix** goes
+back to the value and **Cancel** leaves the body exactly as it was. A finished
+edit is one Undo. Steps cannot be reordered, suppressed or rolled back.
+
+## Freeform bodies
+
+A **Freeform** body is a smooth surface shaped by a coarse **control cage** of
+four-sided faces; the surface follows the cage. New Project → Freeform starts
+on a box. With **Shape** held, the panel chooses whether a tap on the cage
+picks a **Vertex**, an **Edge** or a **Face**; a picked vertex has a handle
+that drags it. A face can be **Push/Pull**ed or **Extrude**d by a typed
+distance, and an edge can carry an **Insert Loop** at a typed ratio along its
+ring or a **Crease** weight that keeps it sharp. **Symmetry** X keeps the two
+halves of the cage exactly mirrored, and the **Subdivision** level (0 to 4)
+sets how smooth the surface is drawn. Every tool, and the handle drag, is one
+Undo, and a project saves and reopens with exactly the cage it had. A
+Freeform body is not sculpted, and there is no T-junction or local refinement:
+an inserted loop always runs the whole ring.
+
+UNVERIFIED on a device (host self-tested only): the Rotate and Scale handle
+modes, adding to a selection, Delete Face, Symmetry Y and Z, and the Freeform
+Box, Plane and Cylinder entries of **Add**.
+
+## Surface bodies
+
+A **Surface** body is built from open surfaces rather than closed solids, one
+feature at a time. Each feature begins as a sketch — from **New Surface Sketch**
+on the Surface panel (under **Shape**), standing at a typed offset along XY's
+normal — and Finish Sketch lists only what that sketch can actually make:
+
+* **Patch** fills the sketch's closed regions with flat surface, keeping holes.
+* **Extrude** sweeps its curves straight up by a typed distance. Open chains
+  are fine; the ends stay open, there are no caps.
+* **Revolve** sweeps its curves about the sketch's one **Construction** line
+  by a typed angle. An open profile is fine. Without exactly one Construction
+  line Revolve is not offered.
+* **Keep as Section** keeps the sketch as the first section of a loft; a later
+  sketch at another offset then offers **Loft**, a surface between the two.
+* **Trim** cuts the sketch's region out of the flat patch on the same plane.
+
+With the body selected, **Stitch** joins surfaces whose edges meet, and
+**Thicken** turns an extruded surface into a solid of a typed thickness; each
+is offered only where it works — over a stitched surface Thicken is not
+offered at all. A surface that is still open is drawn from both sides. Every
+feature is one Undo, the History lists them, and a project saves and reopens
+with exactly the features it had. A Surface body is not sculpted.
+
+UNVERIFIED on a device (host self-tested only): Trim's **Keep inside**,
+Thicken of a flat patch, a partial Revolve, and the Surface entry of **Add**.
 
 ## Choosing and sizing the shape
 
@@ -2078,7 +2151,8 @@ up to fifteen Add and Cut extrusions on its own flat faces, each reopenable, or
 a single Revolve New Body about a straight sketch edge. There
 is no Through All or Up To Face extent, no Intersect, no deleting or reordering
 a feature, and no fillet, chamfer, shell, sweep, loft, pattern, feature
-mirror or constraint solver (sketch Trim, Extend, Offset and Mirror exist —
+mirror or constraint solver on a CAD body (a Surface body has its own loft —
+see *Surface bodies* — and sketch Trim, Extend, Offset and Mirror exist —
 see *Drafting inside a sketch*), no custom construction plane, no
 sketch on the inside of a Cut, and no sketch on a
 curved or imported surface; a polygon profile's points are not numerically
@@ -2110,9 +2184,14 @@ as the Mask tool and Clear Mask above; inverting, growing, shrinking or blurring
 a mask, masking by topology, and keeping a mask across a reopen are not.
 Sculpt Undo IS
 implemented, over whole strokes, and so is the *Sculpt History* list described
-above; both are Sculpt's alone. The Construction history has no such panel,
-neither history has named or thumbnailed steps, there is no branching tree, and
-there is no keyboard shortcut for any of the three controls.
+above; both are Sculpt's alone. The Construction history has no such panel
+(a CAD or Surface body's *History* lists how it was built, not the Undo
+steps), neither history has named or thumbnailed steps, there is no branching
+tree, and there is no keyboard shortcut for any of the three controls.
+
+A Surface body has no general curved-surface (NURBS) editing, no trim of a
+curved surface, no fillet or draft, and no repair or exchange of surfaces with
+other programs; a Freeform cage has no local refinement.
 
 **There is a grid, but there is no snapping of any kind.** Nothing you drag,
 type or place is quantised to it, no value is ever measured off it, and there is
