@@ -98,7 +98,7 @@ All multibyte fields are explicit little-endian. Offsets are from byte 0.
 | 10 | minor | `u16` | `0` |
 | 12 | headerBytes | `u16` | `28` |
 | 14 | projectKind | `u8` | `1` = Construction, `2` = Sculpt |
-| 15 | headerFlags | `u8` | bit0 `hasCONS`, bit1 `hasSCUL`, bit2 `hasIMPT`, bit3 `hasCADB`; all other bits zero |
+| 15 | headerFlags | `u8` | bit0 `hasCONS`, bit1 `hasSCUL`, bit2 `hasIMPT`, bit3 `hasCADB`, bit4 `hasFRFM`, bit5 `hasSURF`; all other bits zero |
 | 16 | sectionCount | `u32` | exact number of sections that follow |
 | 20 | fileBytes | `u64` | exact total file size |
 
@@ -122,6 +122,13 @@ every legacy fixture's bytes for no added protection.
 a build that cannot regenerate a sketch cannot open a file that needs one, and
 refuses it on the header flag first and the `CADB` section's required bit
 second. Files without a CAD Body are byte-for-byte what they were.
+
+`hasFRFM` (bit4, `0x10`) and `hasSURF` (bit5, `0x20`) (`MODELING-FOUNDATIONS-R1`)
+are the same gate twice more: a Freeform body's control cage (§7j) and a
+Surface body's feature list (§7k) can only be rebuilt by a build that knows
+them, so an older reader refuses the header bit first and the required section
+second. A file with neither body sets neither bit and writes neither section,
+so every earlier file is byte-for-byte what it was.
 
 ---
 
@@ -1333,6 +1340,145 @@ read the sketch's REGULAR entities only, so adding, removing or toggling
 Construction geometry moves no face token and no region. It may still be the
 Revolve axis (§7h) — the axis is resolved over every entity of the sketch.
 
+## 7j. `FRFM` v1 — the Freeform bodies (`MODELING-FOUNDATIONS-R1` B)
+
+A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is
+derived from it by Catmull-Clark subdivision on every load and is never
+written. `FRFM` is a REQUIRED section (header bit4), present exactly when some
+body is a Freeform body, and a body it names carries no `CONS`, `IMPT`, `CADB`
+or `SURF` record and may carry no `SCUL` entry.
+
+```
+u32  bodyCount                 1 .. 4096 (kMaxProjectBodies)
+repeat bodyCount times, in SCNE order:
+  u64  objectId                a body SCNE carries
+  u8   subdivisionLevel        0 .. 4
+  u8   symmetry                bit0 X (plane x = 0), bit1 Y, bit2 Z; others 0
+  u16  reserved                0 (anything else: BadPayload, never masked)
+  u32  nextVertexId            > every vertex id below
+  u32  nextEdgeId              > every edge id below
+  u32  nextFaceId              > every face id below
+  u32  vertexCount             1 .. 4096
+  u32  edgeCount               1 .. 8192
+  u32  faceCount               1 .. 4096
+  repeat vertexCount (strictly ascending id):  u32 id | f64 x | f64 y | f64 z
+  repeat edgeCount   (strictly ascending id):  u32 id | u32 v0 | u32 v1 | f64 crease
+  repeat faceCount   (strictly ascending id):  u32 id | u32 a | u32 b | u32 c | u32 d
+```
+
+The three counts are checked against the remaining bytes (28 per vertex, 20 per
+edge, 20 per face) before anything is allocated, and the payload must end
+exactly where the last body does (`BadPayload` otherwise).
+
+The cage is then held to `validateFreeformCage`, and a file that fails it is
+refused `InvalidSemanticValue` with nothing applied: ids non-zero, strictly
+ascending and below their mark; coordinates finite and within 1e5 m; an edge
+record canonical (`v0 < v1`) and unique per vertex pair; a face four DISTINCT
+vertices, rotated so its smallest id is first, wound counter-clockwise seen
+from outside, with no two corners coincident; every face side an edge record,
+every edge record used by one or two faces, two faces over an edge traversing
+it in OPPOSITE directions, no isolated vertex and no bow-tie vertex; a crease
+weight in [0, 1]; the stored level within the derived-quad budget
+(`faceCount × 4^level ≤ 131072`); and a declared symmetry plane under which the
+cage is EXACTLY symmetric — every vertex's reflection a vertex bit for bit, the
+reflected faces the face set. Nothing is repaired, re-wound or re-symmetrized
+on load.
+
+The semantic fingerprint mixes an `FRFM` marker and the encoded record of each
+Freeform body, so a cage edit dirties the project and a project without one
+fingerprints exactly as before.
+
+## 7k. `SURF` v1 — the Surface bodies (`MODELING-FOUNDATIONS-R1` C)
+
+A Surface body's truth is an ORDERED FEATURE LIST over its own retained
+sketches. Every patch, boundary edge, stitch and thickened solid is derived by
+regenerating that list in order on every load and is never written; a
+triangle index is never an identity. `SURF` is a REQUIRED section (header
+bit5), present exactly when some body is a Surface body, and such a body
+carries no `CONS`, `IMPT`, `CADB` or `FRFM` record and no `SCUL` entry.
+
+```
+u32  bodyCount                 1 .. 4096
+repeat bodyCount times, in SCNE order:
+  u64  objectId
+  u32  nextSketchId            > every sketch id below
+  u32  nextFeatureId           > every feature id below
+  u32  sketchCount             0 .. 32
+  u32  featureCount            1 .. 32
+  repeat sketchCount times (strictly ascending id):
+    u32  sketchId              != 0
+    f64  offset                metres along the plane's normal; finite, |offset| <= 1e5
+    u8   workplane             §4 code: 1 XY, 2 XZ, 3 YZ
+    u32  nextEntityId
+    entities                   §7i's v8 grammar: u32 count, then each ENTITY
+                               with its role byte
+    u32  nextDimensionId       §7i
+    u32  dimensionCount, dimensions   §7i
+  repeat featureCount times (strictly ascending id, in construction order):
+    FEATURE
+```
+
+Every FEATURE has ONE fixed layout, every field present for every kind; a
+field the kind does not use must hold its default (the value in brackets), and
+anything else is refused (`PayloadMismatch`), so one feature has exactly one
+encoding:
+
+```
+FEATURE  u32  featureId                          != 0
+         u8   kind      1 PlanarPatch  2 ExtrudedSurface  3 RevolvedSurface
+                        4 LoftSurface  5 TrimSurface      6 Stitch   7 Thicken
+         SECTION  section                         [0, no curves]
+         u32  regionCount (0 .. 16)               [0]
+              repeat: u32 outerAnchorId | u32 holeCount (0 .. 64) | u32 hole × holeCount
+         f64  distance                            Extrude [0]
+         u8   direction  1 along the normal, 2 against      [1]
+         u32  axisEntityId | u32 axisEdgeLocalIndex          Revolve [0 | 0]
+         f64  angleDegrees                        Revolve, 0.001 .. 360 [0]
+         u8   revolveDirection  1 positive, 2 negative      [1]
+         SECTION  sectionB                        Loft [0, no curves]
+         u8   reverseB  (0 | 1)                   Loft [0]
+         u32  startOffsetB                        Loft [0]
+         u32  target                              Trim: the planar patch feature [0]
+         u8   keepInside  (0 | 1)                 Trim [1]
+         u32  stitchCount (0 .. 32) | u32 featureId × stitchCount   Stitch [0]
+         u32  source                              Thicken: the feature thickened [0]
+         f64  thickness                           Thicken, signed metres [0]
+SECTION  u32  sketchId | u32 curveCount (0 .. 64) | u32 entityId × curveCount (ascending)
+```
+
+What each kind reads:
+
+| kind | uses | makes |
+| --- | --- | --- |
+| PlanarPatch | `section.sketchId`, regions | one planar patch per region, holes kept; one closed boundary edge per loop |
+| ExtrudedSurface | `section` curves, distance, direction | one ruled patch per curve CHAIN (open chains valid), never a cap |
+| RevolvedSurface | `section` curves, axis (a straight edge of that sketch), angle, direction | one swept patch per chain; an on-axis point is one apex; a full turn closes its seam |
+| LoftSurface | `section`, `sectionB`, reverseB, startOffsetB | one ruled patch between exactly ONE chain per section, open to open or closed to closed |
+| TrimSurface | `section.sketchId`, regions, target, keepInside | the target's planar patches clipped EXACTLY through the planar arrangement; the target is consumed |
+| Stitch | stitchFeatures (ascending, earlier) | boundary edges of those features joined where they coincide within 1e-6 m |
+| Thicken | source, thickness | the source's patches replaced by a closed solid that passes the kernel's validation |
+
+Chains are walked through coincident AUTHORED endpoints (three or more meeting
+is `CurveChainForked`); a closed chain is wound counter-clockwise and a walk
+starts at the free end of the chain's smallest entity id, so the derived
+geometry is a function of the bytes alone.
+
+Validation runs into temporary state, then the whole list is REGENERATED, and
+the file is refused `InvalidSemanticValue` with nothing applied if any feature
+fails: an unknown kind or code, a bool byte above 1 (`BadPayload`), a feature
+naming a sketch, a feature or an entity that does not exist or is not EARLIER,
+a first feature that is not a Patch, an Extrude, a Revolve or a Loft, a
+consumed feature named again, a trim of a non-planar or non-coplanar patch, a
+stitch gap (`StitchGapTooLarge`: edges within 1e-3 m but not 1e-6 m), a
+non-manifold or incompatible stitch, an undefined thicken
+(`ThickenUnsupportedForSurfaceType`), or a high-water mark at or below an id.
+Nothing is re-aimed, re-trimmed or re-stitched on load. A later Undo or Redo
+restores the list with the snapshot; an id is unique along one forward history
+branch, as `CadSketchId`'s comment states.
+
+The semantic fingerprint mixes a `SURF` marker and the encoded record of each
+Surface body; a project without one fingerprints exactly as before.
+
 ## 8. Validation and compatibility
 
 Decoding happens entirely into temporary document structures. **No live project
@@ -1579,9 +1725,16 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `cad_dimension_reference_v8.forge` | 610 | `cd8ad8620b3f9386d64789651014df57ea24db854a33f4651a107dd411aaf258` | The rectangle (1), an Arc (2), an open Polyline (3) and a Line (4) measured by **Reference** dimensions only — arc radius and sweep, a polyline segment's and a rectangle edge's length, the line's horizontal and vertical components, and the angle between the two polyline segments (ids 1..7); `nextDimensionId` **9**: id 8 was burned |
 | `cad_bad_dimension_ref_v8.forge` | 483 | `a0e1388b6b63157ff66e735fd9e1cf6e888990f9d660bb1095686183f3c96f74` | The driving fixture with its Diameter naming entity **9**, which the sketch does not hold — refused `InvalidSemanticValue` (`SketchDimensionInvalid`), never re-aimed |
 | `cad_dimension_conflict_v8.forge` | 505 | `9ca1afac3749b5f5bc6131b11df973b2687ecaa635df22a487291f963cd9f8fd` | The driving fixture plus a **Driving** Radius (id 6) on the circle the Diameter already drives — refused `InvalidSemanticValue` (`SketchDimensionConflict`) |
+| `freeform_box_v1.forge` | 800 | `2f38b285c5718a5f53cbac8e9dcac9749ae474a3ae2423dd4e7dca97157faf0e` | **`FRFM` v1.** A 1 m Freeform Box cage — 8 vertices, 12 edges, 6 faces — at level 2, no symmetry |
+| `freeform_crease_symmetry_v1.forge` | 1504 | `b218fda7d3eaea4170827a8fece576e032969681c710b1cf9d17521f199e2029` | The box symmetric about x = 0 with its ±X faces extruded 0.25 m and the four edges of its +Y face creased 0.75, at level 3 |
+| `freeform_bad_topology_v1.forge` | 800 | `e896be40f36453d588ea22d4a0dacc6289222484d5d95db377b521d27f86c562` | The box with face 1 wound the wrong way round, so four edges are walked the same way twice — refused `InvalidSemanticValue` |
+| `surface_patch_extrude_v1.forge` | 546 | `d4cb49a6500718e1e1482a788aa897cf28d9922421ac9e1b73bffb89c3d55e14` | **`SURF` v1.** A 2 × 2 planar patch and an open two-line chain extruded 0.5 m into an uncapped ruled surface |
+| `surface_loft_trim_stitch_v1.forge` | 936 | `006374495e44da8332cae0fc07533ebface1f59fde8e12eb5ff9981c33736c8e` | A 4 × 4 patch with a radius-1 hole trimmed out, a 4 × 4 tube stitched to it along the outer square, and a loft between two circles at 1 m and 2 m |
+| `surface_bad_ref_v1.forge` | 690 | `4a0367a4a05f432633a81cd54313db07ab4a88da87d447d85dec8b93df3f640d` | The patch-and-extrude body plus a Trim naming feature **7**, which does not exist — refused `InvalidSemanticValue`, never skipped |
 
-The twenty-one corrupt fixtures written since `CADB` v2 — two each for `CADB` v2,
-v3, v4, v7 and v8, four for `CADB` v5, six for `CADB` v6 and one for `SCNE` v2 — are
+The twenty-three corrupt fixtures written since `CADB` v2 — two each for `CADB` v2,
+v3, v4, v7 and v8, four for `CADB` v5, six for `CADB` v6, one for `SCNE` v2, one
+for `FRFM` v1 and one for `SURF` v1 — are
 **constructed** by the PowerShell builder with the bad value in place, never
 generated and then mutated; the C++ self-test reaches the same bytes by its own
 route (patching the valid parent's one field and its CRC, or — for five of the
@@ -1614,7 +1767,7 @@ and a one-region single-feature one v1..v4. Each of these features costs a
 project that does not use it exactly nothing, exactly as the imported branch
 and the generalized `SCUL` cost the files before them nothing.
 
-**Sixty-six fixtures in all.** The thirty-six that predate `CADB` v5 are
+**Seventy-two fixtures in all.** The thirty-six that predate `CADB` v5 are
 verified by `FSR1A-12`, `IMP01A-19`, `IMP01B-11/12`, `CADR0-33..36`,
 `CADA3-46..51`, `CADUXR1-38`, `CADEXT-10` and `OBJ018A-15/16`, and printed on
 every debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `…_IMPORTED`,
@@ -1632,8 +1785,13 @@ both from the text above. The four `CADB` v7 fixtures are asserted by
 unknown kind by patching the full fixture's kind byte and its CRC while the
 builder writes kind 9 in place. The five `CADB` v8 fixtures are asserted by `DR_FMT_11`: the three valid ones
 through the ordinary writer from states built in C++, the two refusals through
-`encodeProjectV1Unchecked`. CI FAST's corpus parity step holds all sixty-six
-byte-identical between the builder and the repository. The thirteen v6
+`encodeProjectV1Unchecked`. The three `FRFM` v1 fixtures are asserted by
+`FF_20` and the three `SURF` v1 fixtures by `SURF_22`, each pinning the
+builder's digests against states built in C++ (the two refusals through
+`encodeProjectV1Unchecked`), and printed on every debug launch as
+`FORGESHAPE_FREEFORM_GOLDEN_SHA256` and `FORGESHAPE_SURFACE_GOLDEN_SHA256`.
+CI FAST's corpus parity step holds all seventy-two byte-identical between the
+builder and the repository. The thirteen v6
 fixtures are single-body Construction projects with the `SCNE` record of the
 v4/v5 ones, and every one of the forty-four before them is byte-for-byte
 unchanged: none needs what v6 adds. The four v7 fixtures are single-body
@@ -1641,6 +1799,9 @@ projects on the same `SCNE` record, and every one of the fifty-seven before them
 is byte-for-byte unchanged: none of them revolves. The five v8 fixtures are
 single-body projects on the same `SCNE` record, and every one of the sixty-one
 before them is byte-for-byte unchanged: none carries a role or a dimension.
+The six `FRFM` and `SURF` fixtures are single-body projects on a `SCNE` v1
+record, and every one of the sixty-six before them is byte-for-byte unchanged:
+none has a Freeform or a Surface body.
 
 Regenerate and re-verify with:
 
