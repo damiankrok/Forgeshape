@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **twenty-three** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All twenty-three, in emission order:
+A clean debug launch emits **twenty-five** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All twenty-five, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -45,6 +45,8 @@ FORGESHAPE_SKETCH_UX_SELFTEST_OK
 FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK
 FORGESHAPE_MIRROR_SELFTEST_OK
 FORGESHAPE_CAD_FEATURE_SELFTEST_OK
+FORGESHAPE_FREEFORM_SELFTEST_OK
+FORGESHAPE_SURFACE_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
@@ -60,8 +62,8 @@ with no `chatty` marker and no FAIL line to give it away. Confirm the size with
 dropped capture until a larger buffer proves otherwise.
 
 Camera, picking, dynamic-mesh, Construction-box, sculpt, render-shading,
-Construction-history, gizmo, project-format, render-recovery, CAD, mirror and
-CAD-feature self-tests are debug-only and run once from `NativeViewport.start()`. They must
+Construction-history, gizmo, project-format, render-recovery, CAD, mirror,
+CAD-feature, Freeform and Surface self-tests are debug-only and run once from `NativeViewport.start()`. They must
 never run per frame. Each builds the domain objects it needs — the scene,
 history, gizmo, CAD and mirror suites build their own `ConstructionScene` and
 their own camera — rather than reading process-scoped state, so a suite's
@@ -78,8 +80,13 @@ curve-profile timings. The CAD-feature suite prints
 `FORGESHAPE_CAD_FEATURE_PERFORMANCE` (the region, Add, Add + Cut and codec
 round-trip timings of the acceptance model, and the planar arrangement's
 at-cap median/max over 20 derivations) and `FORGESHAPE_CAD_GOLDEN_SHA256_V5`
-(the eight `CADB` v5 fixture digests as this build encodes them).
-`bash scripts/host-native-selftests.sh [filter]` runs all twenty-three suites
+(the eight `CADB` v5 fixture digests as this build encodes them). The
+Freeform and Surface suites print `FORGESHAPE_FREEFORM_PERFORMANCE` /
+`FORGESHAPE_SURFACE_PERFORMANCE` (one bounded run each: subdivision and drag;
+patch, loft, stitch and thicken regeneration) and
+`FORGESHAPE_FREEFORM_GOLDEN_SHA256` / `FORGESHAPE_SURFACE_GOLDEN_SHA256` (the
+three `FRFM` and three `SURF` fixture digests as this build encodes them).
+`bash scripts/host-native-selftests.sh [filter]` runs all twenty-five suites
 on the host, with no device, and is the fast native loop.
 
 ## Hard rules
@@ -182,9 +189,9 @@ on the host, with no device, and is the fast native loop.
 - **A gesture that becomes multi-touch navigation must never mutate the sculpt
   mesh.** No vertex written, no `SculptRevision` minted, no stroke committed.
 - **A CAD Body's truth is its FEATURE CHAIN, never its mesh** (`CAD-R0-A1A2`,
-  `CAD-VERTICAL-SLICE-R1`). A `SceneObject` owns exactly one of THREE
+  `CAD-VERTICAL-SLICE-R1`). A `SceneObject` owns exactly one of FIVE
   representations for its whole life: a Construction Source, an Imported Mesh,
-  or a CAD Body. A CAD Body's first feature is what R0 made it, field for
+  a CAD Body, a Freeform body or a Surface body (the last two below). A CAD Body's first feature is what R0 made it, field for
   field — one sketch on a principal workplane (XY, XZ or YZ;
   `forgeshape_workplane.h` owns the one right-handed mapping) and one linear
   **New Body** extrusion of the REGIONS it selects — and after it a bounded,
@@ -286,7 +293,11 @@ on the host, with no device, and is the fast native loop.
   is a static vector that is never interactive and never an editor viewport.
   The two questions asked OVER a live project — unsaved changes and recovery —
   stay `ChooserSurfaceView` modals, because there a scrim is the right shape.
-  **New Project offers exactly CAD and Sculpt.** CAD is the transient
+  **New Project offers exactly CAD, Sculpt, Freeform and Surface.** Freeform
+  is a seeded Freeform Box inside the session-initialization bracket; Surface
+  is a bootstrap sketch exactly as CAD's, whose first Finish (a Patch, an
+  Extruded or a Revolved Surface) creates the project through the same
+  `loadProjectDocument` path. CAD is the transient
   bootstrap: ONE volatile sketch session over the empty scene, opened DIRECTLY
   on XY seen along +Z with no plane-chooser step before it, owning no
   `ObjectId` and no `SceneObject`; the first Extrude creates the project
@@ -719,6 +730,59 @@ on the host, with no device, and is the fast native loop.
   `cad_bad_feature_kind_v7`). **Not this stage:** a Revolve Add or Cut, a
   later Revolve feature, a sketch on a revolved face, an axis that is not a
   sketch edge, a two-sided or symmetric sweep, and a constraint solver.
+- **A body's History is a VIEW of its feature chain, and an edit of an earlier
+  step is STAGED** (`MODELING-FOUNDATIONS-R1` A). The History control in the
+  history capsule is drawn exactly when the active body is a CAD or a Surface
+  body and nothing is sketched or sculpted; its surface lists one row per
+  retained sketch and per feature in construction order, named by durable id
+  and never by position, derived below JNI on every read (`buildCadTimeline`,
+  `buildSurfaceTimeline`) and stored nowhere. A row opens the editor that
+  already exists for it, staged: the whole chain is regenerated with the edit
+  (latest-only), the FIRST failing feature is named on its row (a cross, by
+  shape) with every later one marked not rebuilt, the commit is withdrawn
+  while it fails, Fix keeps the edit and Cancel writes nothing; a commit is ONE
+  `ScopedConstructionEdit`. There is no reorder, no suppression and no rollback
+  bar, because each would need durable semantics no stage has added.
+- **A Freeform body's truth is its quad CONTROL CAGE, and the smooth surface is
+  derived** (`MODELING-FOUNDATIONS-R1` B, `forgeshape_freeform*.{h,cpp}`). The
+  cage is manifold, orientable and all-quad, with strong non-zero ids for every
+  vertex, edge and face minted from stored high-water marks; Catmull-Clark
+  levels 0..4 (continuous crease weights in [0, 1], boundaries kept) regenerate
+  the surface, bounded at 131072 derived quads, and nothing derived is stored,
+  compared or read back. It is NOT a T-Spline — no T-junction, no local
+  refinement — and the product never says T-Spline. Vertex / Edge / Face
+  selection with multi-select, the gizmo's Move / Rotate / Scale on the
+  selection, Push/Pull and Extrude by a typed distance, Insert Edge Loop at a
+  ratio in (0, 1) (an ambiguous ring refused by name), Crease, Delete Face and
+  Symmetry X / Y / Z (EXACT: every reflection a vertex bit for bit) are each
+  ONE Construction step; a drag is one step, and a second pointer or Cancel
+  restores the pre-drag cage. The tools live in the Freeform context surface
+  (the precision surface under Shape), never a permanent bar. A Freeform body
+  is not sculptable (refused by name, control absent). `FRFM` v1 (§7j) is
+  written only when one exists.
+- **A Surface body's truth is an ORDERED FEATURE LIST, and every patch is
+  derived** (`MODELING-FOUNDATIONS-R1` C, `forgeshape_surface*.{h,cpp}`). Its
+  sketches are retained records (the ordinary sketch grammar plus an offset
+  along the plane's normal) and its features are PlanarPatch, ExtrudedSurface
+  (open chains valid, never capped), RevolvedSurface (an open profile valid;
+  the axis is the sketch's ONE Construction straight edge), LoftSurface
+  (exactly two sections, open↔open or closed↔closed), TrimSurface (a coplanar
+  planar patch clipped EXACTLY through the planar arrangement — never by
+  deleting triangles; anything else refused by name), Stitch (coincident
+  boundary edges within 1e-6 m; a gap, a non-manifold or an incompatible edge
+  refused by name, nothing averaged) and Thicken (only where the offset is
+  defined: planar patches and straight or circular ruled surfaces;
+  otherwise `ThickenUnsupportedForSurfaceType`; the solid passes the kernel's
+  validation). Regeneration is ordered and all-or-nothing and names the first
+  failing feature. A sketch drawn for a Surface feature is the ONE sketch
+  session's; `SurfaceSketchPurpose` (session state, cleared with the sketch)
+  says which body its Finish lands on, and while it is set the CAD commit
+  refuses. Finish opens the Surface surface, which draws only the kinds whose
+  candidate would commit. A Surface body is drawn two-sided while any edge is
+  open, is not sculptable, is no CAD sketch support and takes part in no CAD
+  boolean. `SURF` v1 (§7k) is written only when one exists. **Not this stage:**
+  general NURBS, T-Spline local refinement, B-Rep fillet and draft, feature
+  reorder, a trim of a non-planar surface, and Surface repair or interchange.
 - **Sketch drafting is authored geometry plus derived numbers, and no solver**
   (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`). An entity carries a ROLE
   (`Regular` / `Construction`); material topology ignores Construction in
@@ -1037,8 +1101,12 @@ on the host, with no device, and is the fast native loop.
   `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` added the five **`CADB` v8** fixtures
   (`cad_construction_v8`, `cad_dimension_driving_v8`,
   `cad_dimension_reference_v8`, and the two the decoder must refuse,
-  `cad_bad_dimension_ref_v8` and `cad_dimension_conflict_v8`) — a
-  **sixty-six**-fixture corpus in
+  `cad_bad_dimension_ref_v8` and `cad_dimension_conflict_v8`);
+  `MODELING-FOUNDATIONS-R1` added the three **`FRFM` v1** fixtures
+  (`freeform_box_v1`, `freeform_crease_symmetry_v1`, and the one the decoder
+  must refuse, `freeform_bad_topology_v1`) and the three **`SURF` v1** fixtures
+  (`surface_patch_extrude_v1`, `surface_loft_trim_stitch_v1`, and
+  `surface_bad_ref_v1`) — a **seventy-two**-fixture corpus in
   which every older fixture is byte-for-byte unchanged. Every corrupt fixture is CONSTRUCTED
   by the PowerShell builder with the bad value in place, never generated and
   then mutated.
@@ -1484,7 +1552,14 @@ on the host, with no device, and is the fast native loop.
   snapped to and dimensioned but never bounds material), *Driving* /
   *Reference* dimension (a persistent sketch dimension whose value can be typed
   to change the geometry / one that only reads it, written in parentheses),
-  *Sketch* (the editing context between New Sketch and Extrude, on a
+  *History* (the surface listing a CAD or Surface body's sketches and features
+in construction order; never a "timeline bar"), *Freeform* (a body shaped by
+its quad control cage, subdivided smooth; never "T-Spline" or "SubD" to the
+user), *control cage* (a Freeform body's vertices, edges and faces),
+*Surface* (a body built from open surface features), *patch* (one derived
+piece of a Surface body), *Stitch* / *Thicken* (joining Surface patches along
+coincident edges / making a closed solid of one),
+*Sketch* (the editing context between New Sketch and Extrude, on a
   *workplane* XY, XZ or YZ, with the seven sketch tools Select, Line, Polyline,
   Rectangle, Circle, Arc and Spline on the Tool Rail and *Finish Sketch* /
   *Extrude* as its two toolbar transitions),

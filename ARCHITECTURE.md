@@ -124,6 +124,11 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | The capsule's `totalHeight >= diameter` relation | `validateCapsuleMeters` | the UI restates none of it; it is a domain rule, not an input check |
 | Which parameters belong to which primitive | `PrimitiveSpec`'s payload variant | no caller reads a primitive's numbers as another's; the kind is derived from the payload, not stored beside it |
 | Authoritative primitive update **and** its mesh publication | `applyPrimitive` (`forgeshape_construction.{h,cpp}`) | JNI and Java restate none of this rule |
+| A CAD or Surface body's History rows (derived, stored nowhere) | `buildCadTimeline` (`forgeshape_cad_timeline.{h,cpp}`), `buildSurfaceTimeline` (`forgeshape_surface_authoring.{h,cpp}`) | `FeatureHistoryView` draws a fresh read and keeps no copy; there is no reorder, suppression or rollback |
+| A Freeform body's control cage, its ids and marks, every cage tool and exact symmetry | `FreeformCage` + `forgeshape_freeform.{h,cpp}` | the derived Catmull-Clark mesh (`forgeshape_freeform_subdivision.{h,cpp}`) is never stored or read back |
+| Cage selection, the cage gizmo drag and its one transaction, the cage overlay | `FreeformEditSession` (`forgeshape_freeform_session.{h,cpp}`) | Java holds no selection and no cage value; `FreeformEditorView` draws what native reports |
+| A Surface body's feature list and its ordered, all-or-nothing regeneration | `SurfaceBodyState` + `regenerateSurfaceBody` (`forgeshape_surface.{h,cpp}`) | patches, edges, stitches and the thickened solid are derived; no triangle index is an identity |
+| What a Surface sketch's Finish, a Stitch, a Thicken or a typed value WOULD do, and the commit of each as one step | `forgeshape_surface_authoring.{h,cpp}` | `SurfaceSketchPurpose` is session state, never serialized; the sketch itself is the one `SketchSession`'s |
 | The Construction transaction boundary and the whole Undo/Redo history | `ConstructionHistory` (`forgeshape_history.{h,cpp}`) | Java holds no history, no depth counter and no mirror scene; it holds no sculpt vertex, no `SculptRevision` and no mesh data of any kind |
 | Which handle a touch landed on, the Move/Rotate/Scale solvers, the frozen World or Local drag basis, and the transaction around one drag | `GizmoSession` (`forgeshape_gizmo.{h,cpp}`) | it owns NO transform of its own — the authoritative `ConstructionTransform` moves throughout the drag; Java owns no pivot, no solver, no basis and no captured pointer |
 | Whether there IS a gizmo at all (product mode, rail context, a body to act on) | `EditorWorkspaceView` | it decides nothing about where the handles are, how large they are or what a drag means; it pushes one boolean, a mode index, a space index and the display pixel scale, and reads back which of them the session actually took — including whether a space is offered at all |
@@ -5415,6 +5420,52 @@ compatibility fixture — a synthetic GLB with the structural feature set of an
 external low-poly export. Every coordinate is an integer over a power of two, so
 its bytes are identical on every platform and a hash of it can be evidence. It
 is reachable only from a debug JNI test seam and no product path calls it.
+
+## Modeling foundations: History, Freeform and Surface (`MODELING-FOUNDATIONS-R1`)
+
+Three additions that share one discipline: the body's AUTHORED truth is small
+and serialized; everything drawn is derived from it by one regeneration path;
+and every user act is one `ScopedConstructionEdit` that is refused, with the
+first failure named, before anything is written.
+
+**History.** `buildCadTimeline` and `buildSurfaceTimeline` turn a body's
+feature chain into rows (a sketch just before the first feature that reads it;
+a retained sketch no feature reads after the last), each named by its durable
+id. With an edit staged, the rows are the CANDIDATE chain's: the first failing
+feature is `Failed`, every later one `NotRegenerated`. The JNI reads
+(`cadTimeline`, `surfaceTimeline`) share one 27-slot row layout so one
+`FeatureHistoryView` and one `FeatureHistoryPresentation` serve both, told
+apart by a domain tag. A CAD row reopens the staged sketch or feature editor
+that already existed; a Surface row opens a staged VALUE edit (a distance, an
+angle, a thickness or a sketch's offset) on the Surface surface.
+
+**Freeform.** `FreeformCage` is the representation (`BodyRepresentation::
+Freeform`): vertices, edges with crease weights, quad faces, a subdivision
+level and a symmetry mask. `subdivideFreeformCage` regenerates the smooth mesh
+(Catmull-Clark with boundary and continuous-crease rules) at publication; the
+history snapshot holds the cage, never the mesh. `FreeformEditSession` owns
+the element mode, the selection, the transform mode and one captured drag; the
+touch arbitration in `forgeshape_jni.cpp` gives a cage tap or a gizmo drag to
+the session before the body gizmo, and the session's gizmo reuses the body
+gizmo's pure hit test (`gizmoHitTestSnapshot`) and solvers. `FRFM` v1 is its
+section.
+
+**Surface.** `SurfaceBodyState` is the representation
+(`BodyRepresentation::Surface`): retained sketch records (a `CadSketch`, a
+workplane and an offset) and ordered features. `regenerateSurfaceBody` walks
+the features once, keeping a live patch list: a Patch, an Extrude, a Revolve
+or a Loft adds patches; a Trim replaces its planar target with the clipped
+pieces (through `deriveSketchArrangement` over the patch loops and the trim
+region, so a trim edge is a real boundary edge and never a deleted triangle);
+a Stitch records coincident boundary-edge pairs; a Thicken replaces its source
+with a validated closed `CadSolid`. The result publishes as one render mesh,
+two-sided while any boundary edge is open. A sketch for a Surface feature is
+drawn in the one `SketchSession` (which gained a plane OFFSET so a Loft's
+second section is drawn where it stands); `SurfaceSketchPurpose` holds which
+body its Finish targets, and `surfaceCommitSketch` commits it — through
+`loadProjectDocument` when no project is open, so the first Surface project
+starts with an empty history exactly as the CAD bootstrap's does. `SURF` v1 is
+its section.
 
 ## Current boundaries
 
