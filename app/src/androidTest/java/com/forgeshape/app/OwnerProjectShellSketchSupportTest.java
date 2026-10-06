@@ -449,10 +449,15 @@ public final class OwnerProjectShellSketchSupportTest {
         assertEquals("the sketch stands on the exact face (y)", world[1], origin[1], 1.5f);
     }
 
-    /** A square of side s centred on the sketch origin: a real drag, typed exact. */
+    /**
+     * A square of side s centred on the sketch origin: a real drag of at least
+     * a metre (a shorter one can snap to a single grid point and place
+     * nothing), then typed exact about the same centre.
+     */
     private void drawExactSquare(double side) {
         selectTool(rule.getScenario(), R.id.tool_rail_rectangle);
-        dragSketch(rule.getScenario(), -side / 2, -side / 2, side / 2, side / 2);
+        final double drag = Math.max(side, 1.0) / 2;
+        dragSketch(rule.getScenario(), -drag, -drag, drag, drag);
         assertEquals(1, sketchEntityCount());
         final double[] drawn = new double[NativeViewport.SKETCH_ENTITY_SIZE];
         assertTrue(NativeViewport.sketchSelectedEntity(drawn));
@@ -582,8 +587,11 @@ public final class OwnerProjectShellSketchSupportTest {
         for (long h : after) {
             if (Arrays.binarySearch(before, h) < 0) hit = h;
         }
-        // Taken back by a real tap: at the same pixel when nothing stands on
-        // it now, else wherever the cell can be reached.
+        // Taken back by a real tap: at the same sketch point -- re-projected,
+        // because the first selection can move the camera into the feature
+        // view -- when nothing stands on it now, else wherever the cell can
+        // be reached.
+        assertTrue(NativeViewport.sketchScreenPoint(u, v, at));
         final float[] window = viewportToWindow(at);
         if (blockerAt(window) == null) {
             realTap(window);
