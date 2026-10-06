@@ -880,12 +880,24 @@ counter-clockwise order the extraction produces: a rectangle from its
 `(-w/2, -h/2)` corner (edges 0..3), a circle from `+U` (32 curved edges), and
 a polyline or chain in its stored order when that order is counter-clockwise;
 when it is clockwise the vertex sequence is reversed and edge `j` of the result
-is stored edge `(n − 2 − j) mod n` of the `n` edges. Eligibility is 0 for a
-curved side (a circle's, an arc's or a spline's) and 0 for EVERY face of a Cut
-feature — a Cut leaves its faces behind as the inside of a pocket, facing the
-other way, and R1 does not let a sketch stand there — and 1 otherwise. For a
-first feature that selects one region without holes this is §7c exactly, so no
-stored token of any earlier fixture changes.
+is stored edge `(n − 2 − j) mod n` of the `n` edges. The eligibility bit
+MIXED HERE is a frozen FORMAT bit: 0 for a curved side (a circle's, an arc's or
+a spline's), 0 for EVERY face of a Cut feature and of a Revolve, and 1
+otherwise. For a first feature that selects one region without holes this is
+§7c exactly, so no stored token of any earlier fixture changes.
+
+Where a sketch may STAND is a separate, later question
+(`MODELING-R1-OWNER-CORRECTION`): every FLAT face of an Extrude — a cap, or a
+straight side — is a support whatever its feature's operation, so a Cut's
+pocket floor and its straight walls carry sketches; a curved side and every
+face of a Revolve never do. A Cut's face is placed MATERIAL-OUTWARD (the tool's
+frame with `n` and `v` reversed: the floor faces up out of the material, a wall
+faces into the pocket), and it is a support only where it SURVIVED the chain —
+a placement-3 support on one that the body no longer carries is
+`SupportFaceLost`, and a §7c `TopoRef` on one is refused at load. Keeping the
+mixed bit frozen means no lineage token, no fixture byte and no version moved;
+a file standing on a Cut's face is refused by an older build (its face is
+ineligible there), never misread.
 
 A `TopoRef` of §7c may now name a LATER feature of its producer
 (`producerFeatureId` > 1): the dependent then stands on that feature's face, at
@@ -1070,7 +1082,7 @@ Everything else is the domain's `validateCadBodyState`, surfaced as
 | over a sketch whose curves share a stretch | `PlanarFaceAmbiguousOverlap` |
 | over a sketch past the arrangement's caps | `PlanarFaceCapExceeded` |
 | an arrangement cycle below the area floor | `PlanarFaceDegenerate` |
-| a face selection one of whose EDGE-CONNECTED groups pinches -- the group's own boundary passes a node twice (a hole touching its own outer) | `PlanarFacesTouchAtPoint` (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`; it was `OverlappingRegions`, the loop model's name for a different thing). Since `CAD-V6-S2-CORRECTION-FILL-PICK-R2`, chosen faces that share no fragment -- disjoint, or meeting only at a point -- are separate components and the selection is VALID; no layout, version or fixture changed, and every committed fixture keeps its verdict |
+| a face selection one of whose EDGE-CONNECTED groups does not split into one outer loop and its holes at the nodes its boundary passes twice | `PlanarFacesTouchAtPoint` (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`; it was `OverlappingRegions`, the loop model's name for a different thing). Since `CAD-V6-S2-CORRECTION-FILL-PICK-R2`, chosen faces that share no fragment -- disjoint, or meeting only at a point -- are separate components and the selection is VALID; since `MODELING-R1-OWNER-CORRECTION`, a group whose own boundary passes a node twice (two unchosen cells meeting at a point, a hole touching its outer) is SPLIT there into one outer and its holes, each extruded with its own vertex ring, and is VALID too. No layout, version or fixture changed, and every committed fixture keeps its verdict |
 | a union loop longer than `kMaxProfileVertices` | `TooManyEntities` |
 
 A code-4 FACE is refused by the CODEC (`InvalidSemanticValue`) unless it is a
@@ -1144,7 +1156,8 @@ byte; a proper piece wears a fragment token, whose §7c token code is
 (offset basis `0xCBF29CE484222325`, prime `0x100000001B3`, byte by byte), a code
 no whole-edge token can have because its top byte is a face kind 0..2. A
 straight fragment's side is eligible to carry a sketch; a curved one never is;
-every face of a Cut is ineligible. The feature's signature is §7c's rule over
+the lineage bit of every face of a Cut is 0 (the frozen bit of §7f; where a
+sketch may stand is decided per face there). The feature's signature is §7c's rule over
 this list with the selection anchor `0`. For a ONE-face selection the side list
 is the stored outer cycle fragment for fragment, so the lens of
 `cad_face_lens_v6` has the lineage `0x9873F7F20DED4004`
