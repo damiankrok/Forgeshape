@@ -148,9 +148,10 @@ public final class CadParametricHistoryOwnerTest {
 
         openHistory();
         touchHistoryRow(0);
-        // A 0.6 m wide base: the pocket now stands outside it.
+        // A 0.4 m wide base spans u in [-0.2, 0.2]; the pocket (centre u = 0.4,
+        // radius 0.15) starts at u = 0.25, so it now stands wholly outside it.
         assertEquals(NativeViewport.CAD_OK,
-                rig.applyOnUi(() -> NativeViewport.sketchApplyRectangle(rectangle, 0.6, 2.0)));
+                rig.applyOnUi(() -> NativeViewport.sketchApplyRectangle(rectangle, 0.4, 2.0)));
         rig.press(R.id.finish_sketch);
         assertEquals(NativeViewport.SKETCH_READY, sketchState());
         final FeatureHistoryPresentation.Model staged = timeline(true);
@@ -199,7 +200,7 @@ public final class CadParametricHistoryOwnerTest {
         openHistory();
         touchHistoryRow(0);
         assertEquals(NativeViewport.CAD_OK,
-                rig.applyOnUi(() -> NativeViewport.sketchApplyRectangle(rectangle, 0.6, 2.0)));
+                rig.applyOnUi(() -> NativeViewport.sketchApplyRectangle(rectangle, 0.4, 2.0)));
         rig.press(R.id.finish_sketch);
         assertTrue(rig.shown(R.id.regeneration_issue));
         rig.touchId(R.id.regeneration_issue_fix);
