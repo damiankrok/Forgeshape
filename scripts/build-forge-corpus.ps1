@@ -2718,6 +2718,174 @@ function New-FreeformCreaseSymmetryFile {
     return New-FreeformFile $body
 }
 
+# SURF v1 (MODELING-FOUNDATIONS-R1 C): a Surface body's feature list
+# ---------------------------------------------------------------------------
+#
+# DATA_PACKAGE_SPEC.md 7k. A Surface body stores its retained sketches (each
+# with the CADB v8 entity and dimension grammar, a workplane and an offset
+# along its normal) and its ordered features in ONE fixed record layout, every
+# field present for every kind and canonical (the default) where the kind does
+# not use it. No patch, edge, stitch or solid is ever written.
+#
+#   BODY     objectId u64 | nextSketchId u32 | nextFeatureId u32 |
+#            sketchCount u32 | featureCount u32 | SKETCH x n | FEATURE x m
+#   SKETCH   id u32 | offset f64 | plane u8 | nextEntityId u32 | entities (v8) |
+#            nextDimensionId u32 | dimensionCount u32 | dimensions
+#   FEATURE  id u32 | kind u8 | SECTION | regionCount u32 | (outer u32 |
+#            holeCount u32 | hole u32 x k) x r | distance f64 | direction u8 |
+#            axisEntity u32 | axisEdge u32 | angle f64 | revolveDirection u8 |
+#            SECTION B | reverseB u8 | startOffsetB u32 | target u32 |
+#            keepInside u8 | stitchCount u32 | stitch u32 x s | source u32 |
+#            thickness f64
+#   SECTION  sketchId u32 | curveCount u32 | curve u32 x c
+
+function Add-SurfaceSection {
+    param($Buffer, $Section)
+    $curves = @(if ($null -ne $Section -and $null -ne $Section.Curves) { $Section.Curves })
+    Add-U32 $Buffer ([uint32] $(if ($null -ne $Section) { $Section.SketchId } else { 0 }))
+    Add-U32 $Buffer ([uint32] $curves.Count)
+    foreach ($c in $curves) { Add-U32 $Buffer ([uint32] $c) }
+}
+
+# Every field a kind does not use keeps the C++ default: direction 1 (along the
+# normal), revolve direction 1 (positive), keepInside 1, and zeros elsewhere.
+function New-SurfaceFeature {
+    param([uint32] $Id, [int] $KindCode, $Overrides = @{})
+    $feature = [ordered]@{
+        Id = $Id; KindCode = $KindCode; Section = $null; Regions = @()
+        Distance = 0.0; DirectionCode = 1; AxisEntity = 0; AxisEdge = 0; Angle = 0.0; RevolveCode = 1
+        SectionB = $null; ReverseB = 0; StartOffsetB = 0; Target = 0; KeepInside = 1
+        Stitch = @(); Source = 0; Thickness = 0.0
+    }
+    foreach ($key in $Overrides.Keys) { $feature[$key] = $Overrides[$key] }
+    return [pscustomobject]$feature
+}
+
+function New-SurfacePayload {
+    param($Bodies)
+    $p = New-ByteBuffer
+    Add-U32 $p ([uint32] $Bodies.Count)
+    foreach ($body in $Bodies) {
+        Add-U64 $p ([uint64] $body.ObjectId)
+        Add-U32 $p ([uint32] $body.NextSketchId)
+        Add-U32 $p ([uint32] $body.NextFeatureId)
+        Add-U32 $p ([uint32] $body.Sketches.Count)
+        Add-U32 $p ([uint32] $body.Features.Count)
+        foreach ($sketch in $body.Sketches) {
+            Add-U32 $p ([uint32] $sketch.Id)
+            Add-F64 $p ([double] $sketch.Offset)
+            Add-U8  $p $sketch.PlaneCode
+            Add-U32 $p ([uint32] $sketch.NextEntityId)
+            Add-CadEntityListV8 $p $sketch.Entities
+            Add-U32 $p 1
+            Add-U32 $p 0
+        }
+        foreach ($f in $body.Features) {
+            Add-U32 $p ([uint32] $f.Id)
+            Add-U8  $p $f.KindCode
+            Add-SurfaceSection $p $f.Section
+            $regions = @(if ($null -ne $f.Regions) { $f.Regions })
+            Add-U32 $p ([uint32] $regions.Count)
+            foreach ($r in $regions) {
+                $holes = @(if ($null -ne $r.Holes) { $r.Holes })
+                Add-U32 $p ([uint32] $r.Outer)
+                Add-U32 $p ([uint32] $holes.Count)
+                foreach ($h in $holes) { Add-U32 $p ([uint32] $h) }
+            }
+            Add-F64 $p ([double] $f.Distance)
+            Add-U8  $p $f.DirectionCode
+            Add-U32 $p ([uint32] $f.AxisEntity)
+            Add-U32 $p ([uint32] $f.AxisEdge)
+            Add-F64 $p ([double] $f.Angle)
+            Add-U8  $p $f.RevolveCode
+            Add-SurfaceSection $p $f.SectionB
+            Add-U8  $p $f.ReverseB
+            Add-U32 $p ([uint32] $f.StartOffsetB)
+            Add-U32 $p ([uint32] $f.Target)
+            Add-U8  $p $f.KeepInside
+            $stitch = @(if ($null -ne $f.Stitch) { $f.Stitch })
+            Add-U32 $p ([uint32] $stitch.Count)
+            foreach ($id in $stitch) { Add-U32 $p ([uint32] $id) }
+            Add-U32 $p ([uint32] $f.Source)
+            Add-F64 $p ([double] $f.Thickness)
+        }
+    }
+    return $p.ToArray()
+}
+
+function New-SurfaceFile {
+    param($Body)
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $surf = New-Section 'SURF' 1 $true (New-SurfacePayload @($Body))
+    return New-ForgeFile 1 @($scne, $surf) 0x20
+}
+
+function New-SurfaceSketch {
+    param([uint32] $Id, [double] $Offset, $Entities)
+    $list = @($Entities)
+    return [pscustomobject]@{ Id = $Id; Offset = $Offset; PlaneCode = 1; NextEntityId = $list.Count + 1; Entities = $list }
+}
+
+function New-SurfaceSection {
+    param([uint32] $SketchId, $Curves = @())
+    return [pscustomobject]@{ SketchId = $SketchId; Curves = @($Curves) }
+}
+
+function New-SurfaceRegion { param([uint32] $Outer) return [pscustomobject]@{ Outer = $Outer; Holes = @() } }
+
+# A 2 x 2 patch on XY, and an open two-line chain (0,0)-(1,0)-(1,1) extruded
+# 0.5 m into an uncapped ruled surface.
+function New-SurfacePatchExtrudeBody {
+    param($Extra = @(), $ExtraSketches = @())
+    $sketches = @(
+        (New-SurfaceSketch 1 0.0 @(New-CadRectangleEntity 1 0.0 0.0 2.0 2.0)),
+        (New-SurfaceSketch 2 0.0 @((New-CadLineEntity 1 0.0 0.0 1.0 0.0), (New-CadLineEntity 2 1.0 0.0 1.0 1.0)))
+    ) + @($ExtraSketches)
+    $features = @(
+        (New-SurfaceFeature 1 1 @{ Section = (New-SurfaceSection 1); Regions = @(New-SurfaceRegion 1) }),
+        (New-SurfaceFeature 2 2 @{ Section = (New-SurfaceSection 2 @(1, 2)); Distance = 0.5 })
+    ) + @($Extra)
+    return [pscustomobject]@{
+        ObjectId = 1; NextSketchId = $sketches.Count + 1; NextFeatureId = $features.Count + 1
+        Sketches = $sketches; Features = $features
+    }
+}
+
+function New-SurfacePatchExtrudeFile { return New-SurfaceFile (New-SurfacePatchExtrudeBody) }
+
+# A 4 x 4 patch with a radius-1 hole trimmed out of it, a 4 x 4 rectangular
+# tube 1 m tall stitched to the trimmed patch along the outer square, and a
+# loft from a radius-1 circle at 1 m to a radius-0.5 circle at 2 m.
+function New-SurfaceLoftTrimStitchFile {
+    $sketches = @(
+        (New-SurfaceSketch 1 0.0 @(New-CadRectangleEntity 1 0.0 0.0 4.0 4.0)),
+        (New-SurfaceSketch 2 0.0 @(New-CadCircleEntity 1 0.0 0.0 1.0)),
+        (New-SurfaceSketch 3 0.0 @(New-CadRectangleEntity 1 0.0 0.0 4.0 4.0)),
+        (New-SurfaceSketch 4 2.0 @(New-CadCircleEntity 1 0.0 0.0 0.5)),
+        (New-SurfaceSketch 5 1.0 @(New-CadCircleEntity 1 0.0 0.0 1.0))
+    )
+    $features = @(
+        (New-SurfaceFeature 1 1 @{ Section = (New-SurfaceSection 1); Regions = @(New-SurfaceRegion 1) }),
+        (New-SurfaceFeature 2 5 @{ Section = (New-SurfaceSection 2); Regions = @(New-SurfaceRegion 1); Target = 1; KeepInside = 0 }),
+        (New-SurfaceFeature 3 2 @{ Section = (New-SurfaceSection 3 @(1)); Distance = 1.0 }),
+        (New-SurfaceFeature 4 6 @{ Stitch = @(2, 3) }),
+        (New-SurfaceFeature 5 4 @{ Section = (New-SurfaceSection 5 @(1)); SectionB = (New-SurfaceSection 4 @(1)) })
+    )
+    $body = [pscustomobject]@{
+        ObjectId = 1; NextSketchId = 6; NextFeatureId = 6; Sketches = $sketches; Features = $features
+    }
+    return New-SurfaceFile $body
+}
+
+# The patch-and-extrude body with a trim naming feature 7, which does not
+# exist: the decoder must refuse the reference rather than skip the trim.
+function New-SurfaceBadRefFile {
+    $sketch = New-SurfaceSketch 3 0.0 @(New-CadCircleEntity 1 0.0 0.0 0.5)
+    $trim = New-SurfaceFeature 3 5 @{ Section = (New-SurfaceSection 3); Regions = @(New-SurfaceRegion 1); Target = 7; KeepInside = 0 }
+    return New-SurfaceFile (New-SurfacePatchExtrudeBody -Extra @($trim) -ExtraSketches @($sketch))
+}
+
 # DATA_PACKAGE_SPEC.md 7f promises that the generalized signature IS the 7c one
 # for a feature selecting one region without holes, so no stored token of an
 # earlier fixture moves. Hold the two implementations here to that before a
@@ -2798,6 +2966,9 @@ $fixtures = [ordered]@{
     'freeform_box_v1.forge'              = (New-FreeformBoxFile)
     'freeform_crease_symmetry_v1.forge'  = (New-FreeformCreaseSymmetryFile)
     'freeform_bad_topology_v1.forge'     = (New-FreeformBadTopologyFile)
+    'surface_patch_extrude_v1.forge'     = (New-SurfacePatchExtrudeFile)
+    'surface_loft_trim_stitch_v1.forge'  = (New-SurfaceLoftTrimStitchFile)
+    'surface_bad_ref_v1.forge'           = (New-SurfaceBadRefFile)
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -2884,6 +3055,10 @@ foreach ($name in @('cad_construction_v8', 'cad_dimension_driving_v8', 'cad_dime
 }
 Write-Host 'Digests of the FRFM v1 fixtures (MODELING-FOUNDATIONS-R1 B):'
 foreach ($name in @('freeform_box_v1', 'freeform_crease_symmetry_v1', 'freeform_bad_topology_v1')) {
+    Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
+}
+Write-Host 'Digests of the SURF v1 fixtures (MODELING-FOUNDATIONS-R1 C):'
+foreach ($name in @('surface_patch_extrude_v1', 'surface_loft_trim_stitch_v1', 'surface_bad_ref_v1')) {
     Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
 }
 Write-Host 'Lineage tokens the v5 fixtures carry (7c / 7f signature):'

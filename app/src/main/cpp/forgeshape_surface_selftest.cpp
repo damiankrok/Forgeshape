@@ -746,6 +746,15 @@ void testHistoryAndFormat(Checks& r) {
     r.check("SURF_22_the_corpus_documents_decode_to_their_verdicts",
             decodeStatus(a) == ProjectCodecStatus::Ok && decodeStatus(b) == ProjectCodecStatus::Ok
                     && decodeStatus(c) == ProjectCodecStatus::InvalidSemanticValue);
+    // scripts/build-forge-corpus.ps1 writes the same three documents from the
+    // layout in DATA_PACKAGE_SPEC.md 7k alone; the two implementations must
+    // agree byte for byte.
+    r.check("SURF_22_the_surf_corpus_matches_the_independent_builder",
+            projectFixtureSha256Hex(a) == "d4cb49a6500718e1e1482a788aa897cf28d9922421ac9e1b73bffb89c3d55e14"
+                    && projectFixtureSha256Hex(b)
+                               == "006374495e44da8332cae0fc07533ebface1f59fde8e12eb5ff9981c33736c8e"
+                    && projectFixtureSha256Hex(c)
+                               == "4a0367a4a05f432633a81cd54313db07ab4a88da87d447d85dec8b93df3f640d");
     g_digests = "surface_patch_extrude_v1=" + projectFixtureSha256Hex(a) + " surface_loft_trim_stitch_v1="
                 + projectFixtureSha256Hex(b) + " surface_bad_ref_v1=" + projectFixtureSha256Hex(c);
 }
