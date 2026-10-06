@@ -609,6 +609,22 @@ bool buildSketchDimensionAnnotation(const CadSketch& sketch, const SketchDimensi
             segment(&built.segments, line.start,
                     add(line.start, 1.0, 0.0, radius + kSketchDimensionOvershootUnits * unit));
             angular(&built, line.start, 0.0, built.value * kPi / 180.0, radius, unit);
+            // A SMALL angle's bisector runs almost along the line, where the
+            // Length label already stands (on the line's CCW side): the label
+            // would be hidden as a collision exactly when the angle is hard to
+            // read. So below 45 degrees it stands at the arc's end on the
+            // line's CLOCKWISE side, two label clearances off the line -- the
+            // drafting habit of writing a cramped angle outside its arc. Two
+            // clearances is the least that keeps the two label boxes apart for
+            // every line of 90 reference units or more at every such angle.
+            if (l > 0.0 && std::fabs(built.value) < 45.0) {
+                const double du = (line.end.u - line.start.u) / l;
+                const double dv = (line.end.v - line.start.v) / l;
+                const double along = radius;
+                const double off = 2.0 * kSketchDimensionLabelClearUnits * unit;
+                built.label = SketchPoint{line.start.u + du * along + dv * off,
+                                          line.start.v + dv * along - du * off};
+            }
             break;
         }
         case SketchDimensionKind::RectangleWidth:
@@ -656,7 +672,14 @@ bool buildSketchDimensionAnnotation(const CadSketch& sketch, const SketchDimensi
             double sweep = 0.0;
             arcGeometry(*entity->arc(), &centre, &radius, &start, &sweep);
             if (dimension.kind == SketchDimensionKind::ArcRadius) {
-                radial(&built, centre, start + sweep * 0.5, radius, unit, false);
+                const double middle = start + sweep * 0.5;
+                radial(&built, centre, middle, radius, unit, false);
+                // The Sweep label stands OUTSIDE the arc on this same middle
+                // ray, so the radius is written INSIDE, on its own leader: the
+                // two never claim one box.
+                const double inside = std::max(
+                        0.0, radius - (2.0 * kSketchDimensionLabelClearUnits + 6.0) * unit);
+                built.label = add(centre, std::cos(middle), std::sin(middle), inside);
             } else {
                 const double ring = radius + kSketchDimensionOffsetUnits * unit;
                 for (double angle : {start, start + sweep}) {

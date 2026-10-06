@@ -703,6 +703,54 @@ void testDimensions(Checks& r) {
         r.check("DR_DIM_18_every_kind_builds_a_deterministic_annotation_on_its_stated_side",
                 all && below && scales);
     }
+    // One entity's labels never claim one box: a line's Length beside its
+    // Angle at every small angle (where the bisector rule would put both on
+    // the same side), and an arc's Radius beside its Sweep (which share the
+    // middle ray). A label box is taken as 90 x 48 reference units -- wider
+    // than a "(R 0.812 m)" chip and as tall as the 48 dp floor.
+    {
+        const double unit = 0.01;
+        const auto apart = [&](const SketchPoint& a, const SketchPoint& b) {
+            return std::fabs(a.u - b.u) >= 90.0 * unit || std::fabs(a.v - b.v) >= 48.0 * unit;
+        };
+        bool lines = true;
+        for (double length : {0.9, 1.2, 2.0, 4.0}) {
+            for (int degrees = -44; degrees <= 44; ++degrees) {
+                const double t = static_cast<double>(degrees) * 3.14159265358979323846 / 180.0;
+                CadSketch s;
+                const SketchEntityId l =
+                        add(&s, line(0.0, 0.0, length * std::cos(t), length * std::sin(t)));
+                const SketchDimensionId len = addDim(&s, SketchDimensionKind::LineLength, drive, {l, 0});
+                const SketchDimensionId ang = addDim(&s, SketchDimensionKind::LineAngle, drive, {l, 0});
+                SketchDimensionAnnotation a;
+                SketchDimensionAnnotation b;
+                lines = lines && buildSketchDimensionAnnotation(s, *findSketchDimension(s, len), unit, &a)
+                        && buildSketchDimensionAnnotation(s, *findSketchDimension(s, ang), unit, &b)
+                        && apart(a.label, b.label);
+            }
+        }
+        bool arcs = true;
+        for (double radius : {0.5, 0.8, 1.5}) {
+            for (int middle = 0; middle < 360; middle += 15) {
+                const double m = static_cast<double>(middle) * 3.14159265358979323846 / 180.0;
+                const double half = 0.9;  // a 103-degree arc
+                CadSketch s;
+                const SketchEntityId e = add(
+                        &s, arc(radius * std::cos(m - half), radius * std::sin(m - half),
+                                radius * std::cos(m), radius * std::sin(m),
+                                radius * std::cos(m + half), radius * std::sin(m + half)));
+                const SketchDimensionId rad = addDim(&s, SketchDimensionKind::ArcRadius, ref, {e, 0});
+                const SketchDimensionId swp = addDim(&s, SketchDimensionKind::ArcSweep, ref, {e, 0});
+                SketchDimensionAnnotation a;
+                SketchDimensionAnnotation b;
+                arcs = arcs && buildSketchDimensionAnnotation(s, *findSketchDimension(s, rad), unit, &a)
+                       && buildSketchDimensionAnnotation(s, *findSketchDimension(s, swp), unit, &b)
+                       && apart(a.label, b.label);
+            }
+        }
+        r.check("DR_DIM_19_one_entitys_labels_stand_apart_line_length_and_angle_arc_radius_and_sweep",
+                lines && arcs);
+    }
 }
 
 // ---------------------------------------------------------------------------
