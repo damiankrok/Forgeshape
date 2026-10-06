@@ -675,7 +675,7 @@ public final class OwnerProjectShellSketchSupportTest {
     private Rect windowRect(int id) {
         return onWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View view = activity.findViewById(id);
-            assertNotNull(name(id) + " exists", view);
+            assertNotNull(resName(activity, id) + " exists", view);
             final View root = activity.getWindow().getDecorView();
             final int[] at = new int[2];
             final int[] rp = new int[2];
@@ -708,8 +708,9 @@ public final class OwnerProjectShellSketchSupportTest {
     private void press(final int id) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View control = workspace.findViewById(id);
-            assertNotNull("control " + name(id) + " must exist", control);
-            assertTrue("control " + name(id) + " must be on screen", control.isShown());
+            assertNotNull("control " + resName(activity, id) + " must exist", control);
+            assertTrue("control " + resName(activity, id) + " must be on screen",
+                    control.isShown());
             control.performClick();
             return null;
         });
@@ -737,6 +738,11 @@ public final class OwnerProjectShellSketchSupportTest {
     private String name(int id) {
         return onWorkspace(rule.getScenario(),
                 (activity, workspace) -> activity.getResources().getResourceEntryName(id));
+    }
+
+    /** A resource's name, for messages built ON the UI thread. */
+    private static String resName(android.app.Activity activity, int id) {
+        return activity.getResources().getResourceEntryName(id);
     }
 
     private String string(int id) {
