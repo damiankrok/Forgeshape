@@ -7,6 +7,7 @@
 #include "forgeshape_mesh.h"
 #include "forgeshape_project_bytes.h"
 #include "forgeshape_project_freeform.h"
+#include "forgeshape_project_surface.h"
 
 namespace forgeshape {
 namespace {
@@ -598,10 +599,14 @@ bool primitiveKindFromFileCode(uint8_t code, PrimitiveKind* out) {
 bool sameProjectDocument(const ProjectDocument& a, const ProjectDocument& b) {
     if (a.kind != b.kind || a.hasConstruction != b.hasConstruction
         || a.hasSculpt != b.hasSculpt || a.hasImported != b.hasImported
-        || a.hasCad != b.hasCad || a.hasFreeform != b.hasFreeform) {
+        || a.hasCad != b.hasCad || a.hasFreeform != b.hasFreeform
+        || a.hasSurface != b.hasSurface) {
         return false;
     }
     if (a.hasFreeform && !sameProjectFreeformRecord(a.freeform, b.freeform)) {
+        return false;
+    }
+    if (a.hasSurface && !sameProjectSurfaceRecord(a.surface, b.surface)) {
         return false;
     }
     if (a.hasCad) {
@@ -1048,6 +1053,38 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
         }
     }
 
+    if (document.hasSurface) {
+        // The fifth geometry source (`MODELING-FOUNDATIONS-R1` C), on FRFM's
+        // terms, each feature list held to the domain's own rules AND
+        // regenerated whole: a file whose list does not regenerate is refused
+        // rather than opened with a body that cannot be drawn.
+        if (document.surface.bodies.empty() || document.surface.bodies.size() > bodies.size()) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        size_t sceneCursor = 0;
+        for (const ProjectSurfaceBody& body : document.surface.bodies) {
+            size_t found = bodies.size();
+            for (size_t s = sceneCursor; s < bodies.size(); ++s) {
+                if (bodies[s].objectId == body.objectId) {
+                    found = s;
+                    break;
+                }
+            }
+            if (found == bodies.size() || covered[found] != 0) {
+                return ProjectCodecStatus::UnresolvedReference;
+            }
+            sceneCursor = found + 1;
+            covered[found] = 5;
+            if (body.state.sketches.size() > kMaxSurfaceSketches
+                || body.state.features.size() > kMaxSurfaceFeatures) {
+                return ProjectCodecStatus::ImpossibleCount;
+            }
+            if (regenerateSurfaceBody(body.state, nullptr) != SurfaceStatus::Ok) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+        }
+    }
+
     // A body named by NEITHER branch is deliberately not refused here.
     //
     // It is a legal document: an optional section at a version this reader
@@ -1102,7 +1139,7 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
             // a CAD Body describes something this build cannot evaluate. The
             // same fail-closed shape the pre-`IMPORT-01B` reader gave an
             // `IMPT`+`SCUL` file.
-            if (covered[found] == 3 || covered[found] == 4) {
+            if (covered[found] == 3 || covered[found] == 4 || covered[found] == 5) {
                 return ProjectCodecStatus::UnresolvedReference;
             }
             // A `SCUL` entry over an `IMPT` body is VALID since `IMPORT-01B`.
@@ -1579,6 +1616,12 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         ByteWriter out(freeformPayload);
         writeFreeformPayload(out, document.freeform);
     }
+    std::vector<uint8_t> surfacePayload;
+    if (document.hasSurface) {
+        ++sectionCount;
+        ByteWriter out(surfacePayload);
+        writeSurfacePayload(out, document.surface);
+    }
 
     uint64_t fileBytes = kForgeHeaderBytes;
     fileBytes += kForgeSectionHeaderBytes + scenePayload.size();
@@ -1597,6 +1640,9 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
     if (document.hasFreeform) {
         fileBytes += kForgeSectionHeaderBytes + freeformPayload.size();
     }
+    if (document.hasSurface) {
+        fileBytes += kForgeSectionHeaderBytes + surfacePayload.size();
+    }
 
     std::vector<uint8_t> file;
     file.reserve(static_cast<size_t>(fileBytes));
@@ -1611,7 +1657,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
                                     | (document.hasSculpt ? kHeaderFlagHasSculpt : 0u)
                                     | (document.hasImported ? kHeaderFlagHasImported : 0u)
                                     | (document.hasCad ? kHeaderFlagHasCad : 0u)
-                                    | (document.hasFreeform ? kHeaderFlagHasFreeform : 0u)));
+                                    | (document.hasFreeform ? kHeaderFlagHasFreeform : 0u)
+                                    | (document.hasSurface ? kHeaderFlagHasSurface : 0u)));
         out.u32(sectionCount);
         out.u64(fileBytes);
     }
@@ -1660,6 +1707,12 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         // describes a Freeform body.
         appendSection(file, kSectionTagFreeform, kFreeformSectionVersion, /*required=*/true,
                       freeformPayload);
+    }
+    if (document.hasSurface) {
+        // ALWAYS required, for the same reason: no other branch describes a
+        // Surface body.
+        appendSection(file, kSectionTagSurface, kSurfaceSectionVersion, /*required=*/true,
+                      surfacePayload);
     }
     return file;
 }
@@ -2730,6 +2783,7 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
     bool sawSceneTag = false;
     bool sawCadTag = false;
     bool sawFreeformTag = false;
+    bool sawSurfaceTag = false;
     bool sawConstructionTag = false;
     bool sawSculptTag = false;
     bool sawImportedTag = false;
@@ -2771,8 +2825,10 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         const bool isImported = tagIs(tag, kSectionTagImported);
         const bool isCad = tagIs(tag, kSectionTagCad);
         const bool isFreeform = tagIs(tag, kSectionTagFreeform);
+        const bool isSurface = tagIs(tag, kSectionTagSurface);
 
-        if (!isScene && !isConstruction && !isSculpt && !isImported && !isCad && !isFreeform) {
+        if (!isScene && !isConstruction && !isSculpt && !isImported && !isCad && !isFreeform
+            && !isSurface) {
             if (required) {
                 return ProjectCodecStatus::UnknownRequiredSection;
             }
@@ -2788,10 +2844,12 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         // understand the first would be a hole in the singleton rule.
         if ((isScene && sawSceneTag) || (isConstruction && sawConstructionTag)
             || (isSculpt && sawSculptTag) || (isImported && sawImportedTag)
-            || (isCad && sawCadTag) || (isFreeform && sawFreeformTag)) {
+            || (isCad && sawCadTag) || (isFreeform && sawFreeformTag)
+            || (isSurface && sawSurfaceTag)) {
             return ProjectCodecStatus::DuplicateSection;
         }
         sawFreeformTag = sawFreeformTag || isFreeform;
+        sawSurfaceTag = sawSurfaceTag || isSurface;
         sawSceneTag = sawSceneTag || isScene;
         sawConstructionTag = sawConstructionTag || isConstruction;
         sawSculptTag = sawSculptTag || isSculpt;
@@ -2821,6 +2879,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
                         || sectionVersion == kSceneSectionVersionV2;
         } else if (isFreeform) {
             versionOk = sectionVersion == kFreeformSectionVersion;
+        } else if (isSurface) {
+            versionOk = sectionVersion == kSurfaceSectionVersion;
         } else {
             const uint16_t known =
                     isConstruction ? kConstructionSectionVersion
@@ -2858,6 +2918,9 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         } else if (isFreeform) {
             status = decodeFreeformPayload(payload, &document.freeform);
             document.hasFreeform = (status == ProjectCodecStatus::Ok);
+        } else if (isSurface) {
+            status = decodeSurfacePayload(payload, &document.surface);
+            document.hasSurface = (status == ProjectCodecStatus::Ok);
         } else {
             status = decodeCadPayload(payload, &document.cad, sectionVersion);
             document.hasCad = (status == ProjectCodecStatus::Ok);
@@ -2880,7 +2943,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
                                  | (sawSculptTag ? kHeaderFlagHasSculpt : 0u)
                                  | (sawImportedTag ? kHeaderFlagHasImported : 0u)
                                  | (sawCadTag ? kHeaderFlagHasCad : 0u)
-                                 | (sawFreeformTag ? kHeaderFlagHasFreeform : 0u));
+                                 | (sawFreeformTag ? kHeaderFlagHasFreeform : 0u)
+                                 | (sawSurfaceTag ? kHeaderFlagHasSurface : 0u));
     if (headerFlags != expectedFlags) {
         return ProjectCodecStatus::BadHeader;
     }
@@ -2942,7 +3006,7 @@ ProjectCodecStatus decodeProject(const uint8_t* data, size_t size, ProjectDocume
     }
     if ((headerFlags
          & ~(kHeaderFlagHasConstruction | kHeaderFlagHasSculpt | kHeaderFlagHasImported
-             | kHeaderFlagHasCad | kHeaderFlagHasFreeform))
+             | kHeaderFlagHasCad | kHeaderFlagHasFreeform | kHeaderFlagHasSurface))
         != 0u) {
         return ProjectCodecStatus::BadHeader;
     }
@@ -2956,6 +3020,22 @@ ProjectCodecStatus decodeProject(const uint8_t* data, size_t size, ProjectDocume
 
     return decodeProjectV1(file, static_cast<ProjectKind>(kindCode), headerFlags, sectionCount,
                            out, outSkippedOptionalSections);
+}
+
+void writeProjectSketchEntities(ByteWriter& out, const CadSketch& sketch) {
+    writeCadEntities(out, sketch, /*roles=*/true);
+}
+
+void writeProjectSketchDimensions(ByteWriter& out, const CadSketch& sketch) {
+    writeCadDimensions(out, sketch);
+}
+
+ProjectCodecStatus readProjectSketchEntities(ByteReader& in, uint32_t entityCount, CadSketch* sketch) {
+    return readCadEntities(in, entityCount, sketch, /*allowCurves=*/true, /*roles=*/true);
+}
+
+ProjectCodecStatus readProjectSketchDimensions(ByteReader& in, CadSketch* sketch) {
+    return readCadDimensions(in, sketch);
 }
 
 }  // namespace forgeshape

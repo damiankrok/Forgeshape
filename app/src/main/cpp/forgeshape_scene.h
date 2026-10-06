@@ -20,6 +20,7 @@
 #include "forgeshape_cad_body.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_freeform.h"
+#include "forgeshape_surface.h"
 #include "forgeshape_imported_mesh.h"
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
@@ -75,6 +76,8 @@ enum class BodyRepresentation : uint8_t {
     // a primitive, nor fixed polygons, nor a sketch, and is edited by tools
     // none of the others have.
     Freeform = 4,
+    // `MODELING-FOUNDATIONS-R1` C: an ordered surface feature list.
+    Surface = 5,
 };
 
 const char* bodyRepresentationName(BodyRepresentation representation);
@@ -116,6 +119,14 @@ public:
           meshStore_(id),
           freeform_(new FreeformBody(id, std::move(cage))) {}
 
+    // A Surface body: its feature list and the regeneration that list
+    // produced (the caller regenerated it).
+    SceneObject(ObjectId id, SurfaceBodyState state, SurfaceBodyMesh mesh)
+        : objectId_(id),
+          representation_(BodyRepresentation::Surface),
+          meshStore_(id),
+          surface_(new SurfaceBody(id, std::move(state), std::move(mesh))) {}
+
     SceneObject(const SceneObject&) = delete;
     SceneObject& operator=(const SceneObject&) = delete;
 
@@ -134,6 +145,11 @@ public:
     // The Freeform body, or nullptr for any other representation.
     FreeformBody* freeformOrNull() { return freeform_.get(); }
     const FreeformBody* freeformOrNull() const { return freeform_.get(); }
+
+    bool isSurface() const { return representation_ == BodyRepresentation::Surface; }
+    // The Surface body, or nullptr for any other representation.
+    SurfaceBody* surfaceOrNull() { return surface_.get(); }
+    const SurfaceBody* surfaceOrNull() const { return surface_.get(); }
 
     // The CAD Body, or nullptr for any other representation. A pointer for the
     // same reason `constructionOrNull()` is one: every call site has to say
@@ -259,6 +275,8 @@ private:
     FrozenSculpt frozen_;
     // Null for every representation but Freeform, on the same terms.
     std::unique_ptr<FreeformBody> freeform_;
+    // Null for every representation but Surface, on the same terms.
+    std::unique_ptr<SurfaceBody> surface_;
     // Empty for a Construction Body. Since `IMPORT-01B` an Imported Mesh may
     // also own a Frozen Sculpt Mesh above -- the two live side by side, and
     // this one stays immutable source truth whatever is sculpted from it.
@@ -496,6 +514,10 @@ public:
     // untouched, the reason in `outWhy` -- for a cage that does not validate.
     SceneObject* addFreeformBody(FreeformCage cage, FreeformStatus* outWhy = nullptr);
 
+    // Appends a Surface body (`MODELING-FOUNDATIONS-R1` C), minting its id
+    // only after the whole feature list regenerates, and makes it active.
+    SceneObject* addSurfaceBody(SurfaceBodyState state, SurfaceStatus* outWhy = nullptr);
+
     // Builds a body with an EXPLICIT id, not appended to anything.
     //
     // The id allocator is only ever pushed forward, never rolled back: a redo
@@ -514,6 +536,9 @@ public:
     // rebuild one it holds. Not re-validated: it was authoritative when captured.
     std::unique_ptr<SceneObject> makeFreeformBody(ObjectId id,
                                                   std::shared_ptr<const FreeformCage> cage);
+
+    // The same for a Surface body: its feature list IS its truth.
+    std::unique_ptr<SceneObject> makeSurfaceBody(ObjectId id, const SurfaceBodyState& state);
 
     // Where a body sits in scene order, or bodyCount() when it is not present.
     size_t indexOfBody(ObjectId id) const;

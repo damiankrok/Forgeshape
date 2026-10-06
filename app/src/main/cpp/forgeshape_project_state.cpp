@@ -1,5 +1,7 @@
 #include "forgeshape_project_state.h"
 
+#include "forgeshape_project_surface.h"
+
 #include <cstring>
 #include <memory>
 #include <utility>
@@ -87,6 +89,18 @@ const ProjectFreeformBody* findFreeformBody(const ProjectDocument& document, Obj
     return nullptr;
 }
 
+const ProjectSurfaceBody* findSurfaceBody(const ProjectDocument& document, ObjectId id) {
+    if (!document.hasSurface) {
+        return nullptr;
+    }
+    for (const ProjectSurfaceBody& body : document.surface.bodies) {
+        if (body.objectId == id) {
+            return &body;
+        }
+    }
+    return nullptr;
+}
+
 const ProjectCadBody* findCadBody(const ProjectDocument& document, ObjectId id) {
     if (!document.hasCad) {
         return nullptr;
@@ -106,7 +120,8 @@ bool runtimeCanEvaluateProject(const ProjectDocument& document) {
         if (findConstructionBody(document, placement.objectId) == nullptr
             && findImportedBody(document, placement.objectId) == nullptr
             && findCadBody(document, placement.objectId) == nullptr
-            && findFreeformBody(document, placement.objectId) == nullptr) {
+            && findFreeformBody(document, placement.objectId) == nullptr
+            && findSurfaceBody(document, placement.objectId) == nullptr) {
             return false;
         }
     }
@@ -189,6 +204,14 @@ ProjectDocument captureProjectDocument(const ConstructionScene& scene, ProjectKi
             record.cage = freeform->cage();
             document.freeform.bodies.push_back(std::move(record));
             document.hasFreeform = true;
+        } else if (const SurfaceBody* surface = body.surfaceOrNull()) {
+            // The sketches and the feature list, nothing derived: patches and
+            // solids are regenerated from exactly this on load.
+            ProjectSurfaceBody record;
+            record.objectId = body.objectId();
+            record.state = surface->state();
+            document.surface.bodies.push_back(std::move(record));
+            document.hasSurface = true;
         }
 
         const FrozenSculpt& frozen = body.frozenSculpt();
@@ -254,10 +277,12 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
         const ProjectImportedBody* imported = findImportedBody(document, placement.objectId);
         const ProjectCadBody* cad = findCadBody(document, placement.objectId);
         const ProjectFreeformBody* freeform = findFreeformBody(document, placement.objectId);
+        const ProjectSurfaceBody* surface = findSurfaceBody(document, placement.objectId);
 
         // Proven above by runtimeCanEvaluateProject; re-checked here because
         // the pointers are about to be dereferenced.
-        if (shape == nullptr && imported == nullptr && cad == nullptr && freeform == nullptr) {
+        if (shape == nullptr && imported == nullptr && cad == nullptr && freeform == nullptr
+            && surface == nullptr) {
             return ProjectCodecStatus::MissingRequiredSection;
         }
 
@@ -275,6 +300,14 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
             // proof.
             body.reset(new SceneObject(placement.objectId,
                                        std::make_shared<const FreeformCage>(freeform->cage)));
+        } else if (surface != nullptr) {
+            // validateProjectDocument has regenerated the list once; this is
+            // the regeneration the body keeps, and the publish below the proof.
+            SurfaceBodyMesh mesh;
+            if (regenerateSurfaceBody(surface->state, &mesh) != SurfaceStatus::Ok) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            body.reset(new SceneObject(placement.objectId, surface->state, std::move(mesh)));
         } else if (imported != nullptr) {
             // Rebuilt through the same `ImportedMesh::build` an import goes
             // through, so a loaded object is exactly as validated as a freshly
@@ -775,6 +808,16 @@ uint64_t projectSemanticFingerprint(const ConstructionScene& scene, ProjectKind 
                 mixU64(hash, idOf(f.id));
                 for (FreeformVertexId v : f.loop) mixU64(hash, idOf(v));
             }
+        } else if (const SurfaceBody* surface = body.surfaceOrNull()) {
+            // Every value the `SURF` record carries, mixed as the record's own
+            // bytes, so any feature or sketch edit moves the fingerprint.
+            ProjectSurfaceRecord record;
+            record.bodies.push_back(ProjectSurfaceBody{body.objectId(), surface->state()});
+            std::vector<uint8_t> bytes;
+            ByteWriter out(bytes);
+            writeSurfacePayload(out, record);
+            mixU64(hash, 0x53555246ull);  // "SURF"
+            mixBytes(hash, bytes.data(), bytes.size());
         }
         mixTransform(hash, body.transform().values());
         // Stage 018A. All three are project truth -- they reach `.forge` bytes

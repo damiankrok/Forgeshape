@@ -90,6 +90,10 @@ struct BodyConstructionState {
     // immutable once published and an edit replaces the pointer, so sharing it
     // is exact and keeps 64 steps of a large cage from being 64 copies.
     std::shared_ptr<const FreeformCage> freeform;
+    // Meaningful only when `representation` is Surface (`MODELING-FOUNDATIONS-R1`
+    // C): the feature list and its sketches, bounded by the Surface caps; the
+    // geometry is regenerated from exactly this.
+    std::shared_ptr<const SurfaceBodyState> surface;
     TransformValues transform{};
     // Stage 018A: the three representation-neutral facts about a body that are
     // project truth and are not geometry.

@@ -235,6 +235,11 @@ BodyCommandStatus duplicateSceneBody(ObjectId id, ConstructionScene& scene,
         // never reaches the other.
         freeformCopy = freeform->cage();
     }
+    SurfaceBodyState surfaceCopy;
+    if (const SurfaceBody* surface = source->surfaceOrNull()) {
+        // The feature list and its sketches, by value: two bodies, two lists.
+        surfaceCopy = surface->state();
+    }
     ImportedMesh importedCopy;
     if (const ImportedMesh* imported = source->importedOrNull()) {
         // The arrays are COPIED, never shared: an Imported Mesh IS its
@@ -274,6 +279,10 @@ BodyCommandStatus duplicateSceneBody(ObjectId id, ConstructionScene& scene,
             }
             case BodyRepresentation::Freeform: {
                 copy = scene.addFreeformBody(std::move(freeformCopy));
+                break;
+            }
+            case BodyRepresentation::Surface: {
+                copy = scene.addSurfaceBody(std::move(surfaceCopy));
                 break;
             }
         }

@@ -76,6 +76,7 @@ cat > "$MAIN" <<'EOF'
 #include "forgeshape_cone_capsule_selftest.h"
 #include "forgeshape_construction_selftest.h"
 #include "forgeshape_freeform_selftest.h"
+#include "forgeshape_surface_selftest.h"
 #include "forgeshape_gizmo_selftest.h"
 #include "forgeshape_gltf_export_selftest.h"
 #include "forgeshape_gltf_import_selftest.h"
@@ -149,6 +150,11 @@ int main(int argc, char** argv) {
     if (!gFilter || std::strstr("FREEFORM", gFilter)) {
         std::printf("FORGESHAPE_FREEFORM_PERFORMANCE %s\n", freeformPerformanceReport());
         std::printf("FORGESHAPE_FREEFORM_GOLDEN_SHA256 %s\n", freeformFixtureDigests());
+    }
+    suite<SurfaceSelfTestResult>("SURFACE", runSurfaceSelfTests);
+    if (!gFilter || std::strstr("SURFACE", gFilter)) {
+        std::printf("FORGESHAPE_SURFACE_PERFORMANCE %s\n", surfacePerformanceReport());
+        std::printf("FORGESHAPE_SURFACE_GOLDEN_SHA256 %s\n", surfaceFixtureDigests());
     }
     std::printf("%s (%d checks, %d failed)\n", gFailures ? "HOST_SELFTESTS_FAIL" : "HOST_SELFTESTS_OK",
                 gChecks, gFailures);

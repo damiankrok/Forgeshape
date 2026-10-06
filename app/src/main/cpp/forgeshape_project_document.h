@@ -61,8 +61,10 @@
 #include "forgeshape_cad_body.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_freeform.h"
+#include "forgeshape_surface.h"
 #include "forgeshape_imported_mesh.h"
 #include "forgeshape_object_id.h"
+#include "forgeshape_project_bytes.h"
 #include "forgeshape_transform.h"
 
 namespace forgeshape {
@@ -104,6 +106,9 @@ constexpr uint8_t kHeaderFlagHasCad = 0x08u;
 // terms: a build that predates Freeform sees an unknown header bit and refuses
 // the file (`BadHeader`) rather than opening it with bodies missing.
 constexpr uint8_t kHeaderFlagHasFreeform = 0x10u;
+// bit5: a `SURF` section is present (`MODELING-FOUNDATIONS-R1` C), on exactly
+// FRFM's terms.
+constexpr uint8_t kHeaderFlagHasSurface = 0x20u;
 
 // FourCCs as four ASCII bytes in file order. Compared byte by byte rather than
 // packed into an integer, so nothing about the comparison depends on the host's
@@ -114,10 +119,16 @@ constexpr char kSectionTagSculpt[4] = {'S', 'C', 'U', 'L'};
 constexpr char kSectionTagImported[4] = {'I', 'M', 'P', 'T'};
 constexpr char kSectionTagCad[4] = {'C', 'A', 'D', 'B'};
 constexpr char kSectionTagFreeform[4] = {'F', 'R', 'F', 'M'};
+constexpr char kSectionTagSurface[4] = {'S', 'U', 'R', 'F'};
 
 // `FRFM` v1 (`MODELING-FOUNDATIONS-R1` B): one record per Freeform body, its
 // control cage and nothing derived. DATA_PACKAGE_SPEC.md §7j.
 constexpr uint16_t kFreeformSectionVersion = 1;
+
+// `SURF` v1 (`MODELING-FOUNDATIONS-R1` C): one record per Surface body, its
+// retained sketches and its ordered feature list, nothing derived.
+// DATA_PACKAGE_SPEC.md §7k.
+constexpr uint16_t kSurfaceSectionVersion = 1;
 
 constexpr uint16_t kSceneSectionVersion = 1;
 // Stage 018A: version 2 adds, per body, a FLAGS byte and a NAME.
@@ -214,6 +225,9 @@ uint8_t workplaneFileCode(Workplane plane);
 bool workplaneFromFileCode(uint8_t code, Workplane* out);
 uint8_t extrudeDirectionFileCode(ExtrudeDirection direction);
 bool extrudeDirectionFromFileCode(uint8_t code, ExtrudeDirection* out);
+// CADB v7 revolve sense codes, file-owned and 1-based like the rest.
+uint8_t revolveDirectionFileCode(RevolveDirection direction);
+bool revolveDirectionFromFileCode(uint8_t code, RevolveDirection* out);
 // CADB v4 extent codes (`CAD-EXT-R1`), file-owned and 1-based like the rest.
 uint8_t extrudeExtentFileCode(ExtrudeExtentMode mode);
 bool extrudeExtentFromFileCode(uint8_t code, ExtrudeExtentMode* out);
@@ -478,6 +492,18 @@ struct ProjectFreeformRecord {
     std::vector<ProjectFreeformBody> bodies;  // scene order; only Freeform bodies
 };
 
+// SURF, per body whose representation is Surface (`MODELING-FOUNDATIONS-R1`
+// C): the sketches and the feature list. Patches, edges, stitches and solids
+// are regenerated on load and never stored.
+struct ProjectSurfaceBody {
+    ObjectId objectId = kNoObject;
+    SurfaceBodyState state;
+};
+
+struct ProjectSurfaceRecord {
+    std::vector<ProjectSurfaceBody> bodies;  // scene order; only Surface bodies
+};
+
 // A complete project, decoded or about to be encoded. Plain data with no
 // identity of its own: two documents that compare equal produce byte-identical
 // files, which is the deterministic-writer rule stated as a property.
@@ -494,6 +520,8 @@ struct ProjectDocument {
     ProjectCadRecord cad;
     bool hasFreeform = false;
     ProjectFreeformRecord freeform;
+    bool hasSurface = false;
+    ProjectSurfaceRecord surface;
 };
 
 // True when the two documents carry the same project semantics, field for
@@ -551,5 +579,13 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document);
 // there" are different outcomes, and a test must be able to tell them apart.
 ProjectCodecStatus decodeProject(const uint8_t* data, size_t size, ProjectDocument* out,
                                  uint32_t* outSkippedOptionalSections = nullptr);
+
+// The CADB v8 entity-list and dimension-table grammar (§7i), exposed so a
+// section that retains a sketch (`SURF`) writes and reads it exactly as CADB
+// does: one grammar, two sections.
+void writeProjectSketchEntities(ByteWriter& out, const CadSketch& sketch);
+void writeProjectSketchDimensions(ByteWriter& out, const CadSketch& sketch);
+ProjectCodecStatus readProjectSketchEntities(ByteReader& in, uint32_t entityCount, CadSketch* sketch);
+ProjectCodecStatus readProjectSketchDimensions(ByteReader& in, CadSketch* sketch);
 
 }  // namespace forgeshape

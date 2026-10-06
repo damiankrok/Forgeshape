@@ -187,6 +187,31 @@ SceneObject* ConstructionScene::addFreeformBody(FreeformCage cage, FreeformStatu
     return bodies_.back().get();
 }
 
+std::unique_ptr<SceneObject> ConstructionScene::makeSurfaceBody(ObjectId id,
+                                                                const SurfaceBodyState& state) {
+    if (id >= nextObjectId_) {
+        nextObjectId_ = id + 1;
+    }
+    SurfaceBodyMesh mesh;
+    regenerateSurfaceBody(state, &mesh);
+    return std::unique_ptr<SceneObject>(new SceneObject(id, state, std::move(mesh)));
+}
+
+SceneObject* ConstructionScene::addSurfaceBody(SurfaceBodyState state, SurfaceStatus* outWhy) {
+    SurfaceBodyMesh mesh;
+    const SurfaceStatus why = regenerateSurfaceBody(state, &mesh);
+    if (outWhy != nullptr) {
+        *outWhy = why;
+    }
+    if (why != SurfaceStatus::Ok) {
+        return nullptr;  // refused before an id is minted; the scene is untouched
+    }
+    const ObjectId id = nextObjectId_++;
+    bodies_.push_back(std::unique_ptr<SceneObject>(new SceneObject(id, std::move(state), std::move(mesh))));
+    activeBodyId_ = id;
+    return bodies_.back().get();
+}
+
 CadStatus ConstructionScene::validateCadFaceSupport(const TopoRef& support) const {
     const SceneObject* producer = findBody(support.producerObjectId);
     if (producer == nullptr || producer->cadOrNull() == nullptr) {
@@ -397,6 +422,7 @@ const char* bodyRepresentationName(BodyRepresentation representation) {
         case BodyRepresentation::Imported: return "Imported";
         case BodyRepresentation::Cad: return "Cad";
         case BodyRepresentation::Freeform: return "Freeform";
+        case BodyRepresentation::Surface: return "Surface";
     }
     return "unknown";
 }
@@ -439,6 +465,22 @@ MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy) {
                                         static_cast<uint32_t>(mesh->render.indices.size()), outWhy,
                                         mesh->render.renderBothSides);
     }
+    if (const SurfaceBody* surface = body.surfaceOrNull()) {
+        // The patches and the thickened solid, regenerated when the feature
+        // list was applied. Patches are sheets and publish two-sided.
+        const SurfaceBodyMesh& mesh = surface->mesh();
+        if (mesh.render.vertices.empty()) {
+            if (outWhy != nullptr) {
+                *outWhy = MeshValidation::EmptyVertices;
+            }
+            return kNoMeshRevision;
+        }
+        return body.meshStore().publish(mesh.render.vertices.data(),
+                                        static_cast<uint32_t>(mesh.render.vertices.size()),
+                                        mesh.render.indices.data(),
+                                        static_cast<uint32_t>(mesh.render.indices.size()), outWhy,
+                                        mesh.render.renderBothSides);
+    }
     const ImportedMesh* imported = body.importedOrNull();
     if (imported == nullptr) {
         if (outWhy != nullptr) {
@@ -476,6 +518,10 @@ bool buildSculptSourceMesh(const SceneObject& body, ConstructionMesh* out) {
     }
     if (body.cadOrNull() != nullptr) {
         // Deliberately unsupported in `CAD-R0-A1A2`; see the header.
+        return false;
+    }
+    if (body.surfaceOrNull() != nullptr) {
+        // Not this stage either: a Surface body's truth is its feature list.
         return false;
     }
     if (body.freeformOrNull() != nullptr) {

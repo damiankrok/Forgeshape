@@ -265,6 +265,18 @@ GlbExportStatus captureGlbExportScene(const ConstructionScene& scene, ProjectKin
                                         SurfaceShading::Smooth, &exported.render,
                                         /*renderBothSides=*/false);
             }
+        } else if (const SurfaceBody* surface = body.surfaceOrNull()) {
+            // The patches and any thickened solid, regenerated from the
+            // feature list (`MODELING-FOUNDATIONS-R1` C). Open patches are
+            // sheets, so their material is double-sided.
+            const SurfaceBodyMesh& mesh = surface->mesh();
+            exported.doubleSided = mesh.render.renderBothSides;
+            built = buildRenderMesh(mesh.render.vertices.data(),
+                                    static_cast<uint32_t>(mesh.render.vertices.size()),
+                                    mesh.render.indices.data(),
+                                    static_cast<uint32_t>(mesh.render.indices.size()),
+                                    SurfaceShading::Smooth, &exported.render,
+                                    /*renderBothSides=*/false);
         } else if (body.constructionOrNull() == nullptr) {
             // A representation this exporter does not know. Refused rather
             // than skipped, for the reason stated below.

@@ -73,7 +73,15 @@ SourceGeometry evaluateSourceGeometry(const SceneObject& body, ProjectKind kind)
                                     static_cast<uint32_t>(mesh.indices.size()),
                                     SurfaceShading::Smooth, &surfaces,
                                     /*renderBothSides=*/false);
-        }    } else if (const FreeformBody* freeform = body.freeformOrNull()) {
+        }
+    } else if (const SurfaceBody* surface = body.surfaceOrNull()) {
+        const SurfaceBodyMesh& mesh = surface->mesh();
+        built = buildRenderMesh(mesh.render.vertices.data(),
+                                static_cast<uint32_t>(mesh.render.vertices.size()),
+                                mesh.render.indices.data(),
+                                static_cast<uint32_t>(mesh.render.indices.size()),
+                                SurfaceShading::Smooth, &surfaces, /*renderBothSides=*/false);
+    } else if (const FreeformBody* freeform = body.freeformOrNull()) {
         std::shared_ptr<const FreeformMesh> mesh;
         if (freeform->derived(&mesh) == FreeformStatus::Ok && mesh != nullptr) {
             built = buildRenderMesh(mesh->render.vertices.data(),

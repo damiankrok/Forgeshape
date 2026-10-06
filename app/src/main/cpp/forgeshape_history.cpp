@@ -68,6 +68,13 @@ bool sameSceneConstructionState(const SceneConstructionState& a,
                 return false;
             }
         }
+        if (a.bodies[i].representation == BodyRepresentation::Surface) {
+            const auto& x = a.bodies[i].surface;
+            const auto& y = b.bodies[i].surface;
+            if (x != y && (x == nullptr || y == nullptr || !sameSurfaceBodyState(*x, *y))) {
+                return false;
+            }
+        }
     }
     return true;
 }
@@ -90,6 +97,8 @@ SceneConstructionState captureSceneConstructionState(const ConstructionScene& sc
             captured.cad = cad->captureState();
         } else if (const FreeformBody* freeform = body.freeformOrNull()) {
             captured.freeform = freeform->cagePointer();
+        } else if (const SurfaceBody* surface = body.surfaceOrNull()) {
+            captured.surface = std::make_shared<const SurfaceBodyState>(surface->state());
         }
         state.bodies.push_back(captured);
     }
@@ -282,6 +291,11 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
                     continue;
                 }
                 body = scene_.makeFreeformBody(wanted.objectId, wanted.freeform);
+            } else if (wanted.representation == BodyRepresentation::Surface) {
+                if (wanted.surface == nullptr) {
+                    continue;
+                }
+                body = scene_.makeSurfaceBody(wanted.objectId, *wanted.surface);
             } else if (wanted.representation == BodyRepresentation::Construction) {
                 body = scene_.makeBody(wanted.objectId);
             } else {
@@ -302,9 +316,12 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
         const bool freeformDiffers =
             isFreeform && body->freeformOrNull()->cagePointer() != wanted.freeform
             && !sameFreeformCage(body->freeformOrNull()->cage(), *wanted.freeform);
+        const bool surfaceDiffers = body->surfaceOrNull() != nullptr
+            && wanted.representation == BodyRepresentation::Surface && wanted.surface != nullptr
+            && !sameSurfaceBodyState(body->surfaceOrNull()->state(), *wanted.surface);
         const bool shapeDiffers =
             (isConstruction && !sameConstructionShape(current, wanted.construction)) || cadDiffers
-            || freeformDiffers;
+            || freeformDiffers || surfaceDiffers;
         const bool placementDiffers =
             !sameConstructionPlacement(body->transform().values(), wanted.transform);
         // A body that has never published anything must, whatever its
@@ -319,6 +336,8 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
             body->cadOrNull()->restoreState(wanted.cad);
         } else if (freeformDiffers) {
             body->freeformOrNull()->restoreCage(wanted.freeform);
+        } else if (surfaceDiffers) {
+            body->surfaceOrNull()->restoreState(*wanted.surface);
         } else if (shapeDiffers) {
             body->construction().restoreState(wanted.construction);
         }
