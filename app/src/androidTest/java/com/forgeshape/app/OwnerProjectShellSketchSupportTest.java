@@ -625,19 +625,110 @@ public final class OwnerProjectShellSketchSupportTest {
      * toggled another cell is taken back before the next is tried.
      */
     private void tapFace(long handle) {
-        final double[] info = new double[NativeViewport.SKETCH_REGION_INFO_SIZE];
-        assertTrue(NativeViewport.sketchProfileInfo(handle, info));
-        assertTrue("cell " + handle + " is on screen",
-                info[NativeViewport.SKETCH_REGION_ON_SCREEN] != 0.0);
-        tapFaceNear(handle, (float) info[NativeViewport.SKETCH_REGION_SCREEN_X],
-                (float) info[NativeViewport.SKETCH_REGION_SCREEN_Y]);
+        final float[] at = onScreen(() -> {
+            final double[] info = new double[NativeViewport.SKETCH_REGION_INFO_SIZE];
+            assertTrue(NativeViewport.sketchProfileInfo(handle, info));
+            return new float[]{(float) info[NativeViewport.SKETCH_REGION_SCREEN_X],
+                    (float) info[NativeViewport.SKETCH_REGION_SCREEN_Y]};
+        });
+        tapFaceNear(handle, at[0], at[1]);
     }
 
     /** The same, around a sketch point already known to lie in the cell. */
     private void tapFace(long handle, double u, double v) {
-        final float[] at = new float[2];
-        assertTrue(NativeViewport.sketchScreenPoint(u, v, at));
+        final float[] at = onScreen(() -> {
+            final float[] p = new float[2];
+            assertTrue(NativeViewport.sketchScreenPoint(u, v, p));
+            return p;
+        });
         tapFaceNear(handle, at[0], at[1]);
+    }
+
+    /**
+     * A viewport point brought well inside the viewport: the product moves
+     * the camera into its feature view at the first selection, so a cell can
+     * leave the screen; a real two-finger pan -- the navigation Ready offers --
+     * brings it back, re-measured after every pan.
+     */
+    private float[] onScreen(java.util.function.Supplier<float[]> point) {
+        final float w = onWorkspace(rule.getScenario(), (activity, workspace) ->
+                (float) workspace.findViewById(R.id.viewport_surface).getWidth());
+        final float h = onWorkspace(rule.getScenario(), (activity, workspace) ->
+                (float) workspace.findViewById(R.id.viewport_surface).getHeight());
+        final float margin = 140.0f;
+        float sign = 1.0f;
+        float[] at = point.get();
+        for (int pan = 0; pan < 8; pan++) {
+            if (at[0] >= margin && at[0] <= w - margin && at[1] >= margin && at[1] <= h - margin) {
+                return at;
+            }
+            final float dx = Math.max(-350f, Math.min(350f, w * 0.5f - at[0]));
+            final float dy = Math.max(-350f, Math.min(350f, h * 0.45f - at[1]));
+            final double before = Math.hypot(w * 0.5f - at[0], h * 0.45f - at[1]);
+            twoFingerPan(sign * dx, sign * dy);
+            at = point.get();
+            fact("pan", "delta=" + dx + "," + dy + " sign=" + sign + " now=" + Arrays.toString(at));
+            if (Math.hypot(w * 0.5f - at[0], h * 0.45f - at[1]) > before) {
+                sign = -sign;
+            }
+        }
+        return at;
+    }
+
+    /** A real two-finger pan through the window, by (dx, dy) viewport pixels. */
+    private void twoFingerPan(final float dx, final float dy) {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final float density = activity.getResources().getDisplayMetrics().density;
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final View root = activity.getWindow().getDecorView();
+            final int[] vp = new int[2];
+            viewport.getLocationInWindow(vp);
+            final float cx = vp[0] + viewport.getWidth() * 0.5f;
+            final float cy = vp[1] + viewport.getHeight() * 0.6f;
+            final float half = 60f * density;
+            final long down = SystemClock.uptimeMillis();
+            final int steps = 8;
+            final MotionEvent.PointerProperties[] props = new MotionEvent.PointerProperties[2];
+            for (int i = 0; i < 2; i++) {
+                props[i] = new MotionEvent.PointerProperties();
+                props[i].id = i;
+                props[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+            }
+            final MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[2];
+            for (int step = 0; step <= steps; step++) {
+                final float t = (float) step / steps;
+                for (int i = 0; i < 2; i++) {
+                    coords[i] = new MotionEvent.PointerCoords();
+                    coords[i].x = cx + dx * t + (i == 0 ? -half : half);
+                    coords[i].y = cy + dy * t;
+                    coords[i].pressure = 1f;
+                    coords[i].size = 1f;
+                }
+                final long time = down + 16L * step;
+                if (step == 0) {
+                    sendMulti(root, down, time, MotionEvent.ACTION_DOWN, 1, props, coords);
+                    sendMulti(root, down, time, MotionEvent.ACTION_POINTER_DOWN
+                            | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2, props, coords);
+                } else {
+                    sendMulti(root, down, time, MotionEvent.ACTION_MOVE, 2, props, coords);
+                }
+            }
+            final long end = down + 16L * (steps + 1);
+            sendMulti(root, down, end, MotionEvent.ACTION_POINTER_UP
+                    | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2, props, coords);
+            sendMulti(root, down, end + 8L, MotionEvent.ACTION_UP, 1, props, coords);
+            return null;
+        });
+        settleLayout();
+    }
+
+    private static void sendMulti(View root, long downTime, long time, int action, int count,
+                                  MotionEvent.PointerProperties[] props,
+                                  MotionEvent.PointerCoords[] coords) {
+        final MotionEvent event = MotionEvent.obtain(downTime, time, action, count, props, coords,
+                0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
+        root.dispatchTouchEvent(event);
+        event.recycle();
     }
 
     private void tapFaceNear(long handle, float x, float y) {
