@@ -1,49 +1,53 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.97.0
+**Status Version:** 0.98.0
 **Updated:** 2026-10-06
-**Latest closeout:** **`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` —
-`PASS-CAD-SKETCH-DRAFTING-TOOLKIT-E2E`** (2026-10-06). **TECH PASS / OWNER
-PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
-`feature/cad-v8-sketch-drafting-toolkit-r1` from the Revolve head `5dcb73b`;
-`main` stays `6c9f156`, `feature/cad-v6-sketch-face-r1` stays `bbae765` and
-the Revolve branch stays `5dcb73b`; no FullSharded; S3 not started. Record:
-`artifacts/cad-sketch-drafting-toolkit/SUMMARY.md` (BEFORE.md and DESIGN.md
-first).
+**Latest closeout:** **`MODELING-FOUNDATIONS-R1` — `PASS-MODELING-FOUNDATIONS-R1`**
+(2026-10-06). **TECH PASS / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task
+branch `feature/modeling-v9-parametric-freeform-surface-r1` from the drafting
+head `a3643b5`; product `30833aa`; `main` stays `6c9f156`,
+`feature/cad-v6-sketch-face-r1` stays `bbae765` and the drafting branch stays
+`a3643b5`; no FullSharded; S3 not started. Record:
+`artifacts/modeling-foundations-r1/SUMMARY.md` (BEFORE.md and DESIGN.md first).
 
-- **Construction geometry.** A sketch entity has a role (Regular /
-  Construction); Construction is dashed, selectable, snappable, dimensionable
-  and a valid Revolve or Mirror axis, and bounds no material.
-- **Dimensions.** Twelve kinds, Driving (six kinds, the value typed rewrites
-  the geometry exactly) or Reference (read-only, in parentheses); the value is
-  always derived, never stored. Labels `R` / `Ø` / `°`; visibility Selected /
-  All / Off; overlapping labels hidden by priority, a label never on the
-  stroke it measures (its 48 dp box stands off the measured point by 8 dp), a
-  label that would leave the viewport hidden rather than clamped.
-- **Snaps** (endpoint, intersection, midpoint, centre, origin, horizontal /
-  vertical guides, grid) and **Trim, Extend, Offset, Mirror**, each a pure
-  sketch-to-sketch act on the staged sketch; Trim refuses a dimensioned entity
-  and Extend a Driving length by name. The sketch actions palette under the
-  orientation navigator offers Trim and Extend whatever is selected.
-- **`CADB` v8** (a role byte per entity and each sketch's dimension table),
-  written only for drafting truth; v1..v7 projects keep bytes and fingerprint.
-  Five fixtures; corpus **66/66** byte-identical between the C++ writer and the
-  PowerShell builder; the 61 older fixtures unchanged.
-- **Gates.** Host `HOST_SELFTESTS_OK (4157 checks, 0 failed)`; JVM 148/148;
-  `CI DEVICE` `37414423576` on `df7db66`: `CadSketchDraftingOwnerTest` PASS
-  14/14; union `CI DEVICE` `37415689406` on `df7db66`: **PASS 97/97** (12
-  classes); `CI FAST` `37415698483` on `df7db66`: success (builds, JVM, release
-  guard, corpus 66/66, device-free checks, `git diff --check`).
-- **OWNER APK.** `ci-fast-evidence` artifact `11391450004` of `CI FAST`
-  `37415698483` (product `df7db66`), `app/build/outputs/apk/debug/app-debug.apk`,
-  14,431,018 bytes, SHA-256
-  `60ea5d03b388117379e5fa413823388e3815a0ba956de3819238d6fb1990abab`; artifact
-  expires 2026-10-20T04:56:14Z.
-- **Deferred:** a persistent constraint solver, a fully-defined state,
-  projected / linked edges, drawing sheets and title blocks, and Spline
-  dimensions / Trim / Extend / Offset.
+- **Parametric History.** A CAD or Surface body's sketches and features listed
+  in construction order (History control in the history capsule); a row opens
+  a STAGED edit, the first failing later feature is named, Fix / Cancel, one
+  Undo per finished edit.
+- **Freeform/SubD.** A body whose truth is a quad control cage (strong ids),
+  Catmull-Clark levels 0..4 with creases; Vertex/Edge/Face selection, gizmo,
+  Push/Pull, Extrude, Insert Loop, Crease, Delete Face, exact Symmetry; each one
+  Undo. `FRFM` v1.
+- **Surface.** A body whose truth is an ordered feature list: Patch, Extrude
+  (open chains), Revolve (Construction axis), Loft (two sections), exact
+  planar Trim, Stitch, Thicken; first-failure regeneration; Finish choices hang
+  from the toolbar. `SURF` v1.
+- **Format.** `FRFM` and `SURF` written only when needed (header bits 4 and 5);
+  six fixtures; corpus **72/72** byte-identical between the C++ writer and the
+  PowerShell builder; the 66 older fixtures unchanged.
+- **Gates.** Host `HOST_SELFTESTS_OK (4287 checks, 0 failed)` (25 suites);
+  JVM 170/170; release guard PASS; startup 25/25 tokens; union `CI DEVICE`
+  `37472535341` on `30833aa`: **PASS 54/54** (9 classes, including
+  `CadParametricHistoryOwnerTest` 3, `FreeformOwnerTest` 3, `SurfaceOwnerTest`
+  3); `CI FAST` `37478194506` on `6b54843`: success (corpus 72/72).
+- **OWNER APK.** `ci-fast-evidence` artifact `11420511634` of `CI FAST`
+  `37478194506` (product `30833aa`), `app/build/outputs/apk/debug/app-debug.apk`,
+  17,067,370 bytes, SHA-256
+  `062df5c8a769932bf85cef40877a97ef00c8a68103ac5ffae11a6319560c0862`; artifact
+  expires 2026-10-20T14:26:17Z.
+- **Deferred:** true T-Spline local refinement, general NURBS, general B-Rep
+  fillet and draft, feature reorder, advanced Surface repair and interchange.
 
-**Previous closeout:** **`CAD-V6-REVOLVE-NEWBODY-E2E-R1` —
+**Previous closeout:** **`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` —
+`PASS-CAD-SKETCH-DRAFTING-TOOLKIT-E2E`** (2026-10-06). TECH PASS / OWNER
+PHYSICAL REVIEW REQUIRED / NOT MERGED; branch
+`feature/cad-v8-sketch-drafting-toolkit-r1` at `a3643b5`. Construction geometry,
+twelve dimension kinds, snaps, Trim/Extend/Offset/Mirror, `CADB` v8; union
+`CI DEVICE` `37415689406` PASS 97/97; OWNER APK SHA-256
+`60ea5d03b388117379e5fa413823388e3815a0ba956de3819238d6fb1990abab`. Record:
+`artifacts/cad-sketch-drafting-toolkit/SUMMARY.md`.
+
+**Earlier closeout:** **`CAD-V6-REVOLVE-NEWBODY-E2E-R1` —
 `PASS-CAD-V6-REVOLVE-NEWBODY-E2E`** (2026-10-06). TECH PASS / OWNER PHYSICAL
 REVIEW REQUIRED / NOT MERGED; branch `feature/cad-v6-revolve-newbody-r1` at
 `5dcb73b`. Revolve New Body about a semantic straight sketch edge, exact
@@ -4719,13 +4723,15 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: OWNER physical-device review of the
-`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` APK** (`ci-fast-evidence` artifact
-`11391450004` of `CI FAST` `37415698483`, product `df7db66`) against the
-checklist in `artifacts/cad-sketch-drafting-toolkit/SUMMARY.md`, together with
-the still-pending Revolve checklist in `artifacts/cad-v6-revolve-newbody/SUMMARY.md`
-(which carries the MULTIFACE and HUD3D checklists forward). Nothing merges to
-`feature/cad-v6-sketch-face-r1` or `main` before that verdict; OWNER-TUNABLE
-label, ring, handle and dock sizes may be adjusted from it. `CAD-V6-S3`
+`MODELING-FOUNDATIONS-R1` APK** (`ci-fast-evidence` artifact `11420511634` of
+`CI FAST` `37478194506`, product `30833aa`, APK SHA-256
+`062df5c8a769932bf85cef40877a97ef00c8a68103ac5ffae11a6319560c0862`) against
+`artifacts/modeling-foundations-r1/SUMMARY.md` — Parametric History, Freeform
+and Surface on a physical device, including the items still UNVERIFIED there —
+together with the still-pending drafting-toolkit and Revolve checklists
+(`artifacts/cad-sketch-drafting-toolkit/SUMMARY.md`,
+`artifacts/cad-v6-revolve-newbody/SUMMARY.md`). Nothing merges to
+`feature/cad-v6-sketch-face-r1` or `main` before that verdict. `CAD-V6-S3`
 (retained-sketch mobile UX) waits for it. The v6 branch merges to `main` only
 after the completed v6 migration passes the Tier-5 aggregate once.
 
@@ -4733,7 +4739,8 @@ after the completed v6 migration passes the Tier-5 aggregate once.
 recorded debt, not authorised work. The Council's other OWNER decisions are
 still open (`COUNCIL_FINDINGS.md` §5, `NEXT_VERTICAL_SLICE_OPTIONS.md`).
 
-Do not start a Revolve Add/Cut or later Revolve feature, Through All, To Object, Intersect, a Hole feature,
+Do not start T-Spline local refinement, general NURBS, a Surface trim of a
+curved surface, feature reorder or suppression, a Revolve Add/Cut or later Revolve feature, Through All, To Object, Intersect, a Hole feature,
 fillet, chamfer, shell, a pattern, a constraint solver (or any persistent
 sketch relation), projected edges, drawing sheets, CAD → Sculpt, Stage024,
 `CAD-A4` or Stage 026 from this status. A second third-party library needs its
