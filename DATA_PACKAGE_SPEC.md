@@ -1240,6 +1240,99 @@ by index (no caps, no seam vertex twice); a profile vertex on the axis is one
 apex (two on a full turn when two swept edges meet there); an edge on the axis
 sweeps nothing.
 
+## 7i. `CADB` v8 — Construction geometry and sketch dimensions (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`)
+
+Version 8 records two facts of a SKETCH that no earlier version can: an
+entity's ROLE (Regular geometry, or Construction geometry that is drawn and
+snapped to but never bounds material), and the sketch's persistent DIMENSIONS.
+v8 is v7's layout (§7h, itself §7g's sketch table with a kind byte after every
+feature id) with exactly two additions, both inside every sketch record of the
+table:
+
+```
+ENTITY     u32 entityId | u8 kindCode (§7b/§7d) | u8 roleCode | PAYLOAD (§7b/§7d)
+roleCode   1 Regular, 2 Construction (any other code: InvalidSemanticValue)
+
+after the sketch's entity list:
+  u32  nextDimensionId          > every dimension id below; never 0
+  u32  dimensionCount           0 .. 512
+  repeat dimensionCount times, strictly ascending id (22 bytes each):
+    u32  dimensionId            != 0
+    u8   kindCode               1 LineLength       2 LineAngle
+                                3 LineHorizontal   4 LineVertical
+                                5 RectangleWidth   6 RectangleHeight
+                                7 CircleRadius     8 CircleDiameter
+                                9 EdgeLength      10 ArcRadius
+                               11 ArcSweep        12 EdgeAngle
+    u8   modeCode               1 Driving, 2 Reference
+    u32  firstEntityId          the measured entity
+    u32  firstEdgeLocalIndex    a straight edge (§7h's edge numbering), else 0
+    u32  secondEntityId         EdgeAngle only; 0 otherwise
+    u32  secondEdgeLocalIndex   EdgeAngle only; 0 otherwise
+```
+
+Everything else in a v8 body — the high-water marks, the placements, cuts,
+fragments, face tokens, features, kinds and selections — is §7h byte for byte.
+
+### When v8 is written, and what an older reader does
+
+A sketch carries drafting truth exactly when some entity is Construction, some
+dimension exists, or its `nextDimensionId` is not 1 (a dimension was made and
+deleted: its id is burned). v8 is written ONLY when some sketch of some body
+of the document carries drafting truth; the whole section is then v8 (every
+other body in it wears role 1 and an empty dimension table, and every feature
+a kind byte). Every other document writes whichever of v1..v7 it always wrote,
+byte for byte, and its semantic fingerprint is unchanged — the fingerprint
+mixes a `DRF8` block ONLY for a body carrying drafting truth. `CADB` is
+required, so a build that predates v8 refuses a v8 file
+(`UnsupportedSectionVersion`) rather than opening Construction geometry as
+material or dropping a dimension silently.
+
+### What a dimension IS
+
+A dimension stores no number. Its value is DERIVED from the authored geometry
+on every read; a Driving edit rewrites the geometry through one path and stores
+nothing else:
+
+| kind | target | value | Driving edit keeps |
+| --- | --- | --- | --- |
+| LineLength | Line | `|P1 − P0|` | `P0` and the direction |
+| LineAngle | Line | `atan2(Δv, Δu)` in degrees, in (−180, 180] | `P0` and the length |
+| LineHorizontal | Line | `|Δu|` | Reference only |
+| LineVertical | Line | `|Δv|` | Reference only |
+| RectangleWidth / Height | Rectangle | `width` / `height` | the centre and the other size |
+| CircleRadius / Diameter | Circle | `r` / `2r` | the centre |
+| EdgeLength | Polyline segment `i`, Rectangle edge `k` | that edge's length | Reference only |
+| ArcRadius | Arc | the circumradius of its three points | Reference only |
+| ArcSweep | Arc | `|sweep|` in degrees | Reference only |
+| EdgeAngle | two DISTINCT straight edges | `atan2(|a × b|, a · b)` in degrees, [0, 180] | Reference only |
+
+A Spline has no dimension of any kind.
+
+### What is refused
+
+The decoder refuses structure (`Truncated`, `ImpossibleCount` above 512 —
+proven against the remaining bytes before anything is allocated —
+`InvalidSemanticValue` for an unknown role, kind or mode code). The sketch
+validation then refuses relations (`InvalidSemanticValue`; the domain names
+`SketchDimensionInvalid` or `SketchDimensionConflict`): a zero id, ids not
+strictly ascending, an id at or above `nextDimensionId`, a ref naming no
+entity, an entity of the wrong kind for the dimension, an edge index past the
+entity's straight edges, a second ref on any kind but EdgeAngle (or an
+EdgeAngle whose two edges are one), a Driving mode on a Reference-only kind,
+two dimensions identical in kind and refs, and two DRIVING dimensions that own
+one degree of freedom of one entity (Length; Angle; Width; Height; Radius and
+Diameter are ONE radius). No dimension is ever dropped, re-aimed or repaired
+on load.
+
+### Construction geometry
+
+A Construction entity is invisible to material: the profile extraction, the
+region nesting, the planar arrangement, the lineage token and the face list all
+read the sketch's REGULAR entities only, so adding, removing or toggling
+Construction geometry moves no face token and no region. It may still be the
+Revolve axis (§7h) — the axis is resolved over every entity of the sketch.
+
 ## 8. Validation and compatibility
 
 Decoding happens entirely into temporary document structures. **No live project
@@ -1481,9 +1574,14 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `cad_revolve_partial_v7.forge` | 332 | `7b72037a923f8c767a8694cc6e080e0ef8a8eb624ee926e02f288e5541b2fdd2` | The same sketch revolved **90°**, direction **Negative** (code 2) — a quarter sweep with its two planar caps |
 | `cad_revolve_bad_axis_v7.forge` | 332 | `8be1bee7210c7286e72c8ba94a44f8724bda1400feff6589ef64b3ce30d5ecd1` | The full revolve with its axis naming entity **7**, which the sketch does not hold — refused `InvalidSemanticValue` (`RevolveAxisUnresolved`), never re-aimed at the nearest edge |
 | `cad_bad_feature_kind_v7.forge` | 332 | `404e648523be5069334321bf20cf2abf077ed0ba0b6bb48cc728c30ab56a9fb5` | The full revolve with its base feature's KIND byte **9** in front of the otherwise well-formed Revolve payload — refused `InvalidSemanticValue` (`InvalidFeatureKind`) at the kind byte |
+| `cad_construction_v8.forge` | 373 | `553b7e094cddaf8b65e26c4b642c67c4920646de52ab7bedaade2413b547b776` | `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`, `CADB` **v8**: a 2 × 1 m rectangle (entity 1, Regular) crossed by a **Construction** centre Line (2) and ringed by a **Construction** Circle (3, radius 1.5); the base extrudes the rectangle as ONE region — read as material the two would split it |
+| `cad_dimension_driving_v8.forge` | 483 | `d0a560450063c91f0b4473b5932b05d6e66b8245537da44e34d3434a2bcdfddf` | The rectangle (1), a Circle (2) at `(3, 0)` radius 0.5 and a Line (3) `(-1, -2)`–`(1, -2)`, with **Driving** Width, Height, Diameter, Length and Angle (ids 1..5, `nextDimensionId` 6) |
+| `cad_dimension_reference_v8.forge` | 610 | `cd8ad8620b3f9386d64789651014df57ea24db854a33f4651a107dd411aaf258` | The rectangle (1), an Arc (2), an open Polyline (3) and a Line (4) measured by **Reference** dimensions only — arc radius and sweep, a polyline segment's and a rectangle edge's length, the line's horizontal and vertical components, and the angle between the two polyline segments (ids 1..7); `nextDimensionId` **9**: id 8 was burned |
+| `cad_bad_dimension_ref_v8.forge` | 483 | `a0e1388b6b63157ff66e735fd9e1cf6e888990f9d660bb1095686183f3c96f74` | The driving fixture with its Diameter naming entity **9**, which the sketch does not hold — refused `InvalidSemanticValue` (`SketchDimensionInvalid`), never re-aimed |
+| `cad_dimension_conflict_v8.forge` | 505 | `9ca1afac3749b5f5bc6131b11df973b2687ecaa635df22a487291f963cd9f8fd` | The driving fixture plus a **Driving** Radius (id 6) on the circle the Diameter already drives — refused `InvalidSemanticValue` (`SketchDimensionConflict`) |
 
-The nineteen corrupt fixtures written since `CADB` v2 — two each for `CADB` v2,
-v3, v4 and v7, four for `CADB` v5, six for `CADB` v6 and one for `SCNE` v2 — are
+The twenty-one corrupt fixtures written since `CADB` v2 — two each for `CADB` v2,
+v3, v4, v7 and v8, four for `CADB` v5, six for `CADB` v6 and one for `SCNE` v2 — are
 **constructed** by the PowerShell builder with the bad value in place, never
 generated and then mutated; the C++ self-test reaches the same bytes by its own
 route (patching the valid parent's one field and its CRC, or — for five of the
@@ -1506,16 +1604,17 @@ the two matched could not tell a decoder that confused them apart. Every number
 is an exact binary fraction, so the two implementations agree byte for byte or
 not at all.
 
-No section version has moved an older fixture: `CADB` v2, v3, v4, v5, v6 and v7
-are each written only when a body needs what they add — a face support, a curve,
-an extent that is not One Side, a hole or a later feature, a shared or retained
-sketch or a face selection, a Revolve — so a world-only CAD
+No section version has moved an older fixture: `CADB` v2, v3, v4, v5, v6, v7 and
+v8 are each written only when a body needs what they add — a face support, a
+curve, an extent that is not One Side, a hole or a later feature, a shared or
+retained sketch or a face selection, a Revolve, a Construction role or a sketch
+dimension — so a world-only CAD
 project still writes `CADB` v1, a curveless one v1 or v2, a One Side one v1..v3
 and a one-region single-feature one v1..v4. Each of these features costs a
 project that does not use it exactly nothing, exactly as the imported branch
 and the generalized `SCUL` cost the files before them nothing.
 
-**Sixty-one fixtures in all.** The thirty-six that predate `CADB` v5 are
+**Sixty-six fixtures in all.** The thirty-six that predate `CADB` v5 are
 verified by `FSR1A-12`, `IMP01A-19`, `IMP01B-11/12`, `CADR0-33..36`,
 `CADA3-46..51`, `CADUXR1-38`, `CADEXT-10` and `OBJ018A-15/16`, and printed on
 every debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `…_IMPORTED`,
@@ -1531,13 +1630,17 @@ lineage derived by the production face enumeration while the builder computes
 both from the text above. The four `CADB` v7 fixtures are asserted by
 `REV_FMT_07`: the two valid ones and the bad axis through the writers above, the
 unknown kind by patching the full fixture's kind byte and its CRC while the
-builder writes kind 9 in place. CI FAST's corpus parity step holds all
-sixty-one byte-identical between the builder and the repository. The thirteen v6
+builder writes kind 9 in place. The five `CADB` v8 fixtures are asserted by `DR_FMT_11`: the three valid ones
+through the ordinary writer from states built in C++, the two refusals through
+`encodeProjectV1Unchecked`. CI FAST's corpus parity step holds all sixty-six
+byte-identical between the builder and the repository. The thirteen v6
 fixtures are single-body Construction projects with the `SCNE` record of the
 v4/v5 ones, and every one of the forty-four before them is byte-for-byte
 unchanged: none needs what v6 adds. The four v7 fixtures are single-body
 projects on the same `SCNE` record, and every one of the fifty-seven before them
-is byte-for-byte unchanged: none of them revolves.
+is byte-for-byte unchanged: none of them revolves. The five v8 fixtures are
+single-body projects on the same `SCNE` record, and every one of the sixty-one
+before them is byte-for-byte unchanged: none carries a role or a dimension.
 
 Regenerate and re-verify with:
 
