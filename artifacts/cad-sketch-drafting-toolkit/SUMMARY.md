@@ -13,7 +13,7 @@ decisions made before implementation) first.
 | --- | --- |
 | final product SHA | `df7db66` (later commits add only docs and artifacts: `app/`, `scripts/`, `.github/`, `testdata/` identical) |
 | focused DEVICE | `CI DEVICE` `37414423576` on `df7db66` — `CadSketchDraftingOwnerTest` **PASS 14/14**, 23/23 startup tokens in order, `NATIVE_VIEWPORT_OK`, 0 failure tokens |
-| final DEVICE union | `CI DEVICE` `37415689406` on `df7db66` (12 classes) — RUNNING at the time of this commit |
+| final DEVICE union | `CI DEVICE` `37415689406` on `df7db66` — **PASS 97/97** (12 classes, 2587 s), 23/23 startup tokens in order, `NATIVE_VIEWPORT_OK`, 0 failure tokens |
 | final CI FAST | `CI FAST` `37415698483` on `df7db66` — success: debug, release and androidTest builds, JVM **148/148** (15 classes), release self-test guard PASS, corpus parity **66/66** byte-identical, runtime / sharding / device-guard checks PASS, `git diff --check` |
 | APK | artifact `ci-fast-evidence` id `11391450004` (zip 10,090,913 bytes, zip SHA-256 `7a881a22741fcf7f354e89ec7603c5ca9635b6b64ae421f7fc1b069665ce0998`, expires 2026-10-20T04:56:14Z); inside it `app/build/outputs/apk/debug/app-debug.apk`, **14,431,018 bytes**, SHA-256 **`60ea5d03b388117379e5fa413823388e3815a0ba956de3819238d6fb1990abab`** — downloaded and hashed from that artifact, not rebuilt |
 
@@ -126,7 +126,7 @@ verdicts unchanged (host PROJECT / CAD_FEATURE suites).
 | `37410559758` | `272b3cc` | 1 | FAIL, 4 of 13 failed | DR-05 drag END under a label (HARNESS); DR-03 overlapping drawn labels after the edge clamp (PRODUCT 2); DR-06 / DR-11a Trim absent with a selection (PRODUCT 3) → `97673d6` |
 | `37413051431` | `97673d6` | 1 | FAIL, 1 of 14 failed | DEV-DR-13: a label closed without a value stayed hidden (PRODUCT 4) → `df7db66` |
 | `37414423576` | `df7db66` | 1 | **PASS 14/14** | focused class green |
-| `37415689406` | `df7db66` | 12 | RUNNING | final union |
+| `37415689406` | `df7db66` | 12 | **PASS 97/97** | final union |
 
 Final union: `CadSketchDraftingOwnerTest`, `CadRevolveOwnerTest`,
 `CadMultiFaceOwnerTest`, `CadFillPickR2Test`, `CadPlanarFaceOwnerCorrectionTest`,

@@ -1,47 +1,57 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.96.0
+**Status Version:** 0.97.0
 **Updated:** 2026-10-06
-**Latest closeout:** **`CAD-V6-REVOLVE-NEWBODY-E2E-R1` —
-`PASS-CAD-V6-REVOLVE-NEWBODY-E2E`** (2026-10-06). **TECH PASS / OWNER PHYSICAL
-REVIEW REQUIRED / NOT MERGED.** Task branch `feature/cad-v6-revolve-newbody-r1`
-from the MULTIFACE head `3e2443f`; `main` stays `6c9f156`,
-`feature/cad-v6-sketch-face-r1` stays `bbae765` and the MULTIFACE branch stays
-`3e2443f`; no FullSharded; S3 not started. Record:
-`artifacts/cad-v6-revolve-newbody/SUMMARY.md` (BEFORE.md first).
+**Latest closeout:** **`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` —
+`PASS-CAD-SKETCH-DRAFTING-TOOLKIT-E2E`** (2026-10-06). **TECH PASS / OWNER
+PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
+`feature/cad-v8-sketch-drafting-toolkit-r1` from the Revolve head `5dcb73b`;
+`main` stays `6c9f156`, `feature/cad-v6-sketch-face-r1` stays `bbae765` and
+the Revolve branch stays `5dcb73b`; no FullSharded; S3 not started. Record:
+`artifacts/cad-sketch-drafting-toolkit/SUMMARY.md` (BEFORE.md and DESIGN.md
+first).
 
-- **Revolve New Body exists.** A CAD body's first feature has a kind
-  (`Extrude` or `Revolve`); a Revolve sweeps the same selection an Extrude
-  would (regions with holes or exact planar faces) about a SEMANTIC axis edge
-  (`{entityId, edgeLocalIndex}` of a Line, Polyline segment or Rectangle side;
-  curves refused, no nearest-edge fallback) by an exact angle in degrees
-  (0.001..360, default 360) and a direction. Full turns close their seam with
-  no caps, partial turns carry caps, a crossing axis is refused
-  (`RevolveProfileCrossesAxis`), touching is legal, and every revolved solid
-  passes `cadKernelValidateSolid`. New Body only; revolved faces host nothing.
-- **UI.** Ready → precision surface **Revolve…** → tap an axis edge → a 3/4
-  view, the ring with a draggable handle (whole degrees, no orbit), the angle
-  on a canvas label that types exact values, Flip / Change axis / Extrude
-  instead, and the toolbar's Revolve commit (withdrawn while refused). Commit,
-  Edit (the feature row reopens it in Ready) and the first-project bootstrap
-  are each one transaction.
-- **`CADB` v7** (kind byte after every feature id + the Revolve payload),
-  written only when a body revolves; v1..v6 projects keep bytes and
-  fingerprint. Four new fixtures; corpus **61/61** byte-identical between the
-  C++ writer and the independent PowerShell builder; the 57 older fixtures'
-  bytes and verdicts unchanged.
-- **Gates.** Host `HOST_SELFTESTS_OK (4064 checks, 0 failed)`; JVM 128/128;
-  `CI DEVICE` `37391067580` on `6507f2b`: **PASS 83/83** (11 classes incl.
-  `CadRevolveOwnerTest` 9/9); `CI FAST` `37391069710` on `6507f2b`: success
-  (debug/release/androidTest builds, JVM, release guard, corpus 61/61,
-  `git diff --check`).
-- **OWNER APK.** `ci-fast-evidence` artifact `11381820030` of `CI FAST`
-  `37391069710` (product `6507f2b`), `app/build/outputs/apk/debug/app-debug.apk`,
-  13,647,374 bytes, SHA-256
-  `d41ad54af67f86e8d92177b1e542b932ee15ac3e1c4c836b02deecd91a2f99f6`; artifact
-  expires 2026-10-19T23:59:13Z.
+- **Construction geometry.** A sketch entity has a role (Regular /
+  Construction); Construction is dashed, selectable, snappable, dimensionable
+  and a valid Revolve or Mirror axis, and bounds no material.
+- **Dimensions.** Twelve kinds, Driving (six kinds, the value typed rewrites
+  the geometry exactly) or Reference (read-only, in parentheses); the value is
+  always derived, never stored. Labels `R` / `Ø` / `°`; visibility Selected /
+  All / Off; overlapping labels hidden by priority, a label never on the
+  stroke it measures (its 48 dp box stands off the measured point by 8 dp), a
+  label that would leave the viewport hidden rather than clamped.
+- **Snaps** (endpoint, intersection, midpoint, centre, origin, horizontal /
+  vertical guides, grid) and **Trim, Extend, Offset, Mirror**, each a pure
+  sketch-to-sketch act on the staged sketch; Trim refuses a dimensioned entity
+  and Extend a Driving length by name. The sketch actions palette under the
+  orientation navigator offers Trim and Extend whatever is selected.
+- **`CADB` v8** (a role byte per entity and each sketch's dimension table),
+  written only for drafting truth; v1..v7 projects keep bytes and fingerprint.
+  Five fixtures; corpus **66/66** byte-identical between the C++ writer and the
+  PowerShell builder; the 61 older fixtures unchanged.
+- **Gates.** Host `HOST_SELFTESTS_OK (4157 checks, 0 failed)`; JVM 148/148;
+  `CI DEVICE` `37414423576` on `df7db66`: `CadSketchDraftingOwnerTest` PASS
+  14/14; union `CI DEVICE` `37415689406` on `df7db66`: **PASS 97/97** (12
+  classes); `CI FAST` `37415698483` on `df7db66`: success (builds, JVM, release
+  guard, corpus 66/66, device-free checks, `git diff --check`).
+- **OWNER APK.** `ci-fast-evidence` artifact `11391450004` of `CI FAST`
+  `37415698483` (product `df7db66`), `app/build/outputs/apk/debug/app-debug.apk`,
+  14,431,018 bytes, SHA-256
+  `60ea5d03b388117379e5fa413823388e3815a0ba956de3819238d6fb1990abab`; artifact
+  expires 2026-10-20T04:56:14Z.
+- **Deferred:** a persistent constraint solver, a fully-defined state,
+  projected / linked edges, drawing sheets and title blocks, and Spline
+  dimensions / Trim / Extend / Offset.
 
-**Previous closeout:** **`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1` —
+**Previous closeout:** **`CAD-V6-REVOLVE-NEWBODY-E2E-R1` —
+`PASS-CAD-V6-REVOLVE-NEWBODY-E2E`** (2026-10-06). TECH PASS / OWNER PHYSICAL
+REVIEW REQUIRED / NOT MERGED; branch `feature/cad-v6-revolve-newbody-r1` at
+`5dcb73b`. Revolve New Body about a semantic straight sketch edge, exact
+degrees, `CADB` v7; `CI DEVICE` `37391067580` PASS 83/83, OWNER APK SHA-256
+`d41ad54af67f86e8d92177b1e542b932ee15ac3e1c4c836b02deecd91a2f99f6`. Record:
+`artifacts/cad-v6-revolve-newbody/SUMMARY.md`.
+
+**Earlier closeout:** **`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1` —
 `PASS-CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E`** (2026-10-05). TECH PASS / OWNER
 PHYSICAL REVIEW REQUIRED / NOT MERGED; branch
 `feature/cad-v6-s2-owner-feedback-multiface-r1` at `3e2443f`. The 16-area cap
@@ -1914,7 +1924,7 @@ lives in Git history; only what still constrains the code is kept here.
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
 **Next Stage:** the OWNER physical-device review of the
-`CAD-V6-REVOLVE-NEWBODY-E2E-R1` APK; the Delete → Undo → Redo owner
+`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` APK; the Delete → Undo → Redo owner
 verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See *Next Stage*.
 
 ## Current state
@@ -4709,21 +4719,23 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: OWNER physical-device review of the
-`CAD-V6-REVOLVE-NEWBODY-E2E-R1` APK** (`ci-fast-evidence` artifact
-`11381820030` of `CI FAST` `37391069710`, product `6507f2b`) against the
-checklist in `artifacts/cad-v6-revolve-newbody/SUMMARY.md`, which carries the
-MULTIFACE and HUD3D checklists forward. Nothing merges to
+`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` APK** (`ci-fast-evidence` artifact
+`11391450004` of `CI FAST` `37415698483`, product `df7db66`) against the
+checklist in `artifacts/cad-sketch-drafting-toolkit/SUMMARY.md`, together with
+the still-pending Revolve checklist in `artifacts/cad-v6-revolve-newbody/SUMMARY.md`
+(which carries the MULTIFACE and HUD3D checklists forward). Nothing merges to
 `feature/cad-v6-sketch-face-r1` or `main` before that verdict; OWNER-TUNABLE
-ring, handle and dock sizes may be adjusted from it. `CAD-V6-S3`
-(retained-sketch mobile UX) waits for it. The v6 branch merges to `main` only after the completed v6
-migration passes the Tier-5 aggregate once.
+label, ring, handle and dock sizes may be adjusted from it. `CAD-V6-S3`
+(retained-sketch mobile UX) waits for it. The v6 branch merges to `main` only
+after the completed v6 migration passes the Tier-5 aggregate once.
 
 `FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
 recorded debt, not authorised work. The Council's other OWNER decisions are
 still open (`COUNCIL_FINDINGS.md` §5, `NEXT_VERTICAL_SLICE_OPTIONS.md`).
 
 Do not start a Revolve Add/Cut or later Revolve feature, Through All, To Object, Intersect, a Hole feature,
-fillet, chamfer, shell, a pattern, a constraint solver, CAD → Sculpt, Stage024,
+fillet, chamfer, shell, a pattern, a constraint solver (or any persistent
+sketch relation), projected edges, drawing sheets, CAD → Sculpt, Stage024,
 `CAD-A4` or Stage 026 from this status. A second third-party library needs its
 own gate.
 
