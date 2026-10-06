@@ -58,9 +58,12 @@ final class SurfaceFinishView extends AnchoredSurfaceView {
                 new android.widget.FrameLayout.LayoutParams(
                         EditorControlStyles.dimen(context, R.dimen.feature_history_width),
                         ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.gravity = Gravity.TOP | Gravity.END;
+        // Leading side: the trailing side holds the sketch's own chrome. The
+        // workspace re-seats it on every open (placeSurfaceFinish), mirrored
+        // for a left-handed layout and stopped short of that chrome.
+        params.gravity = Gravity.TOP | Gravity.START;
         params.topMargin = topOffsetPx;
-        params.rightMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        params.leftMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         return params;
     }
 }

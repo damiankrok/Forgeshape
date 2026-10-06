@@ -127,8 +127,11 @@ final class ModelingOwnerRig {
             doOnWorkspace(scenario, (activity, workspace) -> {
                 final View target = finder.apply(activity, workspace);
                 if (target != null) {
-                    target.requestRectangleOnScreen(
-                            new android.graphics.Rect(0, 0, target.getWidth(), target.getHeight()), true);
+                    // The middle band first, so a control taller than a
+                    // squeezed scroll window still shows its middle.
+                    final int mid = target.getHeight() / 2;
+                    target.requestRectangleOnScreen(new android.graphics.Rect(0, Math.max(0, mid - 8),
+                            target.getWidth(), Math.min(target.getHeight(), mid + 8)), true);
                 }
                 return null;
             });
@@ -138,11 +141,11 @@ final class ModelingOwnerRig {
                 if (target == null || !target.isShown()) {
                     return "absent";
                 }
-                final View root = activity.getWindow().getDecorView();
-                final int[] at = new int[2];
-                target.getLocationInWindow(at);
-                final View hit = clickableAt(root, at[0] + target.getWidth() * 0.5f,
-                        at[1] + target.getHeight() * 0.5f);
+                final float[] point = visibleCentre(activity, target);
+                if (point == null) {
+                    return "clipped out of view " + describeChain(target, target);
+                }
+                final View hit = clickableAt(activity.getWindow().getDecorView(), point[0], point[1]);
                 return hit == target || isDescendant(hit, target) ? "" : describeChain(target, hit);
             });
             if (why.isEmpty()) {
@@ -156,18 +159,35 @@ final class ModelingOwnerRig {
             assertNotNull("the view to touch exists", target);
             assertTrue("the view to touch is on screen", target.isShown());
             final View root = activity.getWindow().getDecorView();
-            final int[] at = new int[2];
             final int[] rp = new int[2];
-            target.getLocationInWindow(at);
             root.getLocationInWindow(rp);
-            final float x = at[0] - rp[0] + target.getWidth() * 0.5f;
-            final float y = at[1] - rp[1] + target.getHeight() * 0.5f;
+            final float[] point = visibleCentre(activity, target);
+            assertNotNull("the control shows some of itself", point);
+            final float x = point[0] - rp[0];
+            final float y = point[1] - rp[1];
             final long down = SystemClock.uptimeMillis();
             dispatch(root, down, down, MotionEvent.ACTION_DOWN, x, y);
             dispatch(root, down, down + 60L, MotionEvent.ACTION_UP, x, y);
             return null;
         });
         settleLayout();
+    }
+
+    /**
+     * The centre of the part of a control that is actually visible, in window
+     * coordinates -- where a finger lands on a control a scroll window shows
+     * only some of. Null when none of it is visible.
+     */
+    private static float[] visibleCentre(ForgeShapeActivity activity, View target) {
+        final android.graphics.Rect visible = new android.graphics.Rect();
+        if (!target.getGlobalVisibleRect(visible) || visible.isEmpty()) {
+            return null;
+        }
+        final int[] screen = new int[2];
+        activity.getWindow().getDecorView().getLocationInWindow(screen);
+        // getGlobalVisibleRect is in the root view's coordinates, which are the
+        // window's for an activity's decor view.
+        return new float[]{visible.exactCenterX() + screen[0], visible.exactCenterY() + screen[1]};
     }
 
     /** Where the target and each ancestor stand, for an occlusion failure. */

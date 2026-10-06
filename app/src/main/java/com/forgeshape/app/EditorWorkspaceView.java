@@ -2508,11 +2508,44 @@ final class EditorWorkspaceView extends FrameLayout
     private void setSurfaceFinishOpen(boolean open) {
         if (open) {
             dismissPrimarySurfacesExcept(surfaceFinish);
+            placeSurfaceFinish();
             surfaceFinish.setMaxBodyHeightPx(Math.max(getHeight() / 2,
                     EditorControlStyles.dimen(getContext(), R.dimen.control_height) * 3));
             surfaceFinish.body().refreshFromNative();
         }
         surfaceFinish.setOpen(open);
+    }
+
+    /**
+     * Seats the Finish choices on the LEADING side under the toolbar, and stops
+     * them short of the trailing sketch chrome -- the Tool Rail's host, the
+     * orientation navigator and the actions palette -- measured as they stand
+     * now: a surface may stand on the model, never on another live control.
+     */
+    private void placeSurfaceFinish() {
+        final Context context = getContext();
+        final boolean left = leftHanded();
+        final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        final int[] me = new int[2];
+        getLocationInWindow(me);
+        int edge = left ? 0 : getWidth();
+        for (View chrome : new View[]{trailingHost, sketchNavigator, sketchModify}) {
+            if (chrome == null || !chrome.isShown() || chrome.getWidth() == 0) {
+                continue;
+            }
+            final int[] at = new int[2];
+            chrome.getLocationInWindow(at);
+            final int x0 = at[0] - me[0];
+            edge = left ? Math.max(edge, x0 + chrome.getWidth()) : Math.min(edge, x0);
+        }
+        final int available = (left ? getWidth() - edge : edge) - 2 * gap;
+        final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) surfaceFinish.getLayoutParams();
+        params.width = Math.min(EditorControlStyles.dimen(context, R.dimen.feature_history_width),
+                Math.max(available, EditorControlStyles.dimen(context, R.dimen.control_height) * 3));
+        params.gravity = Gravity.TOP | (left ? Gravity.END : Gravity.START);
+        params.leftMargin = left ? 0 : gap;
+        params.rightMargin = left ? gap : 0;
+        surfaceFinish.setLayoutParams(params);
     }
 
     @Override
