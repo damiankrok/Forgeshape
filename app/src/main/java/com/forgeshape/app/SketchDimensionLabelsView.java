@@ -375,8 +375,20 @@ final class SketchDimensionLabelsView extends FrameLayout {
         if (editingId == 0 && editor.getVisibility() != VISIBLE) {
             return;
         }
+        final long closed = editingId;
         editingId = 0;
         editor.setVisibility(GONE);
+        // The label the editor stood in for comes back where the last refresh
+        // placed it, if it stood then: closing an editor without a value must
+        // not leave a dimension with no number until something else refreshes.
+        if (closed != 0) {
+            final int s = LAYOUT_STRIDE;
+            for (int r = 0; r < layout.length / s; r++) {
+                if ((long) layout[r * s] == closed && layout[r * s + 2] != 0f && r < pool.size()) {
+                    pool.get(r).setVisibility(VISIBLE);
+                }
+            }
+        }
         field.clearFocus();
         final InputMethodManager ime = (InputMethodManager)
                 getContext().getSystemService(Context.INPUT_METHOD_SERVICE);

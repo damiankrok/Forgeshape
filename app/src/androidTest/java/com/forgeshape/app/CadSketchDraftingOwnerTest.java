@@ -1105,6 +1105,9 @@ public final class CadSketchDraftingOwnerTest {
         realGesture(new float[][]{centre});
         assertEquals(name + ": a tap on the label opens it", dimensionId, editingDimension());
         closeLabelEditor();
+        assertTrue(name + ": closing the editor without a value brings the label back",
+                onWorkspace(rule.getScenario(), (activity, workspace) ->
+                        workspace.sketchDimensionLabels().labelFor(dimensionId) != null));
 
         // 2. The label's own point nearest the stroke, 4 dp in: still the label's.
         final float inset = 4f * density;
