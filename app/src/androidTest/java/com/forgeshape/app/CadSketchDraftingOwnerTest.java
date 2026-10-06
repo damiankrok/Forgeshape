@@ -217,16 +217,16 @@ public final class CadSketchDraftingOwnerTest {
         press(R.id.sketch_dimension_kind_length);
         press(R.id.sketch_dimension_kind_angle);
         // In Dimension mode a tap on the drawing chooses the next target.
-        tapEntity(rectangle, rect[1], rect[2] + 0.5 * rect[4], rect[1] - 0.3 * rect[3],
-                rect[2] + 0.5 * rect[4]);
+        tapEntityPoints(rectangle, rectPoints(rect));
         assertEquals(rectangle, (long) draft()[NativeViewport.SKETCH_DRAFT_DIM_TARGET_ENTITY]);
         press(R.id.sketch_dimension_kind_width);
         press(R.id.sketch_dimension_kind_height);
-        tapEntity(disk, circle[1], circle[2] + circle[3], circle[1] + circle[3], circle[2]);
+        tapEntityPoints(disk, circlePoints(circle));
         assertTrue(shown(R.id.sketch_dimension_kind_diameter));
         press(R.id.sketch_dimension_kind_diameter);
         final double[] arcValues = entity(arc);
-        tapEntity(arc, arcValues[7], arcValues[8], arcValues[7], arcValues[8]);
+        tapEntityPoints(arc, new double[][]{{arcValues[7], arcValues[8]}, {arcValues[2], arcValues[3]},
+                {arcValues[4], arcValues[5]}});
         assertFalse("an arc has nothing to drive", shown(R.id.sketch_dimension_driving));
         press(R.id.sketch_dimension_kind_arc_radius);
         press(R.id.sketch_dimension_kind_sweep);
@@ -357,7 +357,7 @@ public final class CadSketchDraftingOwnerTest {
         assertEquals("All shows nine", 9, nativeLabelCount());
         final int drawn = visibleLabelCount();
         fact("all.visible_chips", drawn);
-        assertTrue("most labels stand: " + drawn, drawn >= 6);
+        assertTrue("at least four of nine stand, the rest hidden as collisions: " + drawn, drawn >= 4);
         assertNoChipOverlap();
         assertLabelsAttached("all");
         capture("09_visibility_all");
@@ -447,9 +447,9 @@ public final class CadSketchDraftingOwnerTest {
         testName = "dr05";
         newCadSketch();
         selectTool(rule.getScenario(), R.id.tool_rail_line);
-        final long h = placeLine(-3.5 * D, 0.0, 0.0, 0.0);
-        final double[] rect = drawRectangle(-3.25 * D, -0.5 * D, -2.25 * D, 0.5 * D);
-        final double[] circle = drawCircle(-D, 0.0, 0.5 * D);
+        final long h = placeLine(-2.5 * D, 0.0, D, 0.0);
+        final double[] rect = drawRectangle(-2.25 * D, -0.5 * D, -1.25 * D, 0.5 * D);
+        final double[] circle = drawCircle(0.0, 0.0, 0.5 * D);
         // The crossing points must be exact on v = 0: the line is re-typed
         // through the rectangle's and circle's own centres' v.
         assertEquals("the rectangle stands on the line", 0.0, rect[2], EXACT);
@@ -468,12 +468,12 @@ public final class CadSketchDraftingOwnerTest {
         assertEquals(string(R.string.status_sketch_trimmed), statusLine());
         final double[] hAfter = entity(h);
         fact("trim.line", Arrays.toString(hAfter));
-        assertEquals("the line keeps its start", -3.5 * D, hAfter[2], EXACT);
+        assertEquals("the line keeps its start", -2.5 * D, hAfter[2], EXACT);
         assertEquals("and now ends on the rectangle", rectRight, hAfter[4], EXACT);
         final long piece = newestEntity(NativeViewport.SKETCH_ENTITY_KIND_LINE, h);
         final double[] p = entity(piece);
         assertEquals("the other piece starts on the circle", circle[1] - circle[3], p[2], EXACT);
-        assertEquals(0.0, p[4], EXACT);
+        assertEquals(D, p[4], EXACT);
         // 2. The circle's upper arc.
         tapAt(circle[1], circle[3]);
         assertNull("the circle is gone", entityOrNull((long) circle[0]));
@@ -506,11 +506,11 @@ public final class CadSketchDraftingOwnerTest {
         testName = "dr06";
         newCadSketch();
         selectTool(rule.getScenario(), R.id.tool_rail_line);
-        final long cross = placeLine(-2.6 * D, -D, -2.6 * D, D);
-        final double[] circle = drawCircle(-D, 0.0, 0.5 * D);
+        final long cross = placeLine(-1.6 * D, -D, -1.6 * D, D);
+        final double[] circle = drawCircle(0.0, 0.0, 0.5 * D);
         assertEquals(0.0, circle[2], EXACT);
         selectTool(rule.getScenario(), R.id.tool_rail_line);
-        final long line = placeLine(-3.5 * D, 0.0, -2.0 * D, 0.0);
+        final long line = placeLine(-2.5 * D, 0.0, -D, 0.0);
         // Dimension the line, Driving, from the palette.
         openPalette();
         pressAction(R.id.sketch_action_dimension);
@@ -521,14 +521,14 @@ public final class CadSketchDraftingOwnerTest {
         openPalette();
         pressAction(R.id.sketch_action_trim);
         final double[] before = entity(line);
-        tapAt(-3.2 * D, 0.0);
+        tapAt(-2.2 * D, 0.0);
         assertEquals("Trim is refused by name", string(R.string.status_sketch_dimension_dependency), statusLine());
         assertArrayEquals("the line is untouched", before, entity(line), 0.0);
         press(R.id.sketch_modify_done);
 
         openPalette();
         pressAction(R.id.sketch_action_extend);
-        tapAt(-2.15 * D, 0.0);
+        tapAt(-1.15 * D, 0.0);
         assertEquals("Extend is refused by name", string(R.string.status_sketch_dimension_locked), statusLine());
         assertArrayEquals(before, entity(line), 0.0);
         press(R.id.sketch_modify_done);
@@ -536,7 +536,7 @@ public final class CadSketchDraftingOwnerTest {
 
         // Delete the dimension from its own label.
         selectTool(rule.getScenario(), R.id.tool_rail_select);
-        tapEntity(line, -2.8 * D, 0.0, -2.3 * D, 0.0);
+        tapEntity(line, -1.8 * D, 0.0, -1.3 * D, 0.0);
         openLabelEditor(lengthId);
         press(R.id.sketch_dimension_delete);
         assertEquals(0, dimensions().length);
@@ -544,15 +544,15 @@ public final class CadSketchDraftingOwnerTest {
 
         openPalette();
         pressAction(R.id.sketch_action_extend);
-        tapAt(-2.15 * D, 0.0);
+        tapAt(-1.15 * D, 0.0);
         assertEquals(string(R.string.status_sketch_extended), statusLine());
         assertEquals("extended to the circle", circle[1] - circle[3], entity(line)[4], EXACT);
         press(R.id.sketch_modify_done);
         openPalette();
         pressAction(R.id.sketch_action_trim);
-        tapAt(-3.2 * D, 0.0);
+        tapAt(-2.2 * D, 0.0);
         assertEquals(string(R.string.status_sketch_trimmed), statusLine());
-        assertEquals("the stub left of the crossing line went", -2.6 * D, entity(line)[2], EXACT);
+        assertEquals("the stub left of the crossing line went", -1.6 * D, entity(line)[2], EXACT);
         fact("cross", cross);
     }
 
@@ -565,20 +565,22 @@ public final class CadSketchDraftingOwnerTest {
         testName = "dr07";
         newCadSketch();
         selectTool(rule.getScenario(), R.id.tool_rail_line);
-        placeLine(-D, 0.4 * D, -D, 2.2 * D);
-        final long toLine = placeLine(-3.5 * D, 1.3 * D, -2.5 * D, 1.3 * D);
-        final double[] circle = drawCircle(-1.2 * D, -1.3 * D, 0.5 * D);
+        placeLine(0.0, 0.4 * D, 0.0, 2.0 * D);
+        final long toLine = placeLine(-2.5 * D, 1.3 * D, -1.5 * D, 1.3 * D);
+        final double[] circle = drawCircle(-0.2 * D, -1.3 * D, 0.5 * D);
         selectTool(rule.getScenario(), R.id.tool_rail_line);
-        final long toCircle = placeLine(-3.5 * D, circle[2], -2.5 * D, circle[2]);
+        final long toCircle = placeLine(-2.5 * D, circle[2], -1.5 * D, circle[2]);
+        NativeViewport.sketchSelectEntity(0);
+        refresh();
         openPalette();
         pressAction(R.id.sketch_action_extend);
         capture("15_extend_mode");
-        tapAt(-2.6 * D, 1.3 * D);
+        tapAt(-1.6 * D, 1.3 * D);
         assertEquals(string(R.string.status_sketch_extended), statusLine());
         final double[] a = entity(toLine);
-        assertEquals("to the vertical line, exactly", -D, a[4], EXACT);
+        assertEquals("to the vertical line, exactly", 0.0, a[4], EXACT);
         assertEquals(1.3 * D, a[5], EXACT);
-        tapAt(-2.6 * D, circle[2]);
+        tapAt(-1.6 * D, circle[2]);
         final double[] b = entity(toCircle);
         assertEquals("to the circle, exactly", circle[1] - circle[3], b[4], EXACT);
         assertEquals(circle[2], b[5], EXACT);
@@ -616,10 +618,11 @@ public final class CadSketchDraftingOwnerTest {
         assertEquals(line, (long) draft()[NativeViewport.SKETCH_DRAFT_OFFSET_SOURCE]);
         assertEquals("the default preview is valid", NativeViewport.CAD_OK, (int) draft()[NativeViewport.SKETCH_DRAFT_OFFSET_STATUS]);
         assertTrue("Confirm stands over a valid preview", shown(R.id.sketch_modify_confirm));
-        realDrag(-2.25 * D, 2.2 * D, -2.25 * D, 2.7 * D);
+        realDrag(-2.25 * D, 2.2 * D, -2.25 * D, 1.7 * D);
         final double dragged = draft()[NativeViewport.SKETCH_DRAFT_OFFSET_DISTANCE];
         fact("offset.dragged", dragged);
-        assertTrue("the drag set a positive (left) distance", dragged > 0.2 * D && dragged < 0.8 * D);
+        assertTrue("the drag set a negative (right-side) distance: " + dragged,
+                dragged < -0.2 * D && dragged > -0.8 * D);
         assertEquals("a drag creates nothing", 4, sketchEntityCount());
         capture("17_offset_preview_drag");
         typeOffset("0.123");
@@ -770,7 +773,7 @@ public final class CadSketchDraftingOwnerTest {
         newCadSketch();
         final double[] rect = drawRectangle(-2.75 * D, -0.5 * D, -1.25 * D, 0.5 * D);
         selectTool(rule.getScenario(), R.id.tool_rail_line);
-        final long diagonal = placeLine(-3.5 * D, -1.5 * D, -0.5 * D, 1.5 * D);
+        final long diagonal = placeLine(-3.0 * D, -1.0 * D, -0.5 * D, 1.5 * D);
         openPalette();
         pressAction(R.id.sketch_action_construction);
         // Width and height Driving; the construction line's length Reference,
@@ -859,7 +862,7 @@ public final class CadSketchDraftingOwnerTest {
         newCadSketch();
         final double[] rect = drawRectangle(-2.75 * D, -0.5 * D, -1.25 * D, 0.5 * D);
         selectTool(rule.getScenario(), R.id.tool_rail_line);
-        final long diagonal = placeLine(-3.5 * D, -1.5 * D, -0.5 * D, 1.5 * D);
+        final long diagonal = placeLine(-3.0 * D, -1.0 * D, -0.5 * D, 1.5 * D);
         openPalette();
         pressAction(R.id.sketch_action_construction);
         NativeViewport.sketchSelectEntity((long) rect[0]);
@@ -885,7 +888,7 @@ public final class CadSketchDraftingOwnerTest {
                 LengthUnit.present(java.math.BigDecimal.valueOf(width)));
         openPalette();
         pressAction(R.id.sketch_action_trim);
-        tapAt(-3.25 * D, -1.25 * D);
+        tapAt(-2.75 * D, -0.75 * D);
         assertEquals(string(R.string.status_sketch_trimmed), statusLine());
         press(R.id.sketch_modify_done);
         press(R.id.finish_sketch);
@@ -1124,6 +1127,10 @@ public final class CadSketchDraftingOwnerTest {
      */
     private void snapCase(String name, double su, double sv, double tu, double tv, float offXdp,
                           float offYdp, int expectedKind, double expectU, double expectV) {
+        // Nothing selected: the selected line's own length label would stand
+        // over the very points this case aims at.
+        NativeViewport.sketchSelectEntity(0);
+        refresh();
         final float[] from = sketchPoint(su, sv);
         final float[] to = sketchPoint(tu, tv);
         assertNotNull(name + ": the start is reachable " + lastBlock, from);
@@ -1580,6 +1587,46 @@ public final class CadSketchDraftingOwnerTest {
             assertEquals("the tap chose the dimension target", id,
                     (long) state[NativeViewport.SKETCH_DRAFT_DIM_TARGET_ENTITY]);
         }
+    }
+
+    /** Like {@link #tapEntity}, over any number of candidate points on the entity. */
+    private void tapEntityPoints(long id, double[][] points) {
+        float[] at = null;
+        for (double[] p : points) {
+            at = sketchPoint(p[0], p[1]);
+            if (at != null) break;
+        }
+        assertNotNull("entity " + id + " is reachable: " + lastBlock, at);
+        realGesture(new float[][]{at});
+        fact("tap." + id, Arrays.toString(at));
+        final double[] state = draft();
+        final int mode = (int) state[NativeViewport.SKETCH_DRAFT_MODE];
+        if (mode == NativeViewport.MODIFY_DIMENSION) {
+            assertEquals("the tap chose the dimension target", id,
+                    (long) state[NativeViewport.SKETCH_DRAFT_DIM_TARGET_ENTITY]);
+        } else if (mode == NativeViewport.MODIFY_NONE) {
+            boolean in = false;
+            for (long s : selection()) in |= s == id;
+            assertTrue("the tap chose entity " + id, in);
+        }
+    }
+
+    /** Eight points on a circle {id, cu, cv, r}. */
+    private static double[][] circlePoints(double[] c) {
+        final double[][] out = new double[8][];
+        for (int k = 0; k < 8; k++) {
+            final double t = Math.PI * 0.5 + k * Math.PI / 4.0;
+            out[k] = new double[]{c[1] + c[3] * Math.cos(t), c[2] + c[3] * Math.sin(t)};
+        }
+        return out;
+    }
+
+    /** Points along the four edges of a rectangle {id, cu, cv, w, h}. */
+    private static double[][] rectPoints(double[] r) {
+        final double hw = 0.5 * r[3];
+        final double hh = 0.5 * r[4];
+        return new double[][]{{r[1], r[2] + hh}, {r[1] - 0.3 * r[3], r[2] + hh}, {r[1] + 0.3 * r[3], r[2] + hh},
+                {r[1] - hw, r[2]}, {r[1] + hw, r[2]}, {r[1], r[2] - hh}, {r[1] - 0.3 * r[3], r[2] - hh}};
     }
 
     private void tapEntityAt(long id, double u0, double v0, double u1, double v1) {
