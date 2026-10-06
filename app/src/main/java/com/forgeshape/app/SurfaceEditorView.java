@@ -65,13 +65,14 @@ final class SurfaceEditorView extends LinearLayout {
     private TextView blocked;
     private boolean keepInside;
 
-    private LinearLayout bodyGroup;
     private NumericPropertyRow offsetRow;
     private TextView stitchButton;
     private NumericPropertyRow thicknessRow;
-    private LinearLayout thickenList;
+    /** The Thicken controls now drawn, each one ROW of the body. */
+    private final java.util.List<View> thickenButtons = new java.util.ArrayList<>();
 
-    private LinearLayout editGroup;
+    /** The staged-edit rows, shown together. */
+    private final java.util.List<View> editRows = new java.util.ArrayList<>();
     private TextView editTitle;
     private NumericPropertyRow valueRow;
     private TextView verdict;
@@ -141,13 +142,15 @@ final class SurfaceEditorView extends LinearLayout {
         }
 
         // --- The body: the next sketch, Stitch, Thicken, a staged edit ----
-        bodyGroup = column(context);
-        bodyGroup.addView(EditorControlStyles.sectionLabel(context,
+        // Every control is a DIRECT row of this view: the precision surface
+        // ends its visible body on the last whole row (PrecisionScrollView),
+        // and one tall nested group would be a single row too tall to show.
+        addView(EditorControlStyles.sectionLabel(context,
                 context.getString(R.string.surface_section_create)), EditorControlStyles.rowParams(0));
         offsetRow = new NumericPropertyRow(context, R.id.field_surface_offset,
                 context.getString(R.string.surface_offset), true);
         offsetRow.setText("0");
-        bodyGroup.addView(offsetRow, EditorControlStyles.rowParams(smallGap));
+        addView(offsetRow, EditorControlStyles.rowParams(smallGap));
         final TextView newSketch = EditorControlStyles.actionChip(context, R.id.surface_new_sketch,
                 context.getString(R.string.surface_new_sketch));
         newSketch.setOnClickListener(new OnClickListener() {
@@ -159,9 +162,9 @@ final class SurfaceEditorView extends LinearLayout {
                 }
             }
         });
-        bodyGroup.addView(newSketch, EditorControlStyles.rowParams(smallGap));
+        addView(newSketch, EditorControlStyles.rowParams(smallGap));
 
-        bodyGroup.addView(EditorControlStyles.sectionLabel(context,
+        addView(EditorControlStyles.sectionLabel(context,
                 context.getString(R.string.surface_section_modify)), EditorControlStyles.rowParams(gap));
         stitchButton = EditorControlStyles.actionChip(context, R.id.surface_stitch,
                 context.getString(R.string.surface_stitch));
@@ -172,25 +175,21 @@ final class SurfaceEditorView extends LinearLayout {
                         R.string.status_surface_stitched);
             }
         });
-        bodyGroup.addView(stitchButton, EditorControlStyles.rowParams(smallGap));
+        addView(stitchButton, EditorControlStyles.rowParams(smallGap));
         thicknessRow = new NumericPropertyRow(context, R.id.field_surface_thickness,
                 context.getString(R.string.surface_thickness), true);
         thicknessRow.setText("0.1");
-        bodyGroup.addView(thicknessRow, EditorControlStyles.rowParams(smallGap));
-        thickenList = column(context);
-        bodyGroup.addView(thickenList, EditorControlStyles.rowParams(smallGap));
-
-        editGroup = column(context);
+        addView(thicknessRow, EditorControlStyles.rowParams(smallGap));
         editTitle = EditorControlStyles.sectionLabel(context, "");
         editTitle.setId(R.id.surface_edit_title);
-        editGroup.addView(editTitle, EditorControlStyles.rowParams(0));
+        addEditRow(editTitle, EditorControlStyles.rowParams(0));
         valueRow = new NumericPropertyRow(context, R.id.field_surface_edit_value,
                 context.getString(R.string.surface_value), true);
-        editGroup.addView(valueRow, EditorControlStyles.rowParams(smallGap));
+        addEditRow(valueRow, EditorControlStyles.rowParams(smallGap));
         verdict = EditorControlStyles.captionText(context, R.id.surface_edit_verdict, "");
-        editGroup.addView(verdict, EditorControlStyles.rowParams(smallGap));
+        addEditRow(verdict, EditorControlStyles.rowParams(smallGap));
         failureRow = column(context);
-        editGroup.addView(failureRow, EditorControlStyles.rowParams(smallGap));
+        addEditRow(failureRow, EditorControlStyles.rowParams(smallGap));
         final LinearLayout editActions = new LinearLayout(context);
         editActions.setOrientation(HORIZONTAL);
         applyButton = EditorControlStyles.actionChip(context, R.id.surface_edit_apply,
@@ -220,9 +219,10 @@ final class SurfaceEditorView extends LinearLayout {
         editActions.addView(applyButton, EditorControlStyles.evenShare(0));
         editActions.addView(fixButton, EditorControlStyles.evenShare(smallGap));
         editActions.addView(cancel, EditorControlStyles.evenShare(smallGap));
-        editGroup.addView(editActions, EditorControlStyles.rowParams(smallGap));
-        bodyGroup.addView(editGroup, EditorControlStyles.rowParams(gap));
-        addView(bodyGroup, EditorControlStyles.rowParams(gap));
+        addEditRow(editActions, EditorControlStyles.rowParams(smallGap));
+        for (View row : editRows) {
+            row.setVisibility(GONE);
+        }
 
         valueRow.field().addTextChangedListener(restage);
         thicknessRow.field().addTextChangedListener(restage);
@@ -244,6 +244,11 @@ final class SurfaceEditorView extends LinearLayout {
             }
         };
 
+    private void addEditRow(View row, LayoutParams params) {
+        editRows.add(row);
+        addView(row, params);
+    }
+
     private static LinearLayout column(Context context) {
         final LinearLayout column = new LinearLayout(context);
         column.setOrientation(VERTICAL);
@@ -259,6 +264,15 @@ final class SurfaceEditorView extends LinearLayout {
         valueRow.setText(Double.isNaN(value) ? "" : formatValue(row, value));
         refreshing = false;
         refreshFromNative();
+        // The edit's rows follow the body's tools; bring them into the
+        // surface's visible body, since the History row is what asked.
+        post(new Runnable() {
+            @Override
+            public void run() {
+                editTitle.requestRectangleOnScreen(new android.graphics.Rect(0, 0, editTitle.getWidth(),
+                        editTitle.getHeight() * 4), false);
+            }
+        });
     }
 
     /** Whether a staged edit is open, for the workspace and for verification. */
@@ -321,7 +335,10 @@ final class SurfaceEditorView extends LinearLayout {
 
         // Thicken: one button per live feature whose candidate succeeds, named
         // as its History row is.
-        thickenList.removeAllViews();
+        for (View old : thickenButtons) {
+            removeView(old);
+        }
+        thickenButtons.clear();
         final Double thickness = quietLength(thicknessRow);
         final int live = NativeViewport.surfaceLiveFeatures(body, liveFeatures);
         final int count = NativeViewport.surfaceTimeline(body, -1, 0L, 0.0, timelineHeader, timelineRows);
@@ -348,18 +365,24 @@ final class SurfaceEditorView extends LinearLayout {
                     }
                 }
             });
-            thickenList.addView(button, EditorControlStyles.rowParams(thickenList.getChildCount() == 0 ? 0
-                    : EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+            // Each one its own row, just after the thickness it uses.
+            addView(button, indexOfChild(thicknessRow) + 1 + thickenButtons.size(),
+                    EditorControlStyles.rowParams(EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+            thickenButtons.add(button);
         }
         refreshEdit(context, body);
     }
 
     private void refreshEdit(Context context, long body) {
         if (editing == null) {
-            editGroup.setVisibility(GONE);
+            for (View row : editRows) {
+                row.setVisibility(GONE);
+            }
             return;
         }
-        editGroup.setVisibility(VISIBLE);
+        for (View row : editRows) {
+            row.setVisibility(VISIBLE);
+        }
         editTitle.setText(context.getString(R.string.surface_edit_title, FeatureHistoryText.name(context, editing)));
         final int target = SurfacePresentation.valueTarget(editing);
         final double committed = NativeViewport.surfaceValue(body, target, editing.id);
