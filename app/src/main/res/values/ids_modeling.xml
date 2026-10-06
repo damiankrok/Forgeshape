@@ -43,4 +43,30 @@
     <item name="freeform_level_2" type="id" />
     <item name="freeform_level_3" type="id" />
     <item name="freeform_level_4" type="id" />
+    <!-- Surface (MODELING-FOUNDATIONS-R1 C) -->
+    <item name="surface_editor" type="id" />
+    <item name="surface_summary" type="id" />
+    <item name="field_surface_distance" type="id" />
+    <item name="field_surface_angle" type="id" />
+    <item name="surface_trim_keep_inside" type="id" />
+    <item name="surface_create_patch" type="id" />
+    <item name="surface_create_extrude" type="id" />
+    <item name="surface_create_revolve" type="id" />
+    <item name="surface_create_loft" type="id" />
+    <item name="surface_create_trim" type="id" />
+    <item name="surface_create_section" type="id" />
+    <item name="surface_create_blocked" type="id" />
+    <item name="field_surface_offset" type="id" />
+    <item name="surface_new_sketch" type="id" />
+    <item name="surface_stitch" type="id" />
+    <item name="field_surface_thickness" type="id" />
+    <item name="surface_thicken" type="id" />
+    <item name="surface_edit_title" type="id" />
+    <item name="field_surface_edit_value" type="id" />
+    <item name="surface_edit_verdict" type="id" />
+    <item name="surface_edit_apply" type="id" />
+    <item name="surface_edit_fix" type="id" />
+    <item name="surface_edit_cancel" type="id" />
+    <item name="new_project_surface" type="id" />
+    <item name="add_surface" type="id" />
 </resources>

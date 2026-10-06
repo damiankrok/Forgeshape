@@ -797,6 +797,17 @@ final class GlobalToolbarView extends LinearLayout {
      *        Sculpting and Resume Sculpt on exactly the same terms as a
      *        Construction Body.
      */
+    /** Whether the ACTIVE body is a Surface body (`MODELING-FOUNDATIONS-R1` C). */
+    private boolean surface;
+
+    /**
+     * Names a Surface body's context and withdraws Start Sculpting over one,
+     * which native refuses by name. Read by the next {@code showContext}.
+     */
+    void showSurface(boolean surface) {
+        this.surface = surface;
+    }
+
     void showContext(boolean sculpting, boolean hasFrozenMesh, boolean imported) {
         showContext(sculpting, hasFrozenMesh, imported, false, NativeViewport.SKETCH_INACTIVE,
                 NativeViewport.WORKPLANE_XY, false);
@@ -840,6 +851,7 @@ final class GlobalToolbarView extends LinearLayout {
                                   : imported ? R.string.context_imported_mesh
                                              : cad ? R.string.context_cad_body
                                                    : freeform ? R.string.context_freeform
+                                                   : surface ? R.string.context_surface
                                                    : R.string.context_construction));
         contextLabel.setContentDescription(contextLabel.getText());
 
@@ -856,7 +868,7 @@ final class GlobalToolbarView extends LinearLayout {
         // succeed is not drawn.
         // And not in the CAD bootstrap either: there is no body to sculpt yet.
         // And not over a hidden body (GUARD-2): the native entry refuses it.
-        freezeButton.setVisibility(!sculpting && !hasFrozenMesh && !cad && !freeform && !sketching
+        freezeButton.setVisibility(!sculpting && !hasFrozenMesh && !cad && !freeform && !surface && !sketching
                 && !bootstrap && !activeHidden ? VISIBLE : GONE);
         resumeButton.setVisibility(!sculpting && hasFrozenMesh && !sketching && !bootstrap
                 && !activeHidden ? VISIBLE : GONE);

@@ -508,6 +508,8 @@ final class NativeViewport {
      * Start Sculpting is refused by name (the control is absent for one).
      */
     static final int SCULPT_REFUSED_FREEFORM_BODY = 5;
+    /** The active body is a Surface body: its truth is a feature list. */
+    static final int SCULPT_REFUSED_SURFACE_BODY = 6;
 
     // -----------------------------------------------------------------------
     // The seven sculpt tools.
@@ -3079,6 +3081,7 @@ final class NativeViewport {
     static final int REPRESENTATION_IMPORTED = 2;
     static final int REPRESENTATION_CAD = 3;
     static final int REPRESENTATION_FREEFORM = 4;
+    static final int REPRESENTATION_SURFACE = 5;
 
     static native boolean sceneActiveBodyIsCad();
 
@@ -3299,4 +3302,99 @@ final class NativeViewport {
     static native long freeformMeshDigest();
 
     static native String freeformStatusToken(int code);
+
+    // -----------------------------------------------------------------------
+    // Surface (MODELING-FOUNDATIONS-R1 C)
+    // -----------------------------------------------------------------------
+    //
+    // A Surface body's truth is an ordered feature list over its own retained
+    // sketches; every patch, stitch and thickened solid is derived. Codes are
+    // the native SurfaceStatus codes, plus one transport refusal.
+
+    static final int SURFACE_OK = 0;
+    static final int SURFACE_AXIS_UNRESOLVED = 20;
+    static final int SURFACE_THICKEN_UNSUPPORTED = 36;
+    static final int SURFACE_REFUSED_IN_SCULPT = 100;
+
+    /** What a Surface sketch's Finish makes; the native SurfaceCreateKind codes. */
+    static final int SURFACE_CREATE_PATCH = 1;
+    static final int SURFACE_CREATE_EXTRUDE = 2;
+    static final int SURFACE_CREATE_REVOLVE = 3;
+    static final int SURFACE_CREATE_LOFT = 4;
+    static final int SURFACE_CREATE_TRIM = 5;
+    static final int SURFACE_CREATE_SECTION = 6;
+    static final int SURFACE_CREATE_KIND_COUNT = 6;
+
+    /** A Surface feature's kind, as a timeline row's FEATURE_KIND slot carries it. */
+    static final int SURFACE_KIND_PATCH = 1;
+    static final int SURFACE_KIND_EXTRUDE = 2;
+    static final int SURFACE_KIND_REVOLVE = 3;
+    static final int SURFACE_KIND_LOFT = 4;
+    static final int SURFACE_KIND_TRIM = 5;
+    static final int SURFACE_KIND_STITCH = 6;
+    static final int SURFACE_KIND_THICKEN = 7;
+
+    /** {@link #surfaceApplyValue}'s targets. */
+    static final int SURFACE_VALUE_FEATURE = 0;
+    static final int SURFACE_VALUE_SKETCH = 1;
+
+    static final int SURFACE_SKETCH_STATE_SIZE = 9;
+    static final int SURFACE_SKETCH_ACTIVE = 0;
+    static final int SURFACE_SKETCH_BODY = 1;
+    static final int SURFACE_SKETCH_OFFSET = 2;
+    /** Slot of a create kind's verdict: {@code SURFACE_SKETCH_VERDICT + kind}. */
+    static final int SURFACE_SKETCH_VERDICT = 2;
+
+    static final int SURFACE_STATE_SIZE = 9;
+    static final int SURFACE_STATE_FEATURES = 0;
+    static final int SURFACE_STATE_SKETCHES = 1;
+    static final int SURFACE_STATE_PATCHES = 2;
+    static final int SURFACE_STATE_OPEN_EDGES = 3;
+    static final int SURFACE_STATE_STITCHES = 4;
+    static final int SURFACE_STATE_SOLID_TRIANGLES = 5;
+    static final int SURFACE_STATE_SOLID_VOLUME = 6;
+    static final int SURFACE_STATE_PENDING_SECTION = 7;
+    static final int SURFACE_STATE_TWO_SIDED = 8;
+
+    /** The most features a Surface body holds (the native bound). */
+    static final int SURFACE_MAX_FEATURES = 32;
+
+    /**
+     * Opens a sketch for a Surface feature on {@code plane}, {@code offset}
+     * metres along its normal. {@code bodyId} {@link #NO_OBJECT} makes a new
+     * body -- or, with no project open, the first project.
+     */
+    static native int surfaceBeginSketch(long bodyId, int plane, double offset);
+
+    /** What each Finish kind would answer now, in SURFACE_SKETCH_* slots. */
+    static native boolean surfaceSketchState(double distance, double angle, boolean keepInside,
+                                             double[] out);
+
+    /** The Finish: one transaction, or the first project. */
+    static native int surfaceCommitSketch(int kind, double value, boolean keepInside);
+
+    static native int surfaceLiveFeatures(long bodyId, long[] out);
+
+    /** With {@code commit} false, what Stitch would answer; true performs it. */
+    static native int surfaceStitch(long bodyId, boolean commit);
+
+    static native int surfaceThicken(long bodyId, long featureId, double thickness, boolean commit);
+
+    static native int surfaceApplyValue(long bodyId, int target, long id, double value);
+
+    /** The row's current value, NaN when it has none. */
+    static native double surfaceValue(long bodyId, int target, long id);
+
+    /**
+     * A Surface body's timeline in the CAD timeline's row layout; with
+     * {@code editTarget} >= 0 the STAGED chain with one value replaced.
+     */
+    static native int surfaceTimeline(long bodyId, int editTarget, long editId, double value,
+                                      double[] header, double[] rows);
+
+    static native boolean surfaceState(long bodyId, double[] out);
+
+    static native long surfaceMeshDigest(long bodyId);
+
+    static native String surfaceStatusToken(int code);
 }

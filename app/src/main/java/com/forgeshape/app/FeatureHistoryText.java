@@ -20,6 +20,12 @@ final class FeatureHistoryText {
         if (row.isSketch()) {
             return context.getString(R.string.history_row_sketch, row.ordinal);
         }
+        if (row.domain == FeatureHistoryPresentation.DOMAIN_SURFACE) {
+            // A Surface feature is named by its kind and its own id, the way
+            // the Surface surface's Thicken buttons and the issue text name it.
+            return context.getString(R.string.history_row_surface,
+                    context.getString(SurfacePresentation.kindName(row.featureKind)), row.id);
+        }
         if (row.featureKind == NativeViewport.FEATURE_KIND_REVOLVE) {
             return context.getString(R.string.history_row_revolve, row.ordinal);
         }
@@ -32,7 +38,9 @@ final class FeatureHistoryText {
         switch (row.state) {
             case NativeViewport.TIMELINE_STATE_FAILED:
                 return context.getString(R.string.history_state_failed,
-                        CadStatusMessages.describe(context, row.status));
+                        row.domain == FeatureHistoryPresentation.DOMAIN_SURFACE
+                                ? SurfaceEditorView.refusal(context, row.status)
+                                : CadStatusMessages.describe(context, row.status));
             case NativeViewport.TIMELINE_STATE_NOT_REGENERATED:
                 return context.getString(R.string.history_state_not_rebuilt);
             case NativeViewport.TIMELINE_STATE_PENDING:
@@ -41,6 +49,9 @@ final class FeatureHistoryText {
                 return context.getString(R.string.history_state_unused);
             default:
                 break;
+        }
+        if (row.domain == FeatureHistoryPresentation.DOMAIN_SURFACE) {
+            return surfaceDetail(context, unit, row);
         }
         if (row.isSketch()) {
             if (row.onBodyFace || row.onFeatureFace) {
@@ -66,6 +77,24 @@ final class FeatureHistoryText {
             default:
                 return context.getString(R.string.history_detail_one_side,
                         unit.formatWithUnit(Math.max(row.positive, row.negative)));
+        }
+    }
+
+    /** A Surface row: a sketch's plane, offset and size, or a feature's one value. */
+    private static String surfaceDetail(Context context, LengthUnit unit, FeatureHistoryPresentation.Row row) {
+        if (row.isSketch()) {
+            return context.getString(R.string.history_detail_surface_sketch,
+                    context.getString(CadFeatureEditorView.planeName(row.plane)),
+                    unit.formatWithUnit(row.positive), row.entities);
+        }
+        switch (SurfacePresentation.rowValue(row)) {
+            case SurfacePresentation.VALUE_ANGLE:
+                return context.getString(R.string.history_detail_surface_angle,
+                        LengthUnit.present(java.math.BigDecimal.valueOf(row.positive)));
+            case SurfacePresentation.VALUE_LENGTH:
+                return unit.formatWithUnit(row.positive);
+            default:
+                return context.getString(R.string.history_detail_surface_plain);
         }
     }
 }

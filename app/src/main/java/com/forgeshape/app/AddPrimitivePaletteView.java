@@ -60,6 +60,12 @@ final class AddPrimitivePaletteView extends AnchoredSurfaceView {
          * surface is subdivided from.
          */
         void onAddFreeformChosen(int form);
+
+        /**
+         * A Surface body (`MODELING-FOUNDATIONS-R1` C): opens a sketch whose
+         * Finish makes it.
+         */
+        void onAddSurfaceChosen();
     }
 
     /** Two rather than three: each tile carries a 26 dp silhouette above its
@@ -196,7 +202,16 @@ final class AddPrimitivePaletteView extends AnchoredSurfaceView {
             }
         });
         sketchRow.addView(sketchTile, EditorControlStyles.evenShare(0));
-        sketchRow.addView(new View(context), EditorControlStyles.evenShare(gap));
+        // A Surface body begins as a sketch too, so it stands beside New Sketch.
+        final View surfaceTile = buildTile(context, R.id.add_surface, R.drawable.ic_surface,
+                context.getString(R.string.add_surface));
+        surfaceTile.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onAddSurfaceChosen();
+            }
+        });
+        sketchRow.addView(surfaceTile, EditorControlStyles.evenShare(gap));
         shapesSection.addView(sketchRow, EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.section_gap)));
         final TextView byName = EditorControlStyles.secondaryActionChip(context,

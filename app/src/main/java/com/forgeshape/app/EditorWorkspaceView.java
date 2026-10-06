@@ -79,6 +79,7 @@ final class EditorWorkspaceView extends FrameLayout
         SculptHistoryNavigatorView.OnHistoryStateChosen,
         FeatureHistoryView.OnHistoryRowChosen,
         RegenerationIssueView.OnIssueAction,
+        SurfaceEditorView.Host,
         AnchoredSurfaceView.OnOpenStateChanged {
 
     /** The three body axes by name, for a status line (Stage 020M). */
@@ -346,6 +347,9 @@ final class EditorWorkspaceView extends FrameLayout
     private final CadFeatureEditorView cadEditor;
     /** The Freeform cage context surface (`MODELING-FOUNDATIONS-R1` B). */
     private final FreeformEditorView freeformEditor;
+    /** The Surface context surface (`MODELING-FOUNDATIONS-R1` C). */
+    private final SurfaceEditorView surfaceEditor;
+    private final double[] nativeSurfaceSketch = new double[NativeViewport.SURFACE_SKETCH_STATE_SIZE];
     /** Reused across reads; native fills the FREEFORM_STATE_* slots. */
     private final double[] nativeFreeform = new double[NativeViewport.FREEFORM_STATE_SIZE];
     /** The cage drag count last refreshed for, on the gizmo's own terms. */
@@ -884,6 +888,7 @@ final class EditorWorkspaceView extends FrameLayout
         sketchEditor = new SketchEditorView(context, this, this);
         cadEditor = new CadFeatureEditorView(context, this);
         freeformEditor = new FreeformEditorView(context, this);
+        surfaceEditor = new SurfaceEditorView(context, this);
         relativeScaleEditor = new RelativeScaleEditorView(context, this);
 
         // The two sketch-only surfaces that stand IN the viewport
@@ -2428,6 +2433,61 @@ final class EditorWorkspaceView extends FrameLayout
         syncFromNative();
     }
 
+    /**
+     * New Project -> Surface: one volatile sketch on XY, exactly as the CAD
+     * bootstrap opens; its Finish (Patch, Extrude or Revolve) creates the
+     * project through the same all-or-nothing load path, so it starts with an
+     * empty history. Back before that costs nothing.
+     */
+    @Override
+    public void onNewSurfaceProjectChosen() {
+        setNewProjectChooserOpen(false);
+        beginSurfaceSketch(NativeViewport.NO_OBJECT, 0.0);
+    }
+
+    /** Add -> Surface: a sketch whose Finish makes a NEW Surface body (one Undo). */
+    @Override
+    public void onAddSurfaceChosen() {
+        setAddPrimitiveOpen(false, null);
+        beginSurfaceSketch(NativeViewport.NO_OBJECT, 0.0);
+    }
+
+    /** The Surface surface's New Surface Sketch: the next feature of the active body. */
+    @Override
+    public void onSurfaceSketchRequested(double offsetMeters) {
+        beginSurfaceSketch(NativeViewport.sceneActiveBodyId(), offsetMeters);
+    }
+
+    private void beginSurfaceSketch(long body, double offsetMeters) {
+        final Context context = getContext();
+        final int status = NativeViewport.surfaceBeginSketch(body, NativeViewport.WORKPLANE_XY, offsetMeters);
+        if (status != NativeViewport.SURFACE_OK) {
+            showStatus(SurfaceEditorView.refusal(context, status), R.attr.fsTextError);
+            refreshShellPhase();
+            return;
+        }
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_surface_sketch), R.attr.fsTextSecondary);
+    }
+
+    @Override
+    public void onSurfaceSketchCommitted(boolean firstProject) {
+        if (firstProject) {
+            // The project exists nowhere the user chose yet.
+            noteProjectUnpersisted();
+        }
+        uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+        finishEditing();
+        onNativeStateChanged();
+    }
+
+    /** The Surface context surface, for verification. */
+    SurfaceEditorView surfaceEditor() {
+        return surfaceEditor;
+    }
+
     @Override
     public void onNewProjectCancelled() {
         setNewProjectChooserOpen(false);
@@ -2694,6 +2754,7 @@ final class EditorWorkspaceView extends FrameLayout
         // durable visibility itself. Start/Resume Sculpt are withdrawn over one.
         final boolean activeHidden = projectOpen
                 && !NativeViewport.sceneBodyVisible(NativeViewport.sceneActiveBodyId());
+        toolbar.showSurface(projectOpen && activeBodyIsSurface());
         toolbar.showContext(sculpting, hasFrozenMesh, imported, cad, freeform, sketchState,
                 (int) nativeSketch[NativeViewport.SKETCH_PLANE], activeHidden);
         if (sketchState == NativeViewport.SKETCH_READY) {
@@ -2777,6 +2838,9 @@ final class EditorWorkspaceView extends FrameLayout
             cadEditor.refreshFromNative();
         }
         refreshFreeformEdit(projectOpen, sculpting, sketching);
+        if (!sculpting && (surfaceSketchOpen() || activeBodyIsSurface())) {
+            surfaceEditor.refreshFromNative();
+        }
         refreshSketchViewportSurfaces(sketching);
         objectsCapsule.refreshFromNative();
         refreshTransformGizmo(sculpting);
@@ -3021,6 +3085,12 @@ final class EditorWorkspaceView extends FrameLayout
             return FeatureHistoryPresentation.Model.empty();
         }
         final long body = NativeViewport.sceneActiveBodyId();
+        if (activeBodyIsSurface()) {
+            final int count = NativeViewport.surfaceTimeline(body, -1, 0L, 0.0, timelineHeader,
+                    timelineRows);
+            return FeatureHistoryPresentation.fromNative(FeatureHistoryPresentation.DOMAIN_SURFACE,
+                    timelineHeader, timelineRows, count);
+        }
         final int count = NativeViewport.cadTimeline(body, staged, timelineHeader, timelineRows);
         return FeatureHistoryPresentation.fromNative(FeatureHistoryPresentation.DOMAIN_CAD,
                 timelineHeader, timelineRows, count);
@@ -3028,7 +3098,20 @@ final class EditorWorkspaceView extends FrameLayout
 
     /** Whether the active body has a feature chain to list. */
     private boolean activeBodyHasHistory() {
-        return NativeViewport.projectOpen() && NativeViewport.sceneActiveBodyIsCad();
+        return NativeViewport.projectOpen()
+                && (NativeViewport.sceneActiveBodyIsCad() || activeBodyIsSurface());
+    }
+
+    /** Whether the active body is a Surface body (`MODELING-FOUNDATIONS-R1` C). */
+    private boolean activeBodyIsSurface() {
+        return NativeViewport.projectOpen() && NativeViewport.sceneBodyRepresentation(
+                NativeViewport.sceneActiveBodyId()) == NativeViewport.REPRESENTATION_SURFACE;
+    }
+
+    /** Whether the open sketch is a Surface sketch, read from native. */
+    private boolean surfaceSketchOpen() {
+        NativeViewport.surfaceSketchState(0.5, 360.0, false, nativeSurfaceSketch);
+        return SurfacePresentation.sketchOpen(nativeSurfaceSketch);
     }
 
     /**
@@ -3071,6 +3154,18 @@ final class EditorWorkspaceView extends FrameLayout
     public void onFeatureHistoryRowChosen(FeatureHistoryPresentation.Row row) {
         final Context context = getContext();
         if (!row.editable()) {
+            return;
+        }
+        if (row.domain == FeatureHistoryPresentation.DOMAIN_SURFACE) {
+            // A Surface row opens a STAGED value edit on the Surface surface:
+            // nothing is written until Apply, which is one Undo.
+            setFeatureHistoryOpen(false);
+            uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+            syncFromNative();
+            setPrecisionOpen(true);
+            surfaceEditor.beginEdit(row);
+            showStatus(context.getString(R.string.surface_edit_title, FeatureHistoryText.name(context, row)),
+                    R.attr.fsTextSecondary);
             return;
         }
         final long bodyId = NativeViewport.sceneActiveBodyId();
@@ -3369,6 +3464,13 @@ final class EditorWorkspaceView extends FrameLayout
             inspector.setBody(sculptContext, context.getString(R.string.inspector_sculpt_title));
             return;
         }
+        if (isSketching() && surfaceSketchOpen()) {
+            // A Surface sketch: its Finish is a choice of feature, made here.
+            inspector.setBody(surfaceEditor, context.getString(R.string.inspector_surface_finish_title,
+                    context.getString(CadFeatureEditorView.planeName(
+                            (int) nativeSketch[NativeViewport.SKETCH_PLANE]))));
+            return;
+        }
         if (isSketching()) {
             // The sketch's own surface, titled by its plane: it edits the one
             // sketch in progress, which belongs to no body yet.
@@ -3393,6 +3495,10 @@ final class EditorWorkspaceView extends FrameLayout
             // Shape, for a CAD Body, is its sketch and its extrusion.
             inspector.setBody(cadEditor,
                     context.getString(R.string.inspector_shape_title_for_body, body));
+        } else if (activeBodyIsSurface()) {
+            // Shape, for a Surface body, is its feature list.
+            inspector.setBody(surfaceEditor,
+                    context.getString(R.string.inspector_surface_title_for_body, body));
         } else if (NativeViewport.sceneBodyRepresentation(NativeViewport.sceneActiveBodyId())
                 == NativeViewport.REPRESENTATION_FREEFORM) {
             // Shape, for a Freeform body, is its control cage.
@@ -4166,6 +4272,16 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onFinishSketchRequested() {
         final Context context = getContext();
+        if (surfaceSketchOpen()) {
+            // A Surface sketch's Finish is a CHOICE of feature (Patch, Extrude,
+            // Revolve, Loft, Trim, Section), made on the Surface surface; the
+            // sketch stays open and drawable until one of them commits.
+            finishEditing();
+            setPrecisionOpen(true);
+            surfaceEditor.refreshFromNative();
+            showStatus(context.getString(R.string.surface_finish_summary), R.attr.fsTextSecondary);
+            return;
+        }
         final int status = NativeViewport.sketchFinish();
         if (status != NativeViewport.CAD_OK) {
             showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
@@ -4922,7 +5038,9 @@ final class EditorWorkspaceView extends FrameLayout
                                     ? R.string.status_sculpt_hidden_body
                                     : status == NativeViewport.SCULPT_REFUSED_FREEFORM_BODY
                                             ? R.string.sculpt_refused_freeform_body
-                                            : R.string.status_sculpt_prepare_failed),
+                                            : status == NativeViewport.SCULPT_REFUSED_SURFACE_BODY
+                                                    ? R.string.sculpt_refused_surface_body
+                                                    : R.string.status_sculpt_prepare_failed),
                     R.attr.fsTextError);
             return;
         }

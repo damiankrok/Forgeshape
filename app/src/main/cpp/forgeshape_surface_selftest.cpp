@@ -769,6 +769,8 @@ struct Drawing {
     SketchSession sketch;
     CameraController camera;
     enum : int { kW = 1000, kH = 1000 };
+    // The purpose is process-scoped; a suite gives back whatever it found.
+    SurfaceSketchPurpose saved = surfaceSketchPurpose();
     bool begin(ObjectId body, double offset = 0.0) {
         surfaceSketchPurpose() = SurfaceSketchPurpose{true, body};
         if (sketch.begin(Workplane::XY) != CadStatus::Ok) return false;
@@ -801,7 +803,7 @@ struct Drawing {
     bool circleAt(double u, double v, double radius) {
         return drag(SketchTool::Circle, SketchPoint{u, v}, SketchPoint{u + radius, v});
     }
-    ~Drawing() { surfaceSketchPurpose() = SurfaceSketchPurpose{}; }
+    ~Drawing() { surfaceSketchPurpose() = saved; }
 };
 
 SurfaceCreateRequest requestOf(SurfaceCreateKind kind) {
@@ -1007,6 +1009,13 @@ int runSurfaceSelfTests(SurfaceSelfTestResult* out, int maxOut) {
     testThicken(r);
     testHistoryAndFormat(r);
     testAuthoring(r);
+    // NativeViewport states these numbers; a status is APPENDED, never inserted.
+    r.check("SURF_CODES_the_status_codes_java_names_are_stable",
+            surfaceStatusCode(SurfaceStatus::AxisUnresolved) == 20
+                    && surfaceStatusCode(SurfaceStatus::TrimNotCoplanar) == 29
+                    && surfaceStatusCode(SurfaceStatus::ThickenUnsupportedForSurfaceType) == 36
+                    && surfaceStatusCode(SurfaceStatus::NothingToStitch) == 47
+                    && static_cast<int>(SurfaceCreateKind::Section) == 6);
     measure(r);
     return std::min(r.count, maxOut);
 }
