@@ -878,8 +878,12 @@ body sculpts as before.
 **Sketching on a body's face** (`CAD-A3`). In a CAD project the flat faces of
 your CAD bodies are targets too — both ends of an extrusion and every flat
 side; the curved side of an extruded circle is not. Tap a face to highlight it,
-tap it again to start sketching on it, looking straight at it. A stylus
-hovering over a target highlights it without choosing it. Two fingers still
+tap it again to start sketching on it, looking straight at it. What you tap
+is what stands in front: a plane square in front of a body takes the tap, and a
+body surface in front of a plane takes it from the plane. A surface that cannot
+carry a sketch — the curved wall of a round pocket, a revolved body — chooses
+nothing at all, so two taps there never open a sketch on a plane hidden behind
+it. A stylus hovering over a target highlights it without choosing it. Two fingers still
 orbit and pan while you choose; System Back leaves without changing anything.
 A sketch drawn on a body's face and extruded becomes a new CAD body that
 **stays attached to that face**: move, turn or resize the body it sits on and
@@ -1011,7 +1015,9 @@ body takes no Add or Cut).
 **Edit Feature** (its exact values, by its own identity) and **Edit Sketch**
 (the sketch it is made from), with the sketch it is built from written above.
 Every act is a 48 dp target, and in a short window the list scrolls rather
-than any act shrinking.
+than any act shrinking — verified at the system font sizes 1.0, 1.3 and 1.5, in
+portrait and landscape. While History is open the body's floating Edit Sketch
+control steps aside, so it can never stand on one of History's own acts.
 
 In a sketch's region list (the precision surface after Finish Sketch), **Select
 All** and **Clear** choose every area of the sketch or none, exactly as tapping

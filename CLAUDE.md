@@ -331,7 +331,11 @@ on the host, with no device, and is the fast native loop.
   Primitive's own path into the spatial support chooser, offered only where it
   can succeed (a project, no sketch, no Sculpt, no chooser). While the chooser
   is up the viewport belongs to choosing: the retained-sketch Edit Sketch chip
-  is withdrawn so it cannot take the tap meant for a face under it.
+  is withdrawn so it cannot take the tap meant for a face under it — and so is
+  it while the History surface is open, which offers Edit Sketch itself and at
+  a large font scale grows over the chip's anchor (`CAD-R2-C1`). The NEAREST
+  chooser target owns a tap: a body surface in front of a plane occludes it, so
+  a surface that cannot be a support chooses nothing, never the plane behind.
 - **The sketch's plane and its VIEW are two different things**
   (`SKETCH-UX-R1` C). The orientation navigator in the sketch's upper trailing
   corner owns both, holds neither, and reads `sketchViewState` on every

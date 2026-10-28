@@ -2609,7 +2609,9 @@ gizmo and the exact-value editors leave it alone; `hasCadDependents` /
 `cadDependentsOf` back Delete's `RefusedHasDependents`. A stale lineage, a
 missing producer, a bad token, a curved circle side or a cycle all fail closed.
 `forgeshape_support_chooser.{h,cpp}` resolves a viewport tap to a world plane or
-a face (through the ordinary scene pick), and the sketch camera frames exactly
+a face (through the ordinary scene pick) — the NEAREST target owns the tap, and
+a body surface nearer than a plane hit occludes it, so a surface that cannot be
+a support chooses nothing rather than the plane behind it (`CAD-R2-C1`) — and the sketch camera frames exactly
 along the sketch frame's normal via `CameraController::frameSketchView` (no
 pitch clamp). `CADB` gains section version 2 for the support; v1 stays
 byte-identical, and load validates the whole dependency graph before applying.
