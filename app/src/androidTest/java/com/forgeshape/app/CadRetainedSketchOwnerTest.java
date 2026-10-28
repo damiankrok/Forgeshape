@@ -808,15 +808,15 @@ public final class CadRetainedSketchOwnerTest {
                     + NativeViewport.supportChooserActive() + " owner=" + ownerAtWindow(rotated)
                     + " projection=" + NativeViewport.projectionMode();
             rig.fact("d21.rotated_window", Arrays.toString(rotated) + " " + before);
+            // The aim SURVIVES the rotation (run 40775423761 showed it: kind 3,
+            // still active, the viewport owning the point), so the one tap on
+            // the re-projected seam is the confirm -- of the same face.
+            assertEquals("the aimed face survives the rotation", NativeViewport.SUPPORT_KIND_FACE,
+                    NativeViewport.supportChooserSelectedKind());
+            assertTrue(NativeViewport.supportChooserActive());
             realTap(rotated);
-            final String after = "kind=" + NativeViewport.supportChooserSelectedKind() + " active="
-                    + NativeViewport.supportChooserActive() + " hoverDiagnostic="
-                    + rig.applyOnUi(() -> NativeViewport.supportChooserHover(rotatedAt[0], rotatedAt[1]));
-            rig.fact("d21.after_landscape_tap", after);
-            assertEquals("landscape seam: still the face (" + before + " -> " + after + ")",
-                    NativeViewport.SUPPORT_KIND_FACE, NativeViewport.supportChooserSelectedKind());
-            realTap(rotated);
-            assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
+            assertEquals("the landscape seam confirms the face sketch", NativeViewport.SKETCH_EDITING,
+                    sketchState());
             assertEquals(1.0, sketchViewState()[NativeViewport.SKETCH_VIEW_FACE_SUPPORTED], 0.0);
             rig.capture("d21_seam_landscape");
             cancelSketch();
