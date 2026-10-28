@@ -802,11 +802,19 @@ public final class CadRetainedSketchOwnerTest {
             settleLayout();
             SystemClock.sleep(600);
             settleLayout();
-            final float[] rotated = viewportToWindow(floorSeamPixel());
-            rig.fact("d21.rotated_window", Arrays.toString(rotated));
+            final float[] rotatedAt = floorSeamPixel();
+            final float[] rotated = viewportToWindow(rotatedAt);
+            final String before = "kind=" + NativeViewport.supportChooserSelectedKind() + " active="
+                    + NativeViewport.supportChooserActive() + " owner=" + ownerAtWindow(rotated)
+                    + " projection=" + NativeViewport.projectionMode();
+            rig.fact("d21.rotated_window", Arrays.toString(rotated) + " " + before);
             realTap(rotated);
-            assertEquals("landscape seam: still the face", NativeViewport.SUPPORT_KIND_FACE,
-                    NativeViewport.supportChooserSelectedKind());
+            final String after = "kind=" + NativeViewport.supportChooserSelectedKind() + " active="
+                    + NativeViewport.supportChooserActive() + " hoverDiagnostic="
+                    + rig.applyOnUi(() -> NativeViewport.supportChooserHover(rotatedAt[0], rotatedAt[1]));
+            rig.fact("d21.after_landscape_tap", after);
+            assertEquals("landscape seam: still the face (" + before + " -> " + after + ")",
+                    NativeViewport.SUPPORT_KIND_FACE, NativeViewport.supportChooserSelectedKind());
             realTap(rotated);
             assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
             assertEquals(1.0, sketchViewState()[NativeViewport.SKETCH_VIEW_FACE_SUPPORTED], 0.0);
@@ -863,6 +871,26 @@ public final class CadRetainedSketchOwnerTest {
         } finally {
             restorePerspective();
         }
+    }
+
+    /** The clickable view a real touch at a window point would reach, named. */
+    private String ownerAtWindow(final float[] window) {
+        return rig.on((activity, workspace) -> {
+            final View root = activity.getWindow().getDecorView();
+            final int[] rp = new int[2];
+            root.getLocationInWindow(rp);
+            final View hit = clickableAt(root, window[0] + rp[0], window[1] + rp[1]);
+            if (hit == null) return "none";
+            String name = hit.getClass().getSimpleName();
+            if (hit.getId() != View.NO_ID) {
+                try {
+                    name += " " + activity.getResources().getResourceEntryName(hit.getId());
+                } catch (android.content.res.Resources.NotFoundException ignored) {
+                    name += " #" + hit.getId();
+                }
+            }
+            return name;
+        });
     }
 
     private void hoverAt(final float[] window) {
