@@ -685,6 +685,11 @@ bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b);
 CadStatus validateCadBodyState(const CadBodyState& state,
                                ProfileExtraction* outProfiles = nullptr);
 
+// The sketch TABLE's own rules alone -- ids, order, marks, the one root, every
+// feature naming a sketch the table carries -- without deriving any geometry.
+// Cheap; part of `validateCadBodyState`.
+CadStatus validateCadSketchTableRules(const CadBodyState& state);
+
 // One feature's own rule, without the chain: sketch, extent, regions.
 // `outRegions` receives the region extraction on success (empty for a
 // PlanarFaces selection, which is resolved and merged here instead).

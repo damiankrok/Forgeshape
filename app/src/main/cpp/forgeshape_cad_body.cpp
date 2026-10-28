@@ -1173,6 +1173,10 @@ CadStatus validateCadSketchTable(const CadBodyState& state) {
 
 }  // namespace
 
+CadStatus validateCadSketchTableRules(const CadBodyState& state) {
+    return validateCadSketchTable(state);
+}
+
 CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* outProfiles) {
     const CadStatus tableWhy = validateCadSketchTable(state);
     if (tableWhy != CadStatus::Ok) {
@@ -1612,11 +1616,12 @@ CadStatus CadBody::applyState(const CadBodyState& requested, bool* outChanged) {
             return CadStatus::HighWaterInvalid;
         }
     }
-    // The WHOLE structural rule first (`CAD-R2`). Regeneration walks only the
-    // features, so a retained sketch no feature consumes -- whose face an
-    // upstream edit stripped -- or a table that breaks its own id rules would
-    // pass it and become a committed state the codec then refuses to save.
-    const CadStatus valid = validateCadBodyState(requested);
+    // What regeneration does NOT judge, first (`CAD-R2`). Regeneration walks
+    // only the features, so a retained sketch no feature consumes -- whose face
+    // an upstream edit stripped -- or a table that breaks its own id rules
+    // would pass it and become a committed state the codec refuses to save.
+    // Regeneration below is the rest of `validateCadBodyState`'s rule.
+    const CadStatus valid = validateCadStateBeyondRegeneration(requested);
     if (valid != CadStatus::Ok) {
         ++rejectedUpdates_;
         return valid;

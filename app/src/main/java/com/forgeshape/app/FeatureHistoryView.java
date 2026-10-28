@@ -115,6 +115,20 @@ final class FeatureHistoryView extends AnchoredSurfaceView {
         segments.setVisibility(GONE);
         addView(segments, EditorControlStyles.rowParams(rowGap));
 
+        // The selected row's acts and its dependencies stand ABOVE the list:
+        // in a short window it is the scrolling list that gives up height,
+        // never an act -- a squeezed act would fall under the 48 dp floor
+        // (found on the landscape device run, D12).
+        actions = new LinearLayout(context);
+        actions.setId(R.id.feature_history_actions);
+        actions.setOrientation(VERTICAL);
+        actions.setVisibility(GONE);
+        addView(actions, EditorControlStyles.rowParams(rowGap));
+
+        detail = EditorControlStyles.captionText(context, R.id.feature_history_detail, "");
+        detail.setVisibility(GONE);
+        addView(detail, EditorControlStyles.rowParams(rowGap));
+
         scroller = new BoundedScrollView(context);
         scroller.setId(R.id.feature_history_list);
         scroller.setFillViewport(false);
@@ -125,16 +139,6 @@ final class FeatureHistoryView extends AnchoredSurfaceView {
         rows.setOrientation(VERTICAL);
         scroller.addView(rows, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        detail = EditorControlStyles.captionText(context, R.id.feature_history_detail, "");
-        detail.setVisibility(GONE);
-        addView(detail, EditorControlStyles.rowParams(rowGap));
-
-        actions = new LinearLayout(context);
-        actions.setId(R.id.feature_history_actions);
-        actions.setOrientation(VERTICAL);
-        actions.setVisibility(GONE);
-        addView(actions, EditorControlStyles.rowParams(rowGap));
 
         caption = EditorControlStyles.captionText(context, View.NO_ID,
                 context.getString(R.string.feature_history_caption));

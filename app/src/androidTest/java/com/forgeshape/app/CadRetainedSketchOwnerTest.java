@@ -194,7 +194,9 @@ public final class CadRetainedSketchOwnerTest {
         finishSketch();
         commitExtrude(NativeViewport.OPERATION_CUT, "0.4");
         // A round pocket at (-0.4, 0), r 0.3, 0.4 deep, on the same top cap.
-        newSketchOn(0.7f, 0.9f, 8.0f, -0.4, 0.5, 1.0);
+        // Seen from the -x side: from +x, the chooser's translucent YZ plane
+        // stands in front of a point with x < 0 and takes the tap (D04 run 1).
+        newSketchOn(-0.7f, 0.9f, 8.0f, -0.4, 0.5, 1.0);
         drawExactCircleAt(-0.4, 0.0, 0.3);
         finishSketch();
         commitExtrude(NativeViewport.OPERATION_CUT, "0.4");
@@ -331,7 +333,7 @@ public final class CadRetainedSketchOwnerTest {
         rig.press(R.id.undo_action);
 
         // A NEW sketch now takes a fresh id: 3, never the freed... the restored 2 stands.
-        newSketchOn(0.7f, 0.9f, 8.0f, -0.5, -0.5, 1.0);
+        newSketchOn(-0.7f, 0.9f, 8.0f, -0.5, -0.5, 1.0);
         drawExactSquare(0.3);
         rig.touchId(R.id.keep_sketch);
         assertNotNull(inventory().find(3L));
@@ -388,9 +390,13 @@ public final class CadRetainedSketchOwnerTest {
     public void d08_an_upstream_sketch_edit_names_the_first_failure_and_cancel_restores() {
         newBlock();
         newSketchOn(0.7f, 0.9f, 8.0f, 0.5, 0.5, 1.0);
-        drawExactSquare(0.3);
+        // The top cap's sketch (u, v) is the world (x, y): the pocket stands at
+        // (0.6, 0.6), well clear of a 0.4 wide base (D08 run 1 drew it at the
+        // sketch origin, inside it).
+        drawExactRectangleAt(0.6, 0.6, 0.3, 0.3);
         finishSketch();
         commitExtrude(NativeViewport.OPERATION_CUT, "0.4");
+        assertEquals(4.0 - 0.09 * 0.4, volume(), VOLUME_TOLERANCE);
         final byte[] before = NativeViewport.encodeProject();
         final long fingerprint = NativeViewport.projectFingerprint();
 
@@ -1067,6 +1073,11 @@ public final class CadRetainedSketchOwnerTest {
      * the cell's own quarter points. A tap that toggled another cell fails.
      */
     private void tapCell(long handle, double u, double v) {
+        // A cell under chrome or off the viewport is first brought into the
+        // open by a real two-finger pan -- the navigation Ready offers -- and
+        // only then tapped at its own centre (D09 run 1: the lower-left cell
+        // stood under the chrome at every one of its points).
+        bringOnScreen(u, v);
         final double[][] points = {{u, v}, {u - 0.25, v - 0.25}, {u + 0.25, v - 0.25},
                 {u - 0.25, v + 0.25}, {u + 0.25, v + 0.25}};
         for (double[] p : points) {
@@ -1088,6 +1099,88 @@ public final class CadRetainedSketchOwnerTest {
         }
         throw new AssertionError("cell " + handle + " at (" + u + ", " + v
                 + ") is under the arrow head or chrome at every point of its own");
+    }
+
+    private void bringOnScreen(double u, double v) {
+        final float w = onWorkspace(rule.getScenario(), (activity, workspace) ->
+                (float) workspace.findViewById(R.id.viewport_surface).getWidth());
+        final float h = onWorkspace(rule.getScenario(), (activity, workspace) ->
+                (float) workspace.findViewById(R.id.viewport_surface).getHeight());
+        float sign = 1.0f;
+        for (int pan = 0; pan < 8; pan++) {
+            final float[] at = new float[2];
+            assertTrue(NativeViewport.sketchScreenPoint(u, v, at));
+            if (blockerAt(viewportToWindow(at)) == null && at[0] > 160f && at[0] < w - 160f
+                    && at[1] > 200f && at[1] < h - 260f) {
+                return;
+            }
+            final float dx = Math.max(-350f, Math.min(350f, w * 0.5f - at[0]));
+            final float dy = Math.max(-350f, Math.min(350f, h * 0.45f - at[1]));
+            final double before = Math.hypot(w * 0.5f - at[0], h * 0.45f - at[1]);
+            twoFingerPan(sign * dx, sign * dy);
+            final float[] now = new float[2];
+            assertTrue(NativeViewport.sketchScreenPoint(u, v, now));
+            rig.fact("pan", "(" + u + "," + v + ") " + Arrays.toString(at) + " -> "
+                    + Arrays.toString(now));
+            if (Math.hypot(w * 0.5f - now[0], h * 0.45f - now[1]) > before) {
+                sign = -sign;
+            }
+        }
+    }
+
+    private void twoFingerPan(final float dx, final float dy) {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final float density = activity.getResources().getDisplayMetrics().density;
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final View root = activity.getWindow().getDecorView();
+            final int[] vp = new int[2];
+            viewport.getLocationInWindow(vp);
+            final float cx = vp[0] + viewport.getWidth() * 0.5f;
+            final float cy = vp[1] + viewport.getHeight() * 0.6f;
+            final float half = 60f * density;
+            final long down = SystemClock.uptimeMillis();
+            final int steps = 8;
+            final MotionEvent.PointerProperties[] props = new MotionEvent.PointerProperties[2];
+            for (int i = 0; i < 2; i++) {
+                props[i] = new MotionEvent.PointerProperties();
+                props[i].id = i;
+                props[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+            }
+            final MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[2];
+            for (int step = 0; step <= steps; step++) {
+                final float t = (float) step / steps;
+                for (int i = 0; i < 2; i++) {
+                    coords[i] = new MotionEvent.PointerCoords();
+                    coords[i].x = cx + dx * t + (i == 0 ? -half : half);
+                    coords[i].y = cy + dy * t;
+                    coords[i].pressure = 1f;
+                    coords[i].size = 1f;
+                }
+                final long time = down + 16L * step;
+                if (step == 0) {
+                    sendMulti(root, down, time, MotionEvent.ACTION_DOWN, 1, props, coords);
+                    sendMulti(root, down, time, MotionEvent.ACTION_POINTER_DOWN
+                            | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2, props, coords);
+                } else {
+                    sendMulti(root, down, time, MotionEvent.ACTION_MOVE, 2, props, coords);
+                }
+            }
+            final long end = down + 16L * (steps + 1);
+            sendMulti(root, down, end, MotionEvent.ACTION_POINTER_UP
+                    | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2, props, coords);
+            sendMulti(root, down, end + 8L, MotionEvent.ACTION_UP, 1, props, coords);
+            return null;
+        });
+        settleLayout();
+    }
+
+    private static void sendMulti(View root, long downTime, long time, int action, int count,
+                                  MotionEvent.PointerProperties[] props,
+                                  MotionEvent.PointerCoords[] coords) {
+        final MotionEvent event = MotionEvent.obtain(downTime, time, action, count, props, coords,
+                0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
+        root.dispatchTouchEvent(event);
+        event.recycle();
     }
 
     private String blockerAt(final float[] window) {

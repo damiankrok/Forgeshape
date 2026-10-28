@@ -642,6 +642,26 @@ CadStatus validateCadChain(const CadBodyState& state, uint32_t* outFailedFeature
     return CadStatus::Ok;
 }
 
+CadStatus validateCadStateBeyondRegeneration(const CadBodyState& state) {
+    const CadStatus table = validateCadSketchTableRules(state);
+    if (table != CadStatus::Ok) {
+        return table;
+    }
+    bool anyUnconsumed = false;
+    for (const CadSketchRecord& record : state.sketches) {
+        bool consumed = record.sketchId == state.baseSketchId;
+        for (const CadFeature& feature : state.laterFeatures) {
+            consumed = consumed || feature.sketchId == record.sketchId;
+        }
+        anyUnconsumed = anyUnconsumed || !consumed;
+    }
+    if (!anyUnconsumed) {
+        return CadStatus::Ok;
+    }
+    // The same judge `validateCadBodyState` runs for them.
+    return validateCadChain(state);
+}
+
 CadStatus cadSketchPlacement(const CadBodyState& state, CadSketchId sketchId, CadFrame64* out) {
     if (out == nullptr) {
         return CadStatus::RegenerationFailed;

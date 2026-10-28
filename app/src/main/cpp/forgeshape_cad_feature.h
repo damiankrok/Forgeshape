@@ -155,6 +155,13 @@ CadStatus validateCadChain(const CadBodyState& state, uint32_t* outFailedFeature
 // feature cannot be derived, `SketchNotFound` for an id the table lacks.
 CadStatus cadSketchPlacement(const CadBodyState& state, CadSketchId sketchId, CadFrame64* out);
 
+// What `regenerateCadBody` does not judge (`CAD-R2`): the sketch table's own
+// rules, and every retained sketch NO feature consumes -- its entities and its
+// placement against the chain. The chain is walked only when such a sketch
+// exists, so the common case costs the table check alone. Ok plus a successful
+// regeneration is exactly `validateCadBodyState`'s verdict.
+CadStatus validateCadStateBeyondRegeneration(const CadBodyState& state);
+
 // The geometry of the one feature named, and only what it needs before it.
 CadStatus buildCadFeatureGeometry(const CadBodyState& state, uint32_t featureId,
                                   CadFeatureGeometry* out);

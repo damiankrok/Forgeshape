@@ -667,8 +667,19 @@ on the host, with no device, and is the fast native loop.
   v1..v5 into the table as one sketch per feature (ids 1..n in chain order;
   two identical inline sketches stay two), and the fingerprint mixes a v6
   block only outside that predicate — so every legacy project keeps its bytes
-  and its fingerprint. **Not this stage:** creating, sharing, deleting or
-  browsing sketches from the UI (retained-sketch mobile UX, `CAD-V6-S3`).
+  and its fingerprint. **Retained sketches are managed from the History
+  surface** (`CAD-R2`): its Sketches segment lists the table through the
+  derived inventory (`forgeshape_cad_sketch_inventory`), and every act is a
+  native decision offered only when native accepts it. Keep Sketch retains a
+  sketch on a face of the body's OWN features with no feature (a second
+  ROOT/world-plane sketch stays refused, `SketchSupportInvalid` — that needs
+  new durable semantics); Use for Add / Cut appends a feature naming an
+  EXISTING sketch by id, never a copy; Delete Sketch removes only an unused,
+  non-root sketch (`SketchInUse`, `SketchIsRoot`), never cascades and never
+  lowers `nextSketchId`. Each is one Undo. `CadBody::applyState` and the
+  candidate evaluation judge the WHOLE state (`validateCadBodyState`), so an
+  edit that would strand a retained sketch is refused and previewed as
+  refused.
 - **An Add or a Cut changes the SAME body, through a retained feature chain**
   (`CAD-VERTICAL-SLICE-R1`, `forgeshape_cad_body.{h,cpp}`,
   `forgeshape_cad_feature.{h,cpp}`). After its first New Body feature a CAD

@@ -3013,7 +3013,7 @@ const CadCandidateEvaluation& SketchSession::evaluateCandidate() {
         // The preview IS the candidate: the commit's `applyState` also judges
         // the whole state (a retained sketch the edit would strand), so the
         // preview says so too rather than showing a solid the commit refuses.
-        const CadStatus valid = validateCadBodyState(candidate);
+        const CadStatus valid = validateCadStateBeyondRegeneration(candidate);
         if (valid != CadStatus::Ok) {
             next.status = valid;
             next.failedFeatureId = 0;
