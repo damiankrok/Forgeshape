@@ -1,8 +1,38 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.100.0
+**Status Version:** 0.101.0
 **Updated:** 2026-10-28
-**Latest closeout:** **`CAD-R2` (retained sketches, parametric history,
+**Latest closeout:** **`CAD-R2-C1` (post-implementation quality gate) —
+`PASS-CAD-R2-C1-WITH-RECORDED-BLOCKERS`** (2026-10-28). **TECH PASS / OWNER
+PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`feature/cad-r2-c1-quality-gate-r1` from exactly `ea24d20` (the CAD-R2 head);
+product `cf340f0`, FAST head `911f5c3` (docs only after it); no other branch
+moved; no FullSharded. Record: `artifacts/cad-r2-c1-quality-gate/SUMMARY.md`
+(BEFORE.md first). Recorded blocker: the A2 world-plane retained sketch stays
+an OWNER design decision (options in SUMMARY), not implemented.
+
+- **Performance (A).** R2's reported `eval_all` +31.5 % / `trim100` +35.1 %
+  reproduce in the HOST self-test binary but are a code-placement effect, not
+  R2's code: the same code is 25 % faster in another link of itself, a
+  product-only link removes the gap, the 32-byte branch mitigation removes it,
+  and ablating R2's new validation changes nothing (1.1 µs). All three metrics
+  `NO-REPRO-STABLE`; no product change.
+- **Chooser (B).** A tap on a surface that cannot carry a sketch (curved Cut
+  wall, revolved body) no longer falls through to a world plane BEHIND it
+  (two taps used to open a YZ sketch); a plane in front still wins.
+- **Font scale (C).** At system font 1.5 the canvas Edit Sketch chip stood on
+  History's own Edit Sketch act; the chip now steps aside while History is
+  open. History verified at 1.0 / 1.3 / 1.5 × portrait / landscape.
+- **Gates.** Host `HOST_SELFTESTS_OK (4375 checks, 0 failed)` (+6 C1_CH;
+  oracles 17); JVM 196/196; release guard PASS; corpus 72/72; DEVICE union
+  **122/122** (`40752389411` 67/67 + `40760227555` 55/55, incl.
+  `CadRetainedSketchOwnerTest` D01..D18); `CI FAST` `40766013297` success.
+- **OWNER APK.** `ci-fast-evidence` artifact `12849379257` of `CI FAST`
+  `40766013297`, `app/build/outputs/apk/debug/app-debug.apk`, 17,552,535 bytes,
+  SHA-256 `fd7a11a9a7b1bbf7748b46e2d71c71a2a830b54f59e8bd7f9011113d968b1dd5`;
+  artifact expires 2026-11-11T20:52:13Z.
+
+**Previous closeout:** **`CAD-R2` (retained sketches, parametric history,
 quality) — `PASS-CAD-R2-RETAINED-SKETCH-PARAMETRIC-UX`** (2026-10-28). **TECH
 PASS / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
 `feature/cad-r2-retained-sketch-parametric-ux-r1` from exactly `636797e`;
@@ -4796,17 +4826,17 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: OWNER physical-device review of the `CAD-R2` APK**
-(`ci-fast-evidence` artifact `12819336381` of `CI FAST` `40694343402`, APK
-SHA-256 `043203e18733d10e28985bf86a4cb41ed87fc3c3fd743b391fbc20a6ad5ac272`)
-against the checklist in
-`artifacts/cad-r2-retained-sketch-parametric-ux/SUMMARY.md`, together with the
-still-pending `MODELING-R1-OWNER-CORRECTION`, `MODELING-FOUNDATIONS-R1`,
-drafting-toolkit and Revolve checklists. The OWNER also decides
-BLOCKED-DESIGN-DECISION-R2-WORLD-PLANE-RETAINED-SKETCH. Nothing merges to
-`feature/cad-v6-sketch-face-r1` or `main` before that verdict. The v6 branch
-merges to `main` only after the completed v6 migration passes the Tier-5
-aggregate once.
+**Exactly one next step: OWNER physical-device review of the `CAD-R2-C1` APK**
+(`ci-fast-evidence` artifact `12849379257` of `CI FAST` `40766013297`, APK
+SHA-256 `fd7a11a9a7b1bbf7748b46e2d71c71a2a830b54f59e8bd7f9011113d968b1dd5`)
+against the test pack in `artifacts/cad-r2-c1-quality-gate/SUMMARY.md` (which
+includes the CAD-R2 retained-sketch checklist), together with the still-pending
+`MODELING-R1-OWNER-CORRECTION`, `MODELING-FOUNDATIONS-R1`, drafting-toolkit and
+Revolve checklists. The OWNER also decides
+BLOCKED-DESIGN-DECISION-R2-WORLD-PLANE-RETAINED-SKETCH (options in that
+SUMMARY). Nothing merges to `feature/cad-v6-sketch-face-r1` or `main` before
+that verdict. The v6 branch merges to `main` only after the completed v6
+migration passes the Tier-5 aggregate once.
 
 `FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
 recorded debt, not authorised work. The Council's other OWNER decisions are

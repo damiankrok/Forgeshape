@@ -11,8 +11,9 @@ Read `BEFORE.md` first. Track evidence: `PERF_PROTOCOL.md`, `PERF_ANALYSIS.md`,
 | Base (exact, the R2 head) | `ea24d20805d9487d26221d9dd45e47dc16fb6ecb` |
 | Branch | `feature/cad-r2-c1-quality-gate-r1` |
 | Last product commit (frozen product tree) | `cf340f0` |
-| Device union head | `cf340f0` (both parts) |
-| Final CI FAST head | see `TESTS.md` T5 (docs only after `cf340f0`) |
+| Device union | `40752389411` 67/67 on `cf340f0` + `40760227555` 55/55 on `e81639b` (app tree = `cf340f0`) — **122/122** |
+| Final CI FAST | `40766013297` on `911f5c3` (docs only after `cf340f0`), success |
+| OWNER APK | `ci-fast-evidence` 12849379257, `app-debug.apk` 17,552,535 B, SHA-256 `fd7a11a9a7b1bbf7748b46e2d71c71a2a830b54f59e8bd7f9011113d968b1dd5`, expires 2026-11-11T20:52:13Z |
 
 `main` `6c9f156`, the R2 branch `ea24d20` and the R2 predecessor `636797e`
 were not touched. No merge, rebase, cherry-pick, force push, FullSharded run or
