@@ -2588,6 +2588,59 @@ CadStatus SketchSession::togglePlanarFace(size_t index) {
     return fail(CadStatus::Ok);
 }
 
+CadStatus SketchSession::clearAreaSelection() {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (!faceShapes_.empty()) {
+        setPlanarSelection({});
+    } else {
+        setExtrudeRegions(&extrude_, {});
+    }
+    selectionLost_ = false;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::selectAllAreas() {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (!faceShapes_.empty()) {
+        if (arrangement_.faces.size() > kMaxPlanarFaceSelection) {
+            return fail(CadStatus::TooManyRegions);
+        }
+        std::vector<PlanarFaceRef> all;
+        all.reserve(arrangement_.faces.size());
+        for (const AtomicPlanarFace& face : arrangement_.faces) {
+            all.push_back(face.ref);
+        }
+        setPlanarSelection(std::move(all));
+        selectionLost_ = false;
+        touchCandidate();
+        return fail(CadStatus::Ok);
+    }
+    std::vector<ProfileRegionRef> next;
+    for (const SketchRegion& region : regions_.regions) {
+        if (region.status == CadStatus::Ok) {
+            next = toggleRegionSelection(next, region);
+        }
+    }
+    if (next.empty()) {
+        return fail(CadStatus::NoClosedProfile);
+    }
+    if (next.size() > kMaxProfileRegions) {
+        return fail(CadStatus::TooManyRegions);
+    }
+    const CadStatus why = validateRegionSelection(regions_, next);
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    setExtrudeRegions(&extrude_, std::move(next));
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
 CadStatus SketchSession::selectPlanarFace(size_t index) {
     if (state_ != SketchSessionState::Ready || faceShapes_.empty()) {
         return fail(CadStatus::NotSketching);

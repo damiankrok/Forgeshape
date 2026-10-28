@@ -14,4 +14,7 @@
     <item name="history_act_reuse_cut" type="id" />
     <item name="history_act_delete_sketch" type="id" />
     <item name="keep_sketch" type="id" />
+    <item name="sketch_area_shortcuts" type="id" />
+    <item name="sketch_select_all_areas" type="id" />
+    <item name="sketch_clear_areas" type="id" />
 </resources>

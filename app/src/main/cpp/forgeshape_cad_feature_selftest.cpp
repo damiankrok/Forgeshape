@@ -1,4 +1,5 @@
 #include "forgeshape_cad_feature_selftest.h"
+#include "forgeshape_cad_oracle_selftest.h"
 #include "forgeshape_cad_r2_selftest.h"
 
 #include <algorithm>
@@ -5864,6 +5865,15 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + cadR2Performance;
+    // Independent geometry oracles (`CAD-R2` P3): analytic expectations against
+    // measurements written apart from the model.
+    std::vector<ArrangementSelfTestCheck> oracles;
+    std::string oracleReport;
+    runCadOracleSelfTests(&oracles, &oracleReport);
+    for (const ArrangementSelfTestCheck& check : oracles) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + oracleReport;
     // The retained sketch table, the selection variant and `CADB` v6
     // (`CAD-V6-S1`): model and persistence only, wired to no session, JNI or
     // UI path, so -- like the arrangement -- they ride in this suite.

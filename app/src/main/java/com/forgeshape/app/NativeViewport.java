@@ -3098,6 +3098,12 @@ final class NativeViewport {
     /** Whether the open session edits an unused sketch alone (no Finish). */
     static native boolean sketchIsSketchOnly();
 
+    /** Clears the Ready area selection (`CAD-R2` P2.1). A CAD_* code. */
+    static native int sketchClearAreaSelection();
+
+    /** Chooses every selectable area of the Ready sketch, bounded. A CAD_* code. */
+    static native int sketchSelectAllAreas();
+
     /** The retained sketch a reuse session extrudes, or 0. */
     static native long sketchReuseSketchId();
 

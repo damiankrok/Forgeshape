@@ -55,6 +55,7 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     // --- Ready ---
     private final LinearLayout readySection;
     private final LinearLayout profileChooser;
+    private final LinearLayout areaShortcuts;
     /**
      * New Body, Add and Cut (`CAD-VERTICAL-SLICE-R1`), with their section
      * label: the group is withdrawn whole when it holds one choice. Only the operations
@@ -214,6 +215,39 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         profileChooser.setId(R.id.sketch_profile_chooser);
         profileChooser.setOrientation(VERTICAL);
         readySection.addView(profileChooser, EditorControlStyles.rowParams(smallGap));
+        // Select all / Clear (`CAD-R2` P2.1): the same set a run of taps would
+        // make, decided and bounded below JNI; drawn only where there is more
+        // than one area to choose.
+        areaShortcuts = new LinearLayout(context);
+        areaShortcuts.setId(R.id.sketch_area_shortcuts);
+        areaShortcuts.setOrientation(HORIZONTAL);
+        final TextView selectAll = EditorControlStyles.actionChip(context,
+                R.id.sketch_select_all_areas, context.getString(R.string.sketch_select_all_areas));
+        selectAll.setContentDescription(context.getString(R.string.sketch_select_all_areas_description));
+        selectAll.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onAreaShortcut(NativeViewport.sketchSelectAllAreas());
+            }
+        });
+        final TextView clear = EditorControlStyles.actionChip(context, R.id.sketch_clear_areas,
+                context.getString(R.string.sketch_clear_areas));
+        clear.setContentDescription(context.getString(R.string.sketch_clear_areas_description));
+        clear.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onAreaShortcut(NativeViewport.sketchClearAreaSelection());
+            }
+        });
+        final LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0,
+                LayoutParams.WRAP_CONTENT, 1.0f);
+        final LinearLayout.LayoutParams halfGap = new LinearLayout.LayoutParams(0,
+                LayoutParams.WRAP_CONTENT, 1.0f);
+        halfGap.leftMargin = smallGap;
+        areaShortcuts.addView(selectAll, half);
+        areaShortcuts.addView(clear, halfGap);
+        areaShortcuts.setVisibility(GONE);
+        readySection.addView(areaShortcuts, EditorControlStyles.rowParams(smallGap));
         operationRow = new LinearLayout(context);
         operationRow.setId(R.id.sketch_operation_row);
         operationRow.setOrientation(VERTICAL);
@@ -517,6 +551,7 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         final long[] anchors = new long[Math.max(count, 1)];
         final int written = NativeViewport.sketchProfiles(anchors);
         final long chosen = (long) nativeSketch[NativeViewport.SKETCH_CHOSEN_PROFILE];
+        areaShortcuts.setVisibility(written > 1 ? VISIBLE : GONE);
         final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
         for (int i = 0; i < written; i++) {
             final long anchor = anchors[i];
@@ -684,6 +719,14 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     // -----------------------------------------------------------------------
     // Acts
     // -----------------------------------------------------------------------
+
+    private void onAreaShortcut(int status) {
+        if (status != NativeViewport.CAD_OK) {
+            host.showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+        }
+        refreshFromNative();
+        host.onSketchCandidateChanged();
+    }
 
     private void onProfileChosen(long anchor) {
         final int status = NativeViewport.sketchSelectProfile(anchor);

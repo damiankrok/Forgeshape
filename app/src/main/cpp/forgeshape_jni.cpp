@@ -7605,6 +7605,35 @@ Java_com_forgeshape_app_NativeViewport_sketchIsSketchOnly(JNIEnv*, jclass) {
     return forgeshape::sketchSession().sketchOnly() ? JNI_TRUE : JNI_FALSE;
 }
 
+// Clear / Select All of the Ready areas (`CAD-R2` P2.1), through the session's
+// own bounded rules; the candidate is re-evaluated like after a tap.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchClearAreaSelection(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().clearAreaSelection();
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_AREAS_CLEAR %s", forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSelectAllAreas(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    size_t chosen = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        status = session.selectAllAreas();
+        chosen = session.selectedAreaCount();
+        beginPendingExtrudeFeatureView();
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_AREAS_ALL %s chosen=%d", forgeshape::cadStatusName(status),
+            (int)chosen);
+    return cadCode(status);
+}
+
 // The retained sketch a reuse session extrudes, or 0.
 JNIEXPORT jlong JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchReuseSketchId(JNIEnv*, jclass) {

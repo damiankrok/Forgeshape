@@ -37,6 +37,10 @@
     <string name="history_act_edit_sketch_description">Edit %1$s. Nothing changes until you finish.</string>
     <string name="history_act_edit_feature_description">Edit %1$s. Nothing changes until you finish.</string>
 
+    <string name="sketch_select_all_areas">Select All</string>
+    <string name="sketch_clear_areas">Clear</string>
+    <string name="sketch_select_all_areas_description">Choose every area of this sketch for the extrusion</string>
+    <string name="sketch_clear_areas_description">Choose no area</string>
     <string name="keep_sketch">Keep Sketch</string>
     <string name="keep_sketch_description">Keep this sketch on the body without making a feature. Undo removes it.</string>
 

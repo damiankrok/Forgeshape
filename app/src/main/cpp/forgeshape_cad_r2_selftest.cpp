@@ -1015,6 +1015,48 @@ void testPlanarFaces(Checks& r, double* gridMicros) {
     }
 }
 
+// R2-PF-13/14: Clear and Select All in a staged session, fill mode and loop
+// mode, re-evaluated exactly as after taps.
+void testAreaShortcuts(Checks& r) {
+    {
+        const CadSketch grid = gridSketch(6);
+        const SketchArrangement arrangement = deriveSketchArrangement(grid);
+        Shop shop(makeCadBodyState(grid, faceExtrude({arrangement.faces[0].ref}, 0.5)));
+        Driver d;
+        const CadStatus begun = d.sketch.beginEditFeature(shop.id, shop.state(), kCadFeatureId,
+                                                          worldFrameOf(CadFrame64{}), true);
+        const CadStatus cleared = d.sketch.clearAreaSelection();
+        const size_t afterClear = d.sketch.selectedAreaCount();
+        const CadStatus unchosen = d.sketch.evaluateCandidate().status;
+        const CadStatus all = d.sketch.selectAllAreas();
+        const CadCandidateEvaluation evaluation = d.sketch.evaluateCandidate();
+        r.check("R2_PF_13_fill_mode_clear_then_select_all_chooses_every_cell_once",
+                begun == CadStatus::Ok && cleared == CadStatus::Ok && afterClear == 0u
+                        && unchosen == CadStatus::AmbiguousProfile && all == CadStatus::Ok
+                        && d.sketch.selectedAreaCount() == 36u && evaluation.status == CadStatus::Ok
+                        && evaluation.mesh != nullptr && near(evaluation.mesh->volume, 18.0, 1e-9));
+        d.sketch.cancel();
+    }
+    {
+        CadSketch nested;
+        const SketchEntityId outer = add(&nested, rect(0.0, 0.0, 2.0, 2.0));
+        const SketchEntityId inner = add(&nested, circleAt(0.0, 0.0, 0.5));
+        ExtrudeFeature ring = oneSide(outer, 1.0);
+        ring.profileHoleIds = {inner};
+        Shop shop(makeCadBodyState(nested, ring));
+        Driver d;
+        d.sketch.beginEditFeature(shop.id, shop.state(), kCadFeatureId, worldFrameOf(CadFrame64{}),
+                                  true);
+        const CadStatus all = d.sketch.selectAllAreas();
+        const CadCandidateEvaluation evaluation = d.sketch.evaluateCandidate();
+        r.check("R2_PF_14_loop_mode_select_all_unions_the_ring_and_its_disk",
+                all == CadStatus::Ok && d.sketch.selectedAreaCount() == 2u
+                        && evaluation.status == CadStatus::Ok && evaluation.mesh != nullptr
+                        && near(evaluation.mesh->volume, 4.0, 1e-9));
+        d.sketch.cancel();
+    }
+}
+
 // ===========================================================================
 // R2-SUP: support faces
 // ===========================================================================
@@ -1257,6 +1299,7 @@ void runCadR2SelfTests(std::vector<ArrangementSelfTestCheck>* out, std::string* 
     testDelete(r, &deleteUs);
     testHistory(r);
     testPlanarFaces(r, &gridUs);
+    testAreaShortcuts(r);
     testSupport(r);
     testData(r);
     // Inventory read cost on a 16-sketch body (the cap), median of 9.

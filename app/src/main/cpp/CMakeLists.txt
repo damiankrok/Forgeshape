@@ -131,6 +131,7 @@ set(FORGESHAPE_SELFTEST_SOURCES
     forgeshape_cad_revolve_selftest.cpp
     forgeshape_cad_timeline_selftest.cpp
     forgeshape_cad_r2_selftest.cpp
+    forgeshape_cad_oracle_selftest.cpp
     forgeshape_sketch_drafting_selftest.cpp
     forgeshape_sketch_arrangement_selftest.cpp
     forgeshape_sketch_fill_selftest.cpp

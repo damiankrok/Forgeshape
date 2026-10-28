@@ -349,6 +349,17 @@ public:
     // (`TooManySketches`) or whatever the whole state's validation says.
     CadStatus commitSketch(ConstructionScene& scene, ConstructionHistory& history,
                            CadSketchId* outSketchId = nullptr);
+    // --- area selection shortcuts (`CAD-R2` P2.1) ----------------------------
+    //
+    // Clear: no area chosen (Ready only). Select All: every SELECTABLE area of
+    // this sketch -- every atomic face in fill mode, every Ok region in loop
+    // mode -- by exactly the rule a sequence of taps would apply: the face set
+    // is bounded by the arrangement's own bound, and a region set that no rule
+    // can merge is refused BY NAME with the selection standing as it was. Whether
+    // the chosen set extrudes is the candidate's question, as after any tap.
+    CadStatus clearAreaSelection();
+    CadStatus selectAllAreas();
+
     // Whether Keep Sketch can be offered now (the shell draws it on this alone).
     bool canKeepSketch() const;
     // A sketch-only edit is open (no feature to stage; Finish withdrawn).
