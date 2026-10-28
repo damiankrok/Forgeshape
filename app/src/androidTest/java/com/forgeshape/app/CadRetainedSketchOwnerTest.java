@@ -724,6 +724,49 @@ public final class CadRetainedSketchOwnerTest {
         assertArrayEquals("nothing written", before, NativeViewport.encodeProject());
     }
 
+    // =======================================================================
+    // D14: Select All and Clear in the region list, by real touches
+    // =======================================================================
+
+    @Test
+    public void d14_select_all_and_clear_choose_every_region_or_none() {
+        rig.press(R.id.home_new_project);
+        rig.press(R.id.new_project_cad);
+        selectTool(rule.getScenario(), R.id.tool_rail_rectangle);
+        dragSketch(rule.getScenario(), -1.0, -1.0, 1.0, 1.0);
+        final long outer = selectedOrLastEntity();
+        assertEquals(NativeViewport.CAD_OK,
+                rig.applyOnUi(() -> NativeViewport.sketchApplyRectangle(outer, 2.0, 2.0)));
+        selectTool(rule.getScenario(), R.id.tool_rail_circle);
+        dragSketch(rule.getScenario(), 0.0, 0.0, 0.5, 0.0);
+        final long disk = selectedOrLastEntity();
+        assertEquals(NativeViewport.CAD_OK,
+                rig.applyOnUi(() -> NativeViewport.sketchApplyCircle(disk, 0.5)));
+        finishSketch();
+        assertEquals("a ring and its disk, nothing chosen for the user", 0, selected().length);
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            WorkspaceTestSupport.openPrecision(workspace);
+            return null;
+        });
+        settleLayout();
+        assertTrue("Select All is offered with more than one area",
+                rig.shown(R.id.sketch_select_all_areas));
+        rig.touchId(R.id.sketch_select_all_areas);
+        assertEquals("both regions chosen", 2, selected().length);
+        final double[] preview = candidateMeasure();
+        rig.fact("d14.preview", Arrays.toString(preview));
+        assertEquals("the union is the whole 2 x 2 square, 1 m deep by default", 1.0, preview[1], 0.0);
+        rig.touchId(R.id.sketch_clear_areas);
+        assertEquals("none chosen", 0, selected().length);
+        assertFalse("no commit offered with nothing chosen", rig.shown(R.id.extrude_sketch));
+        rig.capture("d14_cleared");
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            WorkspaceTestSupport.closePrecision(workspace);
+            return null;
+        });
+        settleLayout();
+    }
+
     // -----------------------------------------------------------------------
     // The project and the chooser
     // -----------------------------------------------------------------------

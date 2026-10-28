@@ -973,6 +973,50 @@ rebuilt — and the commit is withdrawn until the edit works again; **Fix** goes
 back to the value and **Cancel** leaves the body exactly as it was. A finished
 edit is one Undo. Steps cannot be reordered, suppressed or rolled back.
 
+### Sketches, features and what each can do
+
+For a CAD body the History surface has three segments at its top: **Steps**
+(the list above, unchanged), **Sketches** and **Features**.
+
+**Sketches** lists every sketch the body keeps — *Sketch 1*, *Sketch 2* … —
+each with how it is used (*Used by Extrude 2 · Cut*, *Shared by 2 features*,
+or *Unused*), where it stands (*on the XY plane*, *on a face of Extrude 1 ·
+New Body*) and its entity count. Tapping a sketch selects it and shows, above
+the list, its dependencies and the acts it allows — only the ones that can
+succeed: **Edit Sketch**, **Use for Add**, **Use for Cut** and **Delete
+Sketch**. An act that cannot succeed is absent and the reason is written
+instead (*Not deletable: The body's first sketch says where the body is and
+can't be removed.*, *A feature still uses this sketch.*, or why a revolved
+body takes no Add or Cut).
+
+* **Keep Sketch.** A sketch started with New Sketch on a face of the body
+  (a top, a straight side, an Add's face, a Cut's floor or straight wall) can
+  be kept with **Keep Sketch** beside the sketch's own controls, without
+  making a feature. It becomes an *Unused* sketch of that body, saved with the
+  project and reopened with the same identity. One Undo removes it. A sketch
+  on a world plane still makes a new body; it cannot be kept inside an
+  existing one.
+* **Use for Add / Use for Cut** opens a new Add or Cut on that SAME sketch,
+  directly at its extrusion — nothing is copied. Back to Sketch is not offered
+  there: the sketch belongs to every feature that uses it.
+* **Edit Sketch** opens exactly that sketch. A sketch used by several features
+  says how many it rebuilds; Finish rebuilds all of them in one step, or is
+  refused naming the first feature that can no longer be rebuilt — **Fix** and
+  **Cancel** as above. An unused sketch is edited on its own and committed
+  with **Keep Sketch**.
+* **Delete Sketch** removes an unused sketch as one Undo; Undo brings back the
+  same sketch, and a later sketch never takes its number.
+
+**Features** lists the features in order; tapping one selects it and offers
+**Edit Feature** (its exact values, by its own identity) and **Edit Sketch**
+(the sketch it is made from), with the sketch it is built from written above.
+Every act is a 48 dp target, and in a short window the list scrolls rather
+than any act shrinking.
+
+In a sketch's region list (the precision surface after Finish Sketch), **Select
+All** and **Clear** choose every area of the sketch or none, exactly as tapping
+each one would.
+
 ## Freeform bodies
 
 A **Freeform** body is a smooth surface shaped by a coarse **control cage** of
