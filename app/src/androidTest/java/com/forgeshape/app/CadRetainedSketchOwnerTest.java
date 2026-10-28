@@ -480,14 +480,18 @@ public final class CadRetainedSketchOwnerTest {
         openHistory();
         touchTab(R.id.feature_history_tab_sketches);
         touchBrowserRow(1);
+        assertTrue("the unused sketch's acts are up", rig.shown(R.id.history_act_delete_sketch));
         WorkspaceTestSupport.setOrientation(rule.getScenario(),
                 ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         settleLayout();
         SystemClock.sleep(600);
         settleLayout();
-        openHistory();
-        touchTab(R.id.feature_history_tab_sketches);
-        touchBrowserRow(1);
+        // No re-tap: a tap on the selected row deselects it (FeatureHistoryView),
+        // and the point is that the open surface and its selection SURVIVE.
+        assertTrue("History is still open after the rotation", rig.on((activity, workspace) ->
+                workspace.featureHistory().isOpen()));
+        assertEquals("the same segment", SketchBrowserPresentation.SEGMENT_SKETCHES,
+                (int) rig.on((activity, workspace) -> workspace.featureHistory().segment()));
         assertActsUsable("after rotation", new int[]{R.id.history_act_edit_sketch,
                 R.id.history_act_reuse_add, R.id.history_act_reuse_cut,
                 R.id.history_act_delete_sketch});
@@ -577,7 +581,12 @@ public final class CadRetainedSketchOwnerTest {
             assertTrue(where + ": 48 dp high " + r, r.height() >= floor);
             assertTrue(where + ": 48 dp wide " + r, r.width() >= floor);
             assertTrue(where + ": inside the window " + r + " in " + window, window.contains(r));
-            assertTrue(where + ": owns its centre " + id, ownsItsCentre(id));
+            if (!ownsItsCentre(id)) {
+                rig.capture("occluded_" + where.replace(' ', '_').replace('.', '_'));
+                throw new AssertionError(where + ": " + resourceName(id) + " " + r
+                        + " does not own its centre; under it: " + whoIsAtCentreOf(id)
+                        + "; History surface " + historySurfaceRect() + "; window " + window);
+            }
             for (Rect other : rects) {
                 assertFalse(where + ": apart " + r + " " + other, Rect.intersects(r, other));
             }
@@ -599,6 +608,42 @@ public final class CadRetainedSketchOwnerTest {
             assertFalse(where + ": detail " + detail + " clear of act " + act,
                     Rect.intersects(detail, act));
         }
+    }
+
+    private String resourceName(int id) {
+        return rig.on((activity, workspace) -> activity.getResources().getResourceEntryName(id));
+    }
+
+    /** The clickable view under a control's centre, named, with its bounds. */
+    private String whoIsAtCentreOf(final int id) {
+        return rig.on((activity, workspace) -> {
+            final View target = workspace.findViewById(id);
+            final int[] at = new int[2];
+            target.getLocationInWindow(at);
+            final View hit = clickableAt(activity.getWindow().getDecorView(),
+                    at[0] + target.getWidth() / 2f, at[1] + target.getHeight() / 2f);
+            if (hit == null) return "nothing clickable";
+            final int[] h = new int[2];
+            hit.getLocationInWindow(h);
+            String name = hit.getClass().getSimpleName();
+            if (hit.getId() != View.NO_ID) {
+                try {
+                    name += " " + activity.getResources().getResourceEntryName(hit.getId());
+                } catch (android.content.res.Resources.NotFoundException ignored) {
+                    name += " #" + hit.getId();
+                }
+            }
+            return name + " [" + h[0] + "," + h[1] + " " + hit.getWidth() + "x" + hit.getHeight() + "]";
+        });
+    }
+
+    private Rect historySurfaceRect() {
+        return rig.on((activity, workspace) -> {
+            final View v = workspace.featureHistory();
+            final int[] at = new int[2];
+            v.getLocationInWindow(at);
+            return new Rect(at[0], at[1], at[0] + v.getWidth(), at[1] + v.getHeight());
+        });
     }
 
     private Rect rectOf(final int id) {
