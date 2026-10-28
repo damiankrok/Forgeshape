@@ -57,7 +57,8 @@ import java.util.Set;
  * sketch inventory, the body measures, the encoded project and its fingerprint
  * — is read to assert. A value is typed through the product's own exact-value
  * door ({@code sketchApplyRectangle}, the precision field) exactly as the
- * earlier owner classes do. Case ids are {@code D01..D12}.
+ * earlier owner classes do. Case ids are {@code D01..D18} (D15..D18 from
+ * {@code CAD-R2-C1}: chooser ownership, font scale and lifecycle).
  */
 @RunWith(AndroidJUnit4.class)
 public final class CadRetainedSketchOwnerTest {
@@ -223,9 +224,13 @@ public final class CadRetainedSketchOwnerTest {
         assertEquals(NativeViewport.SKETCH_FACE_SIDE,
                 (int) wall[NativeViewport.SKETCH_INV_SUPPORT_FACE_KIND]);
 
-        // The round pocket's curved wall: the chooser does not choose it.
+        // The round pocket's curved wall: the chooser chooses NOTHING there --
+        // not a face (it is curved), and not the YZ plane BEHIND it, which is
+        // what the tap fell through to before CAD-R2-C1 (D04 recorded kind 2 and
+        // a sketch opened on YZ). Two real taps; nothing may open or change.
         openNewSketch();
         setCamera(-1.0f, 0.1f, 6.0f);
+        final long fingerprint = NativeViewport.projectFingerprint();
         final float[] at = new float[2];
         // A wall point 30 degrees off the hole's x axis, so neither world plane
         // quad stands between it and the eye (run 2 aimed along y = 0 and the
@@ -236,17 +241,16 @@ public final class CadRetainedSketchOwnerTest {
         realTap(window);
         final int kind = NativeViewport.supportChooserSelectedKind();
         rig.fact("d04.curved_kind", kind);
+        assertEquals("a curved wall in front of the YZ plane chooses nothing",
+                NativeViewport.SUPPORT_KIND_NONE, kind);
         realTap(window);
-        if (sketchState() == NativeViewport.SKETCH_EDITING) {
-            // If anything opened, it must not stand on a FACE (the curved wall
-            // is the only face under that pixel).
-            final double[] view = sketchViewState();
-            rig.fact("d04.curved_opened", Arrays.toString(view));
-            cancelSketch();
-            assertEquals("no face-supported sketch at a curved wall", 0.0,
-                    view[NativeViewport.SKETCH_VIEW_FACE_SUPPORTED], 0.0);
-        }
-        assertNotEquals("the curved wall is never chosen", NativeViewport.SUPPORT_KIND_FACE, kind);
+        rig.fact("d04.curved_after_second_tap", "state=" + sketchState() + " kind="
+                + NativeViewport.supportChooserSelectedKind());
+        assertEquals("no sketch opened", NativeViewport.SKETCH_INACTIVE, sketchState());
+        assertTrue("still choosing", NativeViewport.supportChooserActive());
+        assertEquals(NativeViewport.SUPPORT_KIND_NONE, NativeViewport.supportChooserSelectedKind());
+        assertEquals("the project did not move", fingerprint, NativeViewport.projectFingerprint());
+        rig.capture("d04_curved_wall_refused");
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             NativeViewport.supportChooserCancel();
             workspace.onNativeStateChanged();
@@ -254,6 +258,357 @@ public final class CadRetainedSketchOwnerTest {
         });
         settleLayout();
         assertEquals("nothing was kept there", 5, inventory().rows.size());
+    }
+
+    // =======================================================================
+    // D15 (CAD-R2-C1): a world plane IN FRONT of the body is chosen exactly;
+    // D16: an aim cannot be redirected by an orbit or a refused tap
+    // =======================================================================
+
+    @Test
+    public void d15_a_world_plane_in_front_of_a_body_is_chosen_and_opened_exactly() {
+        newBlock();
+        openNewSketch();
+        // From +x and well above, the YZ square's point (0, 1.5, 0.5) stands
+        // outside the block, and the block's y = +1 side lies behind it on the
+        // same pixel: the plane is the thing in front and keeps the tap.
+        setCamera(1.4f, 0.93f, 8.0f);
+        final long fingerprint = NativeViewport.projectFingerprint();
+        final float[] at = new float[2];
+        assertTrue(NativeViewport.debugProjectWorld(0.0, 1.5, 0.5, at));
+        assertTrue("a body is under the pixel too", insideBlockSilhouette(at));
+        final float[] window = viewportToWindow(at);
+        realTap(window);
+        final int kind = NativeViewport.supportChooserSelectedKind();
+        rig.fact("d15.kind", kind + " at=" + Arrays.toString(at));
+        assertEquals("exactly the YZ plane", 2, kind);
+        assertEquals("aiming writes nothing", fingerprint, NativeViewport.projectFingerprint());
+        rig.capture("d15_plane_aimed");
+        realTap(window);
+        assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
+        final double[] view = sketchViewState();
+        rig.fact("d15.view", Arrays.toString(view));
+        assertEquals("on the YZ plane", 2.0, view[NativeViewport.SKETCH_VIEW_PLANE], 0.0);
+        assertEquals("not on a face", 0.0, view[NativeViewport.SKETCH_VIEW_FACE_SUPPORTED], 0.0);
+        cancelSketch();
+        assertEquals("Cancel costs nothing", fingerprint, NativeViewport.projectFingerprint());
+        assertEquals(1, inventory().rows.size());
+    }
+
+    @Test
+    public void d16_an_aimed_face_survives_an_orbit_and_a_refused_tap_never_redirects() {
+        newBlock();
+        // A round pocket in the top: its wall is curved.
+        newSketchOn(-0.7f, 0.9f, 8.0f, -0.4, 0.5, 1.0);
+        drawExactCircleAt(-0.4, 0.0, 0.3);
+        finishSketch();
+        commitExtrude(NativeViewport.OPERATION_CUT, "0.4");
+        assertEquals(2, NativeViewport.cadFeatureCount(body));
+        final long fingerprint = NativeViewport.projectFingerprint();
+
+        openNewSketch();
+        // From +x, +z and well above (D10's pose) no world plane stands in
+        // front of the base's top at (0.5, 0.5, 1.0).
+        setCamera(0.7f, 0.9f, 8.0f);
+        final float[] at = new float[2];
+        // Aim: the base's top at (0.5, 0.5, 1.0), a planar face.
+        assertTrue(NativeViewport.debugProjectWorld(0.5, 0.5, 1.0, at));
+        realTap(viewportToWindow(at));
+        assertEquals(NativeViewport.SUPPORT_KIND_FACE, NativeViewport.supportChooserSelectedKind());
+        // A one-finger ORBIT is not a tap: the aim stands.
+        realDrag(viewportToWindow(at), 140f, 0f);
+        assertEquals("an orbit does not change the aim", NativeViewport.SUPPORT_KIND_FACE,
+                NativeViewport.supportChooserSelectedKind());
+        assertEquals(NativeViewport.SKETCH_INACTIVE, sketchState());
+        // A tap on the curved wall: refused, nothing opens, nothing is written.
+        setCamera(-1.0f, 0.1f, 6.0f);
+        assertTrue(NativeViewport.debugProjectWorld(-0.4 + 0.3 * Math.cos(Math.PI / 6),
+                0.3 * Math.sin(Math.PI / 6), 0.8, at));
+        realTap(viewportToWindow(at));
+        rig.fact("d16.after_wall", "kind=" + NativeViewport.supportChooserSelectedKind()
+                + " state=" + sketchState());
+        assertEquals("the wall chooses nothing", NativeViewport.SUPPORT_KIND_NONE,
+                NativeViewport.supportChooserSelectedKind());
+        assertEquals(NativeViewport.SKETCH_INACTIVE, sketchState());
+        assertEquals(fingerprint, NativeViewport.projectFingerprint());
+        // The top again, aim + confirm: the sketch opens on THAT face.
+        setCamera(0.7f, 0.9f, 8.0f);
+        assertTrue(NativeViewport.debugProjectWorld(0.5, 0.5, 1.0, at));
+        final float[] top = viewportToWindow(at);
+        realTap(top);
+        assertEquals(NativeViewport.SUPPORT_KIND_FACE, NativeViewport.supportChooserSelectedKind());
+        realTap(top);
+        assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
+        assertEquals(1.0, sketchViewState()[NativeViewport.SKETCH_VIEW_FACE_SUPPORTED], 0.0);
+        assertSketchOriginAtFaceOf(1.0);
+        cancelSketch();
+        assertEquals("the whole journey wrote nothing", fingerprint,
+                NativeViewport.projectFingerprint());
+    }
+
+    /** Whether a viewport point lies inside the projected 2 x 2 x 1 block. */
+    private static boolean insideBlockSilhouette(float[] p) {
+        final double[][] corners = {
+                {-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0},
+                {-1, -1, 1}, {1, -1, 1}, {1, 1, 1}, {-1, 1, 1}};
+        final List<float[]> pts = new ArrayList<>();
+        for (double[] c : corners) {
+            final float[] s = new float[2];
+            if (!NativeViewport.debugProjectWorld(c[0], c[1], c[2], s)) return false;
+            pts.add(s);
+        }
+        // Inside the convex hull: on the same side of every hull edge.
+        pts.sort((a, b) -> a[0] != b[0] ? Float.compare(a[0], b[0]) : Float.compare(a[1], b[1]));
+        final List<float[]> hull = new ArrayList<>();
+        for (int pass = 0; pass < 2; pass++) {
+            final int start = hull.size();
+            for (int i = 0; i < pts.size(); i++) {
+                final float[] q = pts.get(pass == 0 ? i : pts.size() - 1 - i);
+                while (hull.size() >= start + 2) {
+                    final float[] a = hull.get(hull.size() - 2);
+                    final float[] b = hull.get(hull.size() - 1);
+                    if ((b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0]) <= 0) {
+                        hull.remove(hull.size() - 1);
+                    } else {
+                        break;
+                    }
+                }
+                hull.add(q);
+            }
+            hull.remove(hull.size() - 1);
+        }
+        for (int i = 0; i < hull.size(); i++) {
+            final float[] a = hull.get(i);
+            final float[] b = hull.get((i + 1) % hull.size());
+            if ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) < 0) return false;
+        }
+        return true;
+    }
+
+    // =======================================================================
+    // D17 (CAD-R2-C1): the History surface at font scale 1.0 / 1.3 / 1.5, in
+    // portrait and landscape -- every act 48 dp, inside the window, clear of
+    // the others and of the detail text, and owning its own centre; then the
+    // journeys themselves at 1.5 through real taps
+    // =======================================================================
+
+    @Test
+    public void d17_history_acts_stay_reachable_at_font_scale_1_3_and_1_5() {
+        try {
+            newBlock();
+            newSketchOn(0.7f, 0.9f, 8.0f, 0.5, 0.5, 1.0);
+            drawExactSquare(0.3);
+            rig.touchId(R.id.keep_sketch);
+            assertEquals(NativeViewport.SKETCH_INACTIVE, sketchState());
+            for (String scale : new String[]{"1.0", "1.3", "1.5"}) {
+                setFontScale(scale);
+                for (int orientation : new int[]{ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE}) {
+                    WorkspaceTestSupport.setOrientation(rule.getScenario(), orientation);
+                    settleLayout();
+                    SystemClock.sleep(600);
+                    settleLayout();
+                    final String where = "font " + scale + " orientation " + orientation;
+                    openHistory();
+                    assertActsUsable(where + " tabs", new int[]{R.id.feature_history_tab_steps,
+                            R.id.feature_history_tab_sketches, R.id.feature_history_tab_features});
+                    touchTab(R.id.feature_history_tab_sketches);
+                    touchBrowserRow(1);
+                    assertActsUsable(where + " unused sketch", new int[]{R.id.history_act_edit_sketch,
+                            R.id.history_act_reuse_add, R.id.history_act_reuse_cut,
+                            R.id.history_act_delete_sketch});
+                    assertDetailClearOfActs(where);
+                    touchBrowserRow(0);
+                    assertFalse(where + ": the root sketch offers no Delete",
+                            rig.shown(R.id.history_act_delete_sketch));
+                    assertTrue(where + ": the refusal is legible",
+                            detailText().contains(string(R.string.status_cad_sketch_is_root)));
+                    assertDetailClearOfActs(where + " root");
+                    touchTab(R.id.feature_history_tab_features);
+                    touchBrowserRow(0);
+                    assertActsUsable(where + " feature", new int[]{R.id.history_act_edit_feature,
+                            R.id.history_act_edit_sketch});
+                    rig.capture("d17_font_" + scale.replace('.', '_') + "_" + orientation);
+                    closeHistory();
+                }
+            }
+            // The journeys at the largest scale, portrait: Use for Add, Delete
+            // an unused sketch, Edit Feature + Cancel, each by real taps.
+            WorkspaceTestSupport.setOrientation(rule.getScenario(),
+                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+            settleLayout();
+            newSketchOn(0.7f, 0.9f, 8.0f, 0.75, 0.3, 1.0);
+            drawExactSquare(0.2);
+            assertTrue("Keep Sketch is reachable at 1.5", ownsItsCentre(R.id.keep_sketch));
+            rig.touchId(R.id.keep_sketch);
+            assertNotNull(inventory().find(3L));
+            reuse(2L, R.id.history_act_reuse_add, "0.2");
+            assertEquals(4.0 + 0.09 * 0.2, volume(), VOLUME_TOLERANCE);
+            openHistory();
+            touchTab(R.id.feature_history_tab_sketches);
+            touchBrowserRow(rowIndexOf(3L));
+            rig.touchId(R.id.history_act_delete_sketch);
+            assertEquals("the unused sketch is gone", null, inventory().find(3L));
+            final long fingerprint = NativeViewport.projectFingerprint();
+            touchTab(R.id.feature_history_tab_features);
+            touchBrowserRow(1);
+            rig.touchId(R.id.history_act_edit_feature);
+            assertEquals(NativeViewport.SKETCH_READY, sketchState());
+            cancelSketch();
+            assertEquals("Edit Feature + Cancel wrote nothing", fingerprint,
+                    NativeViewport.projectFingerprint());
+            rig.capture("d17_journeys_font_1_5");
+        } finally {
+            setFontScale("1.0");
+        }
+    }
+
+    // =======================================================================
+    // D18 (CAD-R2-C1): History survives a rotation and a background trip while
+    // open; a world-plane sketch never offers Keep Sketch
+    // =======================================================================
+
+    @Test
+    public void d18_history_survives_rotation_and_background_and_world_plane_keep_stays_absent() {
+        newBlock();
+        newSketchOn(0.7f, 0.9f, 8.0f, 0.5, 0.5, 1.0);
+        drawExactSquare(0.3);
+        rig.touchId(R.id.keep_sketch);
+        final long fingerprint = NativeViewport.projectFingerprint();
+        final byte[] bytes = NativeViewport.encodeProject();
+        final int undo = NativeViewport.constructionUndoDepth();
+        openHistory();
+        touchTab(R.id.feature_history_tab_sketches);
+        touchBrowserRow(1);
+        WorkspaceTestSupport.setOrientation(rule.getScenario(),
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        settleLayout();
+        SystemClock.sleep(600);
+        settleLayout();
+        openHistory();
+        touchTab(R.id.feature_history_tab_sketches);
+        touchBrowserRow(1);
+        assertActsUsable("after rotation", new int[]{R.id.history_act_edit_sketch,
+                R.id.history_act_reuse_add, R.id.history_act_reuse_cut,
+                R.id.history_act_delete_sketch});
+        rule.getScenario().moveToState(androidx.lifecycle.Lifecycle.State.CREATED);
+        rule.getScenario().moveToState(androidx.lifecycle.Lifecycle.State.RESUMED);
+        settleLayout();
+        SystemClock.sleep(600);
+        settleLayout();
+        openHistory();
+        touchTab(R.id.feature_history_tab_sketches);
+        assertEquals("the same two sketches after background", 2, browserRowTexts().size());
+        closeHistory();
+        assertEquals("reading History, rotating and backgrounding wrote nothing", fingerprint,
+                NativeViewport.projectFingerprint());
+        assertArrayEquals(bytes, NativeViewport.encodeProject());
+        assertEquals(undo, NativeViewport.constructionUndoDepth());
+
+        // A sketch on a WORLD plane: Keep Sketch is not drawn (the design hold).
+        WorkspaceTestSupport.setOrientation(rule.getScenario(),
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        settleLayout();
+        openNewSketch();
+        setCamera(1.4f, 0.93f, 8.0f);
+        final float[] at = new float[2];
+        assertTrue(NativeViewport.debugProjectWorld(0.0, 1.5, 0.5, at));
+        final float[] window = viewportToWindow(at);
+        realTap(window);
+        assertEquals(2, NativeViewport.supportChooserSelectedKind());
+        realTap(window);
+        assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
+        drawExactSquare(0.2);
+        assertFalse("no Keep Sketch on a world plane", rig.shown(R.id.keep_sketch));
+        assertEquals("and native refuses it below JNI", NativeViewport.CAD_NOT_SKETCHING,
+                rig.applyOnUi(NativeViewport::sketchCommitSketch));
+        assertEquals("the refusal keeps the sketch open", NativeViewport.SKETCH_EDITING,
+                sketchState());
+        cancelSketch();
+        assertEquals(fingerprint, NativeViewport.projectFingerprint());
+    }
+
+    private static void shell(String command) {
+        final android.os.ParcelFileDescriptor pipe = androidx.test.platform.app.InstrumentationRegistry
+                .getInstrumentation().getUiAutomation().executeShellCommand(command);
+        try (java.io.FileInputStream stream =
+                     new android.os.ParcelFileDescriptor.AutoCloseInputStream(pipe)) {
+            final byte[] scratch = new byte[64];
+            while (stream.read(scratch) >= 0) {
+                // Drained so the command completes before the case continues.
+            }
+        } catch (IOException ignored) {
+            // The command still ran; nothing here reads its output.
+        }
+        SystemClock.sleep(200);
+    }
+
+    /** The real system font scale, then waits until the Activity carries it. */
+    private void setFontScale(String scale) {
+        shell("settings put system font_scale " + scale);
+        final float want = Float.parseFloat(scale);
+        boolean applied = false;
+        for (int attempt = 0; attempt < 60 && !applied; attempt++) {
+            final Float now = onWorkspace(rule.getScenario(), (activity, workspace) ->
+                    activity.getResources().getConfiguration().fontScale);
+            applied = now != null && Math.abs(now - want) < 0.01f;
+            if (!applied) SystemClock.sleep(100);
+        }
+        assertTrue("font scale " + scale + " took effect (else this case proves nothing)", applied);
+        settleLayout();
+        SystemClock.sleep(400);
+        settleLayout();
+        rig.fact("font_scale", scale);
+    }
+
+    /** Each control: shown, >= 48 dp both ways, inside the window, owning its centre, apart. */
+    private void assertActsUsable(String where, int[] ids) {
+        final float density = rig.on((activity, workspace) ->
+                activity.getResources().getDisplayMetrics().density);
+        final int floor = Math.round(48 * density) - 1;
+        final Rect window = rig.on((activity, workspace) -> {
+            final View root = activity.getWindow().getDecorView();
+            return new Rect(0, 0, root.getWidth(), root.getHeight());
+        });
+        final List<Rect> rects = new ArrayList<>();
+        for (int id : ids) {
+            final Rect r = rectOf(id);
+            assertNotNull(where + ": control " + id + " shown", r);
+            assertTrue(where + ": 48 dp high " + r, r.height() >= floor);
+            assertTrue(where + ": 48 dp wide " + r, r.width() >= floor);
+            assertTrue(where + ": inside the window " + r + " in " + window, window.contains(r));
+            assertTrue(where + ": owns its centre " + id, ownsItsCentre(id));
+            for (Rect other : rects) {
+                assertFalse(where + ": apart " + r + " " + other, Rect.intersects(r, other));
+            }
+            rects.add(r);
+        }
+        rig.fact("d17." + where.replace(' ', '_'), rects.toString());
+    }
+
+    /** The selected row's detail text is visible and stands on no act. */
+    private void assertDetailClearOfActs(String where) {
+        final Rect detail = rig.on((activity, workspace) -> {
+            final TextView view = workspace.featureHistory().detailText();
+            if (!view.isShown() || view.getHeight() == 0) return null;
+            final Rect visible = new Rect();
+            return view.getGlobalVisibleRect(visible) ? visible : null;
+        });
+        assertNotNull(where + ": the detail text is visible", detail);
+        for (Rect act : actChipRects()) {
+            assertFalse(where + ": detail " + detail + " clear of act " + act,
+                    Rect.intersects(detail, act));
+        }
+    }
+
+    private Rect rectOf(final int id) {
+        return rig.on((activity, workspace) -> {
+            final View view = workspace.findViewById(id);
+            if (view == null || !view.isShown()) return null;
+            final int[] at = new int[2];
+            view.getLocationInWindow(at);
+            return new Rect(at[0], at[1], at[0] + view.getWidth(), at[1] + view.getHeight());
+        });
     }
 
     // =======================================================================
@@ -1342,6 +1697,25 @@ public final class CadRetainedSketchOwnerTest {
             dispatch(root, down, down, MotionEvent.ACTION_DOWN, window[0], window[1],
                     MotionEvent.TOOL_TYPE_FINGER);
             dispatch(root, down, down + 40L, MotionEvent.ACTION_UP, window[0], window[1],
+                    MotionEvent.TOOL_TYPE_FINGER);
+            return null;
+        });
+        settleLayout();
+    }
+
+    /** A one-finger DRAG through the window (an orbit, never a tap). */
+    private void realDrag(final float[] from, final float dx, final float dy) {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View root = activity.getWindow().getDecorView();
+            final long down = SystemClock.uptimeMillis();
+            dispatch(root, down, down, MotionEvent.ACTION_DOWN, from[0], from[1],
+                    MotionEvent.TOOL_TYPE_FINGER);
+            for (int step = 1; step <= 8; step++) {
+                dispatch(root, down, down + 16L * step, MotionEvent.ACTION_MOVE,
+                        from[0] + dx * step / 8f, from[1] + dy * step / 8f,
+                        MotionEvent.TOOL_TYPE_FINGER);
+            }
+            dispatch(root, down, down + 160L, MotionEvent.ACTION_UP, from[0] + dx, from[1] + dy,
                     MotionEvent.TOOL_TYPE_FINGER);
             return null;
         });
