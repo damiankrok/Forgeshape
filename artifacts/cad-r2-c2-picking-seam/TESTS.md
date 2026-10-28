@@ -84,4 +84,20 @@ selected.
 
 ## T5 — CI FAST / APK
 
-@@FAST_SECTION@@
+`CI FAST` **`40787465884`** on `14a3dbc` — success (build, JVM, debug +
+androidTest + release APKs, whitespace, release guard, corpus parity,
+device-free runner guards). From the original artifact: JVM **196 tests, 0
+failures, 0 errors** (20 result files); `RELEASE_SELFTEST_GUARD=PASS`;
+`CORPUS_PARITY=PASS` (**72/72**).
+
+| Item | Value |
+| --- | --- |
+| Artifact | `ci-fast-evidence`, id `12860436405`, 11,643,731 bytes, expires 2026-11-11T23:31:32Z |
+| Artifact digest (GitHub) | `sha256:e5f659df3436d6d4fa2339cbb84f21770ec7fe61c20df6aa7c10ad6dc01d2e1f` |
+| Downloaded ZIP SHA-256 | `e5f659df3436d6d4fa2339cbb84f21770ec7fe61c20df6aa7c10ad6dc01d2e1f` (equal) |
+| APK path inside | `app/build/outputs/apk/debug/app-debug.apk` |
+| APK size | 17,582,551 bytes |
+| APK SHA-256 | `262076926e8cc3f90dc70425de4363d3ba3300adfc1998092d581cdffc40be9e` |
+
+Docs-only proof: `git diff --stat f3db953 HEAD -- app/src/main scripts
+testdata .github` is empty.

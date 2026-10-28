@@ -21,10 +21,10 @@ tests only after it; no other branch moved; no FullSharded. Record:
   renderer or kernel change.
 - **Gates.** Host `HOST_SELFTESTS_OK (4392 checks, 0 failed)` (+17 PICK_C2, 8
   red before the fix; C1_CH and the 17 oracles kept); JVM 196/196; release
-  guard PASS; corpus 72/72; DEVICE union @@UNION@@ incl.
+  guard PASS; corpus 72/72; DEVICE union **126/126** (`40782861799` 67/67 + `40776968165` 59/59) incl.
   `CadRetainedSketchOwnerTest` D01..D22; perf +2.4 – 3.0 % per triangle test,
-  CAD scene pick unchanged (`PERF.md`); `CI FAST` @@FAST@@ success.
-- **OWNER APK.** @@APK@@
+  CAD scene pick unchanged (`PERF.md`); `CI FAST` `40787465884` success.
+- **OWNER APK.** `ci-fast-evidence` artifact `12860436405` of `CI FAST` `40787465884` (head `14a3dbc`, product tree = `f3db953`), `app/build/outputs/apk/debug/app-debug.apk`, 17,582,551 bytes, SHA-256 `262076926e8cc3f90dc70425de4363d3ba3300adfc1998092d581cdffc40be9e`; artifact expires 2026-11-11T23:31:32Z.
 
 **Previous closeout:** **`CAD-R2-C1` (post-implementation quality gate) —
 `PASS-CAD-R2-C1-WITH-RECORDED-BLOCKERS`** (2026-10-28). **TECH PASS / OWNER
@@ -4851,7 +4851,8 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: OWNER physical-device review of the `CAD-R2-C2` APK**
-(@@NEXTAPK@@) against the test packs in
+(`ci-fast-evidence` artifact `12860436405` of `CI FAST` `40787465884`, APK
+SHA-256 `262076926e8cc3f90dc70425de4363d3ba3300adfc1998092d581cdffc40be9e`) against the test packs in
 `artifacts/cad-r2-c2-picking-seam/SUMMARY.md` (the orthographic seam tap) and
 `artifacts/cad-r2-c1-quality-gate/SUMMARY.md` (which includes the CAD-R2
 retained-sketch checklist), together with the still-pending

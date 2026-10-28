@@ -11,7 +11,9 @@ every gate and attempt, `PERF.md` the cost.
 | Branch | `feature/cad-r2-c2-picking-seam-r1` |
 | The one product change | `0fa12c9` — `app/src/main/cpp/forgeshape_picking.cpp` |
 | `app/src/main` frozen at | `f3db953` (the fix + PICK_C2 self-tests) |
-| Device union, CI FAST, APK | `TESTS.md` T4 / T5 |
+| Device union | 126/126: `40782861799` 67/67 (`30b561b`) + `40776968165` 59/59 (`b227a0b`) |
+| CI FAST | `40787465884` on `14a3dbc` (product tree = `f3db953`), success |
+| OWNER APK | artifact `12860436405`, `app-debug.apk` 17,582,551 B, SHA-256 `262076926e8cc3f90dc70425de4363d3ba3300adfc1998092d581cdffc40be9e`, expires 2026-11-11T23:31:32Z |
 
 `main` `6c9f156`, R2 `ea24d20` and C1 `08406cf` untouched. No merge, rebase,
 cherry-pick, force push, FullSharded run, format or fixture change.
