@@ -26,6 +26,7 @@
 #include "forgeshape_sketch_arrangement.h"
 #include "forgeshape_sketch_session.h"
 #include "forgeshape_picking.h"
+#include "forgeshape_selection.h"
 #include "forgeshape_support_chooser.h"
 #include "forgeshape_workplane.h"
 
@@ -1430,6 +1431,97 @@ void testChooserOwnership(Checks& r) {
             hovered.kind == ChosenSupport::Kind::None && nothingSelected);
 }
 
+// ===========================================================================
+// PICK-C2: a ray on the seam two triangles of one face share (`CAD-R2-C2`)
+// ===========================================================================
+
+void testPickingSeam(Checks& r) {
+    // The C1_CH_04 scene, aimed EXACTLY at the pocket floor's centre, which
+    // lies on the diagonal its two triangles share (C1 had to aim off it).
+    Shop shop(shopState());
+    const uint64_t before = shop.fingerprint();
+    const Vec3 seam{0.5f, -0.5f, 0.6f};
+    const CameraSnapshot above = lookAlong(seam, Vec3{0.2f, 0.0f, 1.0f}, Vec3{0, 1, 0});
+    float x = 0.0f;
+    float y = 0.0f;
+    projectWorldToScreen(above, seam, kW, kH, &x, &y);
+    const SceneHit hit = pickSceneSnapshot(above, x, y, kW, kH, shop.scene.snapshot());
+    r.check("PICK_C2_12_the_scene_pick_hits_the_pocket_floor_on_its_seam",
+            hit.hit && hit.objectId == shop.id
+                    && std::sqrt(vec3Dot(vec3Sub(hit.position, seam), vec3Sub(hit.position, seam)))
+                               < 1e-3f);
+
+    SupportChooser& chooser = supportChooser();
+    chooser.begin(/*allowFaces=*/true);
+    const ChosenSupport first = chooserTapAt(shop.scene, above, seam);
+    const ChosenSupport second = chooserTapAt(shop.scene, above, seam);
+    chooser.cancel();
+    r.check("PICK_C2_13_the_chooser_on_the_seam_names_the_exact_floor_never_the_plane_behind",
+            first.kind == ChosenSupport::Kind::Face && first.faceRef.producerObjectId == shop.id
+                    && first.faceRef.producerLocalFeatureId == 3u
+                    && first.faceRef.face.kind == CadFaceKind::CapFar
+                    && first.faceRef.lineageToken == cadFeatureTopologySignature(shop.state(), 3u)
+                    && second.kind == ChosenSupport::Kind::Face
+                    && sameTopoRef(first.faceRef, second.faceRef)
+                    && shop.fingerprint() == before);
+
+    // The same state regenerated and published into a NEW scene: the triangle
+    // indices are rebuilt, the semantic face is the same.
+    Shop again(shopState());
+    chooser.begin(true);
+    const ChosenSupport rebuilt = chooserTapAt(again.scene, above, seam);
+    chooser.cancel();
+    r.check("PICK_C2_14_a_regenerated_mesh_resolves_the_same_semantic_face_on_the_seam",
+            rebuilt.kind == ChosenSupport::Kind::Face
+                    && rebuilt.faceRef.producerLocalFeatureId == first.faceRef.producerLocalFeatureId
+                    && rebuilt.faceRef.face.kind == first.faceRef.face.kind
+                    && rebuilt.faceRef.face.edgeEntityId == first.faceRef.face.edgeEntityId
+                    && rebuilt.faceRef.lineageToken == first.faceRef.lineageToken);
+
+    // A hole stays empty: a 0.3 m square cut THROUGH the 1 m block at (0.5,
+    // 0.5). The far ray at its centre (seen straight down) meets no surface of
+    // the body, so the chooser falls to the XY plane at z = 0 below the hole --
+    // which is genuinely what is visible there -- never a face of the body.
+    CadBodyState through = shopState();
+    CadSketch hole;
+    const SketchEntityId h = add(&hole, rect(0.5, 0.5, 0.3, 0.3));
+    appendCadLaterFeatureWithSketch(&through, CadFeatureOperation::Cut,
+                                    faceSupport(through, kCadFeatureId, cap(CadFaceKind::CapFar)),
+                                    std::move(hole), oneSide(h, 1.0, ExtrudeDirection::AgainstNormal));
+    Shop holed(through);
+    const Vec3 inHole{0.5f, 0.5f, 0.5f};
+    const CameraSnapshot down = lookAlong(inHole, Vec3{0, 0, 1}, Vec3{1, 0, 0});
+    float hx = 0.0f;
+    float hy = 0.0f;
+    projectWorldToScreen(down, inHole, kW, kH, &hx, &hy);
+    const SceneHit holeHit = pickSceneSnapshot(down, hx, hy, kW, kH, holed.scene.snapshot());
+    chooser.begin(true);
+    const ChosenSupport holeChoice = chooserTapAt(holed.scene, down, inHole);
+    chooser.cancel();
+    r.check("PICK_C2_15_a_through_hole_stays_empty_and_chooses_no_face_of_the_body",
+            holed.id != kNoObject && !holeHit.hit
+                    && holeChoice.kind != ChosenSupport::Kind::Face);
+
+    // An edge two DIFFERENT semantic faces share (the base's top cap and its
+    // +x side meet at x = 1, z = 1), from a far eye at 45 degrees: the hit
+    // resolves to one of exactly those two faces -- nearest t, then the lower
+    // triangle index -- and the same one on every repetition.
+    const Vec3 edge{1.0f, 0.3f, 1.0f};
+    const CameraSnapshot diagonal = lookAlong(edge, Vec3{1, 0, 1}, Vec3{0, 1, 0});
+    chooser.begin(true);
+    const ChosenSupport onEdge = chooserTapAt(shop.scene, diagonal, edge);
+    bool stable = onEdge.kind == ChosenSupport::Kind::Face;
+    for (int k = 0; k < 6; ++k) {
+        stable = stable && sameTopoRef(chooserTapAt(shop.scene, diagonal, edge).faceRef, onEdge.faceRef);
+    }
+    chooser.cancel();
+    const bool oneOfTheTwo = onEdge.faceRef.producerLocalFeatureId == kCadFeatureId
+                             && (onEdge.faceRef.face.kind == CadFaceKind::CapFar
+                                 || onEdge.faceRef.face.kind == CadFaceKind::Side);
+    r.check("PICK_C2_16_an_edge_between_two_faces_resolves_to_one_of_them_deterministically",
+            stable && oneOfTheTwo);
+}
+
 }  // namespace
 
 void runCadR2SelfTests(std::vector<ArrangementSelfTestCheck>* out, std::string* performance) {
@@ -1447,6 +1539,7 @@ void runCadR2SelfTests(std::vector<ArrangementSelfTestCheck>* out, std::string* 
     testAreaShortcuts(r);
     testSupport(r);
     testChooserOwnership(r);
+    testPickingSeam(r);
     testData(r);
     // Inventory read cost on a 16-sketch body (the cap), median of 9.
     CadBodyState big = shopState();
