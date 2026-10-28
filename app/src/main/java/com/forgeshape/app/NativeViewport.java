@@ -2315,6 +2315,8 @@ final class NativeViewport {
     static final int CAD_OFFSET_SELF_INTERSECTING = 88;
     static final int CAD_MIRROR_AXIS_INVALID = 89;
     static final int CAD_MIRROR_NOTHING_SELECTED = 90;
+    /** A sketch id the body's table does not carry (`CAD-V6-S1`, code 47). */
+    static final int CAD_SKETCH_NOT_FOUND = 47;
     // `CAD-R2`: retained sketch management. APPENDED.
     static final int CAD_SKETCH_IN_USE = 91;
     static final int CAD_SKETCH_IS_ROOT = 92;

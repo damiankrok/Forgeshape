@@ -679,6 +679,48 @@ public final class CadRetainedSketchOwnerTest {
         settleLayout();
     }
 
+    // =======================================================================
+    // D13: the retained-sketch JNI boundary refuses malformed input by name
+    // =======================================================================
+
+    @Test
+    public void d13_malformed_retained_sketch_calls_are_refused_and_change_nothing() {
+        newBlock();
+        final byte[] before = NativeViewport.encodeProject();
+        final int undo = NativeViewport.constructionUndoDepth();
+        assertEquals("a short header", -1, NativeViewport.cadSketchInventory(body, new double[2],
+                new double[NativeViewport.SKETCH_INV_ROW_SIZE]));
+        assertEquals("no such body", -1, NativeViewport.cadSketchInventory(987654L,
+                new double[NativeViewport.SKETCH_INV_HEADER_SIZE], null));
+        assertEquals("rows too short to hold one row: the count, nothing written", 1,
+                NativeViewport.cadSketchInventory(body, new double[NativeViewport.SKETCH_INV_HEADER_SIZE],
+                        new double[3]));
+        assertEquals("an unknown sketch has no consumers", -1,
+                NativeViewport.cadSketchConsumers(body, 99L, new long[4]));
+        assertEquals("a negative id", -1, NativeViewport.cadSketchConsumers(body, -3L, null));
+        assertEquals(NativeViewport.CAD_SKETCH_NOT_FOUND,
+                rig.applyOnUi(() -> NativeViewport.cadDeleteSketch(body, -5L)));
+        assertEquals(NativeViewport.CAD_SKETCH_NOT_FOUND,
+                rig.applyOnUi(() -> NativeViewport.cadDeleteSketch(body, 1L << 40)));
+        assertEquals(NativeViewport.CAD_SKETCH_IS_ROOT,
+                rig.applyOnUi(() -> NativeViewport.cadDeleteSketch(body, 1L)));
+        assertEquals(NativeViewport.CAD_INVALID_FEATURE_OPERATION,
+                rig.applyOnUi(() -> NativeViewport.sketchBeginReuseSketch(body, 1L, 7)));
+        assertEquals("New Body is never a later feature", NativeViewport.CAD_INVALID_FEATURE_OPERATION,
+                rig.applyOnUi(() -> NativeViewport.sketchBeginReuseSketch(body, 1L,
+                        NativeViewport.OPERATION_NEW_BODY)));
+        assertEquals(NativeViewport.CAD_NOT_CAD_BODY,
+                rig.applyOnUi(() -> NativeViewport.sketchBeginEditSketch(987654L, 1L)));
+        assertEquals(NativeViewport.CAD_SKETCH_NOT_FOUND,
+                rig.applyOnUi(() -> NativeViewport.sketchBeginEditSketch(body, 0L)));
+        assertEquals("Keep Sketch with no session", NativeViewport.CAD_NOT_SKETCHING,
+                rig.applyOnUi(NativeViewport::sketchCommitSketch));
+        assertFalse(NativeViewport.sketchCanKeepSketch());
+        assertEquals(NativeViewport.SKETCH_INACTIVE, sketchState());
+        assertEquals("nothing recorded", undo, NativeViewport.constructionUndoDepth());
+        assertArrayEquals("nothing written", before, NativeViewport.encodeProject());
+    }
+
     // -----------------------------------------------------------------------
     // The project and the chooser
     // -----------------------------------------------------------------------
