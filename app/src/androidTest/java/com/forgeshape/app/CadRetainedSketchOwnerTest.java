@@ -227,23 +227,24 @@ public final class CadRetainedSketchOwnerTest {
         openNewSketch();
         setCamera(-1.0f, 0.1f, 6.0f);
         final float[] at = new float[2];
-        assertTrue(NativeViewport.debugProjectWorld(-0.1, 0.0, 0.8, at));
+        // A wall point 30 degrees off the hole's x axis, so neither world plane
+        // quad stands between it and the eye (run 2 aimed along y = 0 and the
+        // XZ plane, correctly, took the tap).
+        assertTrue(NativeViewport.debugProjectWorld(-0.4 + 0.3 * Math.cos(Math.PI / 6),
+                0.3 * Math.sin(Math.PI / 6), 0.8, at));
         final float[] window = viewportToWindow(at);
         realTap(window);
         final int kind = NativeViewport.supportChooserSelectedKind();
         rig.fact("d04.curved_kind", kind);
         realTap(window);
         if (sketchState() == NativeViewport.SKETCH_EDITING) {
-            // If anything opened, it must not stand on the curved wall.
+            // If anything opened, it must not stand on a FACE (the curved wall
+            // is the only face under that pixel).
             final double[] view = sketchViewState();
             rig.fact("d04.curved_opened", Arrays.toString(view));
-            doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-                NativeViewport.sketchCancel();
-                workspace.onNativeStateChanged();
-                return null;
-            });
-            settleLayout();
-            throw new AssertionError("a sketch opened at a curved Cut wall");
+            cancelSketch();
+            assertEquals("no face-supported sketch at a curved wall", 0.0,
+                    view[NativeViewport.SKETCH_VIEW_FACE_SUPPORTED], 0.0);
         }
         assertNotEquals("the curved wall is never chosen", NativeViewport.SUPPORT_KIND_FACE, kind);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
@@ -333,7 +334,9 @@ public final class CadRetainedSketchOwnerTest {
         rig.press(R.id.undo_action);
 
         // A NEW sketch now takes a fresh id: 3, never the freed... the restored 2 stands.
-        newSketchOn(-0.7f, 0.9f, 8.0f, -0.5, -0.5, 1.0);
+        // x > 0 and y > 0: in front of both the chooser's translucent YZ and XZ
+        // planes from this camera (run 2 aimed through the XZ plane at y < 0).
+        newSketchOn(0.7f, 0.9f, 8.0f, 0.75, 0.3, 1.0);
         drawExactSquare(0.3);
         rig.touchId(R.id.keep_sketch);
         assertNotNull(inventory().find(3L));
