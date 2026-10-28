@@ -113,5 +113,6 @@ lines. Evidence artifacts: `ci-device-evidence` 12814405176 (run 40680946023).
 Union: **118 / 118**, both parts 25/25 startup tokens in order,
 `NATIVE_VIEWPORT_OK`, 0 failure lines, `FORGESHAPE_CI_DEVICE_RESULT=PASS`.
 The product native/Java code is identical in both heads (`5127cfc` + the
-`5dd7d97` Java constant). D14 facts: `d14.preview=[4.0, 1.0]` (Select All →
-four regions, one valid candidate), cleared capture `d14_cleared.png`.
+`5dd7d97` Java constant). D14 facts: `d14.preview=[4.0, 1.0]` (Select All on a ring
+and its disk chooses both regions; the valid candidate is the whole 2 × 2
+square, volume 4 m³, one component), cleared capture `d14_cleared.png`.
