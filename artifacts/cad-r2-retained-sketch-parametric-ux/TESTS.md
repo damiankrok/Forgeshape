@@ -102,3 +102,16 @@ debug control: 35 symbols, 398 strings on both ABIs).
 
 Startup on every run: 25/25 tokens in order, `NATIVE_VIEWPORT_OK`, 0 failure
 lines. Evidence artifacts: `ci-device-evidence` 12814405176 (run 40680946023).
+
+## Final DEVICE union (bounded; split in two by the workflow's 2700 s cap)
+
+| Part | Run | Head | Classes | Result | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| A | **40683528533** | `f706e92` | `OwnerProjectShellSketchSupportTest`, `CadMultiFaceOwnerTest`, `CadFillPickR2Test`, `CadHud3dOwnerTest`, `CadRevolveOwnerTest`, `CadSketchDraftingOwnerTest`, `CadParametricHistoryOwnerTest`, `HomeFlowTest`, `EditorWorkspaceProjectActionsTest` | **OK (67 tests)**, 0 failed | `ci-device-evidence` 12815577156 |
+| B | **40689211847** | `7d2d7b4` (docs only after `1b7507e`, test only after `f706e92`) | `CadRetainedSketchOwnerTest` (D01..D14), `EditorWorkspaceCorrectionTest` | **OK (51 tests)**, 0 failed, 1265 s | `ci-device-evidence` 12818690455 |
+
+Union: **118 / 118**, both parts 25/25 startup tokens in order,
+`NATIVE_VIEWPORT_OK`, 0 failure lines, `FORGESHAPE_CI_DEVICE_RESULT=PASS`.
+The product native/Java code is identical in both heads (`5127cfc` + the
+`5dd7d97` Java constant). D14 facts: `d14.preview=[4.0, 1.0]` (Select All →
+four regions, one valid candidate), cleared capture `d14_cleared.png`.

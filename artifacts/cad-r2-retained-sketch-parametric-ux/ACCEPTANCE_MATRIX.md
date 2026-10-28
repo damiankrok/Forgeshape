@@ -32,7 +32,7 @@ JNI vocabulary) gained two APPENDED codes. Evidence ids: host checks
 
 | Item | Evidence | Verdict |
 | --- | --- | --- |
-| P2.1 Select All / Clear, bounded, same evaluator | R2_PF_13/14; D14 | DELIVERED (D14 in the final union part B) |
+| P2.1 Select All / Clear, bounded, same evaluator | R2_PF_13/14; D14 | DELIVERED (D14 passed in union part B, run 40689211847) |
 | P2.2 complex topology (grid 24/36, two components, point touch, pinched holes, permutation, crossing and tangent circles, nested loops, winding, spline) | R2_PF_01..12, R2_OR_12/13; D09 (22 cells by real taps, one solid, 11 m³ exact, save/reopen) | DELIVERED |
 | P2.3 support lifecycle (Cut floor/wall yes, curved / partial Revolve no, stale refused) | R2_SUP_01..06; D04, D10 | DELIVERED |
 | P2.4 hit ownership, 48 dp, portrait/landscape, stylus | JVM 13/14; D12 (both orientations, every act owns its centre, a stylus press) | DELIVERED (font scale: not exercised — see Known issues) |
