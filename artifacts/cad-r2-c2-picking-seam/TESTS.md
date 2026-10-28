@@ -66,4 +66,22 @@ Focused attempts (`CadRetainedSketchOwnerTest`):
 | 40771034694 | `f3db953` | 21/22 | D19, D20, D22 PASS (`d19.kind=3`, kept on feature 2 `CapFar`; outside → XY 0; hole → XY 0; hover → 3, nothing selected). D21: after the rotation a tap read kind −1 | instrumented D21 (`8e40a4d`) |
 | 40775423761 | `8e40a4d` | D21 only: 0/1 | diagnostics: before the tap `kind=3 active=true owner=viewport_surface projection=1`, after `kind=-1 active=false` — the aim SURVIVED the rotation and the tap confirmed it (the chooser closed on the sketch). **Harness** expectation | D21 asserts the aim survives and one tap opens the face sketch (`b227a0b`); no product change |
 
-Final union: see below.
+Final union (no FullSharded; real `CI DEVICE` runs, API 36 x86_64 emulator,
+25/25 startup tokens in order, `NATIVE_VIEWPORT_OK`, 0 failure tokens each):
+
+| Part | Run | Head | Classes | Result | Artifact |
+| --- | --- | --- | --- | --- | --- |
+| B | 40776968165 | `b227a0b` | `CadRetainedSketchOwnerTest` (D01..D22), `EditorWorkspaceCorrectionTest` | **59/59** (1628 s) | `12856463065` |
+| A | 40782861799 | `30b561b` | `OwnerProjectShellSketchSupportTest`, `CadMultiFaceOwnerTest`, `CadFillPickR2Test`, `CadHud3dOwnerTest`, `CadRevolveOwnerTest`, `CadSketchDraftingOwnerTest`, `CadParametricHistoryOwnerTest`, `HomeFlowTest`, `EditorWorkspaceProjectActionsTest` | **67/67** (1735 s) | `12860315938` |
+
+**Union 126/126** (C1: 122 + D19..D22). `app/src/main` and `androidTest` are
+identical between `b227a0b`, `30b561b` and the FAST head (docs only after
+`b227a0b`). Part B facts: `d19.kind=3`, kept on feature 2 `CapFar`;
+`d20.outside_kind=0`, `hole_kind=0`, inside → FACE; `d21` after rotation
+`kind=3 active=true owner=viewport_surface`, one tap → `SKETCH_EDITING`,
+Cancel: fingerprint and undo depth unchanged; `d22.hover_kind=3`, nothing
+selected.
+
+## T5 — CI FAST / APK
+
+@@FAST_SECTION@@
