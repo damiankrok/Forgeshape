@@ -1,8 +1,32 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.101.0
+**Status Version:** 0.102.0
 **Updated:** 2026-10-28
-**Latest closeout:** **`CAD-R2-C1` (post-implementation quality gate) —
+**Latest closeout:** **`CAD-R2-C2` (CPU picking seam correctness) —
+`PASS-CAD-R2-C2-PICKING-SEAM`** (2026-10-28). **TECH PASS / OWNER PHYSICAL
+REVIEW REQUIRED / NOT MERGED.** Branch `feature/cad-r2-c2-picking-seam-r1` from
+exactly `08406cf` (the C1 head); the one product change `0fa12c9`
+(`forgeshape_picking.cpp`), `app/src/main` frozen at `f3db953`, docs / device
+tests only after it; no other branch moved; no FullSharded. Record:
+`artifacts/cad-r2-c2-picking-seam/SUMMARY.md` (BEFORE.md first). A2 stays
+`BLOCKED-DESIGN-DECISION-R2-WORLD-PLANE-RETAINED-SKETCH`.
+
+- **Defect.** In the ORTHOGRAPHIC projection a tap exactly on the diagonal two
+  triangles of one planar face share (the C1 pocket floor's centre) hit
+  neither, and the chooser answered the world plane BEHIND the face. Cause:
+  float32 cancellation in `intersectRayTriangle` (`s = origin − v0`, origin
+  250 m out) grows past the fixed 1e-6 barycentric overlap.
+- **Fix.** The same Möller–Trumbore, thresholds, culling and float interface,
+  evaluated in double. `kBarycentricEpsilon` unchanged; no format, JNI,
+  renderer or kernel change.
+- **Gates.** Host `HOST_SELFTESTS_OK (4392 checks, 0 failed)` (+17 PICK_C2, 8
+  red before the fix; C1_CH and the 17 oracles kept); JVM 196/196; release
+  guard PASS; corpus 72/72; DEVICE union @@UNION@@ incl.
+  `CadRetainedSketchOwnerTest` D01..D22; perf +2.4 – 3.0 % per triangle test,
+  CAD scene pick unchanged (`PERF.md`); `CI FAST` @@FAST@@ success.
+- **OWNER APK.** @@APK@@
+
+**Previous closeout:** **`CAD-R2-C1` (post-implementation quality gate) —
 `PASS-CAD-R2-C1-WITH-RECORDED-BLOCKERS`** (2026-10-28). **TECH PASS / OWNER
 PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
 `feature/cad-r2-c1-quality-gate-r1` from exactly `ea24d20` (the CAD-R2 head);
@@ -4826,15 +4850,15 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: OWNER physical-device review of the `CAD-R2-C1` APK**
-(`ci-fast-evidence` artifact `12849379257` of `CI FAST` `40766013297`, APK
-SHA-256 `fd7a11a9a7b1bbf7748b46e2d71c71a2a830b54f59e8bd7f9011113d968b1dd5`)
-against the test pack in `artifacts/cad-r2-c1-quality-gate/SUMMARY.md` (which
-includes the CAD-R2 retained-sketch checklist), together with the still-pending
+**Exactly one next step: OWNER physical-device review of the `CAD-R2-C2` APK**
+(@@NEXTAPK@@) against the test packs in
+`artifacts/cad-r2-c2-picking-seam/SUMMARY.md` (the orthographic seam tap) and
+`artifacts/cad-r2-c1-quality-gate/SUMMARY.md` (which includes the CAD-R2
+retained-sketch checklist), together with the still-pending
 `MODELING-R1-OWNER-CORRECTION`, `MODELING-FOUNDATIONS-R1`, drafting-toolkit and
 Revolve checklists. The OWNER also decides
-BLOCKED-DESIGN-DECISION-R2-WORLD-PLANE-RETAINED-SKETCH (options in that
-SUMMARY). Nothing merges to `feature/cad-v6-sketch-face-r1` or `main` before
+BLOCKED-DESIGN-DECISION-R2-WORLD-PLANE-RETAINED-SKETCH (options in the C1
+SUMMARY; option 0, the refusal, is current behaviour, not a decision). Nothing merges to `feature/cad-v6-sketch-face-r1` or `main` before
 that verdict. The v6 branch merges to `main` only after the completed v6
 migration passes the Tier-5 aggregate once.
 
