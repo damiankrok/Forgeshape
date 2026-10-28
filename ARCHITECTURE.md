@@ -4065,7 +4065,10 @@ them, so the uploaded revision survives home/resume with no re-upload.
 
 `forgeshape_picking.{h,cpp}` converts a view-local pixel plus a `CameraSnapshot`
 into a world-space ray, and intersects that ray with indexed triangles
-(Möller–Trumbore, nearest positive hit). It reads the snapshot's own `proj` and
+(Möller–Trumbore, nearest positive hit; the arithmetic is carried in double
+from the float inputs, because an orthographic ray starts 250 m out and float32
+cancellation in `origin − v0` exceeded the 1e-6 shared-edge overlap —
+`CAD-R2-C2`). It reads the snapshot's own `proj` and
 `view` matrices rather than restating FOV or aspect, so there is one camera
 truth. It contains no JNI, Android, Vulkan or renderer types, decides no object
 identity, and uses no GPU id buffer.

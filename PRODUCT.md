@@ -883,7 +883,10 @@ is what stands in front: a plane square in front of a body takes the tap, and a
 body surface in front of a plane takes it from the plane. A surface that cannot
 carry a sketch — the curved wall of a round pocket, a revolved body — chooses
 nothing at all, so two taps there never open a sketch on a plane hidden behind
-it. A stylus hovering over a target highlights it without choosing it. Two fingers still
+it. A tap exactly on the line where a face's triangles meet (its centre, very
+often) chooses that face in the orthographic view too — it used to fall through
+to the plane behind. A stylus hovering over a target highlights it without
+choosing it. Two fingers still
 orbit and pan while you choose; System Back leaves without changing anything.
 A sketch drawn on a body's face and extruded becomes a new CAD body that
 **stays attached to that face**: move, turn or resize the body it sits on and
