@@ -181,6 +181,23 @@ ChosenSupport SupportChooser::resolve(const CameraSnapshot& camera, float x, flo
     if (allowFaces_) {
         const SceneHit sceneHit =
             pickSceneSnapshot(camera, x, y, viewportWidth, viewportHeight, scene.snapshot());
+        // A body surface nearer than the best plane hit OCCLUDES that plane at
+        // this pixel: the plane's grid lines are drawn over everything, but the
+        // point of the plane the ray reaches lies behind the surface the finger
+        // is on. Without this, a tap on a surface that cannot carry a sketch (a
+        // curved wall, a Revolve face, a non-CAD body) fell through to a plane
+        // BEHIND it -- a choice the user never aimed at (`CAD-R2-C1`, D04). A
+        // plane in FRONT of the surface still wins, and so does a plane coplanar
+        // with it, on the face-versus-plane tie rule below. An eligible face
+        // replaces this answer as before; nothing is retargeted to another face.
+        if (sceneHit.hit && best.kind == ChosenSupport::Kind::WorldPlane) {
+            const Vec3 toHit = vec3Sub(sceneHit.position, camera.eye);
+            const float surfaceDistance = std::sqrt(vec3Dot(toHit, toHit));
+            if (surfaceDistance < bestDistance - 1e-3f) {
+                best = ChosenSupport{};
+                bestDistance = surfaceDistance;
+            }
+        }
         if (sceneHit.hit && sceneHit.triangleIndex >= 0) {
             const SceneObject* body = scene.findBody(sceneHit.objectId);
             if (body != nullptr && body->cadOrNull() != nullptr) {

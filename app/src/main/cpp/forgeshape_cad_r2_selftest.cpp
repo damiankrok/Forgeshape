@@ -25,7 +25,9 @@
 #include "forgeshape_sketch.h"
 #include "forgeshape_sketch_arrangement.h"
 #include "forgeshape_sketch_session.h"
+#include "forgeshape_picking.h"
 #include "forgeshape_support_chooser.h"
+#include "forgeshape_workplane.h"
 
 namespace forgeshape {
 
@@ -1285,6 +1287,149 @@ void testData(Checks& r) {
             deleted == CadStatus::Ok && deletedRound);
 }
 
+// ===========================================================================
+// C1-CH: who owns a chooser tap (`CAD-R2-C1` track B)
+// ===========================================================================
+
+// One chooser tap at the pixel `world` projects to, exactly as New Sketch's
+// gesture makes it; the chooser is left active so a second tap can follow.
+ChosenSupport chooserTapAt(const ConstructionScene& scene, const CameraSnapshot& camera,
+                           const Vec3& world) {
+    float x = 0.0f;
+    float y = 0.0f;
+    if (!projectWorldToScreen(camera, world, kW, kH, &x, &y)) return ChosenSupport{};
+    return supportChooser().select(camera, x, y, kW, kH, scene);
+}
+
+// Whether the pick ray at `world`'s pixel reaches world plane `plane` inside
+// its drawn square, and how far from the eye -- computed here from the ray
+// alone, apart from the chooser, so a scenario can prove there IS a plane
+// behind the surface for a fall-through to have taken.
+bool planeHitDistance(const CameraSnapshot& camera, const Vec3& world, Workplane plane,
+                      float* out) {
+    float x = 0.0f;
+    float y = 0.0f;
+    Ray ray;
+    if (!projectWorldToScreen(camera, world, kW, kH, &x, &y)
+        || !buildPickRay(camera, x, y, kW, kH, &ray)) {
+        return false;
+    }
+    Vec3 hit;
+    if (!intersectRayPlane(ray, Vec3{0, 0, 0}, workplaneFrame(plane).normal, &hit)) return false;
+    const SketchPoint uv = localToWorkplane(plane, hit);
+    if (std::fabs(uv.u) > kSupportPlaneHalfMeters || std::fabs(uv.v) > kSupportPlaneHalfMeters) {
+        return false;
+    }
+    *out = std::sqrt(vec3Dot(vec3Sub(hit, camera.eye), vec3Sub(hit, camera.eye)));
+    return true;
+}
+
+float eyeDistance(const CameraSnapshot& camera, const Vec3& p) {
+    return std::sqrt(vec3Dot(vec3Sub(p, camera.eye), vec3Sub(p, camera.eye)));
+}
+
+void testChooserOwnership(Checks& r) {
+    // The shop body with a round pocket Cut (feature 4, centre (-0.5, -0.5),
+    // r 0.2, 0.3 deep from z = 1): its wall is curved and never eligible.
+    CadBodyState round = shopState();
+    CadSketch hole;
+    const SketchEntityId c = add(&hole, circleAt(-0.5, -0.5, 0.2));
+    appendCadLaterFeatureWithSketch(&round, CadFeatureOperation::Cut,
+                                    faceSupport(round, kCadFeatureId, cap(CadFaceKind::CapFar)),
+                                    std::move(hole), oneSide(c, 0.3, ExtrudeDirection::AgainstNormal));
+    Shop shop(round);
+    const uint64_t before = shop.fingerprint();
+
+    // A point on the curved wall 30 degrees round from the hole's +x axis,
+    // seen down into the hole from -x and above: the ray enters through the
+    // opening, meets the wall, and BEHIND it crosses the YZ plane (x = 0)
+    // inside its drawn square -- the D04 geometry.
+    const Vec3 wall{-0.5f + 0.2f * std::cos(0.5236f), -0.5f + 0.2f * std::sin(0.5236f), 0.85f};
+    const CameraSnapshot down = lookAlong(wall, Vec3{-1, 0, 1}, Vec3{0, 1, 0});
+    float yzBehind = 0.0f;
+    const bool planeBehind = planeHitDistance(down, wall, Workplane::YZ, &yzBehind)
+                             && yzBehind > eyeDistance(down, wall) + 0.05f;
+    SupportChooser& chooser = supportChooser();
+    chooser.begin(/*allowFaces=*/true);
+    const ChosenSupport first = chooserTapAt(shop.scene, down, wall);
+    const ChosenSupport second = chooserTapAt(shop.scene, down, wall);
+    const bool stillChoosing = chooser.active();
+    chooser.cancel();
+    r.check("C1_CH_01_the_curved_wall_scenario_has_a_world_plane_behind_the_wall", planeBehind);
+    r.check("C1_CH_02_a_tap_on_a_curved_wall_chooses_nothing_not_the_plane_behind_it",
+            first.kind == ChosenSupport::Kind::None && second.kind == ChosenSupport::Kind::None
+                    && stillChoosing && shop.fingerprint() == before);
+
+    // A world plane IN FRONT of the body keeps the tap: the YZ square at
+    // (0, 1.5, 0.5), seen along (-0.6, -0.8, 0), stands before the base's
+    // y = +1 side, which the same ray meets behind it.
+    const Vec3 onPlane{0.0f, 1.5f, 0.5f};
+    const CameraSnapshot oblique = lookAlong(onPlane, Vec3{0.6f, 0.8f, 0.0f}, Vec3{0, 0, 1});
+    chooser.begin(true);
+    const ChosenSupport plane = chooserTapAt(shop.scene, oblique, onPlane);
+    chooser.cancel();
+    r.check("C1_CH_03_a_world_plane_in_front_of_a_face_is_chosen_exactly",
+            plane.kind == ChosenSupport::Kind::WorldPlane && plane.plane == Workplane::YZ);
+
+    // An eligible face in front of a plane is still that exact face: the
+    // rectangular pocket's floor (feature 3, CapFar), with the XY plane behind.
+    // Aimed off the floor's diagonal: a ray through the exact edge two
+    // triangles share can slip between them at float precision (a pre-existing
+    // property of the CPU pick, recorded in HIT_OWNERSHIP.md), and this check is
+    // about who owns a hit, not about that crack.
+    const Vec3 floor{0.62f, -0.41f, 0.6f};
+    const CameraSnapshot above = lookAlong(floor, Vec3{0.2f, 0.0f, 1.0f}, Vec3{0, 1, 0});
+    float xyBehind = 0.0f;
+    const bool xyIsBehind = planeHitDistance(above, floor, Workplane::XY, &xyBehind)
+                            && xyBehind > eyeDistance(above, floor) + 0.05f;
+    chooser.begin(true);
+    const ChosenSupport face = chooserTapAt(shop.scene, above, floor);
+    const ChosenSupport again = chooserTapAt(shop.scene, above, floor);
+    chooser.cancel();
+    r.check("C1_CH_04_an_eligible_face_before_a_plane_resolves_to_its_exact_identity",
+            xyIsBehind && face.kind == ChosenSupport::Kind::Face && face.faceRef.producerObjectId == shop.id
+                    && face.faceRef.producerLocalFeatureId == 3u
+                    && face.faceRef.face.kind == CadFaceKind::CapFar
+                    && face.faceRef.lineageToken == cadFeatureTopologySignature(shop.state(), 3u)
+                    && again.kind == ChosenSupport::Kind::Face && sameTopoRef(face.faceRef, again.faceRef));
+
+    // A revolved body's surface is never a support either: a full turn of the
+    // 1..2 m square about the sketch's v axis (world Y) is a ring round Y;
+    // its outer surface at 45 degrees, seen radially, has the YZ and XY planes
+    // crossing at the axis behind it.
+    CadSketch s;
+    const SketchEntityId square = add(&s, rect(1.5, 0.5, 1.0, 1.0));
+    add(&s, lineOf(0.0, -1.0, 0.0, 2.0));
+    RevolveFeature revolve;
+    revolve.profileEntityId = square;
+    revolve.axis = CadSketchEdgeRef{2, 0};
+    revolve.angleDegrees = 360.0;
+    Shop ring(makeCadRevolveBodyState(s, revolve));
+    const uint64_t ringBefore = ring.fingerprint();
+    const Vec3 outer{1.9f * 0.70710678f, 0.5f, 1.9f * 0.70710678f};
+    const CameraSnapshot radial = lookAlong(outer, Vec3{1, 0, 1}, Vec3{0, 1, 0});
+    float behindRing = 0.0f;
+    const bool ringPlaneBehind = planeHitDistance(radial, outer, Workplane::YZ, &behindRing)
+                                 && behindRing > eyeDistance(radial, outer) + 0.05f;
+    chooser.begin(true);
+    const ChosenSupport onRing = chooserTapAt(ring.scene, radial, outer);
+    chooser.cancel();
+    r.check("C1_CH_05_a_revolved_surface_with_a_plane_behind_chooses_nothing",
+            ringPlaneBehind && onRing.kind == ChosenSupport::Kind::None
+                    && ring.fingerprint() == ringBefore);
+
+    // Hover answers what a tap would, and never selects: the curved wall again.
+    chooser.begin(true);
+    float hx = 0.0f;
+    float hy = 0.0f;
+    projectWorldToScreen(down, wall, kW, kH, &hx, &hy);
+    const ChosenSupport hovered = chooser.hover(down, hx, hy, kW, kH, shop.scene);
+    const bool nothingSelected = chooser.selected().kind == ChosenSupport::Kind::None;
+    chooser.cancel();
+    r.check("C1_CH_06_hover_over_the_curved_wall_offers_nothing_and_selects_nothing",
+            hovered.kind == ChosenSupport::Kind::None && nothingSelected);
+}
+
 }  // namespace
 
 void runCadR2SelfTests(std::vector<ArrangementSelfTestCheck>* out, std::string* performance) {
@@ -1301,6 +1446,7 @@ void runCadR2SelfTests(std::vector<ArrangementSelfTestCheck>* out, std::string* 
     testPlanarFaces(r, &gridUs);
     testAreaShortcuts(r);
     testSupport(r);
+    testChooserOwnership(r);
     testData(r);
     // Inventory read cost on a 16-sketch body (the cap), median of 9.
     CadBodyState big = shopState();
