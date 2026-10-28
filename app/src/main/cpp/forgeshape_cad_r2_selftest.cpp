@@ -1520,6 +1520,38 @@ void testPickingSeam(Checks& r) {
                                  || onEdge.faceRef.face.kind == CadFaceKind::Side);
     r.check("PICK_C2_16_an_edge_between_two_faces_resolves_to_one_of_them_deterministically",
             stable && oneOfTheTwo);
+
+    // The device scene D19 drives, mirrored on the host: the 2 x 2 x 1 block
+    // and ONE pocket (0.6 at (0.5, -0.5), 0.4 deep -- no boss), the ORBIT
+    // camera in the product's orthographic projection at yaw 0.197, pitch 0
+    // (the same view direction as above), a 1080 x 2400 viewport, and the
+    // pocket floor's centre -- on its triangles' shared diagonal -- tapped.
+    CadSketch block;
+    const SketchEntityId bb = add(&block, rect(0.0, 0.0, 2.0, 2.0));
+    CadBodyState d19 = makeCadBodyState(block, oneSide(bb, 1.0));
+    CadSketch pocket;
+    const SketchEntityId pk = add(&pocket, rect(0.5, -0.5, 0.6, 0.6));
+    appendCadLaterFeatureWithSketch(&d19, CadFeatureOperation::Cut,
+                                    faceSupport(d19, kCadFeatureId, cap(CadFaceKind::CapFar)),
+                                    std::move(pocket), oneSide(pk, 0.4, ExtrudeDirection::AgainstNormal));
+    Shop device(d19);
+    CameraController orbit;
+    orbit.setViewport(1080, 2400);
+    orbit.setProjectionMode(ProjectionMode::Orthographic);
+    orbit.setPose(0.197f, 0.0f, 8.0f);
+    const CameraSnapshot ortho = orbit.snapshot();
+    const Vec3 floorCentre{0.5f, -0.5f, 0.6f};
+    float fx = 0.0f;
+    float fy = 0.0f;
+    projectWorldToScreen(ortho, floorCentre, 1080, 2400, &fx, &fy);
+    const SceneHit floorHit = pickSceneSnapshot(ortho, fx, fy, 1080, 2400, device.scene.snapshot());
+    chooser.begin(true);
+    const ChosenSupport floorChoice = chooser.select(ortho, fx, fy, 1080, 2400, device.scene);
+    chooser.cancel();
+    r.check("PICK_C2_17_the_device_d19_scene_resolves_the_pocket_floor_on_its_seam",
+            floorHit.hit && floorChoice.kind == ChosenSupport::Kind::Face
+                    && floorChoice.faceRef.producerLocalFeatureId == 2u
+                    && floorChoice.faceRef.face.kind == CadFaceKind::CapFar);
 }
 
 }  // namespace

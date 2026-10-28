@@ -57,8 +57,9 @@ import java.util.Set;
  * sketch inventory, the body measures, the encoded project and its fingerprint
  * — is read to assert. A value is typed through the product's own exact-value
  * door ({@code sketchApplyRectangle}, the precision field) exactly as the
- * earlier owner classes do. Case ids are {@code D01..D18} (D15..D18 from
- * {@code CAD-R2-C1}: chooser ownership, font scale and lifecycle).
+ * earlier owner classes do. Case ids are {@code D01..D22} (D15..D18 from
+ * {@code CAD-R2-C1}: chooser ownership, font scale and lifecycle; D19..D22
+ * from {@code CAD-R2-C2}: the pick seam).
  */
 @RunWith(AndroidJUnit4.class)
 public final class CadRetainedSketchOwnerTest {
@@ -657,6 +658,232 @@ public final class CadRetainedSketchOwnerTest {
             view.getLocationInWindow(at);
             return new Rect(at[0], at[1], at[0] + view.getWidth(), at[1] + view.getHeight());
         });
+    }
+
+    // =======================================================================
+    // D19..D22 (CAD-R2-C2): the pick seam. A ray on the diagonal two triangles
+    // of one face share, from the product's ORTHOGRAPHIC eye 250 m out, fell
+    // between both before CAD-R2-C2 and the chooser answered with the plane
+    // behind (host PICK_C2_17 mirrors this exact scene and camera: red before
+    // the fix). Orthographic is chosen through the real Display control.
+    // =======================================================================
+
+    /** Block + a 0.6 pocket at (0.5, -0.5), 0.4 deep: feature 2 is the Cut. */
+    private void blockWithPocket() {
+        newBlock();
+        newSketchOn(0.7f, 0.9f, 8.0f, 0.0, 0.0, 1.0);
+        drawExactRectangleAt(0.5, -0.5, 0.6, 0.6);
+        finishSketch();
+        commitExtrude(NativeViewport.OPERATION_CUT, "0.4");
+        assertEquals(2, NativeViewport.cadFeatureCount(body));
+    }
+
+    /** Orthographic through the Display popover, by real taps. */
+    private void chooseOrthographic() {
+        rig.touchId(R.id.display_settings_button);
+        rig.touchId(R.id.projection_orthographic);
+        rig.touchId(R.id.display_settings_button);
+        settleLayout();
+        assertEquals(NativeViewport.PROJECTION_ORTHOGRAPHIC, NativeViewport.projectionMode());
+    }
+
+    private void restorePerspective() {
+        rig.applyOnUi(() -> NativeViewport.setProjectionMode(NativeViewport.PROJECTION_PERSPECTIVE));
+        settleLayout();
+    }
+
+    /** The floor centre's window pixel under the D19 camera (yaw 0.197, pitch 0). */
+    private float[] floorSeamPixel() {
+        setCamera(0.197f, 0.0f, 8.0f);
+        final float[] at = new float[2];
+        assertTrue(NativeViewport.debugProjectWorld(0.5, -0.5, 0.6, at));
+        rig.fact("seam.viewport_px", Arrays.toString(at));
+        return at;
+    }
+
+    @Test
+    public void d19_the_pocket_floor_on_its_seam_opens_a_sketch_on_that_floor() {
+        try {
+            blockWithPocket();
+            chooseOrthographic();
+            final long fingerprint = NativeViewport.projectFingerprint();
+            openNewSketch();
+            final float[] window = viewportToWindow(floorSeamPixel());
+            realTap(window);
+            final int kind = NativeViewport.supportChooserSelectedKind();
+            rig.fact("d19.kind", kind);
+            assertEquals("the seam names the FACE, never the XY plane behind it",
+                    NativeViewport.SUPPORT_KIND_FACE, kind);
+            assertEquals("aiming writes nothing", fingerprint, NativeViewport.projectFingerprint());
+            rig.capture("d19_seam_aimed");
+            realTap(window);
+            assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
+            assertEquals(1.0, sketchViewState()[NativeViewport.SKETCH_VIEW_FACE_SUPPORTED], 0.0);
+            drawExactSquare(0.1);
+            rig.touchId(R.id.keep_sketch);
+            final double[] kept = inventoryRaw(3L);
+            rig.fact("d19.kept", Arrays.toString(kept));
+            assertEquals("on the pocket Cut (feature 2)", 2.0,
+                    kept[NativeViewport.SKETCH_INV_SUPPORT_FEATURE], 0.0);
+            assertEquals("its floor", NativeViewport.SKETCH_FACE_CAP_FAR,
+                    (int) kept[NativeViewport.SKETCH_INV_SUPPORT_FACE_KIND]);
+        } finally {
+            restorePerspective();
+        }
+    }
+
+    @Test
+    public void d20_outside_the_body_and_through_a_hole_choose_the_plane_that_is_there() {
+        try {
+            blockWithPocket();
+            // A square cut THROUGH the block at (0.5, 0.5): feature 3. (At x < 0
+            // the YZ square would stand in front of the hole from this camera --
+            // at z = 3.0 on the ray -- and rightly take the tap.)
+            newSketchOn(0.7f, 0.9f, 8.0f, 0.5, 0.5, 1.0);
+            drawExactRectangleAt(0.5, 0.5, 0.3, 0.3);
+            finishSketch();
+            commitExtrude(NativeViewport.OPERATION_CUT, "1.0");
+            assertEquals(3, NativeViewport.cadFeatureCount(body));
+            chooseOrthographic();
+            final long fingerprint = NativeViewport.projectFingerprint();
+            openNewSketch();
+            setCamera(0.197f, 0.0f, 8.0f);
+            final float[] at = new float[2];
+            // Just outside the block (y = -1.05) the ray meets no body and
+            // reaches the XY plane below: XY (0), never a face.
+            assertTrue(NativeViewport.debugProjectWorld(0.5, -1.05, 0.6, at));
+            realTap(viewportToWindow(at));
+            rig.fact("d20.outside_kind", NativeViewport.supportChooserSelectedKind());
+            assertEquals("outside the silhouette: the XY plane, exactly", 0,
+                    NativeViewport.supportChooserSelectedKind());
+            // Just inside the block's edge (y = -0.95), the top cap answers.
+            assertTrue(NativeViewport.debugProjectWorld(0.5, -0.95, 1.0, at));
+            realTap(viewportToWindow(at));
+            assertEquals("just inside: a face", NativeViewport.SUPPORT_KIND_FACE,
+                    NativeViewport.supportChooserSelectedKind());
+            // Down the through hole the XY plane under the block is what is
+            // there: XY, never a face of the body.
+            assertTrue(NativeViewport.debugProjectWorld(0.5, 0.5, 0.5, at));
+            realTap(viewportToWindow(at));
+            rig.fact("d20.hole_kind", NativeViewport.supportChooserSelectedKind());
+            assertEquals("the hole is empty: the XY plane below", 0,
+                    NativeViewport.supportChooserSelectedKind());
+            rig.capture("d20_hole_plane");
+            assertEquals(NativeViewport.SKETCH_INACTIVE, sketchState());
+            assertEquals(fingerprint, NativeViewport.projectFingerprint());
+            doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+                NativeViewport.supportChooserCancel();
+                workspace.onNativeStateChanged();
+                return null;
+            });
+            settleLayout();
+        } finally {
+            restorePerspective();
+        }
+    }
+
+    @Test
+    public void d21_the_seam_survives_an_orbit_a_rotation_and_a_cancel_and_writes_nothing() {
+        try {
+            blockWithPocket();
+            chooseOrthographic();
+            final long fingerprint = NativeViewport.projectFingerprint();
+            final int undo = NativeViewport.constructionUndoDepth();
+            openNewSketch();
+            final float[] window = viewportToWindow(floorSeamPixel());
+            realTap(window);
+            assertEquals(NativeViewport.SUPPORT_KIND_FACE, NativeViewport.supportChooserSelectedKind());
+            // A one-finger orbit is not a tap: the aim stands.
+            realDrag(window, 160f, 40f);
+            assertEquals(NativeViewport.SUPPORT_KIND_FACE, NativeViewport.supportChooserSelectedKind());
+            // Rotate, re-project the same seam point, aim + confirm.
+            WorkspaceTestSupport.setOrientation(rule.getScenario(),
+                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+            settleLayout();
+            SystemClock.sleep(600);
+            settleLayout();
+            final float[] rotated = viewportToWindow(floorSeamPixel());
+            rig.fact("d21.rotated_window", Arrays.toString(rotated));
+            realTap(rotated);
+            assertEquals("landscape seam: still the face", NativeViewport.SUPPORT_KIND_FACE,
+                    NativeViewport.supportChooserSelectedKind());
+            realTap(rotated);
+            assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
+            assertEquals(1.0, sketchViewState()[NativeViewport.SKETCH_VIEW_FACE_SUPPORTED], 0.0);
+            rig.capture("d21_seam_landscape");
+            cancelSketch();
+            assertEquals("Cancel writes nothing", fingerprint, NativeViewport.projectFingerprint());
+            assertEquals("and records nothing", undo, NativeViewport.constructionUndoDepth());
+            // The same seam in PERSPECTIVE (the near-eye path) is a face too.
+            restorePerspective();
+            openNewSketch();
+            final float[] persp = viewportToWindow(floorSeamPixel());
+            realTap(persp);
+            assertEquals(NativeViewport.SUPPORT_KIND_FACE, NativeViewport.supportChooserSelectedKind());
+            doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+                NativeViewport.supportChooserCancel();
+                workspace.onNativeStateChanged();
+                return null;
+            });
+            settleLayout();
+            assertEquals(fingerprint, NativeViewport.projectFingerprint());
+        } finally {
+            restorePerspective();
+        }
+    }
+
+    @Test
+    public void d22_a_hover_on_the_seam_highlights_the_face_and_selects_nothing() {
+        try {
+            blockWithPocket();
+            chooseOrthographic();
+            final long fingerprint = NativeViewport.projectFingerprint();
+            openNewSketch();
+            final float[] at = floorSeamPixel();
+            final float[] window = viewportToWindow(at);
+            // A SIMULATED stylus hover through the window (tool type STYLUS on
+            // the emulator -- not a hardware hover proof).
+            hoverAt(window);
+            assertEquals("a hover never selects", NativeViewport.SUPPORT_KIND_NONE,
+                    NativeViewport.supportChooserSelectedKind());
+            assertEquals(NativeViewport.SKETCH_INACTIVE, sketchState());
+            // Native diagnostic (not a user act): what that hover resolved to.
+            final int hovered = rig.applyOnUi(() -> NativeViewport.supportChooserHover(at[0], at[1]));
+            rig.fact("d22.hover_kind", hovered);
+            assertEquals("the hover resolves the face on the seam", NativeViewport.SUPPORT_KIND_FACE,
+                    hovered);
+            assertEquals(NativeViewport.SUPPORT_KIND_NONE, NativeViewport.supportChooserSelectedKind());
+            assertEquals(fingerprint, NativeViewport.projectFingerprint());
+            doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+                NativeViewport.supportChooserCancel();
+                workspace.onNativeStateChanged();
+                return null;
+            });
+            settleLayout();
+        } finally {
+            restorePerspective();
+        }
+    }
+
+    private void hoverAt(final float[] window) {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View root = activity.getWindow().getDecorView();
+            final long now = SystemClock.uptimeMillis();
+            for (int action : new int[]{MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE}) {
+                final MotionEvent.PointerProperties[] props = {new MotionEvent.PointerProperties()};
+                props[0].id = 0;
+                props[0].toolType = MotionEvent.TOOL_TYPE_STYLUS;
+                final MotionEvent.PointerCoords[] coords = {new MotionEvent.PointerCoords()};
+                coords[0].x = window[0];
+                coords[0].y = window[1];
+                final MotionEvent event = MotionEvent.obtain(now, now, action, 1, props, coords, 0, 0,
+                        1f, 1f, 0, 0, InputDevice.SOURCE_STYLUS, 0);
+                root.dispatchGenericMotionEvent(event);
+                event.recycle();
+            }
+            return null;
+        });
+        settleLayout();
     }
 
     // =======================================================================
