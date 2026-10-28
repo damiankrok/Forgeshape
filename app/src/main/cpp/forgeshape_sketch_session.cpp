@@ -5,6 +5,8 @@
 #include <cmath>
 
 #include "forgeshape_cad_face.h"
+#include "forgeshape_cad_feature.h"
+#include "forgeshape_cad_sketch_inventory.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_picking.h"
 
@@ -207,6 +209,8 @@ CadStatus SketchSession::begin(Workplane plane) {
     targetBaseState_ = CadBodyState{};
     hasTargetState_ = false;
     editingFeatureId_ = 0;
+    reuseSketchId_ = kNoCadSketch;
+    editingSketchId_ = kNoCadSketch;
     evaluation_ = CadCandidateEvaluation{};
     regionTapArmed_ = false;
     regionTapOnHead_ = false;
@@ -253,6 +257,8 @@ void SketchSession::cancel() {
     // to the body: the staged copy simply goes away with the session.
     editingBodyId_ = kNoObject;
     editingFeatureId_ = 0;
+    reuseSketchId_ = kNoCadSketch;
+    editingSketchId_ = kNoCadSketch;
     operation_ = CadFeatureOperation::NewBody;
     targetBodyId_ = kNoObject;
     targetBaseState_ = CadBodyState{};
@@ -370,7 +376,8 @@ CadStatus SketchSession::checkDependentsKeepTheirFaces(const ConstructionScene& 
 }
 
 CadStatus SketchSession::commitEdit(ConstructionScene& scene, ConstructionHistory& history) {
-    if (state_ != SketchSessionState::Ready || editingBodyId_ == kNoObject) {
+    if (state_ != SketchSessionState::Ready || editingBodyId_ == kNoObject
+        || editingSketchId_ != kNoCadSketch) {
         return fail(CadStatus::NotSketching);
     }
     if (history.editInProgress()) {
@@ -416,6 +423,221 @@ CadStatus SketchSession::commitEdit(ConstructionScene& scene, ConstructionHistor
         return fail(why);
     }
     cancel();  // the session is over; the truth is the body's again
+    return fail(CadStatus::Ok);
+}
+
+// ---------------------------------------------------------------------------
+// Retained sketches (`CAD-R2`)
+// ---------------------------------------------------------------------------
+
+CadStatus SketchSession::beginReuseSketch(ObjectId bodyId, const CadBodyState& state,
+                                          CadSketchId sketchId, CadFeatureOperation operation,
+                                          const SketchFrame& worldFrame) {
+    if (state_ != SketchSessionState::Inactive) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (bodyId == kNoObject) {
+        return fail(CadStatus::NotCadBody);
+    }
+    if (operation != CadFeatureOperation::Add && operation != CadFeatureOperation::Cut) {
+        // A reuse adds a feature to THIS body; New Body is never a later feature.
+        return fail(CadStatus::InvalidFeatureOperation);
+    }
+    const CadStatus valid = validateCadBodyState(state);
+    if (valid != CadStatus::Ok) {
+        return fail(valid);
+    }
+    const CadStatus refusal = cadSketchReuseRefusal(state, sketchId);
+    if (refusal != CadStatus::Ok) {
+        return fail(refusal);
+    }
+    const CadSketchRecord* record = findCadSketchRecord(state, sketchId);
+    const CadStatus started =
+            begin(record->hasFeatureSupport ? Workplane::XY : record->sketch.plane);
+    if (started != CadStatus::Ok) {
+        return started;
+    }
+    // A copy to SHOW and to pick areas in -- the candidate never writes it back.
+    sketch_ = record->sketch;
+    frame_ = worldFrame;
+    targetBodyId_ = bodyId;
+    targetBaseState_ = state;
+    hasTargetState_ = true;
+    reuseSketchId_ = sketchId;
+    // Which way is INTO the material. Every feature face frame is
+    // material-outward, so a sketch on one cuts against its normal; the root
+    // sketch lies on the base's own plane cap, so a Cut grows the way the base
+    // grew (a two-sided base has material on both sides; the normal's side is
+    // the canonical choice, and Flip is one tap away).
+    if (record->hasFeatureSupport) {
+        reuseCutDirection_ = ExtrudeDirection::AgainstNormal;
+    } else {
+        reuseCutDirection_ = state.extrude.extent == ExtrudeExtentMode::OneSide
+                                     ? state.extrude.direction
+                                     : ExtrudeDirection::AlongNormal;
+    }
+    operation_ = operation;
+    oneSideDirection_ = operation == CadFeatureOperation::Cut
+                                ? reuseCutDirection_
+                                : (reuseCutDirection_ == ExtrudeDirection::AgainstNormal
+                                           ? ExtrudeDirection::AlongNormal
+                                           : ExtrudeDirection::AgainstNormal);
+    extrude_.direction = oneSideDirection_;
+    touchCandidate();
+    const CadStatus finished = finish();
+    if (finished != CadStatus::Ok) {
+        cancel();
+        return fail(finished);
+    }
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::beginEditSketch(ObjectId bodyId, const CadBodyState& state,
+                                         CadSketchId sketchId, const SketchFrame& worldFrame) {
+    if (state_ != SketchSessionState::Inactive) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (bodyId == kNoObject) {
+        return fail(CadStatus::NotCadBody);
+    }
+    const CadStatus valid = validateCadBodyState(state);
+    if (valid != CadStatus::Ok) {
+        return fail(valid);
+    }
+    const CadSketchRecord* record = findCadSketchRecord(state, sketchId);
+    if (record == nullptr) {
+        return fail(CadStatus::SketchNotFound);
+    }
+    // A consumed sketch: through its FIRST consumer, the existing staged edit,
+    // whose one Finish regenerates every feature that extrudes it.
+    CadFeatureView view;
+    for (uint32_t i = 0; cadFeatureAt(state, i, &view); ++i) {
+        if (view.sketchId == sketchId) {
+            return beginEditFeature(bodyId, state, view.featureId, worldFrame,
+                                    /*startReady=*/false);
+        }
+    }
+    // An unused sketch: sketch-only. Its placement must resolve, or there is
+    // nowhere to author it.
+    CadFrame64 placement;
+    const CadStatus placed = cadSketchPlacement(state, sketchId, &placement);
+    if (placed != CadStatus::Ok) {
+        return fail(placed);
+    }
+    const CadStatus started = begin(Workplane::XY);
+    if (started != CadStatus::Ok) {
+        return started;
+    }
+    sketch_ = record->sketch;
+    frame_ = worldFrame;
+    editingBodyId_ = bodyId;
+    editingSketchId_ = sketchId;
+    targetBodyId_ = bodyId;
+    targetBaseState_ = state;
+    hasTargetState_ = true;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+namespace {
+
+// Whether a NEW face sketch stands on one of its producer's own features, so
+// it can be kept as that body's retained sketch.
+bool keepsOnProducer(bool hasTargetState, ObjectId targetBodyId, const CadSketch& sketch,
+                     const CadBodyState& target) {
+    return hasTargetState && sketch.hasFaceSupport
+           && targetBodyId == sketch.faceSupport.producerObjectId
+           && target.baseKind == CadFeatureKind::Extrude
+           && target.sketches.size() < kMaxCadSketches;
+}
+
+}  // namespace
+
+bool SketchSession::canKeepSketch() const {
+    if (!active() || reuseSketchId_ != kNoCadSketch || sketch_.entities.empty()) {
+        return false;
+    }
+    if (editingSketchId_ != kNoCadSketch) {
+        return state_ == SketchSessionState::Editing;
+    }
+    return editingBodyId_ == kNoObject
+           && keepsOnProducer(hasTargetState_, targetBodyId_, sketch_, targetBaseState_);
+}
+
+CadStatus SketchSession::commitSketch(ConstructionScene& scene, ConstructionHistory& history,
+                                      CadSketchId* outSketchId) {
+    if (outSketchId != nullptr) {
+        *outSketchId = kNoCadSketch;
+    }
+    const bool sketchOnlyEdit = editingSketchId_ != kNoCadSketch;
+    const bool newOnFace = !sketchOnlyEdit && reuseSketchId_ == kNoCadSketch
+                           && editingBodyId_ == kNoObject
+                           && keepsOnProducer(hasTargetState_, targetBodyId_, sketch_,
+                                              targetBaseState_);
+    if (!active() || (!sketchOnlyEdit && !newOnFace)
+        || (sketchOnlyEdit && state_ != SketchSessionState::Editing)) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (history.editInProgress()) {
+        return fail(CadStatus::RefusedEditInProgress);
+    }
+    endPolylineInProgress();
+    resetGesture();
+    if (sketch_.entities.empty()) {
+        return fail(CadStatus::NoClosedProfile);  // nothing to keep
+    }
+    const CadStatus sketchWhy = validateCadSketch(sketch_);
+    if (sketchWhy != CadStatus::Ok) {
+        return fail(sketchWhy);
+    }
+    SceneObject* object = scene.findBody(targetBodyId_);
+    CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    if (body == nullptr) {
+        return fail(CadStatus::NotCadBody);
+    }
+    if (!sameCadBodyState(body->state(), targetBaseState_)) {
+        return fail(CadStatus::FeatureSupportInvalid);  // the staged base moved
+    }
+    CadBodyState candidate;
+    CadSketchId kept = kNoCadSketch;
+    if (sketchOnlyEdit) {
+        candidate = candidateState();
+        kept = editingSketchId_;
+    } else {
+        // The TopoRef the session authored against names a face of THIS body,
+        // so it becomes the record's own-feature support -- carried as a
+        // TopoRef it would be a cycle -- exactly as a new Add/Cut's sketch.
+        candidate = targetBaseState_;
+        CadSketch sketch = sketch_;
+        sketch.plane = Workplane::XY;
+        sketch.hasFaceSupport = false;
+        sketch.faceSupport = TopoRef{};
+        CadFeatureSupport support;
+        support.featureId = sketch_.faceSupport.producerLocalFeatureId;
+        support.face = sketch_.faceSupport.face;
+        support.lineageToken = sketch_.faceSupport.lineageToken;
+        kept = addCadSketchRecord(&candidate, std::move(sketch), &support);
+        if (kept == kNoCadSketch) {
+            return fail(CadStatus::TooManySketches);
+        }
+    }
+    CadStatus why = CadStatus::Ok;
+    {
+        // ONE transaction into the SAME body: one Keep is one Undo, and the
+        // whole state is validated and regenerated by `applyState` first.
+        ScopedConstructionEdit edit(history);
+        why = body->applyState(candidate);
+        if (why == CadStatus::Ok) {
+            publishSceneObject(*object);
+        }
+    }
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    if (outSketchId != nullptr) {
+        *outSketchId = kept;
+    }
+    cancel();
     return fail(CadStatus::Ok);
 }
 
@@ -1956,6 +2178,10 @@ CadStatus SketchSession::finish() {
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
     }
+    if (editingSketchId_ != kNoCadSketch) {
+        // A sketch-only edit stages no extrusion: Keep Sketch is its commit.
+        return fail(CadStatus::NotSketching);
+    }
     endPolylineInProgress();
     resetGesture();
     resetModifyState();
@@ -2048,6 +2274,12 @@ void SketchSession::reconcileRegionSelection() {
 
 void SketchSession::backToEditing() {
     if (state_ != SketchSessionState::Ready) {
+        return;
+    }
+    if (reuseSketchId_ != kNoCadSketch) {
+        // A reused sketch is shared truth; it is edited through Edit Sketch,
+        // never from inside a session that only extrudes it.
+        lastStatus_ = CadStatus::SketchInUse;
         return;
     }
     regions_ = SketchRegionExtraction{};
@@ -2521,6 +2753,33 @@ RevolveFeature SketchSession::candidateRevolve() const {
 
 CadBodyState SketchSession::candidateState() const {
     const bool revolve = featureKind_ == CadFeatureKind::Revolve;
+    // `CAD-R2`: a reuse or a sketch-only edit is ALWAYS the target body's chain
+    // (never a new body), whatever the operation field says.
+    if (reuseSketchId_ != kNoCadSketch) {
+        // A NEW feature extruding an EXISTING sketch by id: no sketch is
+        // copied, written or moved; the feature names the record.
+        CadBodyState state = targetBaseState_;
+        if (appendCadLaterFeature(&state, operation_, reuseSketchId_, extrude_) == 0) {
+            CadFeature refused;
+            refused.featureId = state.nextFeatureId;
+            refused.operation = operation_;
+            refused.sketchId = reuseSketchId_;
+            refused.extrude = extrude_;
+            state.laterFeatures.push_back(std::move(refused));
+        }
+        return state;
+    }
+    if (editingSketchId_ != kNoCadSketch) {
+        CadBodyState state = targetBaseState_;
+        CadSketchRecord* record = findCadSketchRecord(state, editingSketchId_);
+        if (record != nullptr) {
+            record->sketch = sketch_;
+            record->sketch.plane = Workplane::XY;
+            record->sketch.hasFaceSupport = false;
+            record->sketch.faceSupport = TopoRef{};
+        }
+        return state;
+    }
     // A new body: the sketch and its extrusion, exactly what R0 built -- or,
     // since `CAD-V6-REVOLVE-NEWBODY-E2E-R1`, its Revolve.
     if (editingFeatureId_ == 0 && operation_ == CadFeatureOperation::NewBody) {
@@ -2600,6 +2859,12 @@ bool SketchSession::operationAvailable(CadFeatureOperation operation) const {
     }
     const bool addOrCut = operation == CadFeatureOperation::Add
                           || operation == CadFeatureOperation::Cut;
+    if (reuseSketchId_ != kNoCadSketch) {
+        return addOrCut;
+    }
+    if (editingSketchId_ != kNoCadSketch) {
+        return false;
+    }
     if (editingFeatureId_ == kCadFeatureId) {
         return operation == CadFeatureOperation::NewBody;
     }
@@ -2638,11 +2903,16 @@ CadStatus SketchSession::setOperation(CadFeatureOperation operation) {
         // feature, because an edit keeps the side the user already chose; and
         // through the one writer, so it is a direction change and never a
         // negative depth. Flip still reverses it afterwards.
-        if (editingFeatureId_ == 0 && sketch_.hasFaceSupport
+        const bool reuse = reuseSketchId_ != kNoCadSketch;
+        if (editingFeatureId_ == 0 && (sketch_.hasFaceSupport || reuse)
             && extrude_.extent == ExtrudeExtentMode::OneSide) {
-            const ExtrudeDirection wanted = operation == CadFeatureOperation::Cut
-                                                    ? ExtrudeDirection::AgainstNormal
-                                                    : ExtrudeDirection::AlongNormal;
+            const ExtrudeDirection cutInto =
+                    reuse ? reuseCutDirection_ : ExtrudeDirection::AgainstNormal;
+            const ExtrudeDirection addOut = cutInto == ExtrudeDirection::AgainstNormal
+                                                    ? ExtrudeDirection::AlongNormal
+                                                    : ExtrudeDirection::AgainstNormal;
+            const ExtrudeDirection wanted =
+                    operation == CadFeatureOperation::Cut ? cutInto : addOut;
             if (extrude_.direction != wanted) {
                 const CadStatus turned = setExtrude(extrude_.depth, wanted);
                 if (turned != CadStatus::Ok) {
@@ -2683,8 +2953,19 @@ const CadCandidateEvaluation& SketchSession::evaluateCandidate() {
     const auto t0 = std::chrono::steady_clock::now();
     auto mesh = std::make_shared<CadBodyMesh>();
     CadRegenerationReport report;
-    next.status = regenerateCadBody(candidateState(), mesh.get(), &report);
+    const CadBodyState candidate = candidateState();
+    next.status = regenerateCadBody(candidate, mesh.get(), &report);
     next.failedFeatureId = report.failedFeatureId;
+    if (next.status == CadStatus::Ok) {
+        // The preview IS the candidate: the commit's `applyState` also judges
+        // the whole state (a retained sketch the edit would strand), so the
+        // preview says so too rather than showing a solid the commit refuses.
+        const CadStatus valid = validateCadBodyState(candidate);
+        if (valid != CadStatus::Ok) {
+            next.status = valid;
+            next.failedFeatureId = 0;
+        }
+    }
     next.kernelMicros = report.kernelMicros;
     next.micros = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0)
                           .count();
@@ -2813,6 +3094,9 @@ CadStatus SketchSession::commitIntoTarget(ConstructionScene& scene, Construction
 bool SketchSession::revolveAvailable() const {
     if (state_ != SketchSessionState::Ready) {
         return false;
+    }
+    if (reuseSketchId_ != kNoCadSketch || editingSketchId_ != kNoCadSketch) {
+        return false;  // Revolve Add/Cut is not R1; a sketch-only edit makes nothing
     }
     if (editingFeatureId_ == kCadFeatureId) {
         // An edit keeps the body's own kind: a Revolve body revolves.

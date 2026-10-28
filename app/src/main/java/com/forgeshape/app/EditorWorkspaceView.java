@@ -78,6 +78,7 @@ final class EditorWorkspaceView extends FrameLayout
         BodyDimensionLabelsView.OnDimensionAction,
         SculptHistoryNavigatorView.OnHistoryStateChosen,
         FeatureHistoryView.OnHistoryRowChosen,
+        FeatureHistoryView.OnHistoryAct,
         RegenerationIssueView.OnIssueAction,
         SurfaceEditorView.Host,
         AnchoredSurfaceView.OnOpenStateChanged {
@@ -872,6 +873,7 @@ final class EditorWorkspaceView extends FrameLayout
         // The Parametric History grows out of the same capsule on the same
         // terms: bottom trailing, clear of the row it came from.
         featureHistory = new FeatureHistoryView(context, this);
+        featureHistory.setActListener(this);
         overlayRoot.addView(featureHistory, FeatureHistoryView.anchoredParams(context,
                 EditorControlStyles.dimen(context, R.dimen.control_height)
                         + EditorControlStyles.dimen(context, R.dimen.row_gap)
@@ -2830,6 +2832,9 @@ final class EditorWorkspaceView extends FrameLayout
         toolbar.showSurface(projectOpen && activeBodyIsSurface());
         toolbar.showContext(sculpting, hasFrozenMesh, imported, cad, freeform, sketchState,
                 (int) nativeSketch[NativeViewport.SKETCH_PLANE], activeHidden);
+        // A sketch-only edit has no extrusion to stage: Keep Sketch is its
+        // commit and Finish Sketch is absent (`CAD-R2`).
+        toolbar.showSketchOnly(sketching && NativeViewport.sketchIsSketchOnly());
         if (sketchState == NativeViewport.SKETCH_READY) {
             refreshExtrudeReadiness();
             if (lastReportedRegionSelection == null) {
@@ -3082,6 +3087,10 @@ final class EditorWorkspaceView extends FrameLayout
                 nativeBodyDim[NativeViewport.BODY_DIM_SUPPORTED] != 0.0,
                 nativeBodyDim[NativeViewport.BODY_DIM_MODE_ACTIVE] != 0.0,
                 (int) nativeBodyDim[NativeViewport.BODY_DIM_ANCHOR]));
+        // `CAD-R2`: Keep Sketch exactly when native says it can succeed, and no
+        // Back to Sketch over a reuse session (its sketch is shared truth).
+        trailingHost.showSketchCommitOptions(sketching && NativeViewport.sketchCanKeepSketch(),
+                !sketching || NativeViewport.sketchReuseSketchId() == 0L);
         // The CAD bootstrap's plane chooser has no body and no sketch yet, so
         // the rail's Construction entries and the precision toggle would all
         // be controls that cannot succeed: the whole trailing cluster is
@@ -3213,17 +3222,151 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         if (featureHistory.isOpen()) {
-            featureHistory.showModel(readTimeline(false), uiState.displayUnit());
+            showHistoryModel();
         }
     }
 
     private void setFeatureHistoryOpen(boolean open) {
         if (open) {
             dismissPrimarySurfacesExcept(featureHistory);
-            featureHistory.showModel(readTimeline(false), uiState.displayUnit());
+            // Every open starts on Steps with nothing selected: the segment and
+            // the selection are presentation, never carried across opens.
+            featureHistory.resetSegment();
+            showHistoryModel();
         }
         featureHistory.setOpen(open);
         EditorControlStyles.setIconButtonActive(featureHistoryAction, open);
+    }
+
+    /** One timeline read and, for a CAD body, one sketch-inventory read. */
+    private void showHistoryModel() {
+        final boolean cad = NativeViewport.projectOpen() && NativeViewport.sceneActiveBodyIsCad();
+        featureHistory.showModel(readTimeline(false),
+                cad ? readSketchInventory() : SketchBrowserPresentation.Inventory.empty(), cad,
+                uiState.displayUnit());
+    }
+
+    /**
+     * The active CAD body's retained sketches and, per sketch, the features
+     * that extrude it -- native's answer, read fresh and stored nowhere.
+     */
+    private SketchBrowserPresentation.Inventory readSketchInventory() {
+        final long body = NativeViewport.sceneActiveBodyId();
+        final double[] header = new double[NativeViewport.SKETCH_INV_HEADER_SIZE];
+        final double[] rows = new double[NativeViewport.SKETCH_INV_MAX_ROWS
+                * NativeViewport.SKETCH_INV_ROW_SIZE];
+        final int count = NativeViewport.cadSketchInventory(body, header, rows);
+        final java.util.Map<Long, long[]> consumers = new java.util.HashMap<>();
+        for (int i = 0; i < Math.max(0, Math.min(count, NativeViewport.SKETCH_INV_MAX_ROWS)); i++) {
+            final long id = (long) rows[i * NativeViewport.SKETCH_INV_ROW_SIZE
+                    + NativeViewport.SKETCH_INV_ID];
+            final long[] buffer = new long[NativeViewport.TIMELINE_MAX_ROWS];
+            final int n = NativeViewport.cadSketchConsumers(body, id, buffer);
+            if (n > 0) {
+                consumers.put(id, java.util.Arrays.copyOf(buffer, Math.min(n, buffer.length)));
+            }
+        }
+        return SketchBrowserPresentation.fromNative(header, rows, count, consumers);
+    }
+
+    /**
+     * Runs one act chosen on the Sketches or Features segment ({@code CAD-R2}).
+     * Every act is ONE native entry that already decides it; this only reports
+     * what native said. Edit Sketch and Edit Feature open the existing staged
+     * editor by DURABLE id; reuse opens the existing Ready state on an
+     * existing sketch; Delete is one Undo.
+     */
+    @Override
+    public void onHistoryAct(int act, long sketchId, long featureId) {
+        final Context context = getContext();
+        final long bodyId = NativeViewport.sceneActiveBodyId();
+        final int status;
+        switch (act) {
+            case SketchBrowserPresentation.ACT_EDIT_FEATURE:
+                status = NativeViewport.sketchBeginEditFeature(bodyId, featureId, true);
+                break;
+            case SketchBrowserPresentation.ACT_REUSE_ADD:
+                status = NativeViewport.sketchBeginReuseSketch(bodyId, sketchId,
+                        NativeViewport.OPERATION_ADD);
+                break;
+            case SketchBrowserPresentation.ACT_REUSE_CUT:
+                status = NativeViewport.sketchBeginReuseSketch(bodyId, sketchId,
+                        NativeViewport.OPERATION_CUT);
+                break;
+            case SketchBrowserPresentation.ACT_DELETE_SKETCH:
+                status = NativeViewport.cadDeleteSketch(bodyId, sketchId);
+                break;
+            default:
+                status = NativeViewport.sketchBeginEditSketch(bodyId, sketchId);
+                break;
+        }
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            if (featureHistory.isOpen()) {
+                showHistoryModel();
+            }
+            return;
+        }
+        if (act == SketchBrowserPresentation.ACT_DELETE_SKETCH) {
+            // The surface stays open on the Sketches list, re-read from native.
+            onNativeStateChanged();
+            showHistoryModel();
+            showStatus(context.getString(R.string.status_sketch_deleted,
+                    context.getString(R.string.history_row_sketch, sketchOrdinal(sketchId))),
+                    R.attr.fsTextSecondary);
+            return;
+        }
+        historyEditFromSketch = act == SketchBrowserPresentation.ACT_EDIT_SKETCH;
+        dismissedIssueKey = "";
+        setFeatureHistoryOpen(false);
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        if (act != SketchBrowserPresentation.ACT_EDIT_SKETCH) {
+            refreshExtrudeReadiness();
+        }
+        if (act == SketchBrowserPresentation.ACT_REUSE_ADD
+                || act == SketchBrowserPresentation.ACT_REUSE_CUT) {
+            showStatus(context.getString(R.string.status_sketch_reuse_begun,
+                    context.getString(R.string.history_row_sketch, sketchOrdinal(sketchId)),
+                    context.getString(act == SketchBrowserPresentation.ACT_REUSE_ADD
+                            ? R.string.sketch_operation_add : R.string.sketch_operation_cut),
+                    BodyLabels.of(context, bodyId)), R.attr.fsTextSecondary);
+        } else {
+            showStatus(context.getString(R.string.status_history_edit_begun,
+                    act == SketchBrowserPresentation.ACT_EDIT_SKETCH
+                            ? context.getString(R.string.history_row_sketch, sketchOrdinal(sketchId))
+                            : context.getString(R.string.history_act_edit_feature),
+                    BodyLabels.of(context, bodyId)), R.attr.fsTextSecondary);
+        }
+    }
+
+    /** A sketch's History ordinal, read from native; its id when it is gone. */
+    private int sketchOrdinal(long sketchId) {
+        final SketchBrowserPresentation.SketchRow row = readSketchInventory().find(sketchId);
+        return row != null ? row.ordinal : (int) sketchId;
+    }
+
+    /**
+     * Keep Sketch ({@code CAD-R2}): the open sketch becomes a retained sketch of
+     * its body with no feature, as one Undo. Native decides whether it can.
+     */
+    @Override
+    public void onKeepSketchRequested() {
+        final Context context = getContext();
+        final long bodyId = NativeViewport.sketchEditingBodyId() != NativeViewport.NO_OBJECT
+                ? NativeViewport.sketchEditingBodyId() : NativeViewport.sceneActiveBodyId();
+        final int status = NativeViewport.sketchCommitSketch();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_sketch_kept,
+                context.getString(R.string.sketch_kept_name), BodyLabels.of(context, bodyId)),
+                R.attr.fsTextSuccess);
     }
 
     /**

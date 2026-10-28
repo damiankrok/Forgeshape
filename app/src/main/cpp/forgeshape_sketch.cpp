@@ -14,7 +14,7 @@ namespace forgeshape {
 
 // The count is a literal in the header so Java can mirror it; this is what
 // keeps the literal honest when an enumerator is appended.
-static_assert(static_cast<int>(CadStatus::MirrorNothingSelected) + 1 == kCadStatusCount,
+static_assert(static_cast<int>(CadStatus::SketchIsRoot) + 1 == kCadStatusCount,
               "kCadStatusCount must equal the number of CadStatus enumerators");
 
 const char* cadStatusName(CadStatus status) {
@@ -110,6 +110,8 @@ const char* cadStatusName(CadStatus status) {
         case CadStatus::OffsetSelfIntersecting: return "OffsetSelfIntersecting";
         case CadStatus::MirrorAxisInvalid: return "MirrorAxisInvalid";
         case CadStatus::MirrorNothingSelected: return "MirrorNothingSelected";
+        case CadStatus::SketchInUse: return "SketchInUse";
+        case CadStatus::SketchIsRoot: return "SketchIsRoot";
     }
     return "unknown";
 }

@@ -147,6 +147,14 @@ CadStatus buildCadChainGeometry(const CadBodyState& state, std::vector<CadFeatur
 // against the whole chain.
 CadStatus validateCadChain(const CadBodyState& state, uint32_t* outFailedFeatureId = nullptr);
 
+// Where the retained sketch `sketchId` stands, in body-local binary64
+// (`CAD-R2`): the root sketch on its workplane, any other on its named face of
+// one of the body's features -- the ONE placement rule every feature that
+// extrudes it also reads, so a sketch no feature consumes is placed exactly as
+// a consumed one. Fails closed by the chain's own reason when an earlier
+// feature cannot be derived, `SketchNotFound` for an id the table lacks.
+CadStatus cadSketchPlacement(const CadBodyState& state, CadSketchId sketchId, CadFrame64* out);
+
 // The geometry of the one feature named, and only what it needs before it.
 CadStatus buildCadFeatureGeometry(const CadBodyState& state, uint32_t featureId,
                                   CadFeatureGeometry* out);

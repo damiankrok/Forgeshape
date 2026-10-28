@@ -60,6 +60,7 @@
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_extrude_tool.h"
 #include "forgeshape_cad_feature.h"
+#include "forgeshape_cad_sketch_inventory.h"
 #include "forgeshape_cad_timeline.h"
 #include "forgeshape_cad_a3_selftest.h"
 #include "forgeshape_sketch_ux_selftest.h"
@@ -591,7 +592,10 @@ void runMirrorSelfTestsAndLog() {
 // them, so drift from the committed fixtures is a value that can be read.
 void runCadFeatureSelfTestsAndLog() {
 #ifndef NDEBUG
-    constexpr int kMaxCadFeatureChecks = 512;
+    // Above the suite's own count with room to grow: a record past the cap is
+    // silently NOT run-and-counted, which is how this suite's last 49 checks
+    // went unreported on the device while the host counted 561 (`CAD-R2`).
+    constexpr int kMaxCadFeatureChecks = 1024;
     static forgeshape::CadFeatureSelfTestResult results[kMaxCadFeatureChecks];
     const int count = forgeshape::runCadFeatureSelfTests(results, kMaxCadFeatureChecks);
     int failed = 0;
@@ -4426,7 +4430,16 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_sketchFinish(JNIEn
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchBackToEditing(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
-    forgeshape::sketchSession().backToEditing();
+    forgeshape::SketchSession& session = forgeshape::sketchSession();
+    if (session.state() == forgeshape::SketchSessionState::Ready && !session.canReturnToSketch()) {
+        // A reuse session extrudes a SHARED sketch it may not edit (`CAD-R2`):
+        // nothing changes, the camera included.
+        session.backToEditing();  // records SketchInUse as the last status
+        FS_LOGI("FORGESHAPE_SKETCH_BACK_REFUSED:%s",
+                forgeshape::cadStatusName(session.lastStatus()));
+        return;
+    }
+    session.backToEditing();
     // Back to the authored sketch is back to the EXACT support-normal view
     // (`CAD-UX-S1-C1`). The feature preview belongs to the staged
     // extrusion; the drawing is authored through the aligned one, where a
@@ -7278,6 +7291,325 @@ Java_com_forgeshape_app_NativeViewport_sketchCommitEdit(JNIEnv*, jclass) {
     FS_LOGI("FORGESHAPE_SKETCH_EDIT_COMMIT objectId=%lld undo=%d", (long long)edited,
             (int)undoDepth);
     return cadCode(status);
+}
+
+// ---------------------------------------------------------------------------
+// Retained sketches (`CAD-R2`)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Where retained sketch `sketchId` of CAD body `id` is authored in WORLD space:
+// its body-local placement (the ONE rule features read) through the body's
+// resolved world model. False when the sketch does not place.
+bool resolveRetainedSketchWorldFrame(forgeshape::ConstructionScene& scene, forgeshape::ObjectId id,
+                                const forgeshape::CadBody& body, forgeshape::CadSketchId sketchId,
+                                forgeshape::SketchFrame* out) {
+    forgeshape::CadFrame64 placement;
+    if (out == nullptr
+        || forgeshape::cadSketchPlacement(body.state(), sketchId, &placement)
+                   != forgeshape::CadStatus::Ok) {
+        return false;
+    }
+    forgeshape::Mat4 model = forgeshape::mat4Identity();
+    scene.resolveWorldModel(id, &model);
+    out->origin = forgeshape::mat4TransformPoint(model, forgeshape::vec3FromDVec3(placement.origin));
+    out->u = forgeshape::vec3Normalize(
+            forgeshape::mat4TransformDirection(model, forgeshape::vec3FromDVec3(placement.u)));
+    out->v = forgeshape::vec3Normalize(
+            forgeshape::mat4TransformDirection(model, forgeshape::vec3FromDVec3(placement.v)));
+    out->n = forgeshape::vec3Normalize(
+            forgeshape::mat4TransformDirection(model, forgeshape::vec3FromDVec3(placement.n)));
+    return true;
+}
+
+// The one guard every retained-sketch act shares: a project, no Sculpt, no
+// open sketch session, no open Construction edit. Caller holds the lock.
+forgeshape::CadStatus retainedSketchActRefusal() {
+    if (!forgeshape::constructionScene().hasProject() || forgeshape::sculptSession().inSculptMode()
+        || forgeshape::sketchSession().active()) {
+        return forgeshape::CadStatus::NotSketching;
+    }
+    if (forgeshape::constructionHistory().editInProgress()) {
+        return forgeshape::CadStatus::RefusedEditInProgress;
+    }
+    return forgeshape::CadStatus::Ok;
+}
+
+}  // namespace
+
+// The retained sketches of CAD body `bodyId`, DERIVED on every call from the
+// committed state and stored nowhere. `header` (>= 4) receives [0] the
+// regeneration verdict (a CAD_* code), [1] the row count, [2] the next sketch
+// id, [3] the first failing feature or 0. `rows` receives up to
+// length / 20 rows of 20 slots: [0] sketch id, [1] ordinal, [2] root,
+// [3] support kind (0 world plane, 1 another body's face, 2 a feature face),
+// [4] workplane, [5] support feature id, [6] support face kind code,
+// [7] entities, [8] dimensions, [9] consumer count, [10] first consumer,
+// [11] last consumer, [12] state (0 Ok, 1 Unused, 2 Failed, 3 NotRegenerated,
+// 4 SupportLost), [13] the row's status code, [14] acts (bit0 Edit, bit1
+// Delete, bit2 Reuse Add, bit3 Reuse Cut), [15] why Delete is not offered,
+// [16] why Reuse is not offered, [17..19] reserved 0. Returns the row count,
+// or -1 for a body that is not a CAD body or a header too short.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_cadSketchInventory(JNIEnv* env, jclass, jlong bodyId,
+                                                          jdoubleArray header, jdoubleArray rows) {
+    constexpr jsize kHeaderSlots = 4;
+    constexpr jsize kRowSlots = 20;
+    if (header == nullptr || env->GetArrayLength(header) < kHeaderSlots) {
+        return -1;
+    }
+    forgeshape::CadSketchInventory inventory;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SceneObject* object =
+                forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(bodyId));
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        if (body == nullptr) {
+            return -1;
+        }
+        std::shared_ptr<const forgeshape::CadBodyMesh> mesh;
+        forgeshape::CadRegenerationReport report;
+        report.status = body->regenerated(&mesh);
+        inventory = forgeshape::buildCadSketchInventory(body->state(), report);
+    }
+    const jdouble head[kHeaderSlots] = {
+            static_cast<jdouble>(cadCode(inventory.status)),
+            static_cast<jdouble>(inventory.rows.size()),
+            static_cast<jdouble>(inventory.nextSketchId),
+            static_cast<jdouble>(inventory.failedFeatureId)};
+    env->SetDoubleArrayRegion(header, 0, kHeaderSlots, head);
+    if (rows != nullptr) {
+        const jsize capacity = env->GetArrayLength(rows) / kRowSlots;
+        const jsize count = std::min(capacity, static_cast<jsize>(inventory.rows.size()));
+        std::vector<jdouble> values(static_cast<size_t>(count) * kRowSlots, 0.0);
+        for (jsize i = 0; i < count; ++i) {
+            const forgeshape::CadSketchInventoryRow& row = inventory.rows[static_cast<size_t>(i)];
+            jdouble* v = &values[static_cast<size_t>(i) * kRowSlots];
+            v[0] = row.sketchId;
+            v[1] = row.ordinal;
+            v[2] = row.root ? 1.0 : 0.0;
+            v[3] = static_cast<jdouble>(static_cast<int>(row.support));
+            v[4] = forgeshape::workplaneIndex(row.plane);
+            v[5] = row.supportFeatureId;
+            v[6] = static_cast<jdouble>(static_cast<int>(row.supportFace.kind));
+            v[7] = row.entityCount;
+            v[8] = row.dimensionCount;
+            v[9] = static_cast<jdouble>(row.consumers.size());
+            v[10] = row.consumers.empty() ? 0.0 : row.consumers.front();
+            v[11] = row.consumers.empty() ? 0.0 : row.consumers.back();
+            v[12] = static_cast<jdouble>(static_cast<int>(row.state));
+            v[13] = static_cast<jdouble>(cadCode(row.status));
+            v[14] = row.acts;
+            v[15] = static_cast<jdouble>(cadCode(row.deleteRefusal));
+            v[16] = static_cast<jdouble>(cadCode(row.reuseRefusal));
+        }
+        if (count > 0) {
+            env->SetDoubleArrayRegion(rows, 0, count * kRowSlots, values.data());
+        }
+    }
+    return static_cast<jint>(inventory.rows.size());
+}
+
+// Every feature that extrudes sketch `sketchId` of body `bodyId`, in chain
+// order, into `out` (as many as fit). Returns the full count, or -1 for a body
+// that is not a CAD body or a sketch it does not carry.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_cadSketchConsumers(JNIEnv* env, jclass, jlong bodyId,
+                                                          jlong sketchId, jlongArray out) {
+    std::vector<jlong> consumers;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SceneObject* object =
+                forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(bodyId));
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        if (body == nullptr || sketchId <= 0
+            || forgeshape::findCadSketchRecord(body->state(),
+                                               static_cast<forgeshape::CadSketchId>(sketchId))
+                       == nullptr) {
+            return -1;
+        }
+        forgeshape::CadFeatureView view;
+        for (uint32_t i = 0; forgeshape::cadFeatureAt(body->state(), i, &view); ++i) {
+            if (view.sketchId == static_cast<forgeshape::CadSketchId>(sketchId)) {
+                consumers.push_back(static_cast<jlong>(view.featureId));
+            }
+        }
+    }
+    if (out != nullptr && !consumers.empty()) {
+        const jsize n = std::min(env->GetArrayLength(out), static_cast<jsize>(consumers.size()));
+        if (n > 0) {
+            env->SetLongArrayRegion(out, 0, n, consumers.data());
+        }
+    }
+    return static_cast<jint>(consumers.size());
+}
+
+// Delete Sketch: removes an UNUSED, non-root retained sketch as one Undo.
+// Refused while sculpting, sketching or mid-edit, and by the domain's names
+// (SketchIsRoot, SketchInUse, SketchNotFound, NotCadBody).
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_cadDeleteSketch(JNIEnv*, jclass, jlong bodyId,
+                                                       jlong sketchId) {
+    forgeshape::CadStatus status;
+    size_t undoDepth = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = retainedSketchActRefusal();
+        if (status == forgeshape::CadStatus::Ok) {
+            status = sketchId <= 0 || sketchId > 0xFFFFFFFFll
+                             ? forgeshape::CadStatus::SketchNotFound
+                             : forgeshape::deleteCadSketch(
+                                       forgeshape::constructionScene(),
+                                       forgeshape::constructionHistory(),
+                                       static_cast<forgeshape::ObjectId>(bodyId),
+                                       static_cast<forgeshape::CadSketchId>(sketchId));
+        }
+        undoDepth = forgeshape::constructionHistory().undoDepth();
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_DELETE body=%lld sketch=%lld %s undo=%d", (long long)bodyId,
+            (long long)sketchId, forgeshape::cadStatusName(status), (int)undoDepth);
+    return cadCode(status);
+}
+
+// Opens a session that extrudes the EXISTING retained sketch `sketchId` of body
+// `bodyId` as a NEW later feature (`operation` 1 Add, 2 Cut), directly in Ready
+// and the feature-preview view. The ordinary Extrude commit applies it.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchBeginReuseSketch(JNIEnv*, jclass, jlong bodyId,
+                                                              jlong sketchId, jint operation) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = retainedSketchActRefusal();
+        forgeshape::CadFeatureOperation op = forgeshape::CadFeatureOperation::NewBody;
+        if (status == forgeshape::CadStatus::Ok
+            && !forgeshape::cadFeatureOperationFromIndex(static_cast<int>(operation), &op)) {
+            status = forgeshape::CadStatus::InvalidFeatureOperation;
+        }
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
+        const forgeshape::SceneObject* object = scene.findBody(id);
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        forgeshape::SketchFrame frame;
+        if (status == forgeshape::CadStatus::Ok && body == nullptr) {
+            status = forgeshape::CadStatus::NotCadBody;
+        } else if (status == forgeshape::CadStatus::Ok
+                   && (sketchId <= 0 || sketchId > 0xFFFFFFFFll
+                       || !resolveRetainedSketchWorldFrame(
+                               scene, id, *body, static_cast<forgeshape::CadSketchId>(sketchId),
+                               &frame))) {
+            status = forgeshape::CadStatus::SketchNotFound;
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
+            status = forgeshape::sketchSession().beginReuseSketch(
+                    id, body->state(), static_cast<forgeshape::CadSketchId>(sketchId), op, frame);
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            forgeshape::supportChooser().cancel();
+            forgeshape::gizmoSession().setActive(false);
+            g_selection.resetGesture();
+            g_camera.resetGesture();
+            beginSketchView();
+            g_featureViewPending = beginExtrudeFeatureView()
+                    == forgeshape::CadFeatureViewSource::Unavailable;
+        }
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_REUSE body=%lld sketch=%lld op=%d %s", (long long)bodyId,
+            (long long)sketchId, (int)operation, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// Opens a staged edit of retained sketch `sketchId` of body `bodyId`: through
+// its first consumer when a feature extrudes it, sketch-only otherwise. The
+// camera frames the sketch exactly as Edit Sketch always has.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchBeginEditSketch(JNIEnv*, jclass, jlong bodyId,
+                                                             jlong sketchId) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = retainedSketchActRefusal();
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
+        const forgeshape::SceneObject* object = scene.findBody(id);
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        forgeshape::SketchFrame frame;
+        if (status == forgeshape::CadStatus::Ok && body == nullptr) {
+            status = forgeshape::CadStatus::NotCadBody;
+        } else if (status == forgeshape::CadStatus::Ok
+                   && (sketchId <= 0 || sketchId > 0xFFFFFFFFll
+                       || !resolveRetainedSketchWorldFrame(
+                               scene, id, *body, static_cast<forgeshape::CadSketchId>(sketchId),
+                               &frame))) {
+            status = forgeshape::CadStatus::SketchNotFound;
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
+            status = forgeshape::sketchSession().beginEditSketch(
+                    id, body->state(), static_cast<forgeshape::CadSketchId>(sketchId), frame);
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            forgeshape::supportChooser().cancel();
+            forgeshape::gizmoSession().setActive(false);
+            g_selection.resetGesture();
+            g_camera.resetGesture();
+            beginSketchView();
+        }
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_EDIT_SKETCH body=%lld sketch=%lld %s", (long long)bodyId,
+            (long long)sketchId, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// Keep Sketch: commits the open session's sketch WITHOUT a feature (a new
+// sketch on one of its body's own faces, or a sketch-only edit), one Undo.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchCommitSketch(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    forgeshape::CadSketchId kept = forgeshape::kNoCadSketch;
+    size_t undoDepth = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (forgeshape::surfaceSketchPurpose().active) {
+            status = forgeshape::CadStatus::NotSketching;
+        } else {
+            status = forgeshape::sketchSession().commitSketch(forgeshape::constructionScene(),
+                                                              forgeshape::constructionHistory(),
+                                                              &kept);
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            endSketchView();
+        }
+        undoDepth = forgeshape::constructionHistory().undoDepth();
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_KEEP %s sketch=%u undo=%d", forgeshape::cadStatusName(status),
+            (unsigned)kept, (int)undoDepth);
+    return cadCode(status);
+}
+
+// Whether Keep Sketch can be offered now. Read on every chrome refresh.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchCanKeepSketch(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return !forgeshape::surfaceSketchPurpose().active && forgeshape::sketchSession().canKeepSketch()
+                   ? JNI_TRUE
+                   : JNI_FALSE;
+}
+
+// Whether the open session is a sketch-only edit (Finish Sketch withdrawn).
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchIsSketchOnly(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::sketchSession().sketchOnly() ? JNI_TRUE : JNI_FALSE;
+}
+
+// The retained sketch a reuse session extrudes, or 0.
+JNIEXPORT jlong JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchReuseSketchId(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jlong>(forgeshape::sketchSession().reuseSketchId());
 }
 
 JNIEXPORT jstring JNICALL

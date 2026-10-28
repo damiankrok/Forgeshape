@@ -952,6 +952,20 @@ final class GlobalToolbarView extends LinearLayout {
         }
     }
 
+    /**
+     * Withdraws Finish Sketch over a sketch-only edit ({@code CAD-R2}): that
+     * session stages no extrusion and native refuses its Finish, so the
+     * control is absent rather than drawn and refused. Keep Sketch, beside the
+     * sketch's own controls, is the commit.
+     */
+    void showSketchOnly(boolean only) {
+        if (only && finishSketchButton.getVisibility() == VISIBLE) {
+            finishSketchButton.setVisibility(GONE);
+            applyEditingComposition();
+            requestLayout();
+        }
+    }
+
     /** Exactly one of Extrude and Revolve, and only for a candidate a commit may make. */
     private void applySketchCommitVisibility() {
         final boolean commit = sketchState == NativeViewport.SKETCH_READY && extrudeReady;

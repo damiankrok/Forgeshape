@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Retained-sketch management (`CAD-R2`). An id names the act, never the label. -->
+<resources>
+    <item name="feature_history_segments" type="id" />
+    <item name="feature_history_tab_steps" type="id" />
+    <item name="feature_history_tab_sketches" type="id" />
+    <item name="feature_history_tab_features" type="id" />
+    <item name="feature_history_detail" type="id" />
+    <item name="feature_history_actions" type="id" />
+    <item name="sketch_browser_row" type="id" />
+    <item name="history_act_edit_sketch" type="id" />
+    <item name="history_act_edit_feature" type="id" />
+    <item name="history_act_reuse_add" type="id" />
+    <item name="history_act_reuse_cut" type="id" />
+    <item name="history_act_delete_sketch" type="id" />
+    <item name="keep_sketch" type="id" />
+</resources>

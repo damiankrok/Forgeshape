@@ -2315,6 +2315,9 @@ final class NativeViewport {
     static final int CAD_OFFSET_SELF_INTERSECTING = 88;
     static final int CAD_MIRROR_AXIS_INVALID = 89;
     static final int CAD_MIRROR_NOTHING_SELECTED = 90;
+    // `CAD-R2`: retained sketch management. APPENDED.
+    static final int CAD_SKETCH_IN_USE = 91;
+    static final int CAD_SKETCH_IS_ROOT = 92;
 
     /**
      * What an extrusion does to material (`CAD-VERTICAL-SLICE-R1`), in the
@@ -3003,6 +3006,100 @@ final class NativeViewport {
      * {@code CAD_*} code.
      */
     static native int sketchBeginEditFeature(long bodyId, long featureId, boolean startReady);
+
+    // --- Retained sketches (`CAD-R2`) -----------------------------------------
+
+    /** Slots of {@link #cadSketchInventory}'s header. */
+    static final int SKETCH_INV_HEADER_SIZE = 4;
+    static final int SKETCH_INV_STATUS = 0;
+    static final int SKETCH_INV_ROW_COUNT = 1;
+    static final int SKETCH_INV_NEXT_ID = 2;
+    static final int SKETCH_INV_FAILED_FEATURE = 3;
+
+    /** Slots of one {@link #cadSketchInventory} row. */
+    static final int SKETCH_INV_ROW_SIZE = 20;
+    /** The durable {@code CadSketchId}. Never a position. */
+    static final int SKETCH_INV_ID = 0;
+    /** 1-based; the History's own sketch ordinal. Presentation only. */
+    static final int SKETCH_INV_ORDINAL = 1;
+    static final int SKETCH_INV_ROOT = 2;
+    /** One of the SKETCH_SUPPORT_* values. */
+    static final int SKETCH_INV_SUPPORT = 3;
+    static final int SKETCH_INV_PLANE = 4;
+    static final int SKETCH_INV_SUPPORT_FEATURE = 5;
+    static final int SKETCH_INV_SUPPORT_FACE_KIND = 6;
+    static final int SKETCH_INV_ENTITIES = 7;
+    static final int SKETCH_INV_DIMENSIONS = 8;
+    static final int SKETCH_INV_CONSUMERS = 9;
+    static final int SKETCH_INV_FIRST_CONSUMER = 10;
+    static final int SKETCH_INV_LAST_CONSUMER = 11;
+    /** One of the SKETCH_ROW_* values. */
+    static final int SKETCH_INV_STATE = 12;
+    /** The row's reason (Failed / SupportLost), a CAD_* code. */
+    static final int SKETCH_INV_STATUS_CODE = 13;
+    /** SKETCH_ACT_* bits native accepts. */
+    static final int SKETCH_INV_ACTS = 14;
+    /** Why Delete is not offered, a CAD_* code (CAD_OK when it is). */
+    static final int SKETCH_INV_DELETE_REFUSAL = 15;
+    /** Why reuse is not offered, a CAD_* code (CAD_OK when it is). */
+    static final int SKETCH_INV_REUSE_REFUSAL = 16;
+
+    /** {@link #SKETCH_INV_SUPPORT_FACE_KIND} values: the face token's kind. */
+    static final int SKETCH_FACE_CAP_PLANE = 0;
+    static final int SKETCH_FACE_CAP_FAR = 1;
+    static final int SKETCH_FACE_SIDE = 2;
+
+    static final int SKETCH_SUPPORT_WORLD_PLANE = 0;
+    static final int SKETCH_SUPPORT_BODY_FACE = 1;
+    static final int SKETCH_SUPPORT_FEATURE_FACE = 2;
+
+    static final int SKETCH_ROW_OK = 0;
+    static final int SKETCH_ROW_UNUSED = 1;
+    static final int SKETCH_ROW_FAILED = 2;
+    static final int SKETCH_ROW_NOT_REGENERATED = 3;
+    static final int SKETCH_ROW_SUPPORT_LOST = 4;
+
+    static final int SKETCH_ACT_EDIT = 1;
+    static final int SKETCH_ACT_DELETE = 2;
+    static final int SKETCH_ACT_REUSE_ADD = 4;
+    static final int SKETCH_ACT_REUSE_CUT = 8;
+
+    /** The most retained sketches one CAD body can carry. */
+    static final int SKETCH_INV_MAX_ROWS = 16;
+
+    /**
+     * The retained sketches of a CAD body, in the History's construction order,
+     * derived from the committed state on every call and stored nowhere.
+     * Returns the row count, or -1 for a body that is not a CAD body.
+     */
+    static native int cadSketchInventory(long bodyId, double[] header, double[] rows);
+
+    /** The features extruding one sketch, in chain order; -1 for no such sketch. */
+    static native int cadSketchConsumers(long bodyId, long sketchId, long[] out);
+
+    /** Delete Sketch: an unused, non-root sketch, as one Undo. A CAD_* code. */
+    static native int cadDeleteSketch(long bodyId, long sketchId);
+
+    /**
+     * Opens a staged NEW Add ({@link #OPERATION_ADD}) or Cut on an EXISTING
+     * retained sketch, directly in Ready. The ordinary Extrude commits it.
+     */
+    static native int sketchBeginReuseSketch(long bodyId, long sketchId, int operation);
+
+    /** Opens a staged edit of one retained sketch by its durable id. */
+    static native int sketchBeginEditSketch(long bodyId, long sketchId);
+
+    /** Keep Sketch: commits the open sketch with no feature, as one Undo. */
+    static native int sketchCommitSketch();
+
+    /** Whether Keep Sketch can be offered now. */
+    static native boolean sketchCanKeepSketch();
+
+    /** Whether the open session edits an unused sketch alone (no Finish). */
+    static native boolean sketchIsSketchOnly();
+
+    /** The retained sketch a reuse session extrudes, or 0. */
+    static native long sketchReuseSketchId();
 
     /** The feature an open edit session edits, or 0. */
     static native long sketchEditingFeatureId();

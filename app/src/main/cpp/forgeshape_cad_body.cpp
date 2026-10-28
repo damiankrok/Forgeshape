@@ -1612,6 +1612,15 @@ CadStatus CadBody::applyState(const CadBodyState& requested, bool* outChanged) {
             return CadStatus::HighWaterInvalid;
         }
     }
+    // The WHOLE structural rule first (`CAD-R2`). Regeneration walks only the
+    // features, so a retained sketch no feature consumes -- whose face an
+    // upstream edit stripped -- or a table that breaks its own id rules would
+    // pass it and become a committed state the codec then refuses to save.
+    const CadStatus valid = validateCadBodyState(requested);
+    if (valid != CadStatus::Ok) {
+        ++rejectedUpdates_;
+        return valid;
+    }
     // Regenerate ONCE into a scratch mesh: the only proof a state is usable is
     // that the whole path runs, and running it here is what makes the refusal
     // land before a byte of the body has moved.

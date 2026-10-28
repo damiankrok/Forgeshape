@@ -312,6 +312,55 @@ public:
     CadStatus beginEditFeature(ObjectId bodyId, const CadBodyState& state, uint32_t featureId,
                                const SketchFrame& worldFrame, bool startReady);
 
+    // --- retained sketches (`CAD-R2`) ---------------------------------------
+
+    // Opens a session that stages a NEW later feature of body `bodyId`
+    // extruding the EXISTING retained sketch `sketchId` -- by id, never a copy
+    // -- as an Add or a Cut. It opens directly in Ready (the sketch is already
+    // drawn) and Back to Sketch is refused (`SketchInUse`): a shared sketch is
+    // edited through `beginEditSketch`, whose one commit regenerates every
+    // feature that extrudes it. The commit is the ordinary Add/Cut commit into
+    // the SAME body, one Undo. Refused while a session is open
+    // (`NotSketching`), for a Revolve body (`RevolveLaterFeatureUnsupported`),
+    // a full chain (`TooManyFeatures`), New Body (`InvalidFeatureOperation`),
+    // and by the sketch's own reasons (`cadSketchReuseRefusal`).
+    CadStatus beginReuseSketch(ObjectId bodyId, const CadBodyState& state, CadSketchId sketchId,
+                               CadFeatureOperation operation, const SketchFrame& worldFrame);
+
+    // Opens a staged edit of retained sketch `sketchId` of body `bodyId`. A
+    // sketch some feature extrudes opens through its FIRST consumer
+    // (`beginEditFeature(startReady=false)`), so its one Finish regenerates
+    // every consumer or is refused naming the first that fails. A sketch no
+    // feature extrudes opens SKETCH-ONLY: Finish Sketch is refused there
+    // (there is no extrusion to stage) and `commitSketch` is the commit.
+    CadStatus beginEditSketch(ObjectId bodyId, const CadBodyState& state, CadSketchId sketchId,
+                              const SketchFrame& worldFrame);
+
+    // Keep Sketch: commits the session's sketch WITHOUT a feature, as ONE
+    // `ScopedConstructionEdit` around ONE `applyState` (one Undo).
+    //   * a NEW sketch on a planar face of one of a CAD body's own features
+    //     becomes a retained sketch of THAT body, standing on that face, minted
+    //     from `nextSketchId` and consumed by nothing;
+    //   * a sketch-only edit (`beginEditSketch` of an unused sketch) replaces
+    //     that record's entities.
+    // `outSketchId` receives the kept sketch's id. Refused, changing nothing,
+    // when `canKeepSketch` is false (`NotSketching`), for an empty sketch
+    // (`NoClosedProfile`: there is nothing to keep), a full table
+    // (`TooManySketches`) or whatever the whole state's validation says.
+    CadStatus commitSketch(ConstructionScene& scene, ConstructionHistory& history,
+                           CadSketchId* outSketchId = nullptr);
+    // Whether Keep Sketch can be offered now (the shell draws it on this alone).
+    bool canKeepSketch() const;
+    // A sketch-only edit is open (no feature to stage; Finish withdrawn).
+    bool sketchOnly() const { return editingSketchId_ != kNoCadSketch; }
+    CadSketchId editingSketchId() const { return editingSketchId_; }
+    // The retained sketch a reuse session extrudes, or kNoCadSketch.
+    CadSketchId reuseSketchId() const { return reuseSketchId_; }
+    // Whether Back to Sketch is possible from Ready (false for a reuse).
+    bool canReturnToSketch() const {
+        return state_ == SketchSessionState::Ready && reuseSketchId_ == kNoCadSketch;
+    }
+
     // The feature an edit session edits, or 0 when it authors a new one.
     uint32_t editingFeatureId() const { return editingFeatureId_; }
 
@@ -1023,6 +1072,13 @@ private:
     // placement is not staged here: it belongs to the sketch RECORD in the
     // staged state, which an edit rewrites the entities of and nothing else.
     uint32_t editingFeatureId_ = 0;
+    // `CAD-R2`: the retained sketch a reuse session extrudes, and the unused
+    // sketch a sketch-only edit rewrites. Volatile; kNoCadSketch otherwise.
+    CadSketchId reuseSketchId_ = kNoCadSketch;
+    CadSketchId editingSketchId_ = kNoCadSketch;
+    // The One Side direction a reuse's operation points into or out of the
+    // material, derived at begin from where the sketch stands.
+    ExtrudeDirection reuseCutDirection_ = ExtrudeDirection::AgainstNormal;
     // Bumped by every authored change that could change the candidate.
     uint64_t candidateRevision_ = 1;
     CadCandidateEvaluation evaluation_;

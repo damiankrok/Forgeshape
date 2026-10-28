@@ -642,6 +642,24 @@ CadStatus validateCadChain(const CadBodyState& state, uint32_t* outFailedFeature
     return CadStatus::Ok;
 }
 
+CadStatus cadSketchPlacement(const CadBodyState& state, CadSketchId sketchId, CadFrame64* out) {
+    if (out == nullptr) {
+        return CadStatus::RegenerationFailed;
+    }
+    const CadSketchRecord* record = findCadSketchRecord(state, sketchId);
+    if (record == nullptr) {
+        return CadStatus::SketchNotFound;
+    }
+    std::vector<CadFeatureGeometry> chain;
+    const CadStatus why = walkCadChain(state, &chain, nullptr, 0xFFFFFFFFu);
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    return sketchPlacement(state, record->sketchId, record->sketch,
+                           record->hasFeatureSupport ? &record->featureSupport : nullptr, chain,
+                           out);
+}
+
 CadStatus buildCadFeatureGeometry(const CadBodyState& state, uint32_t featureId,
                                   CadFeatureGeometry* out) {
     if (out == nullptr) {

@@ -1,4 +1,5 @@
 #include "forgeshape_cad_feature_selftest.h"
+#include "forgeshape_cad_r2_selftest.h"
 
 #include <algorithm>
 #include <chrono>
@@ -5853,6 +5854,16 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + timelinePerformance;
+    // Retained-sketch management and parametric hardening (`CAD-R2`): the
+    // inventory, Keep / Reuse / Delete Sketch, staged edits, planar-face
+    // selections, supports and persistence, beside the chain they extend.
+    std::vector<ArrangementSelfTestCheck> cadR2;
+    std::string cadR2Performance;
+    runCadR2SelfTests(&cadR2, &cadR2Performance);
+    for (const ArrangementSelfTestCheck& check : cadR2) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + cadR2Performance;
     // The retained sketch table, the selection variant and `CADB` v6
     // (`CAD-V6-S1`): model and persistence only, wired to no session, JNI or
     // UI path, so -- like the arrangement -- they ride in this suite.

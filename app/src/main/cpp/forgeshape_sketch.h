@@ -322,11 +322,20 @@ enum class CadStatus : uint8_t {
     MirrorAxisInvalid,
     // Mirror with nothing selected to mirror (the axis is never mirrored).
     MirrorNothingSelected,
+    // --- `CAD-R2`: retained sketch management. APPENDED. ---
+    //
+    // The act needs a sketch no feature consumes (Delete Sketch, a sketch-only
+    // edit), and at least one feature extrudes this one. Never cascaded: the
+    // features are not removed for the user.
+    SketchInUse,
+    // The act would remove or detach the body's ROOT sketch -- the one the base
+    // feature extrudes, which says where the body is.
+    SketchIsRoot,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 91;
+constexpr int kCadStatusCount = 93;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);

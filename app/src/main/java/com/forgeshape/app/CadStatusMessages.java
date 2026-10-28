@@ -137,6 +137,11 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_sketch_mirror_axis_invalid);
             case NativeViewport.CAD_MIRROR_NOTHING_SELECTED:
                 return context.getString(R.string.status_sketch_mirror_nothing);
+            // `CAD-R2`: retained sketch management.
+            case NativeViewport.CAD_SKETCH_IN_USE:
+                return context.getString(R.string.status_cad_sketch_in_use);
+            case NativeViewport.CAD_SKETCH_IS_ROOT:
+                return context.getString(R.string.status_cad_sketch_is_root);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));

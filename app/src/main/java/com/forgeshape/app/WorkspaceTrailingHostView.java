@@ -48,6 +48,9 @@ final class WorkspaceTrailingHostView extends FrameLayout
 
         /** From the profile choice back to editing the sketch. */
         void onBackToSketchRequested();
+
+        /** Keep the sketch on its body without a feature ({@code CAD-R2}). */
+        void onKeepSketchRequested();
     }
 
     /** One derived presentation snapshot; none of these values is product truth. */
@@ -156,6 +159,7 @@ final class WorkspaceTrailingHostView extends FrameLayout
     private final LinearLayout sketchGroup;
     private final ImageView cancelSketchAction;
     private final ImageView backToSketchAction;
+    private final ImageView keepSketchAction;
 
     private Boolean showingSculptEntries;
     /** Whether the rail last drew the sketch tools. Null until the first render. */
@@ -292,6 +296,15 @@ final class WorkspaceTrailingHostView extends FrameLayout
                 view -> callbacks.onBackToSketchRequested());
         sketchGroup.addView(backToSketchAction, internalButtonParams(context,
                 EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
+        // Keep Sketch (`CAD-R2`): the sketch's other commit, the one that makes
+        // no feature. It lives with the sketch's own controls rather than in
+        // the toolbar row, which carries ONE transition at a time.
+        keepSketchAction = selectorButton(context, R.id.keep_sketch,
+                R.drawable.ic_sketch_keep, R.string.keep_sketch_description,
+                view -> callbacks.onKeepSketchRequested());
+        keepSketchAction.setVisibility(GONE);
+        sketchGroup.addView(keepSketchAction, internalButtonParams(context,
+                EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
         sketchGroup.setVisibility(GONE);
         contentColumn.addView(sketchGroup, sectionParams(context,
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
@@ -304,6 +317,24 @@ final class WorkspaceTrailingHostView extends FrameLayout
         precisionGroup.addView(precisionToggle, internalButtonParams(context, 0));
         contentColumn.addView(precisionGroup, sectionParams(context,
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+    }
+
+    /**
+     * The retained-sketch answers native gives on every refresh ({@code CAD-R2}):
+     * whether Keep Sketch can succeed, and whether Back to Sketch can (a reuse
+     * session extrudes a shared sketch it may not edit). Called after
+     * {@link #render}; neither is remembered here.
+     */
+    void showSketchCommitOptions(boolean keepOffered, boolean backOffered) {
+        keepSketchAction.setVisibility(keepOffered ? VISIBLE : GONE);
+        if (!backOffered) {
+            backToSketchAction.setVisibility(GONE);
+        }
+    }
+
+    /** For verification. */
+    ImageView keepSketchAction() {
+        return keepSketchAction;
     }
 
     /** The fixed external geometry this host presents to the workspace row. */
@@ -397,6 +428,9 @@ final class WorkspaceTrailingHostView extends FrameLayout
                 ? VISIBLE : GONE);
         backToSketchAction.setVisibility(
                 SketchChromePolicy.backToSketchShown(state.sketchState) ? VISIBLE : GONE);
+        if (!sketching) {
+            keepSketchAction.setVisibility(GONE);
+        }
 
         precisionToggle.setContentDescription(getContext().getString(
                 state.precisionOpen ? R.string.precision_close : R.string.precision_open,

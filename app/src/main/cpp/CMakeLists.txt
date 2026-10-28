@@ -56,6 +56,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_cad_feature.cpp
     forgeshape_cad_revolve.cpp
     forgeshape_cad_timeline.cpp
+    forgeshape_cad_sketch_inventory.cpp
     forgeshape_cad_kernel.cpp
     forgeshape_cad_extrude_tool.cpp
     forgeshape_sketch.cpp
@@ -129,6 +130,7 @@ set(FORGESHAPE_SELFTEST_SOURCES
     forgeshape_owner_shell_selftest.cpp
     forgeshape_cad_revolve_selftest.cpp
     forgeshape_cad_timeline_selftest.cpp
+    forgeshape_cad_r2_selftest.cpp
     forgeshape_sketch_drafting_selftest.cpp
     forgeshape_sketch_arrangement_selftest.cpp
     forgeshape_sketch_fill_selftest.cpp

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Retained-sketch management (`CAD-R2`). -->
+<resources>
+    <string name="feature_history_tab_steps">Steps</string>
+    <string name="feature_history_tab_sketches">Sketches</string>
+    <string name="feature_history_tab_features">Features</string>
+    <string name="feature_history_tab_steps_description">Every sketch and feature, in the order the body is built</string>
+    <string name="feature_history_tab_sketches_description">The sketches this body keeps, and what uses each one</string>
+    <string name="feature_history_tab_features_description">The features this body is built from, and what each can do</string>
+    <string name="sketch_browser_caption">Tap a sketch to see where it stands and what it can do.</string>
+    <string name="feature_browser_caption">Tap a feature to edit it or the sketch it is made from.</string>
+    <string name="sketch_browser_empty">This body keeps no sketch.</string>
+
+    <string name="sketch_usage_unused">Unused</string>
+    <string name="sketch_usage_single">Used by %1$s</string>
+    <string name="sketch_usage_shared">Shared by %1$d features</string>
+    <string name="sketch_where_plane">on the %1$s plane</string>
+    <string name="sketch_where_body_face">on another body\'s face</string>
+    <string name="sketch_where_feature">on a face of %1$s</string>
+    <string name="sketch_browser_detail">%1$s · %2$s · %3$d entities</string>
+    <string name="sketch_support_lost">Its face is gone: %1$s</string>
+    <string name="sketch_dependencies">Dependencies: %1$s</string>
+    <string name="sketch_dependencies_none">nothing builds from it</string>
+    <string name="feature_dependencies">Built from %1$s %2$s</string>
+    <string name="sketch_cannot_delete">Not deletable: %1$s</string>
+    <string name="sketch_cannot_reuse">Not reusable: %1$s</string>
+    <string name="sketch_shared_edit_warning">Editing it rebuilds %1$d features.</string>
+
+    <string name="history_act_edit_sketch">Edit Sketch</string>
+    <string name="history_act_edit_feature">Edit Feature</string>
+    <string name="history_act_reuse_add">Use for Add</string>
+    <string name="history_act_reuse_cut">Use for Cut</string>
+    <string name="history_act_delete_sketch">Delete Sketch</string>
+    <string name="history_act_reuse_add_description">Add material to this body with %1$s, without copying it</string>
+    <string name="history_act_reuse_cut_description">Cut this body with %1$s, without copying it</string>
+    <string name="history_act_delete_sketch_description">Delete %1$s. Nothing uses it; Undo brings it back.</string>
+    <string name="history_act_edit_sketch_description">Edit %1$s. Nothing changes until you finish.</string>
+    <string name="history_act_edit_feature_description">Edit %1$s. Nothing changes until you finish.</string>
+
+    <string name="keep_sketch">Keep Sketch</string>
+    <string name="keep_sketch_description">Keep this sketch on the body without making a feature. Undo removes it.</string>
+
+    <string name="status_sketch_kept">%1$s kept on %2$s. Undo removes it.</string>
+    <string name="sketch_kept_name">The sketch</string>
+    <string name="status_sketch_deleted">%1$s deleted. Undo brings it back.</string>
+    <string name="status_sketch_reuse_begun">%1$s staged as a new %2$s on %3$s.</string>
+    <string name="status_cad_sketch_in_use">A feature still uses this sketch.</string>
+    <string name="status_cad_sketch_is_root">The body\'s first sketch says where the body is and can\'t be removed.</string>
+</resources>
