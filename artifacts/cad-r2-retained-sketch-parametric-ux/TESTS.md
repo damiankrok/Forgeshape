@@ -116,3 +116,19 @@ The product native/Java code is identical in both heads (`5127cfc` + the
 `5dd7d97` Java constant). D14 facts: `d14.preview=[4.0, 1.0]` (Select All on a ring
 and its disk chooses both regions; the valid candidate is the whole 2 × 2
 square, volume 4 m³, one component), cleared capture `d14_cleared.png`.
+
+## Final CI FAST (after DEVICE green)
+
+`CI FAST` run **40694343402** on `b747651` (docs only after `1b7507e`, the
+device-union product): **success**. JVM 20 suites, **196 tests, 0 failures, 0
+errors**; `RELEASE_SELFTEST_GUARD=PASS` (release arm64-v8a 2,915,880 B and
+x86_64 3,255,824 B: 0 symbols, 0 strings; debug control 35 / 398);
+`FORGE_CORPUS_PARITY=PASS (72/72 byte-identical)`, `committed=72 generated=72
+mismatches=0`; device-guard and runner checks PASS.
+
+**OWNER APK** — `ci-fast-evidence` artifact **12819336381** (zip digest
+`sha256:6744ddc2e1f01602784bbc33fca58c9770cf7d8cd11acea590e3aecb6656cd81`,
+expires 2026-11-11T13:19:04Z), path `app/build/outputs/apk/debug/app-debug.apk`,
+**17,545,911 bytes**, SHA-256
+**`043203e18733d10e28985bf86a4cb41ed87fc3c3fd743b391fbc20a6ad5ac272`** (hashed
+from the downloaded CI artifact; no local rebuild substituted).

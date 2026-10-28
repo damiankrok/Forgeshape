@@ -70,5 +70,5 @@ JNI vocabulary) gained two APPENDED codes. Evidence ids: host checks
 | A6 | DELIVERED | evaluation + issue card; R2_HIST_04/05, R2_SK_12; D08 |
 | A7 | DELIVERED | R2_PF_*, R2_OR_12/13; D09 |
 | A8 | DELIVERED | R2_SUP_*; D04, D10, D12 |
-| A9 | DELIVERED pending final CI FAST parity | R2_DATA_*; corpus 72/72 (CI FAST) |
+| A9 | DELIVERED | R2_DATA_*; corpus 72/72 (CI FAST 40694343402) |
 | A10 | DELIVERED | 17 oracles, `perf_same_machine.md`, release guard PASS |

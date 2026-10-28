@@ -1,8 +1,43 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.99.0
-**Updated:** 2026-10-06
-**Latest closeout:** **`MODELING-R1-OWNER-CORRECTION-PROJECT-SHELL-SKETCH-SUPPORT-PLANAR-R1`
+**Status Version:** 0.100.0
+**Updated:** 2026-10-28
+**Latest closeout:** **`CAD-R2` (retained sketches, parametric history,
+quality) — `PASS-CAD-R2-RETAINED-SKETCH-PARAMETRIC-UX`** (2026-10-28). **TECH
+PASS / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
+`feature/cad-r2-retained-sketch-parametric-ux-r1` from exactly `636797e`;
+product `5127cfc` (+ the Java constant in `5dd7d97`), FAST head `b747651`
+(test / docs only after that); no other branch moved; no FullSharded. Record:
+`artifacts/cad-r2-retained-sketch-parametric-ux/SUMMARY.md` (BEFORE.md and
+DESIGN.md first).
+
+- **History → Sketches.** Every retained sketch listed by durable id with its
+  support, counts, consumers and state; Edit Sketch, Use for Add / Cut and
+  Delete Sketch drawn only where native accepts them, refusals named
+  (`SketchInUse`, `SketchIsRoot`, appended CadStatus 91 / 92).
+- **Keep Sketch / reuse / safe delete.** A sketch on a face of the body's own
+  features can be kept with no feature; Add / Cut can name an EXISTING sketch
+  by id; only unused non-root sketches delete. Each one Undo. A world-plane
+  retained sketch is **BLOCKED-DESIGN-DECISION** (needs a second root).
+- **Fixes.** A sketch-only edit's candidate no longer builds a new body;
+  `CadBody::applyState` now refuses a state that strands a kept sketch; the
+  debug CAD_FEATURE device record cap 512 → 1024; History acts stand above the
+  list so landscape keeps 48 dp.
+- **Format.** None changed; corpus 72/72 byte-identical.
+- **Gates.** Host `HOST_SELFTESTS_OK (4369 checks, 0 failed)` (25 suites, 48
+  R2 checks + 17 independent oracles in CAD_FEATURE); JVM 196/196; release
+  guard PASS; DEVICE union **118/118** (`CI DEVICE` `40683528533` 67/67 on
+  `f706e92` + `40689211847` 51/51 on `7d2d7b4`, incl.
+  `CadRetainedSketchOwnerTest` D01..D14); `CI FAST` `40694343402` success.
+- **Performance risk (open).** Same-machine `eval_all` +31.5 % and
+  `drafting_trim100` +35.1 % median, not attributed to this stage's code
+  (`perf_same_machine.md`).
+- **OWNER APK.** `ci-fast-evidence` artifact `12819336381` of `CI FAST`
+  `40694343402`, `app/build/outputs/apk/debug/app-debug.apk`, 17,545,911 bytes,
+  SHA-256 `043203e18733d10e28985bf86a4cb41ed87fc3c3fd743b391fbc20a6ad5ac272`;
+  artifact expires 2026-11-11T13:19:04Z.
+
+**Previous closeout:** **`MODELING-R1-OWNER-CORRECTION-PROJECT-SHELL-SKETCH-SUPPORT-PLANAR-R1`
 — `PASS-MODELING-R1-OWNER-SHELL-SKETCH-CORRECTION`** (2026-10-06). **TECH PASS /
 OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
 `feature/modeling-r1-owner-shell-sketch-fix-r1` from exactly `7e02240`; product
@@ -4761,20 +4796,17 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: OWNER physical-device review of the
-`MODELING-R1-OWNER-CORRECTION` APK** (`ci-fast-evidence` artifact `11437665909`
-of `CI FAST` `37516245911`, product `4a393fc`, APK SHA-256
-`b557827d56c6979cf46c3451894b38717d6c882faa7610cfbc74f088113411cb`) against the
-checklist in `artifacts/modeling-r1-owner-shell-sketch-fix/SUMMARY.md` — the
-ForgeShape mark and project drawer, New Sketch on base / Add / Cut faces, and
-the inner-cell selection — together with the still-pending
-`MODELING-FOUNDATIONS-R1`, drafting-toolkit and Revolve checklists
-(`artifacts/modeling-foundations-r1/SUMMARY.md`,
-`artifacts/cad-sketch-drafting-toolkit/SUMMARY.md`,
-`artifacts/cad-v6-revolve-newbody/SUMMARY.md`). Nothing merges to
-`feature/cad-v6-sketch-face-r1` or `main` before that verdict. `CAD-V6-S3`
-(retained-sketch mobile UX) waits for it. The v6 branch merges to `main` only
-after the completed v6 migration passes the Tier-5 aggregate once.
+**Exactly one next step: OWNER physical-device review of the `CAD-R2` APK**
+(`ci-fast-evidence` artifact `12819336381` of `CI FAST` `40694343402`, APK
+SHA-256 `043203e18733d10e28985bf86a4cb41ed87fc3c3fd743b391fbc20a6ad5ac272`)
+against the checklist in
+`artifacts/cad-r2-retained-sketch-parametric-ux/SUMMARY.md`, together with the
+still-pending `MODELING-R1-OWNER-CORRECTION`, `MODELING-FOUNDATIONS-R1`,
+drafting-toolkit and Revolve checklists. The OWNER also decides
+BLOCKED-DESIGN-DECISION-R2-WORLD-PLANE-RETAINED-SKETCH. Nothing merges to
+`feature/cad-v6-sketch-face-r1` or `main` before that verdict. The v6 branch
+merges to `main` only after the completed v6 migration passes the Tier-5
+aggregate once.
 
 `FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
 recorded debt, not authorised work. The Council's other OWNER decisions are

@@ -11,10 +11,23 @@ per-item verdicts and `TESTS.md` the raw gate results.
 | Task branch | `feature/cad-r2-retained-sketch-parametric-ux-r1` |
 | Last native / Java product commit | `5127cfc` (plus the Java constant and D13 harness in `5dd7d97`) |
 | Device union head (part A) | `f706e92` |
-| Device union head (part B) and FAST head | see `TESTS.md` (test / docs only after `f706e92`) |
+| Device union part B head | `7d2d7b4` (test / docs only after `f706e92`) |
+| Final CI FAST head | `b747651` (docs only after part B) |
 
 No merge, rebase, cherry-pick, force push or history rewrite; no other branch
 touched; no FullSharded.
+
+## Gates
+
+Host `HOST_SELFTESTS_OK (4369 checks, 0 failed)` (25 suites; baseline 4304);
+JVM 196/196; release guard PASS (both ABIs); corpus 72/72; DEVICE union
+**118/118** (`CI DEVICE` 40683528533 67/67 + 40689211847 51/51);
+`CI FAST` **40694343402** success.
+
+**OWNER APK:** `ci-fast-evidence` artifact **12819336381**,
+`app/build/outputs/apk/debug/app-debug.apk`, 17,545,911 bytes, SHA-256
+`043203e18733d10e28985bf86a4cb41ed87fc3c3fd743b391fbc20a6ad5ac272`; expires
+2026-11-11T13:19:04Z.
 
 ## What the user gets
 
