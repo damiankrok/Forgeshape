@@ -201,6 +201,12 @@ final class CadExtrudeCanvasView extends FrameLayout {
     private boolean paletteOpen;
     /** Whether palette controls draw their caption. Application preference; default off. */
     private boolean toolLabels;
+    /**
+     * Whether a workspace surface that offers its own Edit Sketch is open over
+     * the viewport (the History surface). Read on every refresh, never cached,
+     * so the chip cannot outlive the surface it would stand on.
+     */
+    private java.util.function.BooleanSupplier retainedChipWithdrawn = () -> false;
     /** The dock's box size last applied, px. */
     private int appliedDockWidth;
     private int appliedDockHeight;
@@ -723,6 +729,17 @@ final class CadExtrudeCanvasView extends FrameLayout {
      * only to draw with it. The next refresh applies it, which the caller
      * triggers.
      */
+    /**
+     * Names the condition under which the retained-sketch chip steps aside.
+     * The chip is viewport chrome anchored at the body's projected sketch
+     * anchor; a surface grown over that point (History at a large font scale,
+     * found by `CAD-R2-C1` D17) would otherwise have the chip stand on one of
+     * its acts and take that act's tap.
+     */
+    void setRetainedChipWithdrawnWhen(java.util.function.BooleanSupplier withdrawn) {
+        retainedChipWithdrawn = withdrawn != null ? withdrawn : () -> false;
+    }
+
     void setToolLabelsVisible(boolean visible) {
         toolLabels = visible;
     }
@@ -976,7 +993,11 @@ final class CadExtrudeCanvasView extends FrameLayout {
         // (`MODELING-R1-OWNER-CORRECTION`): the viewport then belongs to
         // choosing a plane or a face, and a chip standing on the body's sketch
         // anchor would take the very tap that chooses the face under it.
+        // Nor while the History surface is open (`CAD-R2-C1`): it lists Edit
+        // Sketch for every sketch itself, and at a large font scale it grows
+        // over the anchor, where the chip would take its acts' taps.
         if (body == NativeViewport.NO_OBJECT || NativeViewport.supportChooserActive()
+                || retainedChipWithdrawn.getAsBoolean()
                 || !NativeViewport.cadBodySketchAnchor(body, bodyAnchor)) {
             hide();
             return;

@@ -977,6 +977,7 @@ final class EditorWorkspaceView extends FrameLayout
         // Tool Labels (`CAD-VERTICAL-SLICE-R1`) is application state read once
         // here and again on every change; the canvas holds only the flag.
         cadExtrudeCanvas.setToolLabelsVisible(currentPreferences().toolLabels());
+        cadExtrudeCanvas.setRetainedChipWithdrawnWhen(featureHistory::isOpen);
         settingsPage.setVisibility(GONE);
         addView(settingsPage, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
@@ -3236,6 +3237,9 @@ final class EditorWorkspaceView extends FrameLayout
         }
         featureHistory.setOpen(open);
         EditorControlStyles.setIconButtonActive(featureHistoryAction, open);
+        // The retained-sketch chip steps aside while History is open, and comes
+        // back when it closes: re-read now rather than at the next gesture.
+        cadExtrudeCanvas.refreshFromNative();
     }
 
     /** One timeline read and, for a CAD body, one sketch-inventory read. */

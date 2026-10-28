@@ -410,6 +410,9 @@ public final class CadRetainedSketchOwnerTest {
                     settleLayout();
                     final String where = "font " + scale + " orientation " + orientation;
                     openHistory();
+                    assertFalse(where + ": the canvas Edit Sketch chip steps aside while History"
+                            + " is open (it took an act's tap at 1.5, run 40744870935)",
+                            rig.shown(R.id.cad_canvas_edit_sketch));
                     assertActsUsable(where + " tabs", new int[]{R.id.feature_history_tab_steps,
                             R.id.feature_history_tab_sketches, R.id.feature_history_tab_features});
                     touchTab(R.id.feature_history_tab_sketches);
