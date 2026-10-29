@@ -72,7 +72,7 @@ Out of scope here:
   - `docs/ui/wireframes/WF-1..WF-4` (listed; SVG wireframes, not a measured spec).
 - **Fresh evidence (this audit):**
   - `evidence/device-run-40797031704/{summary.json, environment-manifest.txt, instrumentation-junit.xml, screens/*/facts.txt, screens/ui-3d-state-audit-r1/*.tsv}`: CI DEVICE, 32/32, 25/25 tokens;
-  - `evidence/local/{host_selftests.txt (HOST_SELFTESTS_OK 4392/0), release_guard.txt (RELEASE_SELFTEST_GUARD=PASS), run_status.txt}`;
+  - `evidence/local/{host_selftests.txt (HOST_SELFTESTS_OK 4392/0), release_guard.txt (RELEASE_SELFTEST_GUARD=PASS), run_status.txt}`. Guard provenance is incomplete: `run_status.txt` records `guard_exit=2` at 00:54:48 for the first invocation; the PASS file was written at 00:57:29 by a rerun whose command and exit code are not recorded (R2 objection 15). Graded "E1, provenance incomplete";
   - `app/build/test-results/testDebugUnitTest/*.xml`: JVM 196 tests, 0 failures, timestamps 2026-10-29T00:57Z.
 - **Code:** Java sources in `app/src/main/java/com/forgeshape/app/` (85 files), `res/values/{ids*,strings*,dimens*,colors,themes,attrs}.xml`, `AndroidManifest.xml`, `app/build.gradle` (min 26, target and compile 36).
 
@@ -164,12 +164,15 @@ for example `SKETCH_UX` navigator algebra (`forgeshape_sketch_ux_selftest.cpp:49
   - `d15`/`d16`/`d19`–`d22` chooser hit ownership and stylus hover.
 - `HomeFlowTest.e2eAppH1_11`: Back in each shell phase, with nothing open.
 - `SettingsPreferencesTest`; `EditorWorkspaceThemeTest`; `EditorWorkspaceRightHostPlacementTest` (font 1.3); `EditorWorkspaceChromeCompositionTest`; `EditorWorkspaceMobileTest`; `SculptHistoryNavigatorTest.e2eSchnav09` (Back closes the navigator first); `CadHud3dOwnerTest`.
-- `SketchUxTest.cadUxR1_11_12_13` asserts the navigator's **native bits only**.
+- `SketchUxTest.cadUxR1_11_12_13_rotationTurnsTheViewAndNotTheSketch` asserts the navigator's **native bits only** (`SketchUxTest.java:217-232`); its name promises a view rotation that nothing in it reads.
 
 **Not asserted anywhere:**
 
 - a sweep over every clickable view for the 48 dp floor;
 - Back with a surface or palette open inside the bootstrap;
+- System Back through the real platform route for any surface or phase other than Add Primitive in a Construction project (only `uilr106` sends `KEYCODE_BACK`; every other Back test calls `dismissTopmostSurface()` directly and bypasses the API ≥ 33 arming predicate);
+- occlusion of the status line (`uilr120` and the visibility ledger pass over the overlapped Sculpt state);
+- a camera pose after a navigator Flip or ±90°;
 - Back during an in-project Revolve on API 33 or later;
 - the comma separator at the field level;
 - TalkBack semantics, selected state, live regions or focus order;
@@ -183,11 +186,13 @@ Fixtures: none in this domain. The UI writes no `.forge` bytes of its own.
 
 ### F-01 — P2 — Several chrome controls fall below the 48 dp hit-area floor in width
 
+One severity for every instance: P2 (`req_F.tsv` UI-011..UI-014; UI-014 corrected from P3 in Round 2).
+
 - **Verdict:** DEFECT-CONFIRMED. **Grade:** E1 (rects measured in this audit's CI DEVICE run) + E2 (cause).
 - **Location:** `EditorControlStyles.java:366-382`, where `chip()` sets only `setMinimumHeight(control_height)`. Instances:
   - **`sketch_navigator_flip`:** 95x126 px = **36.2 x 48 dp**. A weighted 0-width child, `SketchOrientationNavigatorView.java:134-137`. Source: `screens/cad-a3-c2-sketch-ux-r1/facts.txt` capture 04.
   - **`view_selection_outline_on`:** 97x126 px = **37.0 dp** wide. `view_selection_outline_off`: 103x126 px = **39.2 dp** wide. Wrap chips, `DisplaySettingsPopoverView.java:276-299`. Source: `screens/sel-out-r1/facts.txt`. Grid On/Off are built identically at `:230-250` but were not measured.
-  - **`sketch_dimension_value`** (container `sketch_dimension_label`): 114x126 px = **43.4 dp** wide. Source: capture 07. The persistent dimension chips in the same feature do set a minimum width (`SketchDimensionLabelsView.java:177`); the selected-Line chip (`SketchDimensionLabelView.java:82-90`) does not.
+  - **`sketch_dimension_label`** (the `FrameLayout` container, `SketchDimensionLabelView.java:79`; measured at `SketchUxVisualEvidenceTest.java:202`): 114x126 px = **43.4 dp** wide. Source: capture 07. The value chip `sketch_dimension_value` (`:82`) was not measured; its hit area is ≤ 114 px wide by inference (a child receives touches only inside its parent). The persistent dimension chips in the same feature do set a minimum width (`SketchDimensionLabelsView.java:177`); the selected-Line chip (`SketchDimensionLabelView.java:82-90`) does not.
 - **Minimal repro:** run `SketchUxVisualEvidenceTest` or `SelectionOutlineVisualEvidenceTest`. Read the `width_px` of those ids and divide by 2.625.
 - **Impact:** These are hit areas, not glyphs, and they fall below the floor `CLAUDE.md` makes contractual ("48 dp is the interactive floor … it is the HIT AREA"). Mis-taps are likely on the navigator, where Flip sits 4 dp from two 48 dp arrows.
 - **Fix:** `chip.setMinimumWidth(dimen(control_height))` in `chip()`. For the navigator's weighted row, keep weight but give the Flip chip a minimum width, and let the navigator take up to its existing 184 dp cap. Then add a sweep assertion (F-09).
@@ -208,6 +213,7 @@ Fixtures: none in this domain. The UI writes no `.forge` bytes of its own.
   - Commands are under Counterexample attempt 3.
 - **Repro:** open a sketch, tap Flip. The label reads "Along −Z" while the view is unchanged.
 - **Impact:** two drawn controls with no visible effect, against "a control that looks like it works and does not is worse than an absent one".
+- **False-green test:** `SketchUxTest.cadUxR1_11_12_13_rotationTurnsTheViewAndNotTheSketch` (`SketchUxTest.java:209-233`) asserts only `SKETCH_VIEW_QUARTER_TURNS` and unchanged entity values (`:217-232`); `cadUxR1_08_09_10` asserts only `SKETCH_VIEW_FLIPPED` for Flip (`:199-205`). Neither reads the camera, so both pass while the behaviour the first one's name promises is absent. Listed under F-09.
 - **Fix:** frame `viewFrame()` in `beginSketchView`. `viewFrame()` equals `frame()` when no view state is set, so every other caller is unchanged. Add a camera-pose assertion to `SketchUxTest`.
 
 ### F-03 — P2 — In the CAD bootstrap, System Back discards the whole drawn sketch even when a panel is open
@@ -224,22 +230,25 @@ Fixtures: none in this domain. The UI writes no `.forge` bytes of its own.
   3. Tap the precision toggle (the sliders icon at the bottom of the rail, visible in capture `03`), or Finish Sketch and tap the action dock.
   4. Press System Back.
   5. Expected: the panel or palette closes. Actual by source: the sketch is cancelled and Home is shown.
-- **Impact:** the user loses every drawn entity by pressing Back to close a panel. The sketch is volatile, so this is not project data loss, but there is no undo. The code's own comment (`:1150-1154`, "innermost outward") and `uilr106` ("Back dismisses the topmost surface before it leaves") state the contract this breaks.
+- **Impact:** the user loses every drawn entity by pressing Back to close a panel. The sketch is volatile, so this is not project data loss, but there is no undo.
+- **Contract broken:** `ForgeShapeActivity.java:68-72` ("'works' means the innermost thing the user opened closes first") and the name of `uilr106` ("Back dismisses the topmost surface before it leaves"). The comment at `EditorWorkspaceView.java:1150-1154` does NOT support this finding: it documents the current order on purpose ("The questions first, innermost outward … Then the CAD bootstrap").
+- **Conflicting documentation:** `PRODUCT.md:196-198` says "System Back always goes one step: … takes a New-CAD sketch back to Home", which the current order delivers literally. Two owner records disagree, so the panel-open bootstrap Back order is also listed under owner decision 1.
 - **Not covered by tests:**
-  - `HomeFlowTest.e2eAppH1_11` tests bootstrap Back with nothing open.
+  - `HomeFlowTest.e2eAppH1_11` (`:449-482`) tests bootstrap Back with nothing open, by calling `dismissTopmostSurface()` directly.
   - `Ui3dStateAuditTest.ui3d13` tests Back with surfaces open in a Construction project only (`Ui3dStateAuditTest.java:715-748`).
 - **Fix:** move the bootstrap branch after the row-strip, anchored-surface and palette branches. Add both palettes, and the Line dimension and revolve-angle editors, to both predicates.
 
-### F-04 — P2 — On API 33+, Back during an in-project Revolve backgrounds the app; below API 33 it returns to Extrude
+### F-04 — P2 — On API 36 (targetSdk 36), Back during an in-project Revolve backgrounds the app; on the legacy route it returns to Extrude
 
-- **Verdict:** DEFECT-CONFIRMED. **Grade:** E2.
+- **Verdict:** DEFECT-CONFIRMED, scoped to API 36 with targetSdk 36. **Grade:** E2, plus the `uilr106` route evidence that the dispatcher is the live route there (`EditorWorkspaceLegibilityTest.java:341-347`, fresh PASS). **API 33-35: UNVERIFIED (E5).** The manifest has no `android:enableOnBackInvokedCallback`, so on an API 33-35 device the legacy `onBackPressed` route (`ForgeShapeActivity.java:104-110`) may still be the effective one, and there the revolve Back works.
 - **Location:**
   - `dismissTopmostSurface` handles the case at `EditorWorkspaceView.java:1166-1175`.
   - `hasDismissibleSurface` (`:1112-1117`) does not test `CadRevolvePresentation.extrudeInsteadShown`.
   - `ForgeShapeActivity.BackDismissal` (`:121-160`) registers the `OnBackInvokedCallback` only while that predicate is true. Inside a project (not the bootstrap), with no anchored surface open, nothing arms it.
 - **Repro:**
   1. Open a project → New Sketch → XY → draw a closed profile → Finish → Revolve (`revolve_sketch`, `GlobalToolbarView.java:322`).
-  2. Press System Back on an API 33+ device. The CI emulator is API 36 and `targetSdk` is 36.
+  2. Press System Back on an API 36 device. The CI emulator is API 36 and `targetSdk` is 36.
+- **Tests:** none sends Back in this state. `CadRevolveOwnerTest` presses `sketch_revolve_back_to_extrude` (`:464`) and sends no Back key (UI-010 tests column corrected in Round 2).
 - **Impact:**
   - The same press means two different things by API level.
   - On current Android the documented one-step Back ("A Revolve in progress is one step inside Ready: Back returns to the extrusion") is not delivered.
@@ -248,7 +257,7 @@ Fixtures: none in this domain. The UI writes no `.forge` bytes of its own.
 
 ### F-05 — P2 — Three canvas editors silently drop the comma decimal separator, so "2,5" becomes 25
 
-- **Verdict:** DEFECT-CONFIRMED. **Grade:** E2 (key-listener sets) + E1 (`LengthUnitTest.acceptsACommaDecimalSeparatorAndASignedValue` PASS, fresh JVM run: the parser accepts `"1,5"`).
+- **Verdict:** DEFECT-CONFIRMED. **Grade:** defect E2; parser behaviour E1 (`LengthUnitTest.acceptsACommaDecimalSeparatorAndASignedValue` PASS, fresh JVM run: the parser accepts `"1,5"`). No field-level runtime evidence; J-F4 is the runtime reproducer owed.
 - **Location:** `DigitsKeyListener.getInstance("0123456789.-")` in:
   - `BodyDimensionLabelsView.java:127`
   - `CadExtrudeCanvasView.java:644` (depth and second distance)
@@ -269,18 +278,19 @@ Fixtures: none in this domain. The UI writes no `.forge` bytes of its own.
 
 ### F-06 — P3 — In Sculpt the status line is overlapped by the brush column and the Tool Rail
 
-- **Verdict:** DEFECT-CONFIRMED against "a surface may never partially cover another live control". **Grade:** E1, fresh captures.
+- **Verdict:** DEFECT-CONFIRMED against `CLAUDE.md` "Chrome reports, it does not instruct": a status verdict nobody can read is not reported. (Round 2: "a surface may never partially cover another live control" does not apply; the status pill is not a live control and the brush column is not an anchored surface.) **Grade:** E1, fresh captures.
 - **Evidence:**
   - `screens/ui-3d-state-audit-r1/ui3d11_01_sculpt.png`: the text "Now sculpting —" runs under `brush_edge_controls`.
   - `ui3d11_05_resume.png`: the two-line "One finger on the model — …; elsewhere it orbits." is clipped on the left by the brush column and on the right by the rail.
   - Crops: `/tmp/claude-0/fc2-scratch/F/sc.png`, `sc2.png`.
 - **Location:** the status pill is anchored under the toolbar (`GlobalToolbarView.java:446`). In Sculpt the brush column (`BrushEdgeControlsView`) and the rail start at the same y.
 - **Impact:** Sculpt entry and resume verdicts are partly unreadable. They are transient, so P3.
-- **Fix:** in Sculpt, bound the pill's width between the brush column's trailing edge and the rail's leading edge, or offset the brush column below the pill.
+- **Tests pass over this state:** `uilr120` asserts brush top equals rail top (`EditorWorkspaceLegibilityTest.java:~913-916`) and the UI3D-11 `VISIBILITY.tsv` rows PASS; neither measures occlusion (F-09).
+- **Fix:** in Sculpt, bound the pill's width between the brush column's trailing edge and the rail's leading edge. Offsetting the brush column below the pill would break `uilr120`'s asserted top alignment, so that variant is an OWNER layout decision, not a recommended fix.
 
-### F-07 — P3 — Selected state and verdicts do not reach a screen reader
+### F-07 — no severity — Selected state and verdicts do not reach a screen reader
 
-- **Verdict:** PARTIAL (gap). **Grade:** E2.
+- **Verdict:** BLOCKED-OWNER (recommendation), horizon H2 (corrected in Round 2 from H1 / PARTIAL / P3). No repo rule requires TalkBack selected state or live regions; the only accessibility rules are content descriptions and SCULPT-H1's "shape + accessible label". Owner decision 6. **Grade:** E2 for the code facts.
 - **Location:**
   - `EditorControlStyles.setChipActive` (`:433-439`) and the rail (`ToolRailView.java:242`) use `setActivated` only, which TalkBack does not announce. This covers transform mode and space, plane chips, unit chips and Display choices.
   - `status_message` has no accessibility live region.
@@ -304,6 +314,12 @@ Fixtures: none in this domain. The UI writes no `.forge` bytes of its own.
   - `uilr2c_11` checks "intrinsic targets".
   - Nothing walks the view tree.
 - **Impact:** this is how F-01 shipped while the visual-evidence runs that measured it passed.
+- **Further coverage gaps in the same class (Round 2):**
+  - the navigator tests assert state bits under a name that promises a camera change (F-02);
+  - `uilr120` and the visibility ledger pass over the occluded Sculpt status line (F-06);
+  - only `uilr106` drives System Back through the platform route, and only for Add Primitive in Construction; no other surface or phase is tested through it (the gap behind F-03 and F-04);
+  - Freeform, Surface and History have no committed screenshot set (former UI-087, moved here as an evidence gap).
+- **Synthesis:** merge with Seat I's I-08 (`performClick` and viewport-direct taps cannot see occlusion) into one finding.
 - **Fix:** one helper that walks `isShown() && isClickable()` views per captured state and asserts ≥ 48 dp. Exempt by id, with a reason.
 
 ### F-10 — INFO — Mouse-only use cannot zoom or pan
@@ -336,9 +352,9 @@ Fixtures: none in this domain. The UI writes no `.forge` bytes of its own.
 - **H-F2.**
   - **Claim:** common IMEs (e.g. Gboard with a pl/de locale) emit `,` from the decimal key for `TYPE_NUMBER_FLAG_DECIMAL`, so F-05 is hit in normal use.
   - **Status:** not tried on a device. F-05 stands whenever `,` is typed by any means, for example from a hardware keyboard.
-- **H-F3.**
-  - **Claim:** System Back in an in-project sketch with nothing open backgrounds the app rather than cancelling the sketch.
-  - **Basis:** `hasDismissibleSurface` is false. This is source-derived; the intended behaviour is undocumented, so it is not a defect (UI-083).
+- **H-F3 (promoted to a DOC-DIVERGENCE in Round 2, UI-083, E2, P3).**
+  - **Fact (E2):** System Back in an in-project sketch with nothing open backgrounds the app, because `hasDismissibleSurface` is false.
+  - **Divergence:** `CLAUDE.md` APP-H1 ("Back is one step in every phase and the platform's own at Home") and `PRODUCT.md:196` ("System Back always goes one step") imply Back away from Home is not the platform's; `uilr106` asserts that a resting Construction workspace hands Back to the platform (`EditorWorkspaceLegibilityTest.java:324-328`). Owner decision 1.
 - **H-F4.**
   - **Claim:** at font scale 1.5 or 2.0 the navigator's single-line Flip chip ("Along +Z" text in a 36 dp share) clips its label.
   - **Status:** no test exercises it.
@@ -378,15 +394,15 @@ Fixtures: none in this domain. The UI writes no `.forge` bytes of its own.
 | Claim | Evidence |
 | --- | --- |
 | Home and New Project are opaque full-window pages; New Project replaces Home; CAD enters an XY sketch at once with no project | E1: capture facts (`home_is_full_window=true`, `home_still_visible=false`, `support_chooser_active=false project_open=false`) |
-| Back closes the topmost anchored surface and the app stays, through the real platform key route | E1: `uilr106` sends `KEYCODE_BACK` on API 36 (fresh PASS); E3 `HomeFlowTest.e2eAppH1_11` |
+| Back closes Add Primitive in a Construction project and the app stays, through the real platform key route, on API 36 | E1: `uilr106` sends `KEYCODE_BACK` (`EditorWorkspaceLegibilityTest.java:347`, fresh PASS). No other surface or phase is tested through the platform route (F-09). |
 | Trailing-host controls keep ≥ 48 dp at font 1.3 and with the IME up; Apply is reachable without scrolling in portrait and short landscape | E1: `uilr103`, `uilr104`, `uilr110` (fresh) |
-| One primary surface at a time; Display closes the inspector; the visibility ledger is clean | E1: `Ui3dStateAuditTest` `VISIBILITY.tsv` 119/119 PASS |
-| World-anchored chrome tracks its projection to within 0.09–0.44 dp; an off-screen value is hidden, not guessed | E1: `SPATIAL_ATTACHMENTS.tsv` (68 PASS, 3 CLAMPED, 1 NOT_MEASURED with reason) |
+| One primary surface at a time; Display closes the inspector | E1: `uilr117_primarySurfaceExclusivityIsDeterministic` (fresh PASS). Corroboration, not a gate: `VISIBILITY.tsv` 119/119 PASS is recorded rather than asserted (`Ui3dStateAuditTest.java:40-46`). |
+| World-anchored chrome tracks its projection within 0.00–0.24 dp on the 68 PASS rows; an off-screen sketch/CAD value is hidden, not guessed. Body dimension labels are CLAMPED instead (UI3D-04 `after_move` 0.44 dp; UI3D-06 65.96 dp and 5.21 dp). | E1 recorded measurement, not a gating assertion: `SPATIAL_ATTACHMENTS.tsv` (68 PASS, 3 CLAMPED, 1 NOT_MEASURED with reason); `Ui3dStateAuditTest.java:40-46` "records rather than asserts" |
 | Handedness moves the host to the left edge (x 880 → 21 px) and the side panel opens inward | E1: ui-pref facts 14–16 |
 | The five palettes meet 4.5:1 for primary, secondary and error text on six grounds | E3: `CONTRAST.md`; E1 spot recompute |
 | History acts are usable at font 1.3 and 1.5, portrait and landscape | E3: `CadRetainedSketchOwnerTest.d17` (C2 runs) |
-| HUD touch targets stay ≥ 48 dp independent of the scale band | E1: JVM `CadHudPresentationTest` |
-| Debug key hooks and touch attribution are absent from release | E1: `RELEASE_SELFTEST_GUARD=PASS` (fresh) |
+| HUD touch targets stay ≥ 48 dp independent of the scale band | Policy E1: JVM `CadHudPresentationTest` (`:72-81`, `hitPx(density) = round(48·density)`); wiring E2: `CadExtrudeCanvasView.java:253`. No measured HUD view rect in the fresh run. |
+| Native debug tokens are absent from the release `.so`; the HUD touch attribution is gated to debuggable builds; release key hooks reach a native no-op (UI-084, PASS-SOURCE-AND-RECORDED-RUNTIME) | E1, provenance incomplete: `RELEASE_SELFTEST_GUARD=PASS` covers only native strings (`scripts/ci-release-selftest-guard.sh:46`, includes `FORGESHAPE_SKETCH_TAP:`, not `FORGESHAPE_CAD_HUD_TOUCH:`). E2: Java `FLAG_DEBUGGABLE` gate (`CadExtrudeCanvasView.java:249-250, 537-542`); the Java `onKeyDown` hooks remain in release (`ForgeShapeActivity.java:402-430`) and `debugMeshCommand` returns `JNI_FALSE` under `NDEBUG` (`forgeshape_jni.cpp:2267-2270`). No release build was executed. |
 
 ## Journeys proposed for END_TO_END_JOURNEYS
 
@@ -411,12 +427,12 @@ Fixtures: none in this domain. The UI writes no `.forge` bytes of its own.
 
 ## Owner decisions needed
 
-1. What System Back means inside a project sketch with nothing open, and whether Back in the bootstrap with drawn geometry should ask before discarding (F-03, H-F3, UI-083).
+1. What System Back means inside a project sketch with nothing open (UI-083, a DOC-DIVERGENCE between APP-H1 / `PRODUCT.md:196` and `uilr106`); the panel-open bootstrap Back order (F-03: `PRODUCT.md:196-198` vs `ForgeShapeActivity.java:68-72`); and whether Back in the bootstrap with drawn geometry should ask before discarding.
 2. Whether first-entry hints may use the status line (F-12).
 3. The Light Charcoal focus ring at 2.48:1 (F-08).
 4. Whether Android desktop windowing, ChromeOS, mouse and hardware keyboard are targets (F-10, UI-079/080).
 5. Which form factors (tablet, foldable, split-screen) must carry runtime evidence (UI-047).
-6. Whether TalkBack support is a product requirement, with a specification (F-07).
+6. Whether TalkBack support is a product requirement, with a specification (F-07, UI-073, UI-074; H2 / BLOCKED-OWNER until decided).
 7. A physical-device session for stylus hover and pressure (UI-033, UI-081). These are OWNER-PHYSICAL-UNVERIFIED.
 
 ## Unresolved dependencies and open questions
@@ -437,3 +453,39 @@ _Reserved for the coordinator._
 - F-03, F-04 and F-05 are proven from source (E2) and were not reproduced at runtime. Gradle and device runs were not available to this seat.
 - TalkBack, tablet, foldable, mouse and physical-stylus behaviour are UNKNOWN or OWNER-PHYSICAL-UNVERIFIED.
 - The plan-level sources (Master Plan, OWNER_DECISIONS) are not available.
+
+## Round 2 — objections from seat I and responses
+
+Each objection was re-checked against code, tests and the fresh evidence on `70a6c14` before it was answered. Edits were scripted (`/tmp/claude-0/fc2-scratch/F/r2_edit_req.py`, `r2_edit_seat.py`). The pre-edit copies are `/tmp/claude-0/fc2-scratch/F/req_F.before_r2.tsv` and `SEAT_F.before_r2.md`.
+
+Totals: 16 conceded (in full or in part), 0 rebutted, 2 with nothing to answer (17, 18). One item remains UNRESOLVED: 15, the guard rerun provenance, which only the coordinator can close.
+
+| # | Objection (short) | Re-verification | Response | Status |
+| --- | --- | --- | --- | --- |
+| 1 | F-01: wrong id measured; one severity | `SketchUxVisualEvidenceTest.java:202` bounds `R.id.sketch_dimension_label`; `SketchDimensionLabelView.java:79` makes that id the container and `:82` the chip. UI-014 said P3. | CONCEDED. F-01 and UI-014 now name the container `sketch_dimension_label` (114 px = 43.4 dp) and give the chip as ≤ 114 px by inference. The UI-014 grade is now E1 (container) + E2. Severity is P2 everywhere (UI-011..014). DEFECT-CONFIRMED stands. | RESOLVED |
+| 2 | F-02: name the false-green test | `SketchUxTest.java:209-233` reads only `SKETCH_VIEW_QUARTER_TURNS` and the entity values. `cadUxR1_08_09_10` (`:199-205`) reads only `SKETCH_VIEW_FLIPPED`. | CONCEDED. The overclaiming test name and the state-bits-only assertions are now in the F-02 evidence, in UI-018 and in the F-09 gap list. DEFECT-CONFIRMED P2 stands. | RESOLVED |
+| 3 | F-03: misread comment; conflict with PRODUCT.md | `EditorWorkspaceView.java:1150-1154` reads "The questions first, innermost outward … Then the CAD bootstrap", so the order is deliberate. `PRODUCT.md:196-198` says Back takes "a New-CAD sketch back to Home". `ForgeShapeActivity.java:68-72` states the innermost-first rule. | CONCEDED. The comment citation is replaced by `ForgeShapeActivity.java:68-72` plus the `uilr106` name. The `PRODUCT.md:196-198` conflict is now stated. Not runtime-reproduced (`HomeFlowTest.e2eAppH1_11` calls `dismissTopmostSurface()` directly, with nothing open). DEFECT-CONFIRMED P2 (E2) stands, and the order is also added to owner decision 1. | RESOLVED |
+| 4 | F-04: API range overstated | No `enableOnBackInvokedCallback` in `AndroidManifest.xml` (grep, rc=1). `CadRevolveOwnerTest.java:464` presses `sketch_revolve_back_to_extrude`; there is no Back key and no direct `onRevolveEndRequested` call. | CONCEDED. The defect is scoped to API 36 with targetSdk 36 (E2 plus the `uilr106` route evidence at `:341-347`). API 33-35 is UNVERIFIED (E5). The UI-010 tests column is corrected. | RESOLVED |
+| 5 | F-05: grade split; owe a runtime reproducer | The seven `DigitsKeyListener` sites match by grep; three omit `,`. `ExactExpression.java:36` and `LengthUnit.java:129` replace `,`. | CONCEDED. Grade is now "defect E2; parser behaviour E1". J-F4 is named as the runtime reproducer owed. | RESOLVED |
+| 6 | F-06: wrong rule; fix collides with uilr120 | `uilr120` (`EditorWorkspaceLegibilityTest.java:899-916`) asserts `abs(brush.top - rail.top) <= row_gap`. | CONCEDED. The requirement is now cited as "Chrome reports, it does not instruct". It stays E1 P3. "`uilr120` and the ledger pass over this state" is added (F-09 gap). The column offset is withdrawn as a fix and flagged as an owner layout decision; the pill-width bound remains, since it does not touch `uilr120`. | RESOLVED |
+| 7 | UI-073/074: wrong horizon | No repo rule id for TalkBack selected state or live regions. Code facts unchanged (`EditorControlStyles.java:433-439`; one `announceForAccessibility` at `EditorWorkspaceView.java:4308`). | CONCEDED. UI-073 and UI-074 are now H2 / BLOCKED-OWNER (recommendation) with no severity. F-07 is retitled to match. The code facts stay E2. | RESOLVED |
+| 8 | UI-083: wrong horizon | APP-H1 and `PRODUCT.md:196` against `uilr106` (`EditorWorkspaceLegibilityTest.java:324-328`): confirmed. | CONCEDED. UI-083 is now H1 / DOC-DIVERGENCE, E2, P3, under owner decision 1. H-F3 is promoted from hypothesis to that row. | RESOLVED |
+| 9 | UI-087: evidence gap, not product | No rule id. The row is about committed screenshots. | CONCEDED. The row's verdict is now OUT-OF-SCOPE as a product requirement, with no severity. The gap moves to the F-09 list for TEST_COVERAGE_MATRIX / VALIDATION_PLAN. The row id is kept for traceability. | RESOLVED |
+| 10 | Back positive claim overgraded | Only `EditorWorkspaceLegibilityTest.java:347` sends `KEYCODE_BACK`. Direct `dismissTopmostSurface()` calls: `HomeFlowTest:449-482`, `EditorWorkspaceLegibilityTest:791,807,1071,1088,1107`, `Ui3dStateAuditTest:1105`, `SettingsPreferencesTest:109`, `SculptHistoryNavigatorTest:413`. | CONCEDED. The claim is restricted to "Add Primitive, Construction, API 36 (E1 `uilr106`)". The HomeFlowTest E3 citation is struck. "No other surface or phase is tested through the platform route" is added to F-09. UI-008 notes the bypass. | RESOLVED |
+| 11 | Spatial claim numbers and scope | Recomputed from `SPATIAL_ATTACHMENTS.tsv`: 68 PASS rows at 0.00-0.24 dp. CLAMPED rows: UI3D-04 `after_move` 0.44 dp; UI3D-06 65.96 dp and 5.21 dp. `Ui3dStateAuditTest.java:40-46` says "records rather than asserts". | CONCEDED. The range is now 0.00-0.24 dp. "Hidden" is scoped to sketch/CAD chrome, and body labels are stated as clamped. Graded "E1 recorded measurement, not a gating assertion" (also on UI-028 and UI-068). | RESOLVED |
+| 12 | Exclusivity claim should rest on uilr117 | `uilr117_primarySurfaceExclusivityIsDeterministic` at `EditorWorkspaceLegibilityTest.java:827`, fresh PASS. | CONCEDED. The claim now rests on `uilr117` (E1); the ledger is recorded corroboration (UI-039 notes this). | RESOLVED |
+| 13 | UI-084 overgraded | `STRING_PATTERN` at `scripts/ci-release-selftest-guard.sh:46` has `FORGESHAPE_SKETCH_TAP:` and not `FORGESHAPE_CAD_HUD_TOUCH:`. The Java gate is at `CadExtrudeCanvasView.java:249-250, 537-542`. `onKeyDown` at `ForgeShapeActivity.java:402-430` is still in release. `forgeshape_jni.cpp:2267-2270` returns `JNI_FALSE` under `NDEBUG`. | CONCEDED. UI-084 is now PASS-SOURCE-AND-RECORDED-RUNTIME: E1 (provenance incomplete) for the native-string absence only, E2 for the Java gate and the key-hook stub. No release build was executed, and the debug HUD token was not exercised in this audit. | RESOLVED |
+| 14 | HUD 48 dp claim precision | `CadExtrudeCanvasView.java:253` (`hitPx = CadHudPresentation.hitPx(density)`; the cited `:251` is two lines early) | CONCEDED. Graded "policy E1 + wiring E2", with no measured HUD view rect (also on UI-017). | RESOLVED |
+| 15 | Guard provenance | `run_status.txt` (scratchpad and `evidence/local`) ends `guard_exit=2` at 00:54:48. `release_guard.txt` mtime is 00:57:29.97, after `gradle_unit_rerun.txt` at 00:57:27.55. Neither the scratchpad nor `evidence/local` records the rerun's command or exit. | CONCEDED for seat F. Sources read and UI-084 now say "first invocation exit 2, rerun PASS, rerun command and exit unrecorded", graded "E1, provenance incomplete". Recording the rerun command and exit code is the coordinator's to do. | UNRESOLVED (coordinator) |
+| 16 | Hypotheses carry severities | Only UI-021 is E5-only among the 87 rows. | CONCEDED. UI-021 severity is "-". | RESOLVED |
+| 17 | Merge F-09 with I-08 | Counts match (JVM 196; CI DEVICE 32 / 5 classes; ledger 119 and 68/3/1). | AGREED. F-09 now carries the merge request and the gaps from objections 2, 6 and 10 (plus former UI-087). | RESOLVED (for synthesis) |
+| 18 | No objection (F-08, F-10, UI-079, UI-080, F-11, F-12, d17) | — | Noted; no change. | RESOLVED |
+
+Corrections to `work/req_F.tsv` (16 rows changed): UI-008, UI-009, UI-010, UI-014, UI-017, UI-018, UI-021, UI-028, UI-039, UI-040, UI-068, UI-073, UI-074, UI-083, UI-084, UI-087. The row count (87) and column count (19) are unchanged.
+
+Verdict changes:
+
+- UI-073 and UI-074: PARTIAL → BLOCKED-OWNER (H1 → H2).
+- UI-083: UNDETERMINED-SOURCE-GAP → DOC-DIVERGENCE (H2 → H1).
+- UI-084: PASS-REPRODUCED → PASS-SOURCE-AND-RECORDED-RUNTIME.
+- UI-087: PARTIAL → OUT-OF-SCOPE (evidence gap).

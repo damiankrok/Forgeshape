@@ -5,7 +5,7 @@ Audited product tree: `app/src/main` at `70a6c14f703bfda2ab689b855126c1d12a541e4
 `git diff --stat 70a6c14 HEAD -- app` is empty). Research only: nothing under `app/`,
 `testdata/`, `scripts/`, `.github/`, Gradle files or the owner documents was modified, no
 Gradle was run, no branch-changing git command was run. Requirement rows:
-`work/req_D.tsv` (114 rows, `MOD-001`..`MOD-114`).
+`work/req_D.tsv` (115 rows, `MOD-001`..`MOD-115`; `MOD-115` split out of `MOD-007` in round 2).
 
 ## Scope
 
@@ -44,7 +44,8 @@ belong to other seats and were read only where this domain depends on them.
   (`HOST_SELFTESTS_OK (4392 checks, 0 failed)`; `SCULPT_BRUSH_KERNEL` 655, `FREEFORM` 74,
   `SURFACE` 40, `PROJECT` 256, `GLTF_EXPORT` 93), `host_corpus_verdicts.txt` (72 fixtures),
   `gradle.txt`/`gradle_unit_rerun.txt`, `release_guard.txt` (`RELEASE_SELFTEST_GUARD=PASS`),
-  `run_status.txt`; JVM XML `app/build/test-results/testDebugUnitTest/TEST-com.forgeshape.app.{Freeform,Surface}PresentationTest.xml`
+  `run_status.txt` (which records `guard_exit=2` against that PASS line — unresolved, flagged by seat G;
+  no seat-D conclusion rests on the guard result); JVM XML `app/build/test-results/testDebugUnitTest/TEST-com.forgeshape.app.{Freeform,Surface}PresentationTest.xml`
   (timestamps 2026-10-29T00:57, 6/0 and 7/0).
 - Not available: Master Plan v4.1.61, OWNER_DECISIONS_*, MASTER_PLAN_HISTORY_*, PROJECT_STATE.
   Horizons are reconstructed: H0 = Stage 015B/E2E-era sculpt and persistence; H1 =
@@ -124,13 +125,14 @@ CPP=/home/user/Forgeshape/app/src/main/cpp; OBJ=/home/user/Forgeshape/build/host
 g++ -std=c++17 -O1 -I$CPP -I$CPP/third_party/manifold/include -DMANIFOLD_PAR=-1 \
     -DMANIFOLD_NO_IOSTREAM -DMANIFOLD_NO_FILESYSTEM diag_dN.cpp $OBJ/*.o \
     /home/user/Forgeshape/build/host-selftests/kernel/libmanifold.a -lpthread -o diag_dN
-./diag_dN > diag_dN.out      # N in {"", 2, 3, 4, 5}
+./diag_dN > diag_dN.out      # N in {"", 2, 3, 4, 5, 6}  (6 added in round 2)
 python3 -I gen_req.py /home/user/Forgeshape/artifacts/function-council-r2/work/req_D.tsv
 ```
 
 Outputs: `diag_d.out` (Freeform/Surface parameter edges, symmetry exactness, Clear Mask cap),
 `diag_d2.out` (Freeform session across a load), `diag_d3.out` (Undo after a NotRetained
-stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surface export).
+stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surface export of OPEN bodies),
+`diag_d6.out` (round 2: Import GLB commit under an open sketch).
 
 ## Confirmed findings
 
@@ -154,7 +156,9 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
 - **Evidence:** E1 (domain, host) + E2 (consumers). **Verdict: DEFECT-CONFIRMED.**
 - **Fix (isolated):** in `SculptHistory::record`'s NotRetained branch also clear `undo_`
   (Undo cannot cross an unretained stroke, exactly as it cannot cross a Freeze), and add a host
-  check `SCUNDO_23b` with a non-empty undo stack. Owner decision D-OD1 if a different policy
+  check `SCUNDO_23b` with a non-empty undo stack. Note: the existing check
+  `SCUNDO_23_an_oversized_stroke_is_refused_by_name` is misleadingly named — the stroke is APPLIED and
+  reported NotRetained, not refused; renaming it is test hygiene for whoever fixes D-01. Owner decision D-OD1 if a different policy
   (refuse the stroke) is preferred.
 
 ### D-02 — P2 — Import GLB is offered and accepted while a sketch is open
@@ -163,7 +167,11 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
   `ProjectDrawerPolicy.java:107` `markShown` keeps the mark while sketching;
   `forgeshape_jni.cpp:8590-8597` refuses only `inSculptMode()`;
   `forgeshape_import_commit.cpp:50-63` refuses only an open Construction edit.
-- **Minimal repro (E2, source):** open project → New Sketch (CAD or Surface) → ForgeShape mark →
+- **Minimal repro (E1 domain, `diag_d6.out`, round 2):** `SketchSession::begin(XY)` active over a
+  one-body scene; `commitImportedGlbScene` behind the JNI's own Sculpt-only guard → `status=Ok`,
+  bodies 1→2, active 1→2, Construction undo 0→1, sketch still active
+  (`RESULT import_accepted_under_open_sketch_creates_body_switches_active_records_step=1`).
+- **Shell path (E2, source):** open project → New Sketch (CAD or Surface) → ForgeShape mark →
   Import GLB… → pick a valid `.glb`. Nothing on either side of JNI asks `sketchSession().active()`
   or `supportChooser().active()`, so the import creates bodies, makes the first one active and
   records a Construction step while the sketch stays open. The neighbouring entry points refuse
@@ -172,9 +180,11 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
 - **Impact:** violates the `CAD-R0-A1A2` rule "creation, deletion, body switching … are refused
   below JNI and withdrawn above it" while a sketch is drawn, at both layers; a Construction step
   is recorded under the open sketch, the very thing `runHistoryStep`'s comment says must not
-  happen. No data loss was demonstrated. Not reproduced on a device in this audit. Extends
+  happen. No data loss was demonstrated: the P2 rests on the rule violation plus the reproduced
+  side effects (a body created, the active body switched and a Construction step recorded under an
+  open sketch), not on lost work. Not reproduced on a device in this audit. Extends
   the old council's D1 (fixed for Sculpt by C1-D1) to the sketch mode.
-- **Evidence:** E2. **Verdict: DEFECT-CONFIRMED.**
+- **Evidence:** E1 (domain, host) + E2 (JNI and Java guards). **Verdict: DEFECT-CONFIRMED.**
 - **Fix (isolated):** native `importGlbDurable` refuses `RefusedInSketch` when a sketch or the
   chooser is active; Java `showImportAvailable(!sculpting && !sketching && !chooserActive)`;
   one device case (open sketch → import → refused, body count and undo depth unchanged).
@@ -194,13 +204,17 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
 - **Impact:** presentation state from the previous project leaks into the opened one; the
   gizmo stands on a face the user never selected there and a typed tool acts on it. Contradicts
   the session's own contract ("Opening resets … the selection to empty, every time",
-  `forgeshape_freeform_session.h:89-92`). Every New Project → Freeform starts at ObjectId 1, so
-  coincident ids are the ordinary case. Device repro not performed.
+  `forgeshape_freeform_session.h:89-92`). Ids coincide less often than first stated (corrected in round 2):
+  `ConstructionScene::closeProject` (`forgeshape_scene.cpp:83-86`) does not reset the id allocator and
+  load only pushes it forward (`forgeshape_project_state.cpp:410-415`; seat G's G-06), so ids start at 1
+  only for the FIRST project created in a process. The realistic cases are reopening the slot or file
+  just saved (same body ids), or the first project of a process against any saved Freeform-first
+  project. Device repro not performed.
 - **Evidence:** E1 (domain) + E2 (shell path). **Verdict: DEFECT-CONFIRMED.**
 - **Fix (isolated):** call `freeformEditSession().end()` under the lock in `loadProject` and
   `closeProject` (beside the sketch cancel); add a host check.
 
-### D-04 — P3 — The load path enters Sculpt over a hidden active body (recorded debt, now reproduced)
+### D-04 — P3 — The load path enters Sculpt over a hidden active body (recorded technical debt, now reproduced; not a new defect)
 
 - **Where:** `forgeshape_project_state.cpp:419-423` (`enterSculpt()` for a Sculpt-kind
   document, no visibility question) vs. `jni:2885-2894, 3011-3019` (GUARD-2 on Start/Resume).
@@ -210,25 +224,30 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
 - **Impact:** a valid file reopens in Sculpt over a body nobody can see. Not producible
   in-product (Hide is refused in Sculpt and Start/Resume refuse a hidden body); needs a foreign
   or hand-built file.
-- **Evidence:** E1. **Verdict: DEFECT-CONFIRMED** (known debt). **Fix:** open such a document in
-  Construction (or refuse it) — owner decision D-OD4.
+- **Evidence:** E1. **Verdict: PARTIAL** (round 2; was DEFECT-CONFIRMED) — source is
+  `PROJECT_STATUS.md` Technical Debt (4263-4269), not an H1 rule: `CLAUDE.md` Stage027 GUARD-2 is
+  scoped to Start / Resume Sculpt. Not counted as a newly found defect. **Fix:** open such a document
+  in Construction (or refuse it) — owner decision D-OD4.
 
-### D-05 — P3 — Clear Mask is drawn and then refused for a large mask; the reason is not shown; such a mask cannot be cleared in-session
+### D-05 — P3 — Clear Mask is drawn and then refused for a large mask; the reason is not shown
 
 - **Where:** `forgeshape_sculpt.cpp:1687` (`canClearMask` omits the size test) and
   `:1736-1743` (`EntryTooLarge`); `SculptContextView.java:178-180, 295-300`;
-  `strings.xml:751` ("Could not clear the mask. Nothing changed."); `ARCHITECTURE.md:3678-3679`
-  claims the control is ABSENT.
+  `strings.xml:751` ("Could not clear the mask. Nothing changed."). `ARCHITECTURE.md:3678-3679`
+  DISCLOSES that `canClearMask()` answers "the same conditions minus the size test", and `CLAUDE.md`
+  `SCULPT-FCM-R1` makes the `EntryTooLarge` refusal deliberate (corrected in round 2: the earlier text
+  said ARCHITECTURE.md claims the control is absent in this case).
 - **Minimal repro (E1, `diag_d.out`):** 90,000 masked vertices → `canClearMask=1
   clearMask=entry_too_large maskedAfter=90000 undo=0`; 78,400 masked vertices clear normally.
-- **Impact:** a control drawn that cannot succeed (`CLAUDE.md`), a generic message, and — since
-  the Mask brush only adds weight (`applyMask`, `sculpt.cpp:1300-1322`) and a mask stroke over
-  the per-entry cap is NotRetained — a mask over ~87,371 vertices on a dense imported mesh can be
-  neither undone nor cleared; only Reset (destroys sculpting) or save-and-reopen removes it.
-  Re-check of old council D6: still open.
-- **Evidence:** E1. **Verdict: DOC-DIVERGENCE** (ARCHITECTURE.md vs code) plus a UX gap.
-  **Fix:** include the payload test in `canClearMask` (or correct ARCHITECTURE.md) and name the
-  reason in the status line; the larger question is owner decision D-OD2.
+- **Impact:** a control drawn that cannot succeed (`CLAUDE.md` general rule), and a generic message.
+  With a precondition: a mask over ~87,371 vertices ((1 MiB − 128 B) / 12 B) that came from a
+  NotRetained mask stroke, or whose mask entries were evicted from the 32-entry / 4 MiB history, can be
+  neither undone nor cleared in-session (the Mask brush only adds weight, `applyMask`,
+  `sculpt.cpp:1300-1322`); only Reset (destroys sculpting) or save-and-reopen removes it. A large mask
+  built from retained strokes can still be undone entry by entry. Re-check of old council D6: still open.
+- **Evidence:** E1. **Verdict: PARTIAL** (round 2; was DOC-DIVERGENCE). **Fix:** include the payload
+  test in `canClearMask` and name the reason in the status line; the larger question is owner
+  decision D-OD2.
 
 ### D-06 — P3 — PRODUCT.md overstates which bodies export their sculpted shape
 
@@ -251,13 +270,18 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
 - **Evidence:** E2. **Verdict: PARTIAL.** **Fix:** refuse `in_sketch` (and chooser) in
   `enterSculptMode` as `freezeToSculpt` does.
 
-### D-08 — P3 — Freeform Symmetry and Subdivision chips are drawn when the act would be refused
+### D-08 — P3 — Turning Symmetry ON over an asymmetric cage, and a level over the budget, are drawn and then refused
 
 - **Where:** `FreeformEditorView.java:196-231, 245-266` (`refreshFromNative` only sets the
   chips' active state); refusals `CageNotSymmetric`, `SubdivisionBudgetExceeded`
   (asserted by host `FF_14_symmetry_on_an_asymmetric_cage_is_refused…`, `FF_05_*`).
-- **Impact:** contradicts "a control that cannot succeed is not drawn"; the refusal is named,
-  so nothing is lost.
+- **Scope (narrowed in round 2):** turning a plane OFF always succeeds; only turning one ON over an
+  asymmetric cage is refused. A level fails only when `faces × 4^level` exceeds
+  `kMaxFreeformDerivedQuads` (131072, `forgeshape_freeform.h:178`, checked at `forgeshape_freeform.cpp:553`)
+  — at level 4 more than 512 faces, so the seeded Box never reaches it.
+- **Impact:** contradicts "a control that cannot succeed is not drawn" for those two cases; the refusal
+  is named, so nothing is lost. The chips are also state indicators in a selector group, so whether to
+  hide or disable them is an owner/UX decision, not purely a rule fix.
 - **Evidence:** E1 (host) + E2. **Verdict: PARTIAL.** **Fix:** expose per-plane and per-level
   availability in `freeformState` and hide failing chips; add a JVM case.
 
@@ -321,9 +345,15 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
 3. **Surface parameter refusals are named and Stitch never averages.** E1 (host `SURF_*`,
    `diag_d.out`).
 4. **Only CAD faces carry sketches; Freeform/Surface surfaces neither support nor let a plane
-   behind them be chosen.** E2 + E1 (host chooser checks).
-5. **Mask and Sculpt history are volatile and per body; Duplicate carries neither.** E1 (host
-   `FCM_12/13/14`, `SCUNDO_15`) + E2 (`cloneFrozenSculpt`).
+   behind them be chosen.** E1 only for the CAD curved-wall case (host `C1_CH_*`,
+   `forgeshape_cad_r2_selftest.cpp`); the Freeform/Surface part is E2 (representation-neutral
+   occlusion, `forgeshape_support_chooser.cpp:181-199`, `pickSceneSnapshot`) — no check puts such a
+   body in front of a plane (J-D6 would close it).
+5. **Mask and Sculpt history are volatile and per body; Duplicate carries neither.** Volatile/per
+   body: E1 (host `FCM_12/13/14`, `SCUNDO_15`). Duplicate drops history: E1 (host
+   `obj018a_10_the_copy_has_an_empty_sculpt_history`, `obj018a_10_the_sources_sculpt_history_is_untouched`,
+   `forgeshape_scene_selftest.cpp:~907-910`). Duplicate drops the mask: E2 only (`cloneFrozenSculpt`
+   `forgeshape_body_commands.cpp:58-80` → `freezeFrom` zeroes the mask), IMPLEMENTED-UNTESTED (MOD-057).
 6. **Freeform and Surface acts are single Construction steps with exact Undo.** E1 (host
    `FF_18_*`, `SURF_21`, `SURF_AUTH_*`, `diag_d.out` `FFD_undo_restores_exact_cage`) + E3
    (`CI DEVICE 37472535341`).
@@ -366,7 +396,7 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
 
 ## Unresolved dependencies and open questions
 
-- Device reproduction of D-02 and D-03 needs a `CI DEVICE` dispatch (not done by this seat).
+- D-02 is now reproduced on the host domain (E1, `diag_d6.out`); device reproduction of D-02 and D-03 needs a `CI DEVICE` dispatch (not done by this seat).
 - The Sculpt device classes have not run on the current tree; whether they still pass after the
   `MODELING-FOUNDATIONS-R1` JNI changes is UNDETERMINED (no run).
 - Physical stylus (`STYLUS-G1`), visual mask feedback, real-device performance:
@@ -377,7 +407,42 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
   entry points.
 
 **Completeness: PARTIAL** — every in-scope rule and action was traced to code and to a test or
-a recorded run (114 rows), and the five strongest claims were reproduced on the host; but no
+a recorded run (115 rows), and the five strongest claims were reproduced on the host; but no
 device run was made on this tree for the Sculpt, Freeform or Surface classes, D-02/D-03 were not
 reproduced on a device, and the authoritative plan sources are unavailable
 (`PARTIAL-PLAN-SOURCE-GAP`).
+
+## Round 2 — objections from seat G and responses
+
+Re-verified on the audited tree (`app/src/main` @ `70a6c14`). New diagnostic this round:
+`/tmp/claude-0/fc2-scratch/D/diag_d6.cpp` → `diag_d6.out`, built exactly as the other seat-D
+diagnostics (`g++ -std=c++17 -O1 -I$CPP -I$CPP/third_party/manifold/include -DMANIFOLD_PAR=-1
+-DMANIFOLD_NO_IOSTREAM -DMANIFOLD_NO_FILESYSTEM diag_d6.cpp $OBJ/*.o .../kernel/libmanifold.a -lpthread`).
+Row edits to `work/req_D.tsv` were applied by `/tmp/claude-0/fc2-scratch/D/round2_edit.py` (the TSV is
+now authoritative; `gen_req.py` reflects round 1 only).
+
+| # | Objection | Re-check | Response | Changes | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | D-01 keep DEFECT-CONFIRMED P2; `SCUNDO_23_an_oversized_stroke_is_refused_by_name` misnamed | `forgeshape_sculpt_selftest.cpp:1777-1797` asserts `NotRetained` with `undoDepth()==0` before; the stroke is applied | CONCEDE (wording) | D-01 fix note says the stroke is APPLIED and NotRetained, check name misleading; MOD-020 tests column annotated. Verdict/severity unchanged | RESOLVED |
+| 2 | D-02 needs E1 or lower severity | `diag_d6.out`: `SketchSession::begin(XY)` active, `commitImportedGlbScene` behind the JNI's Sculpt-only guard (`jni:8594`) → `status=Ok`, bodies 1→2, active 1→2, undo 0→1, sketch still active; `RESULT ...=1` | CONCEDE (reproduced). Evidence raised to E1 (domain) + E2 (guards). P2 kept, and the text now states plainly that it rests on the rule violation plus the reproduced side effects (body created, active switched, Construction step recorded under an open sketch), not on demonstrated data loss | D-02, MOD-049 | RESOLVED |
+| 3 | D-03 "every New Project → Freeform starts at ObjectId 1" is wrong | `forgeshape_scene.cpp:83-86` `closeProject` clears bodies and active id only; `forgeshape_project_state.cpp:410-415` only pushes the allocator forward | CONCEDE | "Ordinary case" sentence replaced: ids start at 1 only for the first project in a process; realistic cases are reopening the just-saved slot/file, or the first project of a process against a saved Freeform-first project; cross-ref G-06. Verdict/severity unchanged | RESOLVED |
+| 4 | D-04/MOD-042 is recorded debt, not an H1 rule | `CLAUDE.md` Stage027 scopes GUARD-2 to Start / Resume Sculpt; `PROJECT_STATUS.md:4263-4269` records the load path as "not in Stage027's scope" | CONCEDE | D-04 and MOD-042 → PARTIAL, P3, source = PROJECT_STATUS Technical Debt, expected behaviour rewritten; E1 reproducer kept; not counted as a new defect | RESOLVED |
+| 5 | D-05/MOD-014 → PARTIAL; ARCHITECTURE.md misquoted; "cannot be removed" overstated | `ARCHITECTURE.md:3678-3679` does say "minus the size test"; payload = n·12 + 128 B (`sculpt_history.cpp:15-25`) → ~87,371 vertices; retained mask strokes stay undoable within 32 entries / 4 MiB | CONCEDE | D-05 and MOD-014 → PARTIAL P3; expected behaviour rewritten to quote ARCHITECTURE.md and SCULPT-FCM-R1 correctly; impact restated with its precondition (NotRetained mask stroke or evicted entries); MOD-015 severity text likewise | RESOLVED |
+| 6 | D-06 DOC-DIVERGENCE P3 stands | — | AGREE | none | RESOLVED |
+| 7 | D-07 PARTIAL P3 stands | — | AGREE | none | RESOLVED |
+| 8 | D-08 too broad; fix is owner/UX | Turning a plane OFF never fails; `freeform.cpp:553` refuses only `derived > kMaxFreeformDerivedQuads` (131072, declared at `forgeshape_freeform.h:178` — G's `freeform_symmetry.h:178` is a path slip, same constant) | CONCEDE | D-08 title/scope restated ("symmetry ON over an asymmetric cage, and a level over the budget, are drawn and then refused"); MOD-079 expected behaviour and owner_decision (owner/UX) updated; PARTIAL P3 kept | RESOLVED |
+| 9 | D-09/MOD-067 BLOCKED-OWNER | — | AGREE | none | RESOLVED |
+| 10 | D-10 coverage gaps confirmed | — | AGREE | none | RESOLVED |
+| 11 | Positive claim 4 over-graded for Freeform/Surface | Only `C1_CH_*` (CAD curved wall) exercise the chooser occlusion | CONCEDE | Claim 4: E1 for the CAD curved wall only, E2 for Freeform/Surface; MOD-064 split verdict (Freeform/Surface IMPLEMENTED-UNTESTED, J-D6) | RESOLVED |
+| 12 | Positive claim 5 cites wrong tests | `forgeshape_scene_selftest.cpp:907-910` `obj018a_10_the_copy_has_an_empty_sculpt_history`, `..._the_sources_sculpt_history_is_untouched` exist; no check asserts the copy's mask | CONCEDE | Claim 5 cites `obj018a_10` (E1) for history; mask half E2 / IMPLEMENTED-UNTESTED in MOD-057 | RESOLVED |
+| 13 | MOD-086/MOD-109 overclaim | `diag_d5` built only an open Freeform Plane and an open extruded Surface | CONCEDE | Both rows: PASS-REPRODUCED for "open bodies export, double-sided" only; stored level and closed/thickened single-sided are E2, IMPLEMENTED-UNTESTED | RESOLVED |
+| 14 | MOD-114 contradicts itself | Row status "stale", open question UNDETERMINED | CONCEDE | MOD-114 → PARTIAL, P3 (evidence age; current-tree device result UNDETERMINED) | RESOLVED |
+| 15 | MOD-007 mixes horizons | `PROJECT_STATUS.md:4113-4115` STYLUS-G1 BLOCKED-ENV, physical hardware only | CONCEDE | MOD-007 keeps the H2 pressure/tilt half (FUTURE-NOT-DUE, source SCULPT-FCM-R1 "Not this stage"); new MOD-115 = physical stylus gate, H1, BLOCKED-OWNER / OWNER-PHYSICAL-UNVERIFIED | RESOLVED |
+| 16 | MOD-091/MOD-111 call host timings "interactive" | Timings are x86_64 host; open500_l4 49.6 ms > 16.7 ms frame | CONCEDE | Both rows: "bounded host timings measured; not gated"; device interactivity OWNER-PHYSICAL-UNVERIFIED | RESOLVED |
+| 17 | MOD-087 adds NURBS | `CLAUDE.md` bans "T-Spline"/"SubD" to the user; "general NURBS" appears only in a "Not this stage" list | CONCEDE | NURBS dropped from MOD-087's requirement and improvement | RESOLVED |
+| 18 | Add G-05 (mixed tap/brush units) cross-reference | `freeform_session.h:45` (units), `selection.h:37`, `sketch_session.h:210` (px), `sculpt.h:152-154` (px) | CONCEDE | MOD-006, MOD-072, MOD-073 dependencies note G-05 as UNDETERMINED-SOURCE-GAP (owner/UX unit policy); no defect added | RESOLVED |
+| 19 | No contradiction; mention `guard_exit=2` | `run_status.txt` records `guard_exit=2` while `release_guard.txt` ends `RELEASE_SELFTEST_GUARD=PASS` | CONCEDE | Sources line notes the discrepancy as unresolved (seat G's); no seat-D conclusion rests on the guard result | RESOLVED (the guard discrepancy itself stays UNRESOLVED, owned by seat G) |
+
+Summary: 15 conceded (1 — wording only, verdict kept — and 2, 3, 4, 5, 8, 11, 12, 13, 14, 15, 16,
+17, 18, 19), 0 rebutted, 4 agreed with no change (6, 7, 9, 10).
+Open item outside seat D: the `guard_exit=2` vs `RELEASE_SELFTEST_GUARD=PASS` discrepancy.

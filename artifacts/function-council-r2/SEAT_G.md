@@ -95,7 +95,7 @@ PROJECT_STATE. Horizons are reconstructed from the repo records above.
 - **Path:** `app/src/main/cpp/forgeshape_history_selftest.cpp:474-480` (`eviction_is_deterministic_oldest_first`); `app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5392-5394` (`CADFC2_PF_03b_BEFORE_the_lens_taps_to_a_whole_circle_by_anchor_order`); `app/src/main/cpp/CMakeLists.txt` (no `-ffp-contract` policy).
 - **Minimal repro (host, this audit):** build the 98 neutral TUs + the generated 25-suite main with `clang++ -O1 -mfma` (default `-ffp-contract=on`) → `HOST_SELFTESTS_FAIL (4392 checks, 2 failed)` naming exactly those two checks. Controls: same build without `-mfma` → 4392/0; with `-mfma -ffp-contract=off` → 4392/0. An arm64-like build (product −O0 as in the Debug `compile_commands.json`, kernel −O2, FMA) fails the same two.
 - **Root cause (history check, proven):** NDK clang `--target=aarch64-none-linux-android26` with the Debug flags (no `-O`) emits `fmadd d0, d0, d1, d2` for the loop value `0.5 + 0.01*i` (`arm64_forgeshape_history_selftest.s:3967`, the only `fmadd` in the TU), while the oracle `oldestRetained` is folded at compile time unfused; `fma(0.01, 7, 0.5) = 0.56999999999999995` vs `0.57000000000000006`, compared with `==`. x86_64 NDK output for the same pattern is `mulsd`+`addsd`. The lens check is an equal-area tie broken by anchor order; under contraction the two areas differ by rounding and the tie flips (mechanism E5, failure E1).
-- **Impact:** the debug launch on any arm64-v8a device at this tree is expected to print `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_FAIL` and `FORGESHAPE_CAD_FEATURE_SELFTEST_FAIL` instead of the 25 OK tokens CLAUDE.md requires; CI cannot see it because `CI DEVICE` runs the x86_64 emulator only. Product geometry is not shown to be wrong; the defect is ABI-fragile oracles, which also blocks any future desktop ABI that contracts (Windows-on-ARM, AArch64 Linux). The physical outcome itself is OWNER-PHYSICAL-UNVERIFIED (H-G-01).
+- **Impact (split, Round 2):** the history check is expected to print `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_FAIL` on any arm64-v8a debug launch at this tree (H-G-01a, arm64 assembly proof E2 + host E1); the lens check (`FORGESHAPE_CAD_FEATURE_SELFTEST_FAIL`) is proven only under host emulation (`host_arm64like.txt`), so its arm64 device outcome is E5 (H-G-01b). A self-test FAIL only logs (`forgeshape_jni.cpp:526-534`, `:605-613` call `FS_LOGE` and do not stop the viewport), so the product is unaffected; the harm is polluted evidence (expected FAIL lines on arm64 can hide a real one); CI cannot see it because `CI DEVICE` runs the x86_64 emulator only. Product geometry is not shown to be wrong; the defect is ABI-fragile oracles, which also blocks any future desktop ABI that contracts (Windows-on-ARM, AArch64 Linux). The physical outcome itself is OWNER-PHYSICAL-UNVERIFIED (H-G-01).
 - **Evidence grade:** E1 (host reproduction under the same FP semantics) + E2 (arm64 assembly); device E5.
 - **Verdict:** DEFECT-CONFIRMED.
 - **Isolated fix proposal:** compute each oracle through the same runtime expression as the value (or compare with a 1-ULP / 1e-12 tolerance), and give the lens check a non-tied fixture; add a CI FAST job running the host suites with `-mfma` (no device needed). Whether to pin `-ffp-contract=off` is an OWNER decision: `PROJECT_STATUS.md:2447-2449` already argues that pinning "would only re-hide the same knife-edge geometry".
@@ -116,13 +116,15 @@ PROJECT_STATE. Horizons are reconstructed from the repo records above.
 - **Repro:** `clang++ -std=c++17 -fsyntax-only -Wall -Wextra <file>`. The read happens only after the check is already false, so no verdict flips, but it is undefined behaviour in the evidence code — and MSVC (C4701) or a sanitizer build would flag it on a desktop toolchain.
 - **Evidence:** E1. **Verdict:** DEFECT-CONFIRMED. **Fix:** initialise `bx, by, px, py, tx, ty` to 0.
 
-### G-05 — P3 (risk) — Interaction thresholds mix physical pixels and density-scaled units
+### G-05 — P3 — DOC-DIVERGENCE: Freeform's tap slop is density-scaled while its comment says it is the sketch's (regraded Round 2)
+- **Round 2 correction:** the gizmo is removed from the comparison (`kGizmoHitSlopUnits`, `forgeshape_gizmo.h:229-231`, is a hit-corridor half-width, in reference units on purpose per `UI-PREF-R1`). A requirement does exist: CLAUDE.md `CAD-V6-S2-CORRECTION-FILL-PICK-R2` "a finger inside the 24 px tap slop orbits nothing" (H1). The real mismatch is `kFreeformTapSlopUnits` (`forgeshape_freeform_session.h:43-45`, documented as "the sketch's own tap slop") × density (`forgeshape_freeform_session.cpp:640`) vs the sketch's raw 24 px (`forgeshape_sketch_session.h:208-210`, `.cpp:1106,1268`): 2.75× apart at density 2.75. **Evidence E2; Verdict DOC-DIVERGENCE (P3).** The desktop-DPI part below is FUTURE-NOT-DUE. Original text follows for the record.
 - **Path:** physical px: `forgeshape_selection.h:37` (`kTapSlopPixels = 24`), `forgeshape_sketch_session.h:210` (`kSketchTapSlopPixels = 24`), `forgeshape_jni.cpp:307` (`kChooserTapSlopPixels = 24`), `forgeshape_camera.h:101,110` (orbit/pinch per px); reference units × density: `forgeshape_gizmo.h:231` (`kGizmoHitSlopUnits = 24`), `forgeshape_freeform_session.h:45` (`kFreeformTapSlopUnits = 24`).
 - **Repro:** headless probe: a 100 px Mouse drag rotates −0.5000 rad at any density; at Android density 2.75 a sketch tap slop is ~8.7 dp while a Freeform tap slop is 24 dp.
 - **Impact:** on a 1.0-density desktop monitor the px-based slops become ~3× larger physically and orbit ~4× faster per inch than on a phone; on Android today two tools disagree about what a "tap" is. No requirement states which unit is intended.
 - **Evidence:** E2 + E1. **Verdict:** UNDETERMINED-SOURCE-GAP. **Fix:** one stated unit policy (reference units × pushed density) — an OWNER/UX decision first.
 
-### G-06 — P3 (risk) — Re-encoded `.forge` bytes depend on what the process loaded before
+### G-06 — FUTURE-NOT-DUE / OWNER question — Re-encoded `.forge` bytes depend on what the process loaded before (regraded Round 2)
+- **Round 2 correction:** no cited source requires the behaviour (`DATA_PACKAGE_SPEC.md:42` is about collisions; `:1563-1566` requires byte identity only for the same semantic document and encode→decode→encode); after a load into a process with a higher allocator the captured document is a different semantic document, and CLAUDE.md ("the `ObjectId` allocator is never rolled back") makes that intended. PORT-010's source is relabelled "derived (seat G)", horizon H2, verdict FUTURE-NOT-DUE (multi-document desktop impact). Same root cause as SEAT_J J-03; owner decision 3 below is merged with OD-J3. Original text follows for the record.
 - **Path:** `forgeshape_project_state.cpp:410-415` (`reserveObjectIdsThrough(document.scene.nextObjectId - 1)`, forward-only), `:138` (capture writes the live `nextObjectId`), `:753` (fingerprint mixes it).
 - **Repro:** `seq_reencode mixed_cad_v1.forge freeform_box_v1.forge` → `final reencode=different`; `cmp` shows SCNE `nextObjectId` at file offset 56 = 4 instead of 2, plus the SCNE CRC (offsets 45-48). The same fixture alone re-encodes identical.
 - **Impact:** on Android, Open → Save after a larger project in the same process writes different bytes from the opened file (dirty tracking is unaffected — the baseline fingerprint is taken after the load). For a multi-document desktop shell one window's allocator would leak into another's saved bytes. Deliberate per the code comment; no rule says the bytes must match.
@@ -145,9 +147,11 @@ PROJECT_STATE. Horizons are reconstructed from the repo records above.
 
 ## Hypotheses (unproven)
 
-- **H-G-01** — A debug launch on a physical arm64 phone at this tree prints `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_FAIL` and `FORGESHAPE_CAD_FEATURE_SELFTEST_FAIL`. Follows from G-01 (assembly + host reproduction); not run on hardware (OWNER-PHYSICAL-UNVERIFIED). The last recorded physical arm64 run (Gate P1, `PROJECT_STATUS.md:2971`) predates the shallow history available here, so whether it covered these checks is UNDETERMINED.
+- **H-G-01a** — A debug launch on a physical arm64 phone at this tree prints `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_FAIL` (arm64 assembly E2 + host E1; device OWNER-PHYSICAL-UNVERIFIED).
+- **H-G-01b** — The same launch prints `FORGESHAPE_CAD_FEATURE_SELFTEST_FAIL` (host emulation only; arm64 outcome E5).
+- Neither is refuted by Gate P1's "full self-test suite VERIFIED" (`PROJECT_STATUS.md:2971`): `PROJECT_STATUS.md:4158-4163` records that the physical phone drops whole suites from logcat, so that run can show at most "no failures observed".
 - **H-G-02** — Attaching or detaching a hardware keyboard recreates `ForgeShapeActivity` (and rebuilds the Vulkan surface) because `configChanges` (`AndroidManifest.xml:31`) lists `keyboardHidden` but not `keyboard`/`navigation`. Not reproduced (no device).
-- **H-G-03** — `ProjectSlot`/`ProjectCheckpoint` fsync the file but not the directory, so on POSIX the rename may not be durable after power loss. Not reproduced; Android shares the risk.
+- **H-G-03** — `ProjectSlot`/`ProjectCheckpoint` fsync the file but not the directory, so on POSIX the rename may not be durable after power loss. Not reproduced; Android shares the risk. Same as SEAT_J HJ-2.
 - **H-G-04** — On a desktop surface that supports neither `OPAQUE` nor `INHERIT` composite alpha, `createSwapchain` (`renderer.cpp:2175-2178`) would pass an unsupported value. No desktop surface exists to test.
 - **H-G-05** — FP contraction could flip a near-tolerance accept/refuse in sketch/region validation, so a file that opens on one ABI is refused on another. Probed: the 72-fixture verdicts built with `clang -O1 -mfma` (contraction on) are IDENTICAL to the baseline (`verdicts_fma.txt` vs fc2 `host_corpus_verdicts.txt`), so no committed fixture flips; user geometry near a tolerance remains unproven.
 
@@ -168,12 +172,13 @@ PROJECT_STATE. Horizons are reconstructed from the repo records above.
 | Claim | Evidence |
 | --- | --- |
 | The domain (98 TUs, ~57.8k product lines) is platform-neutral and links into a working non-Android program | E1: host suites 4392/0; headless probe links product objects only and runs |
-| The codec is byte-deterministic across toolchains and STLs | E1: FRFM/SURF digests from g++ x86_64 = committed SHA-256s; 72/72 verdicts; probe re-encodes 7 fixtures identically in a fresh process |
+| The codec is byte-deterministic across g++ 13 and clang 18 (`-O1`, with/without `-mfma`), both with libstdc++ | E1: FRFM/SURF digests from g++ x86_64 = committed SHA-256s; 72/72 verdicts; probe re-encodes 7 fixtures identically in a fresh process. **libc++ (NDK STL) was only syntax-checked (`-fsyntax-only`); no libc++ encode ran in this audit — the STL claim is E5 (Round 2).** |
 | The renderer's Android surface coupling is 4 `ANativeWindow_*` functions, one surface extension and one log function | E1 stub probe; E2 line list |
 | Shaders are portable SPIR-V 1.0 with no extension | E1 `glslc` + `spirv-val` 10/10 |
 | JNI is a pull-only, single-class contract (275 exports = 275 natives, no callbacks) | E2 grep counts |
 | No prohibited dependency (Qt, SDL, GLFW, GLM, Metal, MoltenVK) and no network code | E2 grep (`-w`, outside `third_party/manifold`) |
-| Release builds exclude self-tests on both ABIs | E1 fresh `RELEASE_SELFTEST_GUARD=PASS` |
+| Release builds exclude self-tests on both ABIs | E1 fresh `RELEASE_SELFTEST_GUARD=PASS` from the 00:57:29 rerun (`release_guard.txt`), not the first attempt (`run_status.txt` 00:54:48 `guard_exit=2`, an `exit 2` path of `ci-release-selftest-guard.sh:29,37,58`). The guard's debug rows read `app-debug.apk` built 2026-10-28 21:20 (`assembleDebug` UP-TO-DATE, `gradle.txt:56`) |
+| Both `.so` files carry 0x4000 LOAD alignment | E1 (Round 2): `readelf -lW` on the fresh release APK, every LOAD 0x4000 on arm64-v8a and x86_64; 16 KB-page runtime OWNER-PHYSICAL-UNVERIFIED |
 
 ## Journeys proposed for END_TO_END_JOURNEYS
 
@@ -189,20 +194,49 @@ PROJECT_STATE. Horizons are reconstructed from the repo records above.
 
 1. Authorize (or not) a desktop **spike** as research, its first OS, and its shell family (S1 native / S2 JVM / S3 library-assisted; S3 needs a licence/architecture gate per library) — `DESKTOP_POC_GATE.md` G0-1, G0-2.
 2. FP-contraction policy: pin `-ffp-contract=off`, or require tolerant oracles and an FMA CI job (G-01; `PROJECT_STATUS.md:2447-2449` argues against pinning).
-3. Whether Open → Save must be byte-identical regardless of process history (G-06).
-4. One unit policy for interaction thresholds (G-05).
+3. Whether an allocator-only difference is a different document — for Open → Save bytes (G-06) and for dirty tracking (SEAT_J J-03). **One decision with OD-J3.**
+4. A desktop-DPI unit policy for interaction thresholds (FUTURE-NOT-DUE); the Android Freeform/sketch slop mismatch is a DOC-DIVERGENCE fix, not an owner decision (G-05).
 5. Whether desktop-mode Android (mouse + keyboard on ChromeOS / DeX / desktop windowing) is in scope, which would bring wheel/button/hover into `forgeshape_input.h` (G-09, `UI-OWNER-02`).
-6. Whether an arm64 automated run (runner or emulation job) is wanted, since CI DEVICE is x86_64 only.
+6. Whether an arm64 automated run (runner or emulation job) is wanted, since CI DEVICE is x86_64 only (PORT-032: H2 owner decision, no gap).
 
 ## Unresolved dependencies and open questions
 
 - MSVC compatibility: INACCESSIBLE here (no MSVC); source grep found no GCC-only constructs.
 - Physical arm64 at this tree: no run available (H-G-01).
-- Whether Gate P1's physical self-test run included `eviction_is_deterministic_oldest_first`: the repository is shallow (`git rev-parse --is-shallow-repository` → true; root `fd88db8`), so the history cannot answer it.
-- `run_status.txt` records `guard_exit=2` while `release_guard.txt` ends `RELEASE_SELFTEST_GUARD=PASS`; this seat did not resolve the discrepancy (another seat owns the guard).
+- Whether Gate P1's physical self-test run included `eviction_is_deterministic_oldest_first`: moot — even if it did, `PROJECT_STATUS.md:4158-4163` limits that run to "no failures observed" (Round 2). (The repository is also shallow.)
+- RESOLVED (Round 2): `guard_exit=2` was the first attempt (00:54:48); `release_guard.txt` PASS was rewritten at 00:57:29 by a later rerun.
 
 **Completeness: COMPLETE for the seat's design-only scope** — every module class was mapped with
 E1/E2 evidence, portability was verified empirically (compile, link, run, FP experiment) and all
 three design deliverables plus 75 requirement rows are written; it is limited by
 `PARTIAL-PLAN-SOURCE-GAP` (Master plan unavailable), no MSVC, and no physical arm64 device, which
 are recorded as INACCESSIBLE / OWNER-PHYSICAL-UNVERIFIED rather than assumed.
+## Round 2 — objections from seat J and responses
+
+Re-verification commands (read-only; scratch in `/tmp/claude-0/fc2-scratch/G/`):
+`sed -n` over `ProjectSlot.java:95-155`, `ProjectCheckpoint.java:100-125`, `forgeshape_jni.cpp:520-536,600-615`,
+`forgeshape_freeform_session.{h:40-46,cpp:636-642}`, `forgeshape_sketch_session.h:205-211`, `forgeshape_gizmo.h:225-232`,
+`forgeshape_history_selftest.cpp:460-482`, `PROJECT_STATUS.md:2968-2973,4155-4165`;
+`grep -rn '\.pending\|PENDING' app/src/main/java`; `ls -l --time-style=full-iso` on the fc2 scratchpad and APK outputs;
+`git diff --stat fa0b6b4 70a6c14 -- AutosaveController.java ProjectSlot.java ProjectCheckpoint.java forgeshape_project_state.cpp`;
+`unzip -o -q app/build/outputs/apk/release/app-release-unsigned.apk 'lib/*' -d /tmp/claude-0/fc2-scratch/G/rel && readelf -lW .../lib/<abi>/libforgeshape_native.so | grep LOAD`
+(release APK sha256 `3b4d3194c68cf19725fa360e73d297b6dbf52fef1c55d549ed3534ba250c614c`). Pre-Round-2 copies: `SEAT_G.before_r2.md`, `req_G.before_r2.tsv` in the scratch dir.
+
+| # | Objection (seat J) | Re-verification | Response | Change made | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | G-01 stands; split device impact; cite `PROJECT_STATUS.md:4158-4163`; FAIL only logs | `history_selftest.cpp:466-480` (`overflow` is `const size_t`, oracle folded); `jni.cpp:526-534`, `:605-613` only `FS_LOGE`; `PROJECT_STATUS.md:4158-4163` logcat drops whole suites | **CONCEDE** | G-01 Impact split: history = E2 arm64 asm + E1 host; lens = E1 host emulation, arm64 E5. H-G-01 → H-G-01a / H-G-01b. Gate P1 cannot refute (4158-4163), replacing the weaker shallow-repo argument. Impact restated as evidence pollution, product unaffected; P2 kept. PORT-031 evidence cell split | RESOLVED |
+| 2 | G-02 confirmed | — | Agreed | none | RESOLVED |
+| 3 | G-03 confirmed | — | Agreed | none | RESOLVED |
+| 4 | G-04 confirmed, no verdict flips | — | Agreed | none | RESOLVED |
+| 5 | G-05 / PORT-028: drop gizmo; 24 px requirement exists; real mismatch Freeform vs sketch | `gizmo.h:225-231` hit-corridor comment; `freeform_session.h:43-45` "the sketch's own tap slop"; `.cpp:640` `× gizmoPixelsPerReferenceUnit()`; `sketch_session.h:208-210` `kSketchTapSlopPixels = 24.0f` | **CONCEDE** | G-05 retitled DOC-DIVERGENCE P3 (E2), gizmo removed, CLAUDE.md `CAD-V6-S2-CORRECTION-FILL-PICK-R2` cited as H1 source; desktop-DPI part FUTURE-NOT-DUE. PORT-028 narrowed and regraded; owner decision 4 rewritten | RESOLVED |
+| 6 | G-06 / PORT-010: requirement invented; overlap with J-03 | `DATA_PACKAGE_SPEC.md:42`, `:1563-1566` as quoted by J; SEAT_J J-03 (`project_state.cpp:753`) | **CONCEDE** | PORT-010 source = "derived (seat G)", H2, FUTURE-NOT-DUE, no gap; cross-ref J-03; owner decision 3 merged with OD-J3 | RESOLVED |
+| 7 | PORT-048 PASS contradicts J-04 and source | `ProjectSlot.java:110-114` `slot.delete() && pending.renameTo(slot)`; `ProjectCheckpoint.java:107-122` same; `read` (:130-150) reads the slot only; grep: no reader of `*.pending` | **CONCEDE** — my "a failed write keeps the previous valid file" was wrong for the delete-then-retry path | PORT-048 → PARTIAL, P3, E2, owning finding SEAT_J J-04; expected_behaviour "keeps a READABLE valid file"; evidence "recorded" removed | RESOLVED |
+| 8 | PORT-048/-050 cite "recorded" with no run id | SEAT_J:126-129, :377: `FULL_SHARDED_SUITE_PASS` `36607747079` on `fa0b6b4` (`ProjectAutosaveRecoveryTest` FSR1B-01..09). `git diff --stat fa0b6b4 70a6c14`: the three Java persistence files are identical; `forgeshape_project_state.cpp` changed (+231/−14) | **CONCEDE** (named the run) | PORT-050 names `36607747079` @`fa0b6b4`, grade "E2 + E3 (older tree)"; Java scheduling unchanged since that run, native fingerprint changed so that part is E2 only; HJ-1 cross-referenced (statement unchanged). PORT-048 handled in #7 | RESOLVED |
+| 9 | PORT-003/005/011/013/053/054/069 PASS-REPRODUCED on E2 | grep-only evidence, no runtime | **CONCEDE** | all seven → IMPLEMENTED-UNTESTED, E2 | RESOLVED |
+| 10 | PORT-072 can be E1 | My own `readelf -lW` on the fresh release APK: every LOAD 0x4000 on arm64-v8a and x86_64 (reproduces J) | **CONCEDE** | PORT-072 → PASS-REPRODUCED, E1 for alignment; 16 KB runtime OWNER-PHYSICAL-UNVERIFIED; positive-claims row added | RESOLVED |
+| 11 | "byte-deterministic across STLs" overstated | `COMMANDS.txt` #2 is `-fsyntax-only` for libc++; #7/#8/#11 libstdc++ | **CONCEDE** | positive claim narrowed to g++13 / clang18 with libstdc++ (E1); STL claim E5 (no libc++ encode, no named device digest run cited) | RESOLVED |
+| 12 | Resolve `guard_exit=2` | `run_status.txt` 00:54:48; `release_guard.txt` mtime 00:57:29 > `gradle_unit_rerun.txt` 00:57:27; `app-debug.apk` mtime 2026-10-28 21:20:06 | **CONCEDE** | positive claim states the PASS is from the rerun, and that the debug rows read the 21:20 debug APK; open question marked RESOLVED | RESOLVED |
+| 13 | Horizons: PORT-031 → H0; PORT-032 → H2 no gap; PORT-056 → H2; PORT-067 E3 vs E1 | CLAUDE.md "Commands"; `PROJECT_STATUS.md:2624`; no requirement found for PORT-056; `TEST_COVERAGE_MATRIX.md:19` grades CI FAST `40796992679` E1 | **CONCEDE** | PORT-031 H0; PORT-032 H2, BLOCKED-OWNER, severity "-"; PORT-056 H2, FUTURE-NOT-DUE, severity "-" (hypothesis H-G-02 kept); PORT-067 E1 | RESOLVED |
+| 14 | G-07/08/09, H-G-03, H-G-05 no objection; link H-G-03 to HJ-2 | — | Agreed | H-G-03 now names SEAT_J HJ-2 | RESOLVED |
+
+Tally: 14 objections, 14 conceded (4 of them agreements with no change), 0 rebutted, 0 UNRESOLVED.

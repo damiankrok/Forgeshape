@@ -124,9 +124,14 @@ These are what the tests actually assert:
   covers `ProjectSlot`, `ProjectCheckpoint` or unit seeding in the Freeform
   and Surface editors.
 - **androidTest.** None of these classes ran in this audit's fresh device run
-  `40797031704`, which ran 32 UI tests in other classes. The most recent
-  aggregate containing them is `FULL_SHARDED_SUITE_PASS` `36607747079` on
-  `fa0b6b4`, an **older tree** (E3).
+  `40797031704`, which ran 32 UI tests in other classes. `HomeFlowTest` and
+  `EditorWorkspaceProjectActionsTest` ran in C2 DEVICE `40782861799` at
+  `30b561b`, 67/67 (`artifacts/cad-r2-c2-picking-seam/TESTS.md:75`), whose
+  `app/src/main` and `app/src/androidTest` equal this tree's (`git diff --stat
+  30b561b 70a6c14 -- app/src/main app/src/androidTest` is empty) (E3). For the
+  other classes below the most recent aggregate is `FULL_SHARDED_SUITE_PASS`
+  `36607747079` on `fa0b6b4`, an **older tree** (E3). (Corrected in Round 2,
+  objection C-12.)
   - **`ProjectAutosaveRecoveryTest`** (FSR1B-01..09): checkpoint isolation from
     the slot; one write per burst; a failed write leaves the previous
     checkpoint; quarantine; Recover restores values and a fresh history.
@@ -140,13 +145,14 @@ These are what the tests actually assert:
     `SpatialSketchTest`**: refusal codes, including `RefusedHasDependents`.
 - **Fixtures.** The 28 refusal fixtures in `testdata/forge/v1`.
 - **Gaps.**
-  - No test drives the real revolve-axis pick (J-05).
+  - ~~No test drives the real revolve-axis pick (J-05).~~ Withdrawn in Round 2
+    (C-1): `CadRevolveOwnerTest` drives it with real `MotionEvent`s.
   - No test hides or locks a CAD or Surface body and then edits it (J-01).
   - No test checks Freeform or Surface fields against the display unit (J-02).
 
 ## Confirmed findings
 
-### J-01 — P3 — A hidden CAD or Surface body can be edited through History and Edit, with an invisible preview
+### J-01 — P3 — A hidden CAD or Surface body can be edited through History and Edit; no solid candidate is drawn for it (Round 2: BLOCKED-OWNER OD-J1 for the refusal question, PARTIAL for the missing solid preview)
 
 - **Where.**
   - `forgeshape_jni.cpp:7137-7193` (`sketchBeginEdit`) and 7205-7250
@@ -165,19 +171,35 @@ These are what the tests actually assert:
   - `[LOCKED] ... commitEdit=Ok depth 1.5000 -> 3.0000 ... locked=1`
   - `[FREEFORM] beginHidden=BodyHidden beginLocked=BodyLocked`
   - On the device: hide the active CAD body, tap History, open its Extrude
-    row, and drag or type a depth. The viewport shows no preview, and the
-    commit lands on a body nobody can see.
-- **Impact.** The user edits geometry blind. This contradicts the hidden-body
-  policy every sibling path already follows:
+    row, and drag or type a depth. No solid candidate is drawn (only a target
+    already in the snapshot is substituted); the sketch overlay — profile,
+    hatch and extrude arrow — is still drawn (`forgeshape_jni.cpp:1988-1992`).
+    The commit lands on a body that is not drawn.
+- **Impact.** The user edits a solid whose result is not drawn. No repo rule
+  requires CAD or Surface edits to refuse a hidden body (Stage027 GUARD-2 is
+  Sculpt-only; the Dimensions refusal states its own reason; `PRODUCT.md:530-535`
+  says a hidden body can still be selected from its row), so this is a
+  consistency question for the owner, not a rule breach. Sibling paths that do
+  refuse:
   - Freeform refuses (`BodyHidden`).
   - Sculpt Start and Resume refuse (Stage027 GUARD-2).
   - Dimensions refuse (`RefusedHidden`), "because the leaders are read off
     geometry that is not drawn".
 
-  Locked behaves the same way; that half is D-09. Nothing is lost, because
-  the commit is one Undo.
+  The locked half is NOT a defect: `PRODUCT.md:537-542` says a locked body
+  refuses only being moved and "Everything else still works", and CLAUDE.md
+  Stage 018A names exactly two lock guards, so CAD/Surface commits on a locked
+  body are the documented behaviour (PASS-SOURCE, E2). The outlier is
+  Freeform's `BodyLocked` (`forgeshape_freeform_session.cpp:277-278`), which no
+  owner document states (DOC-DIVERGENCE, OD-J1). Nothing is lost, because the
+  commit is one Undo.
 - **Evidence and verdict.** E1 for the domain composition (`j1_hidden_edit.out`).
-  E2 for the JNI, the preview and the Java gating. **DEFECT-CONFIRMED.**
+  E2 for the JNI, the preview and the Java gating. Round 2 (objections C-3,
+  C-4): **BLOCKED-OWNER (OD-J1), horizon H2-pending-decision** for whether a
+  hidden body's CAD/Surface edit should be refused; **PARTIAL, P3** for the
+  missing solid candidate (CAD-VERTICAL-SLICE-R1 "the renderer draws that
+  evaluation" does not happen for a target outside the snapshot). Formerly
+  DEFECT-CONFIRMED.
 - **Isolated fix.**
   - Refuse `sketchBeginEdit`, `sketchBeginEditFeature`,
     `sketchBeginEditSketch` and the Surface edit entry points with a named
@@ -223,9 +245,12 @@ These are what the tests actually assert:
 - **Isolated fix.**
   1. Give each length row a unit caption (`label() + " (" + unit.label() + ")"`).
   2. Seed the rows through `unit.format(meters)`.
-  3. Add `convertDisplayUnit` to `FreeformEditorView`, `SurfaceEditorView`
-     and the `SketchModifyView` offset field, and call it from
-     `onDisplayUnitRequested`.
+  3. Add `convertDisplayUnit` to `FreeformEditorView` and `SurfaceEditorView`,
+     and call it from `onDisplayUnitRequested`.
+  4. (Narrowed in Round 2, C-16.) The `SketchModifyView` offset field is
+     seeded correctly from native metres through `displayUnit().format(...)`
+     on entering Offset mode (`SketchModifyView.java:280-282`); only a unit
+     change made while Offset mode is already open is not converted (E2).
 
 ### J-03 — P3 — Creating a body and undoing it leaves the project "unsaved" and checkpointed, though nothing changed
 
@@ -247,9 +272,13 @@ These are what the tests actually assert:
 - **Impact.** The user is asked to save when there is nothing to save. A
   needless recovery candidate also exists after a crash. This erodes trust in
   the dirty indicator. No data is lost.
-- **Evidence and verdict.** E1 (`j4_replay.out`) and E2. **PARTIAL.** The
-  behaviour is internally consistent, because the allocator is file truth,
-  but nothing documents it as user-facing.
+- **Evidence and verdict.** E1 (`j4_replay.out`) and E2. Round 2 (C-15):
+  **BLOCKED-OWNER (OD-J3), horizon H2-pending-decision**, formerly PARTIAL.
+  The behaviour follows the stated rules: the `.forge` rule stores the id
+  allocator's high-water mark, so a Save after create + Undo produces
+  different bytes, and APP-H1 asks by FINGERPRINT. No repo record states the
+  opposite expectation. Does not apply to CAD's `nextSketchId` /
+  `nextFeatureId`, which Undo restores (CAD-V6-S1-C1).
 - **Isolated fix.** Either exclude `nextObjectId` from the *dirty* comparison
   while keeping it in the codec, or document it in `PRODUCT.md`. This needs
   owner decision OD-J3.
@@ -267,9 +296,12 @@ These are what the tests actually assert:
   replace and the retry also fails, Save reports failure and the slot is gone.
   Open Saved Project then says there is no project. The fsync'd bytes sit
   orphaned until the next Save overwrites them.
-- **Impact.** This narrow path, which ext4 and f2fs should not take, turns a
-  failed Save into the loss of the saved project, as far as the UI can tell.
-  The code comment claims the opposite.
+- **Impact.** On this narrow path, which ext4 and f2fs should not take, the
+  previous slot copy is lost and the newer bytes sit orphaned in
+  `.pending`. Current work stays in memory and in the checkpoint, because
+  `saveProjectToSlot` returns before `ProjectCheckpoint.clear` on a failed
+  write (`EditorWorkspaceView.java:5459-5467`). The code comment's "ONLY copy"
+  is never read back. (Reworded in Round 2, C-17.)
 - **Evidence and verdict.** E2. **DEFECT-CONFIRMED** for the recovery gap.
   How likely the path is is E5.
 - **Isolated fix.** In `ProjectSlot.read`, fall back to a validated
@@ -278,34 +310,48 @@ These are what the tests actually assert:
   `slot.forge.new`, then use `Files.move` with `ATOMIC_MOVE` and
   `REPLACE_EXISTING`.
 
-### J-05 — P3 — Some real UI paths are exercised on the device only through test seams the product never calls
+### J-05 — P3 — A few device tests reach state through JNI seams the product never calls (narrowed in Round 2)
 
 - **Where.** The JNI census in `native_usage.txt` covers 275 natives.
   - **66 are never called from product Java.**
-  - **Seams that stand in for UI flows in device tests:**
-    - `sketchSetRevolveAxis` (`CadParametricHistoryOwnerTest.java:241`,
-      `CadRetainedSketchOwnerTest.java:1262`);
-    - `sketchToggleRegion` (`CadFillPickR2Test.java:935`,
-      `CadPlanarFaceRuntimeTest.java:529`);
-    - `sketchSetDimensionTarget` (`CadSketchDraftingOwnerTest.java:344-354,725`);
-    - `sketchSelectEntity`, plus `constructionUndo`/`Redo`, while the product
-      uses `historyUndo`/`Redo`.
-  - **The real revolve-axis flow is untested on the device.** The product
-    uses `sketchBeginRevolveAxisPick` (`EditorWorkspaceView.java:4645`), then
-    a tap through the touch path (`forgeshape_jni.cpp:9745-9789`). **No**
-    androidTest file references it.
+  - **Seams used as setup in device tests** (Round 2, C-1/C-2: restricted to
+    these):
+    - `sketchSetRevolveAxis` as setup in `CadParametricHistoryOwnerTest.java:241`
+      and `CadRetainedSketchOwnerTest.java:1262`;
+    - `sketchToggleRegion` in `CadPlanarFaceRuntimeTest.java:529`
+      (`toggleFace`). `CadFillPickR2Test.nativeToggle` (`:933-940`) also calls
+      it, but only as setup; that class drives its acceptance taps with
+      `realGesture` (9 call sites).
+  - **Withdrawn (Round 2, C-1).** The earlier claim that the real revolve-axis
+    pick is untested on the device was wrong. `CadRevolveOwnerTest` opens
+    Revolve with `pressInSketchEditor(R.id.sketch_revolve_begin)` (`:555-566`),
+    asserts `REVOLVE_AXIS_PICKING == 1` (`:129-131`), chooses the axis with
+    `tapAxis` → `realGesture`, which dispatches real `MotionEvent` DOWN/UP
+    through the decor view (`:619-636`, `:725-747`), and `devRev05` presses
+    `R.id.sketch_revolve_change_axis` and taps again (`:309-321`). That class
+    passed in C2 DEVICE `40782861799` at `30b561b`, 67/67, on a product and
+    test tree equal to this one (E3). `CadSketchDraftingOwnerTest` chooses
+    dimension targets with real taps (`:222-237`); its `sketchSetDimensionTarget`
+    block (`:344-354`) is bulk setup.
+  - **DOC-DIVERGENCE (test javadoc).** `CadPlanarFaceRuntimeTest.toggleFace`
+    (`:521-529`) says it "adds a face through the precision surface's row
+    path". No product Java calls `sketchToggleRegion` (only its declaration,
+    `NativeViewport.java:2835`), and the real row makes the tapped region the
+    ONE region (`SketchEditorView.java:538-545`). The javadoc describes a
+    product path that does not exist.
   - **Eight natives are called by neither product nor tests:**
     - `supportChooserSelect`, `supportChooserConfirm`;
     - `freeformSelect`, `freeformClearSelection`;
     - `sculptUndo`, `sculptRedo`, `sculptRedoAvailable`;
     - `sketchToggleSelectEntity`.
-- **Impact.** Device evidence for Revolve History and edit, and for some fill
-  and dimension journeys, proves the domain after the seam, not the gesture a
-  user makes. The eight orphan exports are untested ABI surface.
-- **Evidence and verdict.** E2. **IMPLEMENTED-UNTESTED** for the real
-  axis-pick path. The orphans are recorded only.
+- **Impact.** Where a seam is setup, the device evidence after it proves the
+  domain, not the gesture that would have produced that state. The eight
+  orphan exports are untested ABI surface.
+- **Evidence and verdict.** E2. **PARTIAL** for seam-as-setup coverage; the
+  orphans are recorded only (IMPLEMENTED-UNTESTED). The real axis pick is
+  PASS-SOURCE-AND-RECORDED-RUNTIME (E3 `40782861799`).
 - **Isolated fix.**
-  - Add one device case that taps the axis edge after the pick control.
+  - Correct the `toggleFace` javadoc.
   - Either delete the eight orphan natives or cover them.
   - Note in each seam-using test which UI act it stands for.
 
@@ -316,12 +362,17 @@ These are what the tests actually assert:
   calls `saveProjectToSlot`, which calls `ProjectSlot.write` and
   `ProjectCheckpoint.clear` (5458-5467). It then calls
   `proceedToLeave(LEAVE_OPEN_SLOT)`, which calls `openSavedProjectSlot` (2656)
-  and reads back the slot just written. E2.
+  and reads back the slot just written: an **unannounced overwrite** of the
+  project about to be opened (the prompt says "Save the project to this device
+  first", `strings.xml:63`, but not that it replaces that project). E2.
 - **E-05 and E-06** match this seat's codec observations. Seat J's fuzz did
   not exercise operation flips, so it neither adds to nor contradicts them.
 - **A-04 / C-02 / D-02 / E-03** (Import during a sketch) are not re-run here.
   The `objectCommandsBlockedByMode` guard (`forgeshape_jni.cpp:3408`) covers
-  object commands, not `importGlbDurable` (8560). This is consistent with them.
+  object commands, not `importGlbDurable` (8560; it guards Sculpt only,
+  8594-8600, while `sceneAddBody` refuses `in_sketch`, 3246-3265). The rule is
+  the delivered **H0** CAD-R0-A1A2 guard; E1 is Seat A's
+  `SEATA_IMPORT_DURING_SKETCH=ACCEPTED` (`SEAT_A.md:134`). (Round 2, C-5.)
 
 ## Hypotheses (unproven)
 
@@ -333,6 +384,9 @@ These are what the tests actually assert:
     still for more than `DEBOUNCE_MILLIS` (900 ms) and the process dies, the
     recovered placement is one the user cancelled or never committed.
   - The guard's absence is E2. The user consequence is E5.
+  - Scope (Round 2, C-18): only gizmo and Freeform drags can be caught. CAD
+    extrude and revolve drags are session-only and write no `CadBodyState`
+    until commit (CAD-UX-S1), so they never reach a checkpoint.
 - **HJ-2. The rename may not be durable on power loss.**
   - Neither `ProjectSlot.write` nor `ProjectCheckpoint.write` fsyncs the
     parent directory after `renameTo`.
@@ -362,9 +416,11 @@ These are what the tests actually assert:
 1. **Decoding and loading is memory-safe and fail-closed** under 167,875
    structural mutations with sanitizers (E1, J2). On 34,615 random mutations
    it also fails closed (Seat E, E1).
-2. **Every object-command refusal changes nothing.** Every probe in J4 and
-   J5, including the numeric ones, left the semantic fingerprint and the
-   undo depth equal (E1).
+2. **The four object-command refusals probed (`RefusedHasDependents`,
+   `RefusedFaceSupportedCad`, `RefusedInvalidName`, `RefusedNotMirrorable`,
+   J4) and the 93 numeric refusals (J5) change nothing**: fingerprint and undo
+   depth equal (E1). Delete-last-body, refusals in Sculpt or in a sketch, and
+   lock/hide in a sketch were not probed. (Narrowed in Round 2, C-10.)
 3. **Undo and Redo walk exactly the recorded semantic states** across a
    rename, a lock, a hide, a CAD duplicate, a Freeform create and extrude,
    and two deletes, including a producer and its dependent. Each state saves
@@ -377,9 +433,14 @@ These are what the tests actually assert:
    checkpoint keeps the previous one (FSR1B-03, E3 `36607747079` on the
    older tree `fa0b6b4`).
 6. **The JNI enum and array inputs checked here are validated before
-   use** (E2). The debug-only camera and history seams are compiled out of
-   release builds (`#ifndef NDEBUG`, E2). Release builds carry no self-tests
-   (`RELEASE_SELFTEST_GUARD=PASS`, fresh, E1).
+   use** (E2). The debug-only seams are **inert in release**, not compiled
+   out: they remain exported with no-op bodies (`debugResetConstructionHistory`
+   `#ifndef NDEBUG` inside the body, `forgeshape_jni.cpp:7967-7972`;
+   `debugCameraPose` the same, `:7893-7911`; `debugInjectDeviceLoss` returns
+   `JNI_FALSE`, `:9083`) (PASS-SOURCE, E2; the release guard does not probe
+   them). Release builds carry no self-tests (`RELEASE_SELFTEST_GUARD=PASS`,
+   E1) — from a rerun at 00:57; `run_status.txt` records the first attempt as
+   `guard_exit=2` at 00:54 and does not record the rerun. (Round 2, C-9.)
 7. **Freeform refuses hidden or locked bodies and prunes a stale selection**
    (`forgeshape_freeform_session.cpp:273-330`, E1 in j1 output).
 8. **Host self-tests pass 4392/0 and the corpus gives 72 named verdicts**
@@ -425,8 +486,9 @@ These are what the tests actually assert:
 
 - **OD-J1.** Should CAD and Surface edits (Edit Sketch, History rows, Keep
   Sketch, Add/Cut, Surface value and Thicken) be refused over a hidden body,
-  as Freeform, Sculpt and Dimensions are? Should they also be refused over a
-  locked body, as Freeform is? (Seat D's D-09 covers lock.)
+  as Freeform, Sculpt and Dimensions are? And is Freeform's undocumented
+  `BodyLocked` refusal intended, given `PRODUCT.md:537-542` ("Everything else
+  still works")? (Seat D's D-09 covers lock.)
 - **OD-J2.** Does Lock on a face-supported dependent constrain anything when
   its producer moves (HJ-3)?
 - **OD-J3.** Is an allocator-only difference "unsaved changes" (J-03)?
@@ -436,8 +498,11 @@ These are what the tests actually assert:
 ## Unresolved dependencies and open questions
 
 - No device run in this audit exercised the persistence, recovery or JNI
-  hardening classes. Their newest aggregate evidence is from the older tree
-  `fa0b6b4` (`36607747079`).
+  hardening classes. `HomeFlowTest` and `EditorWorkspaceProjectActionsTest`
+  ran in C2 `40782861799` on an identical product/test tree; for
+  `ProjectAutosaveRecoveryTest`, `JniBoundaryHardeningTest` and
+  `ObjectCommandsTest` the newest aggregate is from the older tree `fa0b6b4`
+  (`36607747079`).
 - Whether `renameTo` ever fails to replace on a shipped Android filesystem
   (J-04 likelihood, HJ-2) needs a device or filesystem test.
 - The ProjectProcessDeathTest flow needs the PowerShell persistence script.
@@ -456,3 +521,41 @@ These are what the tests actually assert:
   - Surface hidden-body edits.
 - The canonical master plan and owner-decision sources are not available,
   per `BEFORE.md`.
+
+## Round 2 — objections from seat C and responses
+
+Each objection was re-checked by read-only source and test inspection at
+`70a6c14`, plus `git diff --stat 30b561b 70a6c14 -- app/src/main app/src/androidTest`
+(empty). No new binaries were run. Corrections are applied above in this file
+and in `work/req_J.tsv`. Unless a row says otherwise, nothing remains UNRESOLVED.
+
+| # | Objection (seat C) | Re-verification | Response | Status |
+| --- | --- | --- | --- | --- |
+| C-1 | ADV-063 / J-05: the real revolve-axis pick IS device-tested; withdraw | `CadRevolveOwnerTest.java:555-566` presses `R.id.sketch_revolve_begin`; `:129-131` asserts `REVOLVE_AXIS_PICKING`; `tapAxis` (`:619-636`) → `realGesture` (`:725-747`) dispatches real `MotionEvent` DOWN/UP through the decor view and asserts the tapped entity is the axis; `devRev05` presses `sketch_revolve_change_axis` (`:314`). Class is in `40782861799` 67/67 at `30b561b` (`cad-r2-c2-picking-seam/TESTS.md:75`), and the tree is identical | **CONCEDED.** ADV-063 → PASS-SOURCE-AND-RECORDED-RUNTIME (E3 `40782861799`). The "No androidTest file references it" sentence and the Gaps bullet are withdrawn. My grep searched only the JNI name. | Resolved |
+| C-2 | J-05 / ADV-064 overstated; restrict the seam claim; add the stale javadoc | `CadFillPickR2Test` has 9 `realGesture` call sites. `nativeToggle` (`:933-940`) is setup. `CadSketchDraftingOwnerTest:222-237` chooses dimension targets with real taps. `sketchToggleRegion` has no product caller (only `NativeViewport.java:2835`). `CadPlanarFaceRuntimeTest.toggleFace` javadoc (`:521-529`) names a "precision surface's row path"; the real row selects ONE region (`SketchEditorView.java:538-545`) | **CONCEDED.** J-05 stays P3. The seam claim is restricted to `sketchSetRevolveAxis` (`CadParametricHistoryOwnerTest:241`, `CadRetainedSketchOwnerTest:1262`) and `CadPlanarFaceRuntimeTest:529`. The stale javadoc is added as DOC-DIVERGENCE. | Resolved |
+| C-3 | J-01 / ADV-051 hidden-body edit is not a rule breach → BLOCKED-OWNER; the "no preview" wording is too strong | JNI gaps confirmed (`forgeshape_jni.cpp:7137-7193`, `7205-7250`). `PRODUCT.md:530-535` lets a hidden body be selected from its row. GUARD-2 is Sculpt-only. `applyCadOperationPreviewLocked` (`:1758-1765`) substitutes only a target already in the snapshot. The sketch overlay is set regardless (`:1988-1992`) | **CONCEDED.** ADV-051 → BLOCKED-OWNER (OD-J1), H2-pending-decision. The missing SOLID candidate is recorded as PARTIAL P3. That observation stands on CAD-VERTICAL-SLICE-R1 "the renderer draws that evaluation", which does not happen for a target outside the snapshot. The wording is now "no solid candidate is drawn; the sketch overlay and extrude arrow are". | Resolved |
+| C-4 | Locked half of J-01 / ADV-053 points the wrong way | `PRODUCT.md:537-542` ("Everything else still works"). CLAUDE.md Stage 018A names two lock guards. Freeform `BodyLocked` (`forgeshape_freeform_session.cpp:278`) appears in no owner doc; the only `BodyLocked` hit is ARCHITECTURE.md:4990, which is about the transform rejection | **CONCEDED.** CAD/Surface lock behaviour → PASS-SOURCE (E2). ADV-053 → DOC-DIVERGENCE (Freeform outlier), and OD-J1 is reworded to ask about it. | Resolved |
+| C-5 | ADV-046: horizon H1→H0, grade E2→E1 (Seat A) | `importGlbDurable` guards only Sculpt (`:8594-8600`). `sceneAddBody` refuses `in_sketch` (`:3246-3265`). The rule is CAD-R0-A1A2 (delivered). `SEAT_A.md:134` `SEATA_IMPORT_DURING_SKETCH=ACCEPTED` | **CONCEDED.** H0, E1 (Seat A's diagnostic). P2 DEFECT-CONFIRMED is kept. | Resolved |
+| C-6 | ADV-027: "silent loss" → "unannounced overwrite" | `EditorWorkspaceView.java:2665-2678`, `5458-5471`, `2656`. `strings.xml:62-63` | **CONCEDED.** Reworded in the A-01 re-verification and in the ADV-027 expected behaviour. P1 is kept. | Resolved |
+| C-7 | ADV-026: H1→H0; add DOC-DIVERGENCE for `PRODUCT.md:193-194` | `onRecoverRequested` (`:5675-5679`) clears the checkpoint and notes the project persisted. `PRODUCT.md:193-194` "recovered is not asked about" | **CONCEDED.** H0 (CLAUDE.md Autosave rule). The DOC-DIVERGENCE note is added to the dependencies column. | Resolved |
+| C-8 | ADV-067: wrong cause and wrong fix | `ExactExpression.java:35` maps `,`→`.`. The three canvas editors parse with `LengthUnit.parse` (`CadExtrudeCanvasView:1284`, `SketchDimensionLabelView:264`, `BodyDimensionLabelsView:302`). Their key listeners are `"0123456789.-"` (`:644`, `:112`, `:127`). `CadRevolveAngleLabelView:87` and `NumericPropertyRow:109` allow `,` | **CONCEDED.** The cause is now the key-listener allowed set, and the fix is "add `,` to the three key listeners". E2, DEFECT-CONFIRMED, owned by F-05. J3 now evidences only that the parser works. | Resolved |
+| C-9 | ADV-061: seams are inert, not compiled out; the guard does not probe them; the guard run had a rerun | `ci-release-selftest-guard.sh:11-17` probes `SelfTests` symbols and token strings only. No-op bodies at `forgeshape_jni.cpp:7967-7972` and `:9083`. `run_status.txt` records `guard_exit=2` at 00:54:48. `release_guard.txt` mtime is 00:57:29 and reads PASS | **CONCEDED.** Self-test absence: E1 PASS-REPRODUCED, stated as coming from the unrecorded rerun. Debug seams: PASS-SOURCE (E2), "inert in release". | Resolved; the rerun's own exit status is not recorded in `run_status.txt` and stays an open provenance note |
+| C-10 | Positive claim 2 over-generalised | `j4_replay.out` has exactly four refusals. J5 probes numeric values | **CONCEDED.** Reworded to the four probed refusals plus the 93 numeric refusals. The unprobed refusals are listed. | Resolved |
+| C-11 | ADV-001: J2 never reached a refused load | `J2_SUMMARY … loadRefused=0`. FSR1A_07 checks at `forgeshape_project_selftest.cpp:1834-1843` and FSR1A_13 at `:1845`. The fresh PROJECT suite is 256/0 (`host_selftests.txt:14`); that file prints suite totals, not check names | **CONCEDED.** The E1 now cites FSR1A_07 and FSR1A_13 through the fresh PROJECT suite pass. J2 is kept only for memory safety and decode/load agreement. | Resolved |
+| C-12 | Device dating for HomeFlowTest / EditorWorkspaceProjectActionsTest | `TESTS.md:75` lists both in `40782861799` 67/67. Product and androidTest trees are identical to `70a6c14` | **CONCEDED.** ADV-012, ADV-028, ADV-071, ADV-041 (and ADV-037, which also cites HomeFlowTest) now carry E3 `40782861799`. ADV-041 keeps its E1 from J4 and adds E3. "No device run on this tree" now applies only to `ProjectAutosaveRecoveryTest`, `JniBoundaryHardeningTest` and `ObjectCommandsTest`. | Resolved |
+| C-13 | ADV-039: J1 never cancels | `CADUXR1_33_edit_sketch_cancel_is_exact_non_mutation` (`forgeshape_sketch_ux_selftest.cpp:638`). Fresh SKETCH_UX is 118/0 | **CONCEDED.** That check is added as the Cancel evidence. The verdict stands. | Resolved |
+| C-14 | Claims 3, 4, 5, 7, 8 hold | — | Acknowledged. | Resolved |
+| C-15 | ADV-018 / J-03 has no repo source for the expectation | `projectSemanticFingerprint` mixes `nextObjectId` (`forgeshape_project_state.cpp:753`). The `.forge` rule stores the allocator mark. APP-H1 asks by fingerprint | **CONCEDED.** ADV-018 → BLOCKED-OWNER (OD-J3), H2-pending-decision. A note is added that CAD id marks are restored by Undo. | Resolved |
+| C-16 | J-02 / ADV-066: the sketch Offset field is seeded correctly at entry | `SketchModifyView.java:280-282` formats native metres in the display unit on entering Offset. `onDisplayUnitRequested` (`EditorWorkspaceView.java:6403-6416`) does not convert it | **CONCEDED.** Offset is narrowed to "not converted on a mid-mode unit change" (E2). Whether a unit chip is reachable while Offset mode is open was not checked (E5). Freeform and Surface stand as stated. | Resolved |
+| C-17 | J-04 / ADV-013 impact text | `saveProjectToSlot` returns before `ProjectCheckpoint.clear` on a failed write (`EditorWorkspaceView.java:5459-5463`) | **CONCEDED.** The impact is reworded: the previous slot copy is lost, the newer bytes sit orphaned in `.pending`, and current work stays in memory and in the checkpoint. P3 DEFECT-CONFIRMED is kept. | Resolved |
+| C-18 | HJ-1 scope note | CAD-UX-S1: extrude and revolve drags are session-only until commit | **CONCEDED.** Scope note added: gizmo and Freeform drags only. | Resolved |
+| C-19 | Revolve contradiction with SEAT_C | Same as C-1 | **CONCEDED** (withdrawn). | Resolved |
+| C-20 | Gap in SEAT_C (J-01, F-05 cross-refs) | This is a demand on seat C, not on seat J | No action for seat J. Seat J agrees that seat C should cross-reference J-01 (BLOCKED-OWNER, OD-J1) and F-05. | Seat C's to close |
+| C-21 | No contradiction on ADV-038/040/060, ADV-003/005 | — | Acknowledged. | Resolved |
+
+**Tally:** 18 substantive objections conceded (C-1 to C-13 and C-15 to C-19), 0 rebutted. C-14 and C-21 raise no objection, and C-20 is addressed to seat C. Seat J's net severity changes:
+- J-01 goes from DEFECT-CONFIRMED to BLOCKED-OWNER, plus a PARTIAL P3 for the missing solid preview.
+- J-03 goes from PARTIAL to BLOCKED-OWNER.
+- J-05 is narrowed, and its revolve half is withdrawn.
+- ADV-067 moves to DEFECT-CONFIRMED with the corrected cause.
+- ADV-026 and ADV-046 move to H0.

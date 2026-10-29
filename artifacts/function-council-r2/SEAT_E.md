@@ -125,13 +125,15 @@ failed)`, from `fc2/host_selftests.txt`.
 
 | Suite | Checks | What it asserts |
 | --- | --- | --- |
-| `PROJECT` | 256 / 0 | Encode/decode/validate; committed digests `FSR1A_12_*` and `IMP01A_19_*` (`forgeshape_project_selftest.cpp:2330-2360`) |
+| `PROJECT` | 256 / 0 [^cap] | Encode/decode/validate; committed digests `FSR1A_12_*` and `IMP01A_19_*` (`forgeshape_project_selftest.cpp:2330-2360`) |
 | `GLTF_EXPORT` | 93 / 0 | Bake, determinant refusals, determinism |
 | `GLTF_IMPORT` | 189 / 0 | Bounded subset, named refusals |
 | `RENDER_RECOVERY` | 24 / 0 | Recovery policy |
 | `SCENE` | 175 / 0 | Scene behaviour |
 | `CONSTRUCTION_HISTORY` | 147 / 0 | History, including the session-initialization bracket |
 | `FREEFORM`, `SURFACE` | — | Print `FRFM`/`SURF` golden digests; seat E compared all six with `sha256sum` of the committed fixtures: 6/6 equal |
+
+[^cap]: R2 (seat H obj 16): 256 is exactly the device result cap `kMaxProjectChecks = 256` (`forgeshape_jni.cpp:821`), and `Recorder::check` silently drops records past `max` (`forgeshape_project_selftest.cpp:21-32`). The host harness allocates 8192 (`scripts/host-native-selftests.sh:104`), so the next PROJECT check added will run on the host and vanish on the device. The device PROJECT token cannot grow without a cap change. E2.
 
 No host check covers GLB export of a CAD body, of a face-supported body, of a
 Freeform body or of a Surface body. `forgeshape_gltf_export_selftest.cpp`
@@ -145,7 +147,9 @@ contains no CAD case.
 - `BadPayload` (`object_state_bad_flags_v2`)
 - `UnresolvedReference` (`cad_dependency_cycle_v2`)
 - `InvalidSemanticValue` for every other `bad_*`, `noncanonical`,
-  `unresolved`, `overlap`, `conflict` and `surface_bad_ref` fixture
+  `unresolved`, `overlap`, `conflict` and `surface_bad_ref` fixture (22 of 28)
+
+R2 (seat H obj 15): the script only prints names; no expected-file was passed. The 22 `InvalidSemanticValue` refusals do not prove each file is refused for its PLANTED defect. E1 for the refusal, E2/E5 for the cause.
 
 **Corpus parity with the PowerShell builder.** NOT RUN locally (no `pwsh`).
 E3: CI FAST `40787465884` step ".forge corpus parity" (72/72), as recorded in
@@ -219,6 +223,12 @@ g++ -std=c++17 -O1 -Iapp/src/main/cpp -Iapp/src/main/cpp/third_party/manifold/in
   | `cad_face_chain_v2.forge` | bodies 2 and 3 | `(0,0,0)` | `y=1.0` and `y=1.5` |
 
   Independent bodies match exactly.
+- **Second divergence (R2, seat H obj 1).** `ConstructionScene::snapshot`
+  leaves out a face-supported body whose support does not resolve
+  (`forgeshape_scene.cpp:359-366`); export still writes it, at its stored
+  identity. The scene comment says a well-formed scene never reaches that
+  branch (load validates the graph; edits keep the lineage), so reachability is
+  E5; the fix must refuse such a body by name rather than export it.
 - **Impact.** A face-supported body is exported at the origin, unrotated,
   without any error. That breaks CLAUDE.md "it exports EVERY body" and
   PRODUCT.md "each in the place, at the angle … you put it". Any New Body made
@@ -229,8 +239,8 @@ g++ -std=c++17 -O1 -Iapp/src/main/cpp -Iapp/src/main/cpp/third_party/manifold/in
 - **Fix.** In `captureGlbExportScene`, take the model from
   `scene.resolveWorldModel(id, &model)`. Put its translation on the node and
   bake its linear 3×3 into the vertices, with normals by inverse-transpose, as
-  today. If it does not resolve, fail by name. Add one host check per face
-  fixture.
+  today. If it does not resolve, fail by name (not export at the origin). Add one
+  host check per face fixture.
 
 ### E-02 — P2 — The recovery question can reappear over the live project after an Activity recreation
 
@@ -259,10 +269,10 @@ g++ -std=c++17 -O1 -Iapp/src/main/cpp -Iapp/src/main/cpp/third_party/manifold/in
   - It contradicts PRODUCT.md "it asks — once" and CLAUDE.md "Nothing replaces
     the live project without the user saying so".
   - Recover reloads the checkpoint with no dirty question and clears the live
-    Construction Undo history. If the checkpoint was written before the
-    newest edits, those edits are lost: on a foreground recreate, `onStop`'s
-    immediate checkpoint runs on the old worker while the new constructor
-    reads the file.
+    Construction Undo history (E2).
+  - R2 regrade (seat H obj 2): "those edits are lost" is E5. It needs
+    `onStop`'s immediate checkpoint on the old worker to race the new
+    constructor's read; the race itself is HYP-E7.
 - **Grade and verdict.** E2, plus the E3 mechanism in `fsr1b04`.
   DEFECT-CONFIRMED.
 - **Fix.** Call `uiState.recordRecoveryResolved()` after the first
@@ -318,9 +328,11 @@ g++ -std=c++17 -O1 -Iapp/src/main/cpp -Iapp/src/main/cpp/third_party/manifold/in
   | `loadProjectDocument` | `InvalidSemanticValue` |
 
 - **Impact.** A recovery candidate can be offered and then fail to recover:
-  it is quarantined and reported. Open File reports "invalid". Both stay
-  fail-closed. Only a crafted file, or a corrupt one with a valid CRC, can
-  carry such a body.
+  it is quarantined and reported. Open File reports "invalid". The project
+  scene is unchanged by the refusal, but (R2, seat H obj 8) the JNI wrapper
+  has already cancelled any open sketch and ended its view before
+  `loadProjectDocument` refuses: see E-12. Only a crafted file, or a corrupt
+  one with a valid CRC, can carry such a body.
 - **Grade and verdict.** E1. DEFECT-CONFIRMED.
 - **Fix.** Regenerate every chain with later features in validation, and
   correct the two comments.
@@ -348,7 +360,10 @@ g++ -std=c++17 -O1 -Iapp/src/main/cpp -Iapp/src/main/cpp/third_party/manifold/in
 - **Grade and verdict.** E1. DEFECT-CONFIRMED.
 - **Fix.** Refuse `faceEdgeLocalIndex > 0xFFFF` in every face-token reader
   (v2 TopoRef, v5 support, v6 token), and state the bound in
-  `DATA_PACKAGE_SPEC.md` §7c.
+  `DATA_PACKAGE_SPEC.md` §7c. R2 (seat H obj 5): the `& 0xFFFF` mask is part
+  of the FORMAT lineage formula (`DATA_PACKAGE_SPEC.md:555`); the fix is a
+  decode-side bound only and must not change the code formula, or every
+  fixture's lineage token moves.
 
 ### E-07 — P3 — The Freeform edit session survives a project load with a stale selection
 
@@ -379,9 +394,12 @@ g++ -std=c++17 -O1 -Iapp/src/main/cpp -Iapp/src/main/cpp/third_party/manifold/in
   file is refused, the project stays live (by design, 2640-2645). Autosave's
   `checkpointedFingerprint` still equals it, so no new checkpoint is written
   until the next edit.
-- **Grade and verdict.** E2. DEFECT-CONFIRMED.
-- **Fix.** Retire the checkpoint only after the replacing project is live, or
-  reset the autosave baseline.
+- **Grade and verdict.** E2. R2 (seat H obj 7): PARTIAL, owner decision.
+  CLAUDE.md says Discard retires the checkpoint, and the user did say
+  Discard; whether a cancelled picker or refused file should restore
+  protection is a policy choice. P3.
+- **Fix (if the owner chooses protection).** Retire the checkpoint only after
+  the replacing project is live, or reset the autosave baseline.
 
 ### E-09 — P3 — A Sculpt project loads into Sculpt on a hidden active body (Stage027 GUARD-2 debt, CONFIRMED-OPEN)
 
@@ -398,8 +416,59 @@ g++ -std=c++17 -O1 -Iapp/src/main/cpp -Iapp/src/main/cpp/third_party/manifold/in
 - **Location.** `forgeshape_jni.cpp:8968-8990`. `ConstructionHistory::clear`
   sets `editOpen_ = false` (`forgeshape_history.cpp:221-227`), while
   `loadProjectDocument` refuses at `forgeshape_project_state.cpp:250`.
-- **Impact.** No shell path reaches it mid-drag today.
-- **Grade and verdict.** E2. DEFECT-CONFIRMED.
+- **Impact.** No shell path reaches it mid-drag today: `closeProject` is
+  called only from shell paths after the dirty guard
+  (`EditorWorkspaceView.java:2420, 2446, 2580, 2641, 2721`).
+- **Grade and verdict.** E2. R2 (seat H obj 13): PARTIAL (missing defensive
+  guard), P3/INFO. A guard asymmetry with no reachable wrong outcome is not a
+  confirmed defect.
+
+### E-12 — P3 — The JNI load wrapper mutates sketch, view and gesture state before a post-decode refusal (R2, from seat H obj 8)
+
+- **Location.** `forgeshape_jni.cpp:8463-8478`. Under `g_stateMutex`, before
+  `loadProjectDocument`, it clears `g_grabbing` and `g_strokePending`, calls
+  `sketchSession().cancel()` and `endSketchView()`.
+- **What is wrong.** `loadProjectDocument` can still refuse after a decode Ok:
+  `RefusedEditInProgress` (`forgeshape_project_state.cpp:250`), a validate
+  failure, `MissingRequiredSection` from `runtimeCanEvaluateProject`, or the
+  E-05 class (`InvalidSemanticValue`, `pf_gap.out`). The staged sketch or Edit
+  Sketch is then discarded and the camera moved by a load that fails.
+- **Reachability.** Open Saved Project / Open File are drawer rows, and the
+  mark is shown while sketching (`ProjectDrawerPolicy.java:109-111`). A clean
+  project skips the unsaved question. On a refusal the Java callers skip the
+  refresh (`EditorWorkspaceView.java:5490-5496`, `6095-6103`), so the chrome
+  can still describe a sketch native has cancelled (E5 for the visible effect).
+- **Grade and verdict.** E2. DEFECT-CONFIRMED. P3. Violates CLAUDE.md "a
+  failed load changes nothing at all" at the entry point the product calls.
+- **Fix.** Run `editInProgress`, validate and `runtimeCanEvaluateProject`
+  before the cancels, or move the cancels into the commit branch.
+
+### E-13 — P3 — A checkpoint can record a fingerprint for a state it did not encode (R2, from seat H obj 11 / SEAT_H H-02)
+
+- **Location.** `AutosaveController.performCheckpoint` reads
+  `projectFingerprint()` (`AutosaveController.java:157`) and `encodeProject()`
+  (`:173`) in two separate `g_stateMutex` acquisitions (`forgeshape_jni.cpp:8936-8947`,
+  `8385-8410`), then records the EARLIER fingerprint (`:189`).
+- **Outcome.** An edit during the encode followed by an Undo inside the 900 ms
+  debounce (`:60`) leaves `recovery.forge` holding the undone edit; the next
+  run sees fingerprint == recorded and never rewrites it.
+- **Grade and verdict.** E2 mechanism, timing E5. DEFECT-CONFIRMED (same grade
+  as SEAT_H H-02). P3.
+- **Fix.** Return fingerprint and bytes from one JNI call under one lock.
+
+### E-14 — P3 — A checkpoint write in flight can land after Save cleared it (was H-E1; R2, seat H obj 12)
+
+- **Location.** `saveProjectToSlot` (`EditorWorkspaceView.java:5458-5468`)
+  runs `ProjectCheckpoint.clear` on the UI thread; `performCheckpoint` writes on
+  the worker with no shared lock; `noteProjectPersisted` is posted behind any
+  in-flight write (`AutosaveController.java:202-218`), so it cannot prevent one.
+- **Outcome.** A `recovery.forge` survives Save, is never rewritten while the
+  fingerprint stays equal, and is offered at the next cold launch. Its state may
+  be OLDER than the slot, because its fingerprint and encode preceded Save.
+- **Grade and verdict.** E2 mechanism, timing E5. DEFECT-CONFIRMED, P3
+  (graded identically to E-13 / H-02).
+- **Fix.** Serialize `clear` through the autosave worker (post it, and have
+  `performCheckpoint` re-check a "cleared at generation" marker).
 
 ### E-11 — INFO — Documentation divergences
 
@@ -432,7 +501,7 @@ Grade E2. Verdict DOC-DIVERGENCE.
 
 ## Hypotheses (unproven)
 
-- **H-E1. An autosave write can land after Save clears it.** A checkpoint
+- **H-E1 → promoted to E-14 in round 2.** An autosave write can land after Save clears it. A checkpoint
   write in flight on the autosave worker can complete AFTER Save's
   `ProjectCheckpoint.clear()` (`EditorWorkspaceView.java:5467`). There is no
   shared lock between `write` and `clear`. That would leave a `recovery.forge`
@@ -450,9 +519,32 @@ Grade E2. Verdict DOC-DIVERGENCE.
 - **H-E3. A crash may undo a rename.** No parent-directory fsync follows the
   rename, so a power loss could revert it. The old file survives, so this is a
   durability, not a corruption, risk. E5.
-- **H-E4. Save can stall the UI thread.** Save encodes and fsyncs on the UI
-  thread (`saveProjectToSlot`), which could jank or ANR on large sculpt or
-  imported projects. E5.
+- **H-E4. Save can stall the UI thread and the viewport.** Save encodes and
+  fsyncs on the UI thread (`saveProjectToSlot`), which could jank or ANR on
+  large sculpt or imported projects. R2 (seat H obj 22): the encode holds
+  `g_stateMutex` (`forgeshape_jni.cpp:8391`), which the render loop takes every
+  frame to snapshot the scene (`forgeshape_jni.cpp:1870-1872`; seat H cited
+  1822-1826, which is the `g_viewport.mutex` wait), so the viewport freezes for
+  the whole encode too; the same applies to the autosave worker's encode.
+  Mechanism E2; reachability at large sizes E5, OWNER-PHYSICAL-UNVERIFIED.
+- **HYP-E6. Two autosave writers can destroy the valid checkpoint.** Across a
+  recreation the old controller's `quitSafely()` still runs onStop's queued
+  immediate checkpoint (`AutosaveController.java:283-289`) while the new
+  constructor creates a second controller (`EditorWorkspaceView.java:1019`).
+  `ProjectCheckpoint.write` (`ProjectCheckpoint.java:85-125`) is static, has no
+  lock, and every writer uses `recovery.forge.pending`. If two overlap, the
+  first rename succeeds, the second's rename fails (its pending is gone), and
+  the fallback `checkpoint.delete() && pending.renameTo(checkpoint)` (`:112`)
+  deletes the valid checkpoint and leaves none; both streams may also have
+  written the same inode. Mechanism E2, reachability E5 (needs the new
+  controller to write while the old one is still writing).
+- **HYP-E7. A checkpoint read can race a rename and quarantine a valid file.**
+  `read()` takes `checkpoint.length()` (`:133`) and then opens and `readFully`s
+  (`:141`). A rename in between gives EOF (null → `PROJECT_NO_DATA`) or a
+  prefix (`Truncated`); `offerRecoveryIfPresent`
+  (`EditorWorkspaceView.java:5583-5595`) then quarantines the session's own
+  valid checkpoint and reports "recovery failed". E-02's foreground recreation
+  reaches this read. Mechanism E2, reachability E5.
 - **H-E5. Import during a sketch may misplace the next commit.** A face
   sketch's Finish after an import that switched the active body could commit
   against an unexpected target. Not traced to a concrete wrong outcome. E5.
@@ -496,9 +588,12 @@ Grade E2. Verdict DOC-DIVERGENCE.
   - Every valid committed fixture (43) re-encodes byte-identically, and so
     does a load → capture → encode round trip (E1).
   - The PowerShell builder parity is 72/72 in CI FAST `40787465884` (E3).
-- **Every refusal fixture is refused by its expected name** (28 of 28), and
-  every valid CAD fixture regenerates (E1, `host_corpus_verdicts.txt`).
-- **Load fails closed, and a successful load starts a fresh history.**
+- **28/28 refusal fixtures are refused, with the status the self-tests and
+  builder expect; the specific planted cause is not asserted** (22 are the
+  coarse `InvalidSemanticValue`). Every valid CAD fixture regenerates. E1 for
+  the refusal, E2/E5 for the cause (R2, seat H obj 15).
+- **Load fails closed at `loadProjectDocument` (not at the JNI entry point,
+  see E-12), and a successful load starts a fresh history.**
   - Atomic staging is at `forgeshape_project_state.cpp:265-400`; the commit
     cannot fail; `history.clear()` is at line 430 (E2).
   - Fuzz shows 0 violations (E1).
@@ -519,6 +614,8 @@ Grade E2. Verdict DOC-DIVERGENCE.
 | J-E2 | negative, fail-closed | A project open with an Undo depth | Open File → pick `cad_bad_two_sides_v4.forge` | Refused as invalid; scene, fingerprint and Undo depth unchanged |
 | J-E3 | negative, regression for E-02 | Cold launch, no candidate | Edit → wait for checkpoint → Settings → change palette | NO recovery prompt; project not dirty after an earlier Save (E-04) |
 | J-E4 | positive, regression for E-01 | — | CAD body → New Sketch on its top cap → New Body extrude → Export | Each node's translation plus baked geometry equals the drawn world AABB of every body |
+| J-E6 | negative, regression for HYP-E6/E7 | A large project open, edited, no candidate at launch | Trigger a recreation (palette change) while a checkpoint of the large project is being written | Exactly one valid `recovery.forge`; no `.pending` left; no quarantine; no recovery prompt |
+| J-E7 | negative, regression for E-12 | A clean project with an Edit Sketch open | Open File → pick a file that decodes Ok but fails load (E-05 class) | Refused; the staged sketch, the camera and the chrome are exactly as before |
 | J-E5 | negative, regression for E-03 | A project open | New Sketch (Editing) → open the ForgeShape mark | No Import GLB row; a direct `importGlbDurable` answers a sketch refusal and records no step |
 
 ## Owner decisions needed
@@ -556,3 +653,36 @@ COMPLETE for the seat's assigned scope (codec, corpus, fingerprint, Android
 persistence/lifecycle, GLB bounds, D1..D7 plus the sketch-import re-check).
 Device-runtime claims are E3 historic by environment, and corpus parity with
 the PowerShell builder is E3 (CI FAST) because there is no `pwsh`.
+
+## Round 2 — objections from seat H and responses
+
+Seat E re-checked each objection against the source at `70a6c14` (read-only;
+no build, no product edit). Corrections are applied in place above and in
+`work/req_E.tsv`. Commands run: `sed`/`grep`/`awk` over the named files, and
+`/tmp/claude-0/fc2-scratch/E/r2_tsv.py`, `r2_md.py` to apply the edits.
+
+| # | Objection | Response | Re-verification | Status |
+| --- | --- | --- | --- | --- |
+| 1 | E-01 upheld; add: export writes a face-supported body that `snapshot` omits when its support does not resolve | CONCEDE (addition) | `forgeshape_scene.cpp:359-366` skips unresolved; `forgeshape_gltf_export.cpp:176-187` has no such check. The scene comment says a well-formed scene never reaches the branch, so reachability is E5. Added to E-01 and its fix (refuse by name) | RESOLVED |
+| 2 | E-02 upheld; "those edits are lost" is E5 | CONCEDE | Sub-claim regraded E5 in E-02; the race is HYP-E7 | RESOLVED |
+| 3 | E-03 upheld | AGREED | — | RESOLVED |
+| 4 | E-04 upheld | AGREED | — | RESOLVED |
+| 5 | E-06 upheld; fix must not change the lineage formula | CONCEDE (addition) | `DATA_PACKAGE_SPEC.md:555` states `(edgeLocalIndex & 0xFFFF)` in the lineage `code`. Fix text now says decode-side bound only | RESOLVED |
+| 6 | E-07, E-09 upheld | AGREED | — | RESOLVED |
+| 7 | E-08: owner decision, not plain defect | CONCEDE | CLAUDE.md "Discard retires the checkpoint" is literally what the code does. E-08 / DOC-048 now PARTIAL + owner decision, P3 | RESOLVED |
+| 8 | JNI load mutates sketch/view/gesture before a post-decode refusal | CONCEDE | `forgeshape_jni.cpp:8463-8478` confirmed; refusals after it at `forgeshape_project_state.cpp:250-262` (edit in progress, validate, runtimeCanEvaluate) and E-05 class. Open rows reachable while sketching (`ProjectDrawerPolicy.java:109-111`); clean project skips the question; Java skips refresh on refusal (`EditorWorkspaceView.java:5490-5496`, `6095-6103`). Struck "Both stay fail-closed" from E-05; new E-12 / DOC-087 (P3, E2, DEFECT-CONFIRMED); DOC-011 and DOC-062 now PARTIAL; positive claim qualified to `loadProjectDocument`. My fuzz's "0 fail-closed violations" measured scene/fingerprint/body count only, so it does not contradict this | RESOLVED |
+| 9 | Unsynchronized checkpoint I/O; two workers across a recreation | CONCEDE | `ProjectCheckpoint.write` static, no lock, one `.pending` path (`ProjectCheckpoint.java:47, 85-125`); fallback at `:112` deletes the valid file when the second rename fails; `read()` length at `:133` then open/readFully. `quitSafely` keeps due messages (`AutosaveController.java:283-289`). Added HYP-E6, HYP-E7 (mechanism E2, reachability E5); DOC-038 and DOC-041 now PARTIAL ("single-writer only"); journey J-E6 | RESOLVED |
+| 10 | DOC-077 overstated | CONCEDE | `onRendererRestartRequired` (`EditorWorkspaceView.java:6147-6154`) has one production caller, `checkRendererLifecycle` from `onResume` (`ForgeShapeActivity.java:335-336, 371-382`); the class comment's "debug injection's follow-up" caller does not exist in the Activity. Split into DOC-077a (PASS-SOURCE-AND-RECORDED-RUNTIME, E3) and DOC-077b (PARTIAL, E2, deferred to next resume; cross-ref SEAT_H H-01) | RESOLVED |
+| 11 | Fingerprint/encode skew (H-02) missing | CONCEDE | `AutosaveController.java:157, 173, 189`; JNI `projectFingerprint` and `encodeProject` lock separately. New E-13 / DOC-086, DEFECT-CONFIRMED, E2, P3 | RESOLVED |
+| 12 | H-E1/DOC-084 graded inconsistently with H-02 | CONCEDE | `saveProjectToSlot` clear at `EditorWorkspaceView.java:5465` on UI thread; `noteProjectPersisted` posted behind the in-flight task (`AutosaveController.java:202-218`). Promoted to E-14; DOC-084 DEFECT-CONFIRMED, E2, P3 (timing E5), same grade as E-13 | RESOLVED |
+| 13 | E-10/DOC-051 should be PARTIAL | CONCEDE | `closeProject` callers: `EditorWorkspaceView.java:2420, 2446, 2580, 2641, 2721`, all shell paths; no reachable wrong outcome shown. Now PARTIAL, P3/INFO. D7 stays listed as an open guard asymmetry | RESOLVED |
+| 14 | DOC-039 horizon wrong | CONCEDE | Relabelled H0; PARTIAL with the concurrent-writer note | RESOLVED |
+| 15 | "Refused by expected name 28/28" overstated | CONCEDE, with a count correction | `fc2/host_corpus_verdicts.txt`: 22 (not 24) of the 28 are `InvalidSemanticValue`; the others are BadPayload, ChecksumMismatch, Truncated, UnknownRequiredSection, UnresolvedReference, UnsupportedMajor (1 each). No expected-file argument was given. Claim reworded; DOC-010 graded E1 (refusal) / E2-E5 (cause) | RESOLVED (count differs from seat H by 2) |
+| 16 | PROJECT 256/0 equals the device cap | CONCEDE | `kMaxProjectChecks = 256` (`forgeshape_jni.cpp:821`); `Recorder::check` drops past `max` (`forgeshape_project_selftest.cpp:21-32`); host harness allocates 8192 (`scripts/host-native-selftests.sh:104`), so the host emitting exactly 256 is the suite's true size today. Footnote added | RESOLVED |
+| 17 | Load does not end the chooser, Dimensions, gizmo | CONCEDE | `loadProject` has no `supportChooser().cancel()` (closeProject does, `jni:8976`). Whether Java's post-load `dismissPrimarySurfacesExcept(null)` / `onNativeStateChanged` ends them was not traced. DOC-052 scope extended; those parts UNDETERMINED-SOURCE-GAP / E5. E-07 stands | UNRESOLVED (trace pending) |
+| 18-21 | Positive claims upheld (writer canonical; fuzz at domain level; D1/D5 closed; release has no self-tests) | AGREED | `guard_exit=2` vs `RELEASE_SELFTEST_GUARD=PASS` stays an orchestrator question | UNRESOLVED (orchestrator: guard exit code) |
+| 22 | H-E4: add render-thread half | CONCEDE, with a line correction | The render loop takes `g_stateMutex` per frame at `forgeshape_jni.cpp:1870-1872` (seat H's 1822-1826 is the `g_viewport.mutex` wait). `encodeProject` holds `g_stateMutex` (`:8391`). The autosave worker's encode freezes the viewport the same way. Kept as hypothesis; reachability E5, OWNER-PHYSICAL-UNVERIFIED | RESOLVED |
+
+Totals: 15 objections conceded (incl. additions: 1, 2, 5, 7-17, 22), 0 rebutted, 7 agreed
+without change. Two items stay open: objection 17's chooser/Dimensions trace
+and the release-guard exit code.
