@@ -1,0 +1,431 @@
+FIXTURE cad_arc_profile_v3.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_bad_arc_v3.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_dimension_ref_v8.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_extent_v4.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_face_ref_v2.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_feature_kind_v7.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_feature_order_v5.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_feature_ref_v5.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_operation_v5.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_plane_v1.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_region_v5.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_selection_kind_v6.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_sketch_ref_v6.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_spline_v3.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_two_sides_v4.forge decode=InvalidSemanticValue
+FIXTURE cad_circle_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_construction_v8.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_dependency_cycle_v2.forge decode=UnresolvedReference
+FIXTURE cad_dimension_conflict_v8.forge decode=InvalidSemanticValue
+FIXTURE cad_dimension_driving_v8.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_dimension_reference_v8.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_duplicate_sketch_id_v6.forge decode=InvalidSemanticValue
+FIXTURE cad_face_chain_v2.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER cad_face_chain_v2.forge sculpt_only=0 first_diff=535 section=CADB payload_off=199 old=00 new=45 sizes=594/594
+FIXTURE cad_face_curve_v3.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_face_extent_v4.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER cad_face_extent_v4.forge sculpt_only=0 first_diff=553 section=CADB payload_off=217 old=00 new=ff sizes=629/629
+FIXTURE cad_face_lens_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_face_protrusion_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_face_sketch_cap_v2.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_face_sketch_side_v2.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER cad_face_sketch_side_v2.forge sculpt_only=0 first_diff=358 section=CADB payload_off=102 old=00 new=94 sizes=425/425
+FP_EQUAL_BYTES_DIFFER cad_face_sketch_side_v2.forge sculpt_only=0 first_diff=357 section=CADB payload_off=101 old=00 new=08 sizes=425/425
+FP_EQUAL_BYTES_DIFFER cad_face_sketch_side_v2.forge sculpt_only=0 first_diff=358 section=CADB payload_off=102 old=00 new=20 sizes=425/425
+FIXTURE cad_face_two_circles_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_feature_add_v5.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_feature_chain_v5.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER cad_feature_chain_v5.forge sculpt_only=0 first_diff=420 section=CADB payload_off=244 old=00 new=a1 sizes=496/496
+FIXTURE cad_feature_cut_v5.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER cad_feature_cut_v5.forge sculpt_only=0 first_diff=286 section=CADB payload_off=110 old=00 new=6b sizes=362/362
+FP_EQUAL_BYTES_DIFFER cad_feature_cut_v5.forge sculpt_only=0 first_diff=286 section=CADB payload_off=110 old=00 new=08 sizes=362/362
+FIXTURE cad_fragment_support_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_mixed_curve_profile_v3.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_mixed_selection_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER cad_mixed_selection_v6.forge sculpt_only=0 first_diff=267 section=CADB payload_off=91 old=00 new=c1 sizes=497/497
+FP_EQUAL_BYTES_DIFFER cad_mixed_selection_v6.forge sculpt_only=0 first_diff=268 section=CADB payload_off=92 old=00 new=3d sizes=497/497
+FIXTURE cad_noncanonical_face_v6.forge decode=InvalidSemanticValue
+FIXTURE cad_overlap_face_v6.forge decode=InvalidSemanticValue
+FIXTURE cad_rectangle_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_region_hole_v5.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_revolve_bad_axis_v7.forge decode=InvalidSemanticValue
+FIXTURE cad_revolve_full_v7.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_revolve_partial_v7.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_sketch_shared_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_spline_face_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_spline_profile_v3.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_symmetric_v4.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_two_sides_v4.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_unresolved_face_v6.forge decode=InvalidSemanticValue
+FIXTURE construction_imported_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=480 section=IMPT payload_off=82 old=00 new=3f sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=438 section=IMPT payload_off=40 old=00 new=40 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=448 section=IMPT payload_off=50 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=441 section=IMPT payload_off=43 old=00 new=01 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=450 section=IMPT payload_off=52 old=00 new=10 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=440 section=IMPT payload_off=42 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=454 section=IMPT payload_off=56 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=432 section=IMPT payload_off=34 old=00 new=40 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=479 section=IMPT payload_off=81 old=40 new=00 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=474 section=IMPT payload_off=76 old=00 new=80 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=454 section=IMPT payload_off=56 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=489 section=IMPT payload_off=91 old=00 new=10 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=532 section=IMPT payload_off=134 old=01 new=00 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=455 section=IMPT payload_off=57 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=481 section=IMPT payload_off=83 old=00 new=02 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=452 section=IMPT payload_off=54 old=00 new=56 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=494 section=IMPT payload_off=96 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=468 section=IMPT payload_off=70 old=00 new=75 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=475 section=IMPT payload_off=77 old=00 new=16 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=438 section=IMPT payload_off=40 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=469 section=IMPT payload_off=71 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=517 section=IMPT payload_off=119 old=00 new=a4 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=453 section=IMPT payload_off=55 old=00 new=04 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=486 section=IMPT payload_off=88 old=00 new=80 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=447 section=IMPT payload_off=49 old=3f new=2f sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=472 section=IMPT payload_off=74 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=508 section=IMPT payload_off=110 old=00 new=a6 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=439 section=IMPT payload_off=41 old=00 new=18 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=468 section=IMPT payload_off=70 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=516 section=IMPT payload_off=118 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=438 section=IMPT payload_off=40 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=488 section=IMPT payload_off=90 old=00 new=e9 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=461 section=IMPT payload_off=63 old=00 new=02 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=513 section=IMPT payload_off=115 old=00 new=01 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=442 section=IMPT payload_off=44 old=00 new=9c sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=481 section=IMPT payload_off=83 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=462 section=IMPT payload_off=64 old=10 new=6e sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=433 section=IMPT payload_off=35 old=00 new=08 sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=473 section=IMPT payload_off=75 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=476 section=IMPT payload_off=78 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=436 section=IMPT payload_off=38 old=00 new=ff sizes=570/570
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0 first_diff=446 section=IMPT payload_off=48 old=c0 new=c8 sizes=570/570
+FIXTURE construction_multibody_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE corrupt_crc_v1.forge decode=ChecksumMismatch
+FIXTURE freeform_bad_topology_v1.forge decode=InvalidSemanticValue
+FIXTURE freeform_box_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE freeform_crease_symmetry_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE imported_only_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=240 section=IMPT payload_off=64 old=10 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=249 section=IMPT payload_off=73 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=231 section=IMPT payload_off=55 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=235 section=IMPT payload_off=59 old=00 new=63 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=240 section=IMPT payload_off=64 old=10 new=00 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=299 section=IMPT payload_off=123 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=211 section=IMPT payload_off=35 old=00 new=40 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=211 section=IMPT payload_off=35 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=221 section=IMPT payload_off=45 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=214 section=IMPT payload_off=38 old=00 new=7e sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=210 section=IMPT payload_off=34 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=292 section=IMPT payload_off=116 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=248 section=IMPT payload_off=72 old=00 new=01 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=230 section=IMPT payload_off=54 old=00 new=20 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=224 section=IMPT payload_off=48 old=c0 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=299 section=IMPT payload_off=123 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=217 section=IMPT payload_off=41 old=00 new=40 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=239 section=IMPT payload_off=63 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=286 section=IMPT payload_off=110 old=00 new=20 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=238 section=IMPT payload_off=62 old=00 new=10 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=289 section=IMPT payload_off=113 old=00 new=04 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=294 section=IMPT payload_off=118 old=00 new=27 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=219 section=IMPT payload_off=43 old=00 new=68 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=237 section=IMPT payload_off=61 old=00 new=40 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=231 section=IMPT payload_off=55 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=213 section=IMPT payload_off=37 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=287 section=IMPT payload_off=111 old=00 new=01 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=272 section=IMPT payload_off=96 old=00 new=b8 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=229 section=IMPT payload_off=53 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=223 section=IMPT payload_off=47 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=287 section=IMPT payload_off=111 old=00 new=02 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=253 section=IMPT payload_off=77 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=283 section=IMPT payload_off=107 old=00 new=10 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=279 section=IMPT payload_off=103 old=00 new=c5 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=299 section=IMPT payload_off=123 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=221 section=IMPT payload_off=45 old=00 new=01 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=224 section=IMPT payload_off=48 old=c0 new=4c sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=250 section=IMPT payload_off=74 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=256 section=IMPT payload_off=80 old=60 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=237 section=IMPT payload_off=61 old=00 new=04 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=215 section=IMPT payload_off=39 old=00 new=01 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=227 section=IMPT payload_off=51 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=241 section=IMPT payload_off=65 old=40 new=c0 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=253 section=IMPT payload_off=77 old=00 new=04 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=286 section=IMPT payload_off=110 old=00 new=01 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=274 section=IMPT payload_off=98 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=253 section=IMPT payload_off=77 old=00 new=34 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=237 section=IMPT payload_off=61 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=266 section=IMPT payload_off=90 old=00 new=9e sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=253 section=IMPT payload_off=77 old=00 new=fc sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=280 section=IMPT payload_off=104 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=286 section=IMPT payload_off=110 old=00 new=3f sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=230 section=IMPT payload_off=54 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=250 section=IMPT payload_off=74 old=00 new=6a sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=238 section=IMPT payload_off=62 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=216 section=IMPT payload_off=40 old=00 new=d2 sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=242 section=IMPT payload_off=66 old=00 new=ff sizes=348/348
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0 first_diff=287 section=IMPT payload_off=111 old=00 new=cb sizes=348/348
+FIXTURE imported_sculpt_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=361 section=IMPT payload_off=44 old=00 new=01 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=240 section=SCUL payload_off=64 old=3f new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=204 section=SCUL payload_off=28 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=437 section=IMPT payload_off=120 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=351 section=IMPT payload_off=34 old=00 new=20 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=427 section=IMPT payload_off=110 old=00 new=02 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=356 section=IMPT payload_off=39 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=362 section=IMPT payload_off=45 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=221 section=SCUL payload_off=45 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=232 section=SCUL payload_off=56 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=233 section=SCUL payload_off=57 old=00 new=01 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=243 section=SCUL payload_off=67 old=50 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=225 section=SCUL payload_off=49 old=00 new=e7 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=392 section=IMPT payload_off=75 old=00 new=c8 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=217 section=SCUL payload_off=41 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=233 section=SCUL payload_off=57 old=00 new=08 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=224 section=SCUL payload_off=48 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=351 section=IMPT payload_off=34 old=00 new=56 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=222 section=SCUL payload_off=46 old=00 new=ba sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=240 section=SCUL payload_off=64 old=3f new=00 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=361 section=IMPT payload_off=44 old=00 new=5f sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=443 section=IMPT payload_off=126 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=220 section=SCUL payload_off=44 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=443 section=IMPT payload_off=126 old=00 new=20 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=379 section=IMPT payload_off=62 old=00 new=10 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=374 section=IMPT payload_off=57 old=00 new=20 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=214 section=SCUL payload_off=38 old=00 new=01 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=392 section=IMPT payload_off=75 old=00 new=08 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=236 section=SCUL payload_off=60 old=3f new=00 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=354 section=IMPT payload_off=37 old=00 new=40 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=225 section=SCUL payload_off=49 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=207 section=SCUL payload_off=31 old=00 new=40 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=395 section=IMPT payload_off=78 old=00 new=01 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=377 section=IMPT payload_off=60 old=00 new=7d sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=420 section=IMPT payload_off=103 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=209 section=SCUL payload_off=33 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=372 section=IMPT payload_off=55 old=00 new=94 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=427 section=IMPT payload_off=110 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=215 section=SCUL payload_off=39 old=00 new=80 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=205 section=SCUL payload_off=29 old=00 new=75 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=239 section=SCUL payload_off=63 old=40 new=00 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=244 section=SCUL payload_off=68 old=40 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=360 section=IMPT payload_off=43 old=00 new=98 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=207 section=SCUL payload_off=31 old=00 new=ef sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=368 section=IMPT payload_off=51 old=00 new=c5 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=214 section=SCUL payload_off=38 old=00 new=91 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=221 section=SCUL payload_off=45 old=00 new=8e sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=227 section=SCUL payload_off=51 old=20 new=00 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=204 section=SCUL payload_off=28 old=00 new=01 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=205 section=SCUL payload_off=29 old=00 new=ac sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=437 section=IMPT payload_off=120 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=211 section=SCUL payload_off=35 old=e0 new=79 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=207 section=SCUL payload_off=31 old=00 new=10 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=363 section=IMPT payload_off=46 old=00 new=c1 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=225 section=SCUL payload_off=49 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=211 section=SCUL payload_off=35 old=e0 new=60 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=365 section=IMPT payload_off=48 old=c0 new=40 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=236 section=SCUL payload_off=60 old=3f new=00 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=377 section=IMPT payload_off=60 old=00 new=8d sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=411 section=IMPT payload_off=94 old=00 new=20 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=222 section=SCUL payload_off=46 old=00 new=1e sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=221 section=SCUL payload_off=45 old=00 new=ff sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=216 section=SCUL payload_off=40 old=00 new=80 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=429 section=IMPT payload_off=112 old=00 new=33 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=429 section=IMPT payload_off=112 old=00 new=af sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1 first_diff=199 section=SCUL payload_off=23 old=80 new=88 sizes=489/489
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0 first_diff=432 section=IMPT payload_off=115 old=00 new=01 sizes=489/489
+FIXTURE mixed_cad_extent_v4.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE mixed_cad_face_v2.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=677 section=IMPT payload_off=119 old=00 new=ff sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=660 section=IMPT payload_off=102 old=00 new=8c sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=623 section=IMPT payload_off=65 old=40 new=ff sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=638 section=IMPT payload_off=80 old=60 new=68 sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=654 section=IMPT payload_off=96 old=00 new=78 sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=637 section=IMPT payload_off=79 old=00 new=6f sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=616 section=IMPT payload_off=58 old=00 new=02 sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=598 section=IMPT payload_off=40 old=00 new=ff sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=657 section=IMPT payload_off=99 old=00 new=04 sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=653 section=IMPT payload_off=95 old=00 new=10 sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=855 section=CADB payload_off=101 old=00 new=ff sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=604 section=IMPT payload_off=46 old=00 new=01 sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=855 section=CADB payload_off=101 old=00 new=26 sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=627 section=IMPT payload_off=69 old=00 new=ff sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=652 section=IMPT payload_off=94 old=00 new=f3 sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=611 section=IMPT payload_off=53 old=00 new=ff sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=681 section=IMPT payload_off=123 old=00 new=b3 sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=631 section=IMPT payload_off=73 old=00 new=01 sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=640 section=IMPT payload_off=82 old=00 new=ff sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=671 section=IMPT payload_off=113 old=00 new=80 sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=676 section=IMPT payload_off=118 old=00 new=8b sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=609 section=IMPT payload_off=51 old=00 new=70 sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=625 section=IMPT payload_off=67 old=00 new=ff sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=611 section=IMPT payload_off=53 old=00 new=ff sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=628 section=IMPT payload_off=70 old=00 new=ff sizes=923/923
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0 first_diff=623 section=IMPT payload_off=65 old=40 new=e9 sizes=923/923
+FIXTURE mixed_cad_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE mixed_imported_sculpt_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1172 section=IMPT payload_off=246 old=00 new=bd sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1032 section=IMPT payload_off=106 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=840 section=SCUL payload_off=168 old=00 new=2d sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=845 section=SCUL payload_off=173 old=3f new=00 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=819 section=SCUL payload_off=147 old=00 new=01 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1166 section=IMPT payload_off=240 old=00 new=80 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1001 section=IMPT payload_off=75 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1007 section=IMPT payload_off=81 old=40 new=00 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=696 section=SCUL payload_off=24 old=00 new=02 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1179 section=IMPT payload_off=253 old=00 new=ac sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1175 section=IMPT payload_off=249 old=40 new=f9 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1029 section=IMPT payload_off=103 old=00 new=04 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=727 section=SCUL payload_off=55 old=00 new=43 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1076 section=IMPT payload_off=150 old=03 new=01 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=824 section=SCUL payload_off=152 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1012 section=IMPT payload_off=86 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=999 section=IMPT payload_off=73 old=00 new=10 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1221 section=IMPT payload_off=295 old=00 new=10 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=971 section=IMPT payload_off=45 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1169 section=IMPT payload_off=243 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=702 section=SCUL payload_off=30 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1142 section=IMPT payload_off=216 old=c0 new=80 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=982 section=IMPT payload_off=56 old=00 new=20 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1217 section=IMPT payload_off=291 old=00 new=23 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=738 section=SCUL payload_off=66 old=00 new=c8 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=969 section=IMPT payload_off=43 old=00 new=04 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1136 section=IMPT payload_off=210 old=00 new=80 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=991 section=IMPT payload_off=65 old=40 new=42 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=996 section=IMPT payload_off=70 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1180 section=IMPT payload_off=254 old=00 new=7b sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=707 section=SCUL payload_off=35 old=c0 new=00 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=987 section=IMPT payload_off=61 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=697 section=SCUL payload_off=25 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=707 section=SCUL payload_off=35 old=c0 new=e0 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=827 section=SCUL payload_off=155 old=00 new=a1 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=849 section=SCUL payload_off=177 old=3f new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=840 section=SCUL payload_off=168 old=00 new=08 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1004 section=IMPT payload_off=78 old=00 new=08 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1046 section=IMPT payload_off=120 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1016 section=IMPT payload_off=90 old=00 new=02 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1218 section=IMPT payload_off=292 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1133 section=IMPT payload_off=207 old=00 new=10 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=734 section=SCUL payload_off=62 old=00 new=01 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=696 section=SCUL payload_off=24 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1064 section=IMPT payload_off=138 old=02 new=00 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=723 section=SCUL payload_off=51 old=a0 new=b0 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=732 section=SCUL payload_off=60 old=3e new=3f sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=852 section=SCUL payload_off=180 old=50 new=54 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=992 section=IMPT payload_off=66 old=00 new=20 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1154 section=IMPT payload_off=228 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=718 section=SCUL payload_off=46 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=705 section=SCUL payload_off=33 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1148 section=IMPT payload_off=222 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1010 section=IMPT payload_off=84 old=00 new=ff sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1 first_diff=836 section=SCUL payload_off=164 old=20 new=a7 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1159 section=IMPT payload_off=233 old=40 new=00 sizes=1266/1266
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0 first_diff=1009 section=IMPT payload_off=83 old=00 new=80 sizes=1266/1266
+FIXTURE mixed_imported_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=799 section=IMPT payload_off=66 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=852 section=IMPT payload_off=119 old=00 new=a8 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=633 section=SCUL payload_off=41 old=00 new=11 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=644 section=SCUL payload_off=52 old=3f new=2d sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=640 section=SCUL payload_off=48 old=00 new=cb sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=837 section=IMPT payload_off=104 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=658 section=SCUL payload_off=66 old=00 new=80 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=800 section=IMPT payload_off=67 old=00 new=40 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=837 section=IMPT payload_off=104 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=791 section=IMPT payload_off=58 old=00 new=08 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=790 section=IMPT payload_off=57 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=817 section=IMPT payload_off=84 old=00 new=48 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=795 section=IMPT payload_off=62 old=00 new=d6 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=816 section=IMPT payload_off=83 old=00 new=01 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=655 section=SCUL payload_off=63 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=628 section=SCUL payload_off=36 old=3f new=00 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=705 section=SCUL payload_off=113 old=03 new=00 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=637 section=SCUL payload_off=45 old=00 new=80 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=798 section=IMPT payload_off=65 old=40 new=8c sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=785 section=IMPT payload_off=52 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=770 section=IMPT payload_off=37 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=656 section=SCUL payload_off=64 old=3f new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=837 section=IMPT payload_off=104 old=00 new=59 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=852 section=IMPT payload_off=119 old=00 new=05 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=811 section=IMPT payload_off=78 old=00 new=01 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=651 section=SCUL payload_off=59 old=80 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=641 section=SCUL payload_off=49 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=701 section=SCUL payload_off=109 old=02 new=00 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=837 section=IMPT payload_off=104 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=641 section=SCUL payload_off=49 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=857 section=IMPT payload_off=124 old=00 new=c4 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=630 section=SCUL payload_off=38 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=623 section=SCUL payload_off=31 old=00 new=5e sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=789 section=IMPT payload_off=56 old=00 new=13 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=657 section=SCUL payload_off=65 old=00 new=20 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=782 section=IMPT payload_off=49 old=3f new=a4 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=637 section=SCUL payload_off=45 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=618 section=SCUL payload_off=26 old=00 new=5a sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=645 section=SCUL payload_off=53 old=00 new=80 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=701 section=SCUL payload_off=109 old=02 new=00 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=619 section=SCUL payload_off=27 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=786 section=IMPT payload_off=53 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=857 section=IMPT payload_off=124 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=654 section=SCUL payload_off=62 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=651 section=SCUL payload_off=59 old=80 new=00 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=814 section=IMPT payload_off=81 old=40 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=809 section=IMPT payload_off=76 old=00 new=b9 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=654 section=SCUL payload_off=62 old=00 new=a9 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=770 section=IMPT payload_off=37 old=00 new=6e sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1 first_diff=629 section=SCUL payload_off=37 old=00 new=ff sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=831 section=IMPT payload_off=98 old=00 new=10 sizes=905/905
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0 first_diff=784 section=IMPT payload_off=51 old=00 new=01 sizes=905/905
+FIXTURE object_state_bad_flags_v2.forge decode=BadPayload
+FIXTURE object_state_v2.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE sculpt_mixed_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=571 section=SCUL payload_off=59 old=80 new=00 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=561 section=SCUL payload_off=49 old=00 new=08 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=534 section=SCUL payload_off=22 old=00 new=10 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=562 section=SCUL payload_off=50 old=00 new=58 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=539 section=SCUL payload_off=27 old=00 new=10 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=538 section=SCUL payload_off=26 old=00 new=ff sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=573 section=SCUL payload_off=61 old=00 new=c9 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=589 section=SCUL payload_off=77 old=02 new=00 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=540 section=SCUL payload_off=28 old=00 new=5b sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=574 section=SCUL payload_off=62 old=00 new=ff sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=535 section=SCUL payload_off=23 old=00 new=1e sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=557 section=SCUL payload_off=45 old=00 new=b7 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=556 section=SCUL payload_off=44 old=00 new=79 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=553 section=SCUL payload_off=41 old=00 new=2a sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=556 section=SCUL payload_off=44 old=00 new=40 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=571 section=SCUL payload_off=59 old=80 new=ff sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=537 section=SCUL payload_off=25 old=00 new=84 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=570 section=SCUL payload_off=58 old=00 new=10 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=567 section=SCUL payload_off=55 old=00 new=34 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=539 section=SCUL payload_off=27 old=00 new=ff sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=564 section=SCUL payload_off=52 old=3f new=1f sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=567 section=SCUL payload_off=55 old=00 new=20 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=547 section=SCUL payload_off=35 old=c0 new=ad sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=535 section=SCUL payload_off=23 old=00 new=ff sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=560 section=SCUL payload_off=48 old=00 new=c6 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=617 section=SCUL payload_off=105 old=01 new=00 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=569 section=SCUL payload_off=57 old=00 new=ff sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=539 section=SCUL payload_off=27 old=00 new=ff sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=566 section=SCUL payload_off=54 old=00 new=ff sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=576 section=SCUL payload_off=64 old=3f new=ff sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=537 section=SCUL payload_off=25 old=00 new=10 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=534 section=SCUL payload_off=22 old=00 new=20 sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=541 section=SCUL payload_off=29 old=00 new=0e sizes=629/629
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1 first_diff=544 section=SCUL payload_off=32 old=00 new=ff sizes=629/629
+FIXTURE surface_bad_ref_v1.forge decode=InvalidSemanticValue
+FIXTURE surface_loft_trim_stitch_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE surface_patch_extrude_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE truncated_v1.forge decode=Truncated
+FIXTURE unknown_optional_v1.forge decode=Ok skipped=1 reencode_identical=0 load=Ok load_capture_encode_identical=0
+FIXTURE unknown_required_v1.forge decode=UnknownRequiredSection
+FIXTURE unsupported_major_v1.forge decode=UnsupportedMajor
+SUMMARY ok_fixtures=44 reencode_identical=43 reencode_diff=1 load_capture_identical=43 load_capture_diff=1
+FUZZ runs=34615 decoded_ok=9089 loaded_ok=9089 load_refused=0 fail_closed_violations=0 fp_compared=8954 fp_equal_bytes_differ=346
+FUZZ_STATUS BadPayload 515
+FUZZ_STATUS ChecksumMismatch 214
+FUZZ_STATUS ImpossibleCount 2150
+FUZZ_STATUS InvalidSemanticValue 12880
+FUZZ_STATUS Ok 9089
+FUZZ_STATUS Truncated 992
+FUZZ_STATUS UnknownRequiredSection 392
+FUZZ_STATUS UnresolvedReference 2168
+FUZZ_STATUS UnsupportedMajor 400
+FUZZ_STATUS trunc:Truncated 5638
+FUZZ_STATUS trunc:UnsupportedMajor 177

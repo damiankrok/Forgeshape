@@ -1,0 +1,8 @@
+# FC2 seat H scratch diagnostics (never added to the build). Tree: 70a6c14 product sources; objects reused read-only from build/host-selftests/obj (built by the audit's fresh host run).
+CPP=/home/user/Forgeshape/app/src/main/cpp; OBJ=/home/user/Forgeshape/build/host-selftests/obj; K=/home/user/Forgeshape/build/host-selftests/kernel/libmanifold.a
+FL="-std=c++17 -O1 -I$CPP -I$CPP/third_party/manifold/include -DMANIFOLD_PAR=-1 -DMANIFOLD_NO_IOSTREAM -DMANIFOLD_NO_FILESYSTEM"
+g++ $FL overlay_diag.cpp $(ls $OBJ/*.o | grep -v cad_multiface_selftest.o) $K -o overlay_diag && ./overlay_diag
+g++ $FL finish_diag.cpp  $(ls $OBJ/*.o | grep -v cad_multiface_selftest.o) $K -o finish_diag  && ./finish_diag
+g++ $FL mesh_diag.cpp $(ls $OBJ/*.o) $K -o mesh_diag && ./mesh_diag
+g++ $FL pick_eps.cpp  $(ls $OBJ/*.o) $K -o pick_eps  && ./pick_eps
+# CPU: Intel Xeon @2.80GHz family 6 model 85 (JCC-erratum part, same as CAD-R2-C1), g++ 13.3.0

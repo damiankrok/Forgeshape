@@ -1,0 +1,7 @@
+leg_m=1.0e-03 twice_area=1.00e-06 hit_normal=1 hit_60deg=1
+leg_m=3.0e-04 twice_area=9.00e-08 hit_normal=1 hit_60deg=1
+leg_m=1.5e-04 twice_area=2.25e-08 hit_normal=1 hit_60deg=1
+leg_m=1.0e-04 twice_area=1.00e-08 hit_normal=0 hit_60deg=0
+leg_m=9.0e-05 twice_area=8.10e-09 hit_normal=0 hit_60deg=0
+leg_m=5.0e-05 twice_area=2.50e-09 hit_normal=0 hit_60deg=0
+leg_m=1.0e-05 twice_area=1.00e-10 hit_normal=0 hit_60deg=0

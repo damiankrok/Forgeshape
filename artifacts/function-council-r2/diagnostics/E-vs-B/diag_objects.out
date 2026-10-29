@@ -1,0 +1,8 @@
+1 locked active=2 locked=1 gizmoVisible=1 pivot=(3.00,0.00,0.00)
+1 beginDrag=1 moved=1 committed=1 lockedBodyPosX=3.6227 undoDepth=2
+2 hidden active body: inSnapshot=0 gizmoVisible=1
+3 nextBefore=4 afterClose newId=4 hasProject=1
+4 rename=Ok dup=Ok copyName.len=0 copyName='' sameAsSource=0
+4b 93-char source: copy1='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb co' copy2=''
+5 delete last active -> status=Ok active=2 nextNew=4
+5 after undo of creation bodies=3; undo of delete -> bodies=3 has3=1

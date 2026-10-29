@@ -1,0 +1,4 @@
+INFO record1=recorded record2=not_retained undoDepth=1 canUndo=1
+INFO before undo: z0=6.000 z1=6.000 z2=5.000
+INFO undo=ok after undo: z0=0.000 z1=0.000 z2=5.000 hasEdits=0
+RESULT undo_lands_on_a_state_that_existed=0

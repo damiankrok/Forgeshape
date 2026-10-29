@@ -1,0 +1,26 @@
+P1 flipped=1 quarters=1 frame()_unchanged_view_after_flip=1 after_flip_and_roll=1 viewFrame()_differs=1
+P2 angle=360 validate=Ok regenerate=Ok volume=9.36433546 tris=256
+P2 angle=359.9999999 validate=Ok regenerate=Ok volume=9.36433545 tris=260
+P2 angle=359.99 validate=Ok regenerate=Ok volume=9.36407869 tris=260
+P2 angle=0.001 validate=Ok regenerate=Ok volume=2.61799388e-05 tris=36
+P2 angle=0.000999 validate=RevolveAngleInvalid regenerate=RevolveAngleInvalid volume=-1 tris=0
+P2 angle=360.0000001 validate=RevolveAngleInvalid regenerate=RevolveAngleInvalid volume=-1 tris=0
+P2 angle=nan validate=RevolveAngleInvalid regenerate=RevolveAngleInvalid volume=-1 tris=0
+P2 angle=-90 validate=RevolveAngleInvalid regenerate=RevolveAngleInvalid volume=-1 tris=0
+P3 volume=4.036 expected=4.036 deterministic_regen=1
+P3 encode_bytes=471 decode=Ok reencode_identical=1
+P3 sig_base=958f78af1c70baa1 depth_edit_same=1 symmetric_same=1 validate_deeper=Ok validate_sym=Ok
+P3 delete_root=SketchIsRoot delete_used=SketchInUse
+P3 cut_swallow=Ok failed_feature=0 add_inside=AddNoEffect failed_feature=4
+P3 append_refused_at_count=16 (kMaxCadFeatures=16)
+P3 later_features_appended=13 then=TooManyFeatures total_features=16
+P5 at_cap=16 validate=Ok over_cap=17 validate=TooManyFeatures
+P6 kept_sketches=15 table=16 features=1 add_offered_by_feature_count_rule=1
+P6 candidate_validate=HighWaterInvalid regenerate=SketchNotFound (refused feature sketchId=0)
+P7 ring=Ok vol=3.219639 (4-pi/4*~=3.214602) ring+disk=Ok vol=4.000000 components=1 stale_holes=ProfileRegionMismatch
+P4 placed=1 replace=Ok len=0 -> ZeroLengthLine start=(0,0) end=(0.3,0.4)
+P4 placed=1 replace=Ok len=-1 -> ZeroLengthLine start=(0,0) end=(0.3,0.4)
+P4 placed=1 replace=Ok len=nan -> NonFinite start=(0,0) end=(0.3,0.4)
+P4 placed=1 replace=Ok len=inf -> NonFinite start=(0,0) end=(0.3,0.4)
+P4 placed=1 replace=Ok len=1e+09 -> ZeroLengthLine start=(0,0) end=(0.3,0.4)
+P4 placed=1 replace=Ok len=1 -> Ok start=(0,0) end=(0.6,0.8)

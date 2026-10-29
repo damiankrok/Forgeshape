@@ -1,0 +1,431 @@
+FIXTURE cad_arc_profile_v3.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_bad_arc_v3.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_dimension_ref_v8.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_extent_v4.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_face_ref_v2.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_feature_kind_v7.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_feature_order_v5.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_feature_ref_v5.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_operation_v5.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_plane_v1.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_region_v5.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_selection_kind_v6.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_sketch_ref_v6.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_spline_v3.forge decode=InvalidSemanticValue
+FIXTURE cad_bad_two_sides_v4.forge decode=InvalidSemanticValue
+FIXTURE cad_circle_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_construction_v8.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_dependency_cycle_v2.forge decode=UnresolvedReference
+FIXTURE cad_dimension_conflict_v8.forge decode=InvalidSemanticValue
+FIXTURE cad_dimension_driving_v8.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_dimension_reference_v8.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_duplicate_sketch_id_v6.forge decode=InvalidSemanticValue
+FIXTURE cad_face_chain_v2.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER cad_face_chain_v2.forge sculpt_only=0
+FIXTURE cad_face_curve_v3.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_face_extent_v4.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER cad_face_extent_v4.forge sculpt_only=0
+FIXTURE cad_face_lens_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_face_protrusion_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_face_sketch_cap_v2.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_face_sketch_side_v2.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER cad_face_sketch_side_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER cad_face_sketch_side_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER cad_face_sketch_side_v2.forge sculpt_only=0
+FIXTURE cad_face_two_circles_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_feature_add_v5.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_feature_chain_v5.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER cad_feature_chain_v5.forge sculpt_only=0
+FIXTURE cad_feature_cut_v5.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER cad_feature_cut_v5.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER cad_feature_cut_v5.forge sculpt_only=0
+FIXTURE cad_fragment_support_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_mixed_curve_profile_v3.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_mixed_selection_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER cad_mixed_selection_v6.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER cad_mixed_selection_v6.forge sculpt_only=0
+FIXTURE cad_noncanonical_face_v6.forge decode=InvalidSemanticValue
+FIXTURE cad_overlap_face_v6.forge decode=InvalidSemanticValue
+FIXTURE cad_rectangle_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_region_hole_v5.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_revolve_bad_axis_v7.forge decode=InvalidSemanticValue
+FIXTURE cad_revolve_full_v7.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_revolve_partial_v7.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_sketch_shared_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_spline_face_v6.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_spline_profile_v3.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_symmetric_v4.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_two_sides_v4.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE cad_unresolved_face_v6.forge decode=InvalidSemanticValue
+FIXTURE construction_imported_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER construction_imported_v1.forge sculpt_only=0
+FIXTURE construction_multibody_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE corrupt_crc_v1.forge decode=ChecksumMismatch
+FIXTURE freeform_bad_topology_v1.forge decode=InvalidSemanticValue
+FIXTURE freeform_box_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE freeform_crease_symmetry_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE imported_only_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_only_v1.forge sculpt_only=0
+FIXTURE imported_sculpt_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER imported_sculpt_v1.forge sculpt_only=0
+FIXTURE mixed_cad_extent_v4.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE mixed_cad_face_v2.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_cad_face_v2.forge sculpt_only=0
+FIXTURE mixed_cad_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE mixed_imported_sculpt_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_sculpt_v1.forge sculpt_only=0
+FIXTURE mixed_imported_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FP_EQUAL_BYTES_DIFFER mixed_imported_v1.forge sculpt_only=0
+FIXTURE object_state_bad_flags_v2.forge decode=BadPayload
+FIXTURE object_state_v2.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE sculpt_mixed_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FP_EQUAL_BYTES_DIFFER sculpt_mixed_v1.forge sculpt_only=1
+FIXTURE surface_bad_ref_v1.forge decode=InvalidSemanticValue
+FIXTURE surface_loft_trim_stitch_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE surface_patch_extrude_v1.forge decode=Ok skipped=0 reencode_identical=1 load=Ok load_capture_encode_identical=1
+FIXTURE truncated_v1.forge decode=Truncated
+FIXTURE unknown_optional_v1.forge decode=Ok skipped=1 reencode_identical=0 load=Ok load_capture_encode_identical=0
+FIXTURE unknown_required_v1.forge decode=UnknownRequiredSection
+FIXTURE unsupported_major_v1.forge decode=UnsupportedMajor
+SUMMARY ok_fixtures=44 reencode_identical=43 reencode_diff=1 load_capture_identical=43 load_capture_diff=1
+FUZZ runs=34615 decoded_ok=9089 loaded_ok=9089 load_refused=0 fail_closed_violations=0 fp_compared=8954 fp_equal_bytes_differ=346
+FUZZ_STATUS BadPayload 515
+FUZZ_STATUS ChecksumMismatch 214
+FUZZ_STATUS ImpossibleCount 2150
+FUZZ_STATUS InvalidSemanticValue 12880
+FUZZ_STATUS Ok 9089
+FUZZ_STATUS Truncated 992
+FUZZ_STATUS UnknownRequiredSection 392
+FUZZ_STATUS UnresolvedReference 2168
+FUZZ_STATUS UnsupportedMajor 400
+FUZZ_STATUS trunc:Truncated 5638
+FUZZ_STATUS trunc:UnsupportedMajor 177

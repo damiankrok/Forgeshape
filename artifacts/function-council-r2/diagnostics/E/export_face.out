@@ -1,0 +1,12 @@
+== testdata/forge/v1/cad_face_sketch_cap_v2.forge load=Ok capture=Ok
+body 1 faceSupported=0 export_translation=(1.5000,0.5000,-2.0000) world_model_translation=(1.5000,0.5000,-2.0000) resolved=1 export_aabb_z=[-2.0000,0.0000] export_aabb_y=[-0.5000,1.5000]
+body 2 faceSupported=1 export_translation=(0.0000,0.0000,0.0000) world_model_translation=(1.5000,0.5000,0.0000) resolved=1 export_aabb_z=[0.0000,0.5000] export_aabb_y=[-0.7500,0.2500]
+== testdata/forge/v1/cad_face_sketch_side_v2.forge load=Ok capture=Ok
+body 1 faceSupported=0 export_translation=(0.0000,0.0000,0.0000) world_model_translation=(0.0000,0.0000,0.0000) resolved=1 export_aabb_z=[0.0000,2.0000] export_aabb_y=[-1.0000,1.0000]
+body 2 faceSupported=1 export_translation=(0.0000,0.0000,0.0000) world_model_translation=(1.0000,0.0000,1.0000) resolved=1 export_aabb_z=[-0.2500,0.0000] export_aabb_y=[-0.2500,0.2500]
+== testdata/forge/v1/cad_face_chain_v2.forge load=Ok capture=Ok
+body 1 faceSupported=0 export_translation=(0.0000,0.0000,0.0000) world_model_translation=(0.0000,0.0000,0.0000) resolved=1 export_aabb_z=[-2.1213,2.1213] export_aabb_y=[0.0000,1.0000]
+body 2 faceSupported=1 export_translation=(0.0000,0.0000,0.0000) world_model_translation=(0.0000,1.0000,0.0000) resolved=1 export_aabb_z=[0.0000,0.5000] export_aabb_y=[-0.7500,0.7500]
+body 3 faceSupported=1 export_translation=(0.0000,0.0000,0.0000) world_model_translation=(0.0000,1.5000,0.0000) resolved=1 export_aabb_z=[0.0000,0.2500] export_aabb_y=[-0.5000,0.5000]
+== testdata/forge/v1/cad_rectangle_v1.forge load=Ok capture=Ok
+body 1 faceSupported=0 export_translation=(0.5000,-0.2500,1.2500) world_model_translation=(0.5000,-0.2500,1.2500) resolved=1 export_aabb_z=[0.5454,3.0388] export_aabb_y=[-0.3828,2.9567]

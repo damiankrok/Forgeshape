@@ -1,0 +1,3 @@
+grid=24x24 entities=47 place_total_us=28339 place_max_one_entity_us=2361 finish_only_us=12344 status=Ok faces=576
+grid=40x40 entities=79 place_total_us=107753 place_max_one_entity_us=4867 finish_only_us=47591 status=Ok faces=1600
+grid=63x63 entities=125 place_total_us=513637 place_max_one_entity_us=20723 finish_only_us=321577 status=Ok faces=3969

@@ -1,0 +1,13 @@
+pose(r=0,90,0 s=1,2,0.5) plane=XY -> scale=(1,2,0.5) rot=(0.0000,90.0000,0.0000)
+pose(r=0,90,0 s=1,2,0.5) plane=XZ -> scale=(1,2,0.5) rot=(180.0000,270.0000,0.0000)
+pose(r=0,90,0 s=1,2,0.5) plane=YZ -> scale=(1,2,0.5) rot=(0.0000,270.0000,0.0000)
+pose(r=720.5,-270,1080 s=3,0.2,1.7) plane=XY -> scale=(3,0.2,1.7) rot=(720.5000,-270.0000,1080.2500)
+pose(r=720.5,-270,1080 s=3,0.2,1.7) plane=XZ -> scale=(3,0.2,1.7) rot=(900.0000,-90.0000,1080.2500)
+pose(r=720.5,-270,1080 s=3,0.2,1.7) plane=YZ -> scale=(3,0.2,1.7) rot=(720.0000,-90.0000,1080.2500)
+pose(r=90,45,-180 s=0.001,1e+03,1) plane=XY -> scale=(0.001,1000,1) rot=(89.9999,135.0000,-179.9990)
+pose(r=90,45,-180 s=0.001,1e+03,1) plane=XZ -> scale=(0.001,1000,1) rot=(89.9999,-45.0000,-0.0010)
+pose(r=90,45,-180 s=0.001,1e+03,1) plane=YZ -> scale=(0.001,1000,1) rot=(89.9999,-45.0000,-180.0010)
+MIRROR identity worst relative error = 0
+relscale underflow -> RefusedGeometry resize=NotPositive scaleX=2e-06 undo=0
+relscale negative -> RefusedGeometry resize=NotPositive
+dimension X=5 anchor Negative on turned body -> Ok dimX=5.000000 negFaceDrift=2.38e-07 undo=1

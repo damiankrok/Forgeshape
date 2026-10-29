@@ -1,0 +1,12 @@
+# FUNCTION-COUNCIL-R2 seat J -- exact commands. Scratch only; nothing here enters the build.
+# Tree: HEAD 7c05748 (audit branch), app/ identical to 70a6c14 (git diff --stat 70a6c14 HEAD -- app/ testdata/ -> empty).
+# 1. ASan+UBSan objects of the 98 platform-neutral TUs (all forgeshape_*.cpp except jni/renderer):
+ls $CPP/forgeshape_*.cpp | grep -v -e forgeshape_jni.cpp -e forgeshape_renderer.cpp > tus.txt
+xargs -P4 -I{} ./build_asan.sh {} < tus.txt        # g++ 13 -std=c++17 -O1 -g -fsanitize=address,undefined ; 98/98, 3m30s
+# link: ./link.sh <name>  (ASan product objects + cached build/host-selftests/kernel/libmanifold.a, read-only)
+# 2. J1 hidden/locked CAD edit:      ./j1_hidden_edit testdata/forge/v1        -> j1_hidden_edit.out
+# 3. J2 structural count fuzz:       ASAN_OPTIONS=allocator_may_return_null=0:detect_leaks=0 ./j2_count_fuzz v1/mixed_cad_v1.forge v1/*.forge -> j2_count_fuzz.out
+# 4. J3 unit probe (javac, copy of LengthUnit.java): javac -d out LengthUnit.java J3Probe.java; java -cp out com.forgeshape.app.J3Probe -> j3_unit_probe.out
+# 5. J4 replay/undo/redo/reopen:     ./j4_replay testdata/forge/v1             -> j4_replay.out
+# 6. J5 non-finite values:           ./j5_nonfinite testdata/forge/v1          -> j5_nonfinite.out
+# 7. JNI usage census: natives declared in NativeViewport.java vs callers in app/src/main/java and app/src/{androidTest,test} -> native_usage.txt

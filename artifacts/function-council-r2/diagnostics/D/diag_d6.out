@@ -1,0 +1,4 @@
+INFO before: sketchBegin=0 sketchActive=1 inSculpt=0 bodies=1 active=1 undo=0 editInProgress=0
+INFO import: status=Ok objects=1 firstObjectId=2
+INFO after: sketchActive=1 bodies=2 active=2 undo=1
+RESULT import_accepted_under_open_sketch_creates_body_switches_active_records_step=1

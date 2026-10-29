@@ -1,0 +1,4 @@
+grid=8x8 ready=1 faces=64 finish_us=1387 overlay_vertices_unselected=50 overlay_vertices_all_selected=292 ranges=7 cap=65536 build_all_selected_us=87 camera_rebuild_us_mean=64 max=95 eval_us=347 eval_status=Ok
+grid=24x24 ready=1 faces=576 finish_us=25893 overlay_vertices_unselected=114 overlay_vertices_all_selected=688 ranges=7 cap=65536 build_all_selected_us=655 camera_rebuild_us_mean=705 max=1103 eval_us=2669 eval_status=Ok
+grid=40x40 ready=1 faces=1600 finish_us=140817 overlay_vertices_unselected=178 overlay_vertices_all_selected=1008 ranges=7 cap=65536 build_all_selected_us=1978 camera_rebuild_us_mean=1919 max=2037 eval_us=8013 eval_status=Ok
+grid=63x63 ready=1 faces=3969 finish_us=805999 overlay_vertices_unselected=270 overlay_vertices_all_selected=1468 ranges=7 cap=65536 build_all_selected_us=7559 camera_rebuild_us_mean=4456 max=5130 eval_us=25744 eval_status=Ok

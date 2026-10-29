@@ -1,0 +1,4 @@
+target=10000 vertices=10086 triangles=19200 publish_us=139 render_refresh_smooth_us=1778 render_refresh_faceted_us=776 pick_full_scan_us=694
+target=50000 vertices=49686 triangles=97200 publish_us=1028 render_refresh_smooth_us=9810 render_refresh_faceted_us=6426 pick_full_scan_us=3680
+target=100000 vertices=99846 triangles=196608 publish_us=2199 render_refresh_smooth_us=20322 render_refresh_faceted_us=13438 pick_full_scan_us=7409
+target=131072 vertices=131424 triangles=259308 publish_us=3089 render_refresh_smooth_us=29869 render_refresh_faceted_us=18378 pick_full_scan_us=10364

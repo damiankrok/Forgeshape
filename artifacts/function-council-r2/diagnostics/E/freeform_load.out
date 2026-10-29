@@ -1,0 +1,7 @@
+decode testdata/forge/v1/freeform_box_v1.forge = Ok
+decode testdata/forge/v1/freeform_crease_symmetry_v1.forge = Ok
+load A=Ok active=0
+begin=Ok
+select face 6 => Ok
+load B=Ok active=1
+after load+reconcile: session active=1 body=1 selection_size=1 id=6

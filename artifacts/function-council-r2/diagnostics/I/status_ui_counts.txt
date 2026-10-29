@@ -1,0 +1,56 @@
+ WorkspaceLayoutModeTest (JVM)    15 
+ EditorUiStateTest (JVM)    10 
+ LengthUnitTest (JVM)    5 
+ AppThemeTest (JVM)    10 
+ AppPreferencesTest (JVM)    10 
+ ChromeMotionTest (JVM)    8 
+ DisplaySettingsContractTest (JVM)    6 
+ EditorWorkspaceControlsTest    23 
+ EditorWorkspaceLayoutTest    10 
+ EditorWorkspaceGestureTest    6 
+ EditorWorkspaceLifecycleTest    3 
+ EditorWorkspaceDisplayTest    17 
+ EditorWorkspaceObjectsTest    10 
+ HomeFlowTest    12 
+ CadA3VisualEvidenceTest    1 
+ SpatialSketchTest    8 
+ EditorWorkspaceFoundationTest    8 
+ EditorWorkspaceThemeTest    19 
+ SettingsPreferencesTest    15 
+ UiPrefVisualEvidenceTest    1 
+ SelectionOutlineTest    19 
+ SelectionOutlineVisualEvidenceTest    1 
+ EditorWorkspaceMotionTest    10 
+ PointerSemanticsTest (JVM)    6 
+ EditorWorkspacePointerTest    13 
+ EditorWorkspaceCompositionTest    10 
+ SketchExtrudeTest    9 
+ CadCanvasExtrudeTest    9 
+ EditorWorkspaceMobileTest    15 
+ EditorWorkspaceSculptRetentionTest    2 
+ EditorWorkspaceCorrectionTest    36 
+ EditorWorkspaceChromeCompositionTest    12 
+ EditorWorkspaceArchitectureTest    12 
+ EditorWorkspaceHistoryTest    20 
+ EditorWorkspaceGizmoTest    46 
+ EditorWorkspaceLegibilityTest    20 
+ EditorWorkspaceProjectActionsTest    7 
+ GlbImportExternalR1Test    14 
+ ProjectAutosaveRecoveryTest    14 
+ ImportedMeshDurableTest    12 
+ ImportedMeshSculptTest    9 
+ ObjectsDeleteTest    8 
+ ObjectCommandsTest    1 
+ BodyDimensionsSmokeTest    1 
+ MirrorSmokeTest    1 
+ Ui3dStateAuditTest    9 
+ Ui3dDimensionVisibilityTest    2 
+ SculptHistoryNavigatorTest    9 
+ ProjectTransferTest    13 
+ DiagnosticsAndRendererLossTest    9 
+ DiagnosticLogTest (JVM)    11 
+ ProjectProcessDeathTest    8 
+ EditorWorkspaceUnifiedRightHostTest    18 
+ EditorWorkspaceRightHostPlacementTest    12 
+ GlbExportTest    24 
+ GlbImportPreviewTest    23 
