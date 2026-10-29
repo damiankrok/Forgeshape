@@ -1,7 +1,25 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.102.0
-**Updated:** 2026-10-28
+**Status Version:** 0.103.0
+**Updated:** 2026-10-29
+**Latest audit (research, no product change):** **`FUNCTION-COUNCIL-R2`
+(full capability / UX / Android-desktop portability audit) —
+`PARTIAL-PLAN-SOURCE-GAP`** (2026-10-29). The canonical Master Plan v4.1.61
+and OWNER-decision files were unavailable, so Master-Plan compliance is NOT
+claimed; the repo, tests and runtime were audited against the repo's own
+records. Branch `audit/function-council-r2-full-product-ux-platform-r1` from
+exactly `70a6c14`, adding only `artifacts/function-council-r2/**`; nothing
+merged, no FullSharded. Record: `artifacts/function-council-r2/SUMMARY.md`.
+Fresh evidence on the C2 product tree: host 4392/0 (25 suites, 17 oracles),
+JVM 196/0, release guard PASS, `CI FAST` `40796992679` (corpus 72/72),
+`CI DEVICE` `40797031704` 32/32 + `40800569636` 77/77 + `40805804385` 90/90
+(emulator only). 681 atomic requirements traced; 30 of 38 P0–P2 findings
+panel-verified, all survived (23 root causes, no P0, no regression); two P1
+(GLB export of a face-supported CAD body at the wrong placement; recovered
+work protected nowhere after Recover, OWNER decision OD-05). Old Council D1
+and D5 closed; D2, D3, D4 and import-during-sketch confirmed open; D6, D7
+partial. This audit approves no functionality; the `CAD-R2-C2` status below
+(TECH PASS / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED) is unchanged.
 **Latest closeout:** **`CAD-R2-C2` (CPU picking seam correctness) —
 `PASS-CAD-R2-C2-PICKING-SEAM`** (2026-10-28). **TECH PASS / OWNER PHYSICAL
 REVIEW REQUIRED / NOT MERGED.** Branch `feature/cad-r2-c2-picking-seam-r1` from
@@ -4863,8 +4881,15 @@ SUMMARY; option 0, the refusal, is current behaviour, not a decision). Nothing m
 that verdict. The v6 branch merges to `main` only after the completed v6
 migration passes the Tier-5 aggregate once.
 
-`FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
-recorded debt, not authorised work. The Council's other OWNER decisions are
+`FUNCTION-COUNCIL-R2` adds decision support to that review, not a second next
+step: its owner-decision register (`artifacts/function-council-r2/OWNER_DECISIONS_REQUIRED.md`,
+OD-27 is this review) and its recommended stage to schedule AFTER the verdict,
+`CAD-FACE-SUPPORTED-PLACEMENT-R1` (not started; `PRIORITISED_BACKLOG.md`).
+
+`FUNCTION-COUNCIL-R1`'s debt, re-checked by `FUNCTION-COUNCIL-R2` on `70a6c14`
+(`artifacts/function-council-r2/COUNCIL_DEBT_RECHECK.md`): D5 is closed; D2, D3,
+D4 and the import-during-sketch observation are confirmed open; D6 and D7 are
+partial. All of it stays recorded debt, not authorised work. The Council's other OWNER decisions are
 still open (`COUNCIL_FINDINGS.md` §5, `NEXT_VERTICAL_SLICE_OPTIONS.md`).
 
 Do not start T-Spline local refinement, general NURBS, a Surface trim of a

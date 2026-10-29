@@ -38,7 +38,7 @@ Device coverage: 39 of the 70 instrumented classes have run on this product tree
 (28 in this audit, 11 in C2). The other 31 have only historical runs on older
 trees, so any claim about the whole suite stays `REQUIRES-FULLSHARDED-OWNER-GATE`.
 
-Screenshots are kept under `evidence/device-run-*/screens/` (146 PNG, with
+Screenshots are kept under `evidence/device-run-*/` (146 PNG incl. 6 startup/post-test captures, with
 SHA-256 sums).
 
 ## Council
