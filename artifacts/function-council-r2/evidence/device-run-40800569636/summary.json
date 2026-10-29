@@ -1,0 +1,23 @@
+{
+  "result": "PASS",
+  "detail": "25/25 startup tokens in order, NATIVE_VIEWPORT_OK, 0 failure tokens; com.forgeshape.app.SurfaceOwnerTest,com.forgeshape.app.FreeformOwnerTest,com.forgeshape.app.Stage027SculptWorkflowTest,com.forgeshape.app.SculptHistoryNavigatorTest,com.forgeshape.app.SculptUndoTest,com.forgeshape.app.SculptBrushStage025Test,com.forgeshape.app.ImportGlbSculptGuardTest,com.forgeshape.app.ImportedMeshSculptTest,com.forgeshape.app.CadVerticalSliceTest,com.forgeshape.app.CadExtrudeExtentTest,com.forgeshape.app.SketchUxTest OK (77 tests)",
+  "phase": "done",
+  "serial": "emulator-5580",
+  "avd": "ForgeShape_CI_API36",
+  "avd_name_confirmed": "ForgeShape_CI_API36",
+  "system_image": "system-images;android-36;google_apis;x86_64",
+  "device_profile": "medium_phone",
+  "gpu_mode": "swiftshader_indirect",
+  "boot_seconds": "51",
+  "startup_seconds": "21",
+  "startup_capture_used": "1",
+  "selftest_tokens_expected": 25,
+  "selftest_tokens_found": 25,
+  "selftest_tokens_in_order": true,
+  "native_viewport_ok": true,
+  "failure_token_lines": 0,
+  "test_class": "com.forgeshape.app.SurfaceOwnerTest,com.forgeshape.app.FreeformOwnerTest,com.forgeshape.app.Stage027SculptWorkflowTest,com.forgeshape.app.SculptHistoryNavigatorTest,com.forgeshape.app.SculptUndoTest,com.forgeshape.app.SculptBrushStage025Test,com.forgeshape.app.ImportGlbSculptGuardTest,com.forgeshape.app.ImportedMeshSculptTest,com.forgeshape.app.CadVerticalSliceTest,com.forgeshape.app.CadExtrudeExtentTest,com.forgeshape.app.SketchUxTest",
+  "tests_run": 77,
+  "tests_failed": 0,
+  "test_seconds": "1972"
+}

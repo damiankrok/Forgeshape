@@ -1,0 +1,9 @@
+face_sketch.area_m2=0.6400000000000001
+perf.cut_preview_us=892.867
+perf.cut_drag_preview_us=724.132
+cut.drag_depth_m=1.0 -> 1.2679189443588257
+capture.10_cut_preview.presented_frames=6 in 1721ms
+capture.10_cut_preview=10_cut_preview.png 1080x2400
+cut.volume_m3=3.6799999999999997
+capture.11_cut_committed.presented_frames=6 in 1569ms
+capture.11_cut_committed=11_cut_committed.png 1080x2400

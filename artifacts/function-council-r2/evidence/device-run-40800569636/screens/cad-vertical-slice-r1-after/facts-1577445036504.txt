@@ -1,0 +1,14 @@
+capture.04_compact_hud_one_side.presented_frames=6 in 1764ms
+capture.04_compact_hud_one_side=04_compact_hud_one_side.png 1080x2400
+hud.dock_box=[153,1321][279,1447]
+hud.dock_reach_dp=47.568684
+hud.value=rotation=-28.08275 text_sp=13.307222
+hud.cad_extrude_extent_one_side=[5,1380][131,1506] hit_dp=48.0x48.0 glyph_dp=28.190475
+hud.cad_extrude_extent_symmetric=[131,1380][257,1506] hit_dp=48.0x48.0 glyph_dp=28.190475
+hud.cad_extrude_extent_two_sides=[257,1380][383,1506] hit_dp=48.0x48.0 glyph_dp=28.190475
+capture.05_compact_hud_extent_palette.presented_frames=6 in 1676ms
+capture.05_compact_hud_extent_palette=05_compact_hud_extent_palette.png 1080x2400
+capture.06_compact_hud_symmetric.presented_frames=6 in 1717ms
+capture.06_compact_hud_symmetric=06_compact_hud_symmetric.png 1080x2400
+capture.07_compact_hud_labels_on.presented_frames=6 in 1727ms
+capture.07_compact_hud_labels_on=07_compact_hud_labels_on.png 1080x2400

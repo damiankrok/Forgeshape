@@ -1,0 +1,16 @@
+rectangle_m=4.0 x 2.8000000000000003
+capture.01_rectangle_circle_two_regions.presented_frames=6 in 1685ms
+capture.01_rectangle_circle_two_regions=01_rectangle_circle_two_regions.png 1080x2400
+regions=2.0
+ring_area_m2=9.202275102554847
+ring_arrow_half_shaft_px=106.68636068112608
+ring_preview_volume_m3=9.202275102554834
+perf.ring_preview_us=577.428
+capture.02_ring_selected_hatched.presented_frames=6 in 1770ms
+capture.02_ring_selected_hatched=02_ring_selected_hatched.png 1080x2400
+capture.02b_ring_plus_disk_union.presented_frames=6 in 1667ms
+capture.02b_ring_plus_disk_union=02b_ring_plus_disk_union.png 1080x2400
+ring_body_volume_m3=4.601137551277417
+ring_body_triangles=144.0
+capture.03_ring_extruded.presented_frames=6 in 1735ms
+capture.03_ring_extruded=03_ring_extruded.png 1080x2400

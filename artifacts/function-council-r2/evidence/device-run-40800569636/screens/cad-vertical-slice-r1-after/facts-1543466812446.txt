@@ -1,0 +1,9 @@
+union.entities=3.0
+union.areas_m2=rect=11.200000000000001 A=0.4994312243612881 B=0.4994312243612887
+capture.16_union_o_plus_a.presented_frames=6 in 1577ms
+capture.16_union_o_plus_a=16_union_o_plus_a.png 1080x2400
+capture.17_union_all_three.presented_frames=6 in 1624ms
+capture.17_union_all_three=17_union_all_three.png 1080x2400
+union.body_volume_m3=5.350284387819362
+capture.18_union_committed.presented_frames=6 in 1470ms
+capture.18_union_committed=18_union_committed.png 1080x2400

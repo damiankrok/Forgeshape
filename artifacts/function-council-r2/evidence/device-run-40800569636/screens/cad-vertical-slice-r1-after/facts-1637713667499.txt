@@ -1,0 +1,6 @@
+capture.15_ready_chrome.presented_frames=6 in 1779ms
+capture.15_ready_chrome=15_ready_chrome.png 1080x2400
+ready.trailing_host=[880,231][1059,668] viewport_pct=3.0178626543209877
+ready.hud_value=[320,1143][446,1269]
+capture.16_ready_precision_on_request.presented_frames=6 in 1832ms
+capture.16_ready_precision_on_request=16_ready_precision_on_request.png 1080x2400

@@ -149,7 +149,7 @@ PROJECT_STATE. Horizons are reconstructed from the repo records above.
 - **H-G-02** — Attaching or detaching a hardware keyboard recreates `ForgeShapeActivity` (and rebuilds the Vulkan surface) because `configChanges` (`AndroidManifest.xml:31`) lists `keyboardHidden` but not `keyboard`/`navigation`. Not reproduced (no device).
 - **H-G-03** — `ProjectSlot`/`ProjectCheckpoint` fsync the file but not the directory, so on POSIX the rename may not be durable after power loss. Not reproduced; Android shares the risk.
 - **H-G-04** — On a desktop surface that supports neither `OPAQUE` nor `INHERIT` composite alpha, `createSwapchain` (`renderer.cpp:2175-2178`) would pass an unsupported value. No desktop surface exists to test.
-- **H-G-05** — FP contraction could flip a near-tolerance accept/refuse in sketch/region validation, so a file that opens on one ABI is refused on another. Not reproduced: the 72-fixture verdicts were not re-run under `-mfma` by this seat.
+- **H-G-05** — FP contraction could flip a near-tolerance accept/refuse in sketch/region validation, so a file that opens on one ABI is refused on another. Probed: the 72-fixture verdicts built with `clang -O1 -mfma` (contraction on) are IDENTICAL to the baseline (`verdicts_fma.txt` vs fc2 `host_corpus_verdicts.txt`), so no committed fixture flips; user geometry near a tolerance remains unproven.
 
 ## Adversarial counterexample attempts
 
@@ -161,6 +161,7 @@ PROJECT_STATE. Horizons are reconstructed from the repo records above.
 | 4 | "Load → save is a pure function of the document" | load two fixtures sequentially in one process, re-encode | **Broke** byte identity (G-06), by documented design |
 | 5 | "`Renderer` never creates or releases an `ANativeWindow`" | read `detachSurface` / `rebuildDeviceAfterLoss` | **Broke** (G-03) |
 | 6 | "No Uri/path crosses JNI" | list every `static native` taking `String`/`byte[]`/`Object` | **Failed to break**: only names, status tokens, `byte[]` documents, and `Surface` |
+| 7 | "FP contraction changes which files open" (H-G-05) | decode + regenerate all 72 fixtures with an FMA-contracted build | **Failed to break**: 72/72 verdicts identical to the baseline |
 
 ## Positive claims with their evidence
 
@@ -178,11 +179,11 @@ PROJECT_STATE. Horizons are reconstructed from the repo records above.
 
 | ID | Title | Negative? | Steps | Expected | Test today | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| J-G-01 | Headless open, orbit, pick, re-encode | no | decode fixture → `loadProjectDocument` → camera 1920×1080 → Mouse drag 100 px → `pickScene` at centre → capture → encode | load `Ok`; yaw −0.5 rad; centre hit names an ObjectId; bytes identical | seat-G `headless_shell_probe` (scratch only) | PASS-REPRODUCED (E1), not in CI |
+| J-G-01 | Headless open, orbit, pick, re-encode | no | decode fixture → `loadProjectDocument` → camera 1920×1080 → Mouse drag 100 px → `pickScene` at centre → capture → encode | load `Ok`; yaw −0.5 rad; centre hit names an ObjectId; bytes identical | seat-G `headless_shell_probe` (scratch only) | PASS-REPRODUCED (E1); not in CI |
 | J-G-02 | Corrupt project is refused before anything changes | **yes** | feed `truncated_v1.forge` (and the other refusal fixtures) to the same driver | named refusal (`Truncated`, …); scene untouched | host corpus verdicts; probe | PASS-REPRODUCED (E1) |
-| J-G-03 | arm64 debug launch emits all 25 `*_SELFTEST_OK` tokens | **yes** (regression guard) | build Debug arm64-v8a, launch on a physical phone with `logcat -G 64M`, or run the host suites with `-mfma` | 25 OK + `FORGESHAPE_NATIVE_VIEWPORT_OK` | none automated | expected to FAIL today (G-01; H-G-01) |
-| J-G-04 | Platform-neutrality gate catches a leak | **yes** | CI runs `scripts/host-native-selftests.sh`; a domain TU that includes an Android header fails the job | job red | none (G-02) | NOT-IMPLEMENTED (proposal; H0 constraint, gap) |
-| J-G-05 | Density change keeps the 48-unit hit floor | no | change display size (Android) / move window (desktop) → refresh → grab a gizmo handle | `setGizmoPixelScale` receives the new density; handle hit area tracks it | host GIZMO suite (scale arithmetic) | PASS-SOURCE (E2); runtime not measured |
+| J-G-03 | arm64 debug launch emits all 25 `*_SELFTEST_OK` tokens | **yes** (regression guard) | build Debug arm64-v8a, launch on a physical phone with `logcat -G 64M`, or run the host suites with `-mfma` | 25 OK + `FORGESHAPE_NATIVE_VIEWPORT_OK` | none automated | DEFECT-CONFIRMED on host under arm64 FP semantics (G-01); device OWNER-PHYSICAL-UNVERIFIED (H-G-01) |
+| J-G-04 | Platform-neutrality gate catches a leak | **yes** | CI runs `scripts/host-native-selftests.sh`; a domain TU that includes an Android header fails the job | job red | none (G-02) | PARTIAL (constraint held manually; no CI gate) |
+| J-G-05 | Density change keeps the 48-unit hit floor | no | change display size (Android) / move window (desktop) → refresh → grab a gizmo handle | `setGizmoPixelScale` receives the new density; handle hit area tracks it | host GIZMO suite (scale arithmetic) | IMPLEMENTED-UNTESTED for the density-change path (E2) |
 
 ## Owner decisions needed
 
@@ -199,7 +200,6 @@ PROJECT_STATE. Horizons are reconstructed from the repo records above.
 - Physical arm64 at this tree: no run available (H-G-01).
 - Whether Gate P1's physical self-test run included `eviction_is_deterministic_oldest_first`: the repository is shallow (`git rev-parse --is-shallow-repository` → true; root `fd88db8`), so the history cannot answer it.
 - `run_status.txt` records `guard_exit=2` while `release_guard.txt` ends `RELEASE_SELFTEST_GUARD=PASS`; this seat did not resolve the discrepancy (another seat owns the guard).
-- Whether the 72-fixture verdicts are stable under FMA contraction (H-G-05) — a one-command follow-up with the `obj_fma` objects.
 
 **Completeness: COMPLETE for the seat's design-only scope** — every module class was mapped with
 E1/E2 evidence, portability was verified empirically (compile, link, run, FP experiment) and all

@@ -1,0 +1,10 @@
+face_sketch.area_m2=0.6400000000000001
+feature_list.rows=2
+capture.13_feature_edit_open.presented_frames=6 in 1520ms
+capture.13_feature_edit_open=13_feature_edit_open.png 1080x2400
+upstream_edit.volume_m3=6.16
+capture.13b_upstream_edit_carries_the_add.presented_frames=6 in 1761ms
+capture.13b_upstream_edit_carries_the_add=13b_upstream_edit_carries_the_add.png 1080x2400
+feature_chain_project_bytes=35456
+capture.14_feature_chain_reopened.presented_frames=6 in 1415ms
+capture.14_feature_chain_reopened=14_feature_chain_reopened.png 1080x2400

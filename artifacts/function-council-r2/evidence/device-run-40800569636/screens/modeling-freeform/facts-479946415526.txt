@@ -1,0 +1,2 @@
+capture.03_loop_and_crease=03_loop_and_crease.png frames=6
+capture.04_extruded=04_extruded.png frames=6
