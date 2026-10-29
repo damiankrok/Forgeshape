@@ -318,7 +318,7 @@ One severity for every instance: P2 (`req_F.tsv` UI-011..UI-014; UI-014 correcte
   - the navigator tests assert state bits under a name that promises a camera change (F-02);
   - `uilr120` and the visibility ledger pass over the occluded Sculpt status line (F-06);
   - only `uilr106` drives System Back through the platform route, and only for Add Primitive in Construction; no other surface or phase is tested through it (the gap behind F-03 and F-04);
-  - Freeform, Surface and History have no committed screenshot set (former UI-087, moved here as an evidence gap).
+  - History has no screenshot set on this tree (former UI-087, moved here as an evidence gap); Freeform and Surface now have fresh captures from CI DEVICE `40800569636` (`evidence/device-run-40800569636/screens/modeling-freeform/`, `modeling-surface/`).
 - **Synthesis:** merge with Seat I's I-08 (`performClick` and viewport-direct taps cannot see occlusion) into one finding.
 - **Fix:** one helper that walks `isShown() && isClickable()` views per captured state and asserts ≥ 48 dp. Exempt by id, with a reason.
 
@@ -393,8 +393,8 @@ One severity for every instance: P2 (`req_F.tsv` UI-011..UI-014; UI-014 correcte
 
 | Claim | Evidence |
 | --- | --- |
-| Home and New Project are opaque full-window pages; New Project replaces Home; CAD enters an XY sketch at once with no project | E1: capture facts (`home_is_full_window=true`, `home_still_visible=false`, `support_chooser_active=false project_open=false`) |
-| Back closes Add Primitive in a Construction project and the app stays, through the real platform key route, on API 36 | E1: `uilr106` sends `KEYCODE_BACK` (`EditorWorkspaceLegibilityTest.java:347`, fresh PASS). No other surface or phase is tested through the platform route (F-09). |
+| Home and New Project are opaque full-window pages; New Project replaces Home; CAD enters an XY sketch at once with no project | Supported, NOT upgraded: capture facts (`home_is_full_window=true`, `home_still_visible=false`, `support_chooser_active=false project_open=false`, `evidence/device-run-40797031704/screens/cad-a3-c2-sketch-ux-r1/facts.txt`). Panel verification judged this claim overstated at its stated grade (`work/VERIFICATION.md`, positive-claim challenges); it stands at E2 (source) with recorded facts as corroboration, not PASS-REPRODUCED. |
+| Back closes Add Primitive in a Construction project and the app stays, through the real platform key route, on API 36 | `uilr106` sends `KEYCODE_BACK` (`EditorWorkspaceLegibilityTest.java:347`, fresh PASS in `40797031704`). Panel verification judged the general Back claim overstated (`work/VERIFICATION.md`); only this one case is runtime-backed, and no other surface or phase is tested through the platform route (F-09, F-03, F-04). |
 | Trailing-host controls keep ≥ 48 dp at font 1.3 and with the IME up; Apply is reachable without scrolling in portrait and short landscape | E1: `uilr103`, `uilr104`, `uilr110` (fresh) |
 | One primary surface at a time; Display closes the inspector | E1: `uilr117_primarySurfaceExclusivityIsDeterministic` (fresh PASS). Corroboration, not a gate: `VISIBILITY.tsv` 119/119 PASS is recorded rather than asserted (`Ui3dStateAuditTest.java:40-46`). |
 | World-anchored chrome tracks its projection within 0.00–0.24 dp on the 68 PASS rows; an off-screen sketch/CAD value is hidden, not guessed. Body dimension labels are CLAMPED instead (UI3D-04 `after_move` 0.44 dp; UI3D-06 65.96 dp and 5.21 dp). | E1 recorded measurement, not a gating assertion: `SPATIAL_ATTACHMENTS.tsv` (68 PASS, 3 CLAMPED, 1 NOT_MEASURED with reason); `Ui3dStateAuditTest.java:40-46` "records rather than asserts" |
@@ -439,18 +439,30 @@ One severity for every instance: P2 (`req_F.tsv` UI-011..UI-014; UI-014 correcte
 
 - F-02 is shared with Seat C (C-01). The synthesis should carry one id.
 - A-05 (Seat A, "saved" baseline lost on Activity recreation, FC-R1 D3) touches the palette-change journey. Seat F did not re-verify it.
-- No visual evidence on this tree for the Freeform, Surface, History, Mirror chooser and question surfaces (`SCREEN_EVIDENCE_INDEX.md` §3).
-- The coordinator's fresh CI DEVICE run is cited where its outputs existed in `evidence/device-run-40797031704`. The section below is left for its appendix.
+- Freeform and Surface now have fresh emulator captures on this tree from CI DEVICE `40800569636` (`evidence/device-run-40800569636/screens/modeling-freeform/`, 6 PNGs; `evidence/device-run-40800569636/screens/modeling-surface/`, 9 PNGs). No visual evidence on this tree remains for the History surface, the mirror plane chooser and the question surfaces (`MirrorSmokeTest` ran in `40805804385`, which wrote no screen set).
+- The coordinator's three fresh CI DEVICE runs are listed in the section below; the full record is in `TESTS.md`.
 - The canonical Master Plan and OWNER_DECISIONS are not available. Horizons are reconstructed from `CLAUDE.md` rule ids and `PRODUCT.md`.
 
-## Fresh CI DEVICE evidence (appended by coordinator)
+## Fresh CI DEVICE evidence (coordinator executions)
 
-_Reserved for the coordinator._
+All three runs: emulator only (`ForgeShape_CI_API36`, API 36, `swiftshader_indirect`), 25/25 startup tokens in order, `FORGESHAPE_NATIVE_VIEWPORT_OK`, 0 failure tokens, 0 `<failure>` elements in the JUnit XML. Recorded in `TESTS.md`. Emulator CI closes no physical-device gate (stylus, pressure, hover, hardware GPU, tablet/foldable remain OWNER-PHYSICAL-UNVERIFIED).
+
+| Run | Result | Classes relevant to this seat | Evidence |
+| --- | --- | --- | --- |
+| `40797031704` | 32/32 | `EditorWorkspaceLegibilityTest`, `Ui3dStateAuditTest`, `SketchUxVisualEvidenceTest`, `UiPrefVisualEvidenceTest`, `SelectionOutlineVisualEvidenceTest` | `evidence/device-run-40797031704/` (screens: `cad-a3-c2-sketch-ux-r1`, `sel-out-r1`, `ui-3d-state-audit-r1`, `ui-pref-r1`) |
+| `40800569636` | 77/77 | `SurfaceOwnerTest` (3), `FreeformOwnerTest` (3), `SculptHistoryNavigatorTest` (9, incl. `e2eSchnav09`), `SketchUxTest` (14, incl. `cadUxR1_11_12_13_rotationTurnsTheViewAndNotTheSketch`), `CadVerticalSliceTest` (9), `CadExtrudeExtentTest` (5), plus four Sculpt and two Import-sculpt classes | `evidence/device-run-40800569636/` (screens: `modeling-freeform`, `modeling-surface`, `cad-vertical-slice-r1-after`) |
+| `40805804385` | 90/90 | `SettingsPreferencesTest` (15), `EditorWorkspaceLifecycleTest`, `ObjectCommandsTest`, `ObjectsDeleteTest`, `MirrorSmokeTest`, `BodyDimensionsSmokeTest`, plus persistence, transfer, process death, JNI hardening and diagnostics classes | `evidence/device-run-40805804385/` (no screen set) |
+
+Effect on this seat:
+
+- `SketchUxTest`, `SculptHistoryNavigatorTest.e2eSchnav09` and `SettingsPreferencesTest`, listed above as historical, are now also fresh PASS on this tree. `cadUxR1_11_12_13` still asserts native bits only, so its PASS does not touch F-02.
+- Freeform and Surface gain fresh visual evidence (F-09 updated); History, the mirror plane chooser and the question surfaces still have none.
+- None of these runs contains a reproducer for F-01..F-05 (the proposed J-F1..J-F4 are not among the executed tests), so those findings stay at their source grades.
 
 **Completeness: PARTIAL.**
 
 - Every screen in scope was inventoried from source, and the measured states were checked against fresh emulator facts.
-- F-03, F-04 and F-05 are proven from source (E2) and were not reproduced at runtime. Gradle and device runs were not available to this seat.
+- F-03, F-04 and F-05 are proven from source (E2) and were not reproduced at runtime. This seat ran no Gradle or device job; the coordinator's three CI DEVICE runs (`40797031704`, `40800569636`, `40805804385`) contain no reproducer for them.
 - TalkBack, tablet, foldable, mouse and physical-stylus behaviour are UNKNOWN or OWNER-PHYSICAL-UNVERIFIED.
 - The plan-level sources (Master Plan, OWNER_DECISIONS) are not available.
 

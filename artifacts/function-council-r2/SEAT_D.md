@@ -114,6 +114,13 @@ belong to other seats and were read only where this domain depends on them.
   `MODELING-FOUNDATIONS-R1` changed `freezeToSculpt` (`d1a0671`/`82239bf`). None of the CAD-R2 /
   C1 / C2 device unions include a Sculpt, Freeform or Surface class. Emulator only; no physical
   device evidence exists for any of this.
+- **Device, current tree (E1, emulator) — coordinator note:** `CI DEVICE 40800569636` (77/77, emulator `ForgeShape_CI_API36`, 25/25 startup tokens in order; evidence `artifacts/function-council-r2/evidence/device-run-40800569636/`; recorded in `TESTS.md`) ran on the audited tree and passed
+  `SurfaceOwnerTest` 3/0, `FreeformOwnerTest` 3/0, `Stage027SculptWorkflowTest` 4/0,
+  `SculptHistoryNavigatorTest` 9/0, `SculptUndoTest` 10/0, `SculptBrushStage025Test` 8/0,
+  `ImportGlbSculptGuardTest` 3/0 and `ImportedMeshSculptTest` 9/0 (per-class counts from that
+  run's `instrumentation-junit.xml`). This supersedes the "historical only" state above for those
+  eight classes. `EditorWorkspaceSculptRetentionTest` and `EditorWorkspaceHistoryTest` were in none
+  of the three coordinator device runs and remain historical (E3). Still emulator only.
 
 ## Commands run by this seat
 
@@ -295,8 +302,13 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
 
 ### D-10 — P3 — Coverage gaps
 
-- No device class for Sculpt/Freeform/Surface has run on the current tree (see coverage);
-  the newest Sculpt device evidence predates the `freezeToSculpt` change of 2026-10-06.
+- ~~No device class for Sculpt/Freeform/Surface has run on the current tree; the newest Sculpt
+  device evidence predates the `freezeToSculpt` change of 2026-10-06.~~ **Withdrawn (coordinator
+  note):** `CI DEVICE 40800569636` (77/77, emulator `ForgeShape_CI_API36`, 25/25 startup tokens in order; evidence `artifacts/function-council-r2/evidence/device-run-40800569636/`; recorded in `TESTS.md`) passed `SurfaceOwnerTest`, `FreeformOwnerTest`, `Stage027SculptWorkflowTest`,
+  `SculptHistoryNavigatorTest`, `SculptUndoTest`, `SculptBrushStage025Test`,
+  `ImportGlbSculptGuardTest` and `ImportedMeshSculptTest` on the audited tree, after the
+  `freezeToSculpt` change. Remaining device gap: `EditorWorkspaceSculptRetentionTest` and
+  `EditorWorkspaceHistoryTest` (not in any coordinator run), plus D-02/D-03 device repro.
 - No suite asserts: D-01's scenario, Clear Mask `EntryTooLarge`, GLB export of a Freeform or a
   Surface body (diag_d5: `capture=Ok`, 14,844 B, both `doubleSided=1`), the Freeform/Surface
   JNI Sculpt/sketch refusals (`jni:5442-5448`, `5813-6030`), Surface Duplicate, or the
@@ -356,7 +368,8 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
    `forgeshape_body_commands.cpp:58-80` → `freezeFrom` zeroes the mask), IMPLEMENTED-UNTESTED (MOD-057).
 6. **Freeform and Surface acts are single Construction steps with exact Undo.** E1 (host
    `FF_18_*`, `SURF_21`, `SURF_AUTH_*`, `diag_d.out` `FFD_undo_restores_exact_cage`) + E3
-   (`CI DEVICE 37472535341`).
+   (`CI DEVICE 37472535341`) + device on the audited tree, `FreeformOwnerTest`/`SurfaceOwnerTest`
+   in `CI DEVICE 40800569636` (emulator).
 7. **`FRFM`/`SURF` fixtures decode to their verdicts on this tree.** E1 (`host_corpus_verdicts.txt`).
 8. **Import is refused in Sculpt at both layers** (old council D1 closed for Sculpt). E2 + E3
    (`CI DEVICE 36643101662`).
@@ -397,8 +410,11 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
 ## Unresolved dependencies and open questions
 
 - D-02 is now reproduced on the host domain (E1, `diag_d6.out`); device reproduction of D-02 and D-03 needs a `CI DEVICE` dispatch (not done by this seat).
-- The Sculpt device classes have not run on the current tree; whether they still pass after the
-  `MODELING-FOUNDATIONS-R1` JNI changes is UNDETERMINED (no run).
+- ~~The Sculpt device classes have not run on the current tree; whether they still pass after the
+  `MODELING-FOUNDATIONS-R1` JNI changes is UNDETERMINED (no run).~~ **Resolved (coordinator
+  note):** they pass on the audited tree in `CI DEVICE 40800569636` (77/77, emulator `ForgeShape_CI_API36`, 25/25 startup tokens in order; evidence `artifacts/function-council-r2/evidence/device-run-40800569636/`; recorded in `TESTS.md`) — Sculpt, Import-sculpt, Freeform and Surface
+  classes, 0 failures. Not covered by any coordinator run: `EditorWorkspaceSculptRetentionTest`,
+  `EditorWorkspaceHistoryTest`.
 - Physical stylus (`STYLUS-G1`), visual mask feedback, real-device performance:
   OWNER-PHYSICAL-UNVERIFIED.
 - Horizons are reconstructed; the canonical Master Plan and owner-decision files are not
@@ -408,8 +424,8 @@ stroke), `diag_d4.out` (hidden-body Sculpt load), `diag_d5.out` (Freeform/Surfac
 
 **Completeness: PARTIAL** — every in-scope rule and action was traced to code and to a test or
 a recorded run (115 rows), and the five strongest claims were reproduced on the host; but no
-device run was made on this tree for the Sculpt, Freeform or Surface classes, D-02/D-03 were not
-reproduced on a device, and the authoritative plan sources are unavailable
+device run was made by this seat (the coordinator's `CI DEVICE 40800569636` (77/77, emulator `ForgeShape_CI_API36`, 25/25 startup tokens in order; evidence `artifacts/function-council-r2/evidence/device-run-40800569636/`; recorded in `TESTS.md`) since covered the Sculpt,
+Freeform and Surface owner classes, all passing), D-02/D-03 were not reproduced on a device, and the authoritative plan sources are unavailable
 (`PARTIAL-PLAN-SOURCE-GAP`).
 
 ## Round 2 — objections from seat G and responses
@@ -436,7 +452,7 @@ now authoritative; `gen_req.py` reflects round 1 only).
 | 11 | Positive claim 4 over-graded for Freeform/Surface | Only `C1_CH_*` (CAD curved wall) exercise the chooser occlusion | CONCEDE | Claim 4: E1 for the CAD curved wall only, E2 for Freeform/Surface; MOD-064 split verdict (Freeform/Surface IMPLEMENTED-UNTESTED, J-D6) | RESOLVED |
 | 12 | Positive claim 5 cites wrong tests | `forgeshape_scene_selftest.cpp:907-910` `obj018a_10_the_copy_has_an_empty_sculpt_history`, `..._the_sources_sculpt_history_is_untouched` exist; no check asserts the copy's mask | CONCEDE | Claim 5 cites `obj018a_10` (E1) for history; mask half E2 / IMPLEMENTED-UNTESTED in MOD-057 | RESOLVED |
 | 13 | MOD-086/MOD-109 overclaim | `diag_d5` built only an open Freeform Plane and an open extruded Surface | CONCEDE | Both rows: PASS-REPRODUCED for "open bodies export, double-sided" only; stored level and closed/thickened single-sided are E2, IMPLEMENTED-UNTESTED | RESOLVED |
-| 14 | MOD-114 contradicts itself | Row status "stale", open question UNDETERMINED | CONCEDE | MOD-114 → PARTIAL, P3 (evidence age; current-tree device result UNDETERMINED) | RESOLVED |
+| 14 | MOD-114 contradicts itself | Row status "stale", open question UNDETERMINED | CONCEDE | MOD-114 → PARTIAL, P3 (evidence age; current-tree device result UNDETERMINED). *Coordinator note:* the current-tree device result is now known — PASS in `CI DEVICE 40800569636` (E1, emulator); the evidence-age gap is closed for the classes that run covered (`work/req_D.tsv` not edited by this repair) | RESOLVED |
 | 15 | MOD-007 mixes horizons | `PROJECT_STATUS.md:4113-4115` STYLUS-G1 BLOCKED-ENV, physical hardware only | CONCEDE | MOD-007 keeps the H2 pressure/tilt half (FUTURE-NOT-DUE, source SCULPT-FCM-R1 "Not this stage"); new MOD-115 = physical stylus gate, H1, BLOCKED-OWNER / OWNER-PHYSICAL-UNVERIFIED | RESOLVED |
 | 16 | MOD-091/MOD-111 call host timings "interactive" | Timings are x86_64 host; open500_l4 49.6 ms > 16.7 ms frame | CONCEDE | Both rows: "bounded host timings measured; not gated"; device interactivity OWNER-PHYSICAL-UNVERIFIED | RESOLVED |
 | 17 | MOD-087 adds NURBS | `CLAUDE.md` bans "T-Spline"/"SubD" to the user; "general NURBS" appears only in a "Not this stage" list | CONCEDE | NURBS dropped from MOD-087's requirement and improvement | RESOLVED |
@@ -446,3 +462,23 @@ now authoritative; `gen_req.py` reflects round 1 only).
 Summary: 15 conceded (1 — wording only, verdict kept — and 2, 3, 4, 5, 8, 11, 12, 13, 14, 15, 16,
 17, 18, 19), 0 rebutted, 4 agreed with no change (6, 7, 9, 10).
 Open item outside seat D: the `guard_exit=2` vs `RELEASE_SELFTEST_GUARD=PASS` discrepancy.
+
+## Round 2 addendum — coordinator device runs (repair)
+
+Coordinator executions on the audited tree `70a6c14` (all emulator only; recorded in `TESTS.md`):
+`CI DEVICE 40800569636` 77/77 (`evidence/device-run-40800569636/`) — `SurfaceOwnerTest`,
+`FreeformOwnerTest`, `Stage027SculptWorkflowTest`, `SculptHistoryNavigatorTest`, `SculptUndoTest`,
+`SculptBrushStage025Test`, `ImportGlbSculptGuardTest`, `ImportedMeshSculptTest`,
+`CadVerticalSliceTest`, `CadExtrudeExtentTest`, `SketchUxTest`; `CI DEVICE 40805804385` 90/90
+(`evidence/device-run-40805804385/`, persistence/objects/lifecycle, no seat-D owner class);
+`CI DEVICE 40797031704` 32/32 (`evidence/device-run-40797031704/`, visual-evidence classes). Each
+with 25/25 startup tokens in order.
+
+Effect on this seat: D-10's "no Sculpt/Freeform/Surface device class on the current tree" and the
+open question "Sculpt device classes UNDETERMINED (no run)" are withdrawn (E1, emulator, run
+40800569636). Unchanged: D-02/D-03 are still not reproduced on a device (no run included such a
+case); `EditorWorkspaceSculptRetentionTest` and `EditorWorkspaceHistoryTest` remain historical
+(E3); physical stylus, mask visuals and real-device performance stay OWNER-PHYSICAL-UNVERIFIED —
+emulator CI closes no physical-device gate. `work/VERIFICATION.md` let both seat-D positive claims
+stand and confirmed D-01 and D-02, so no seat-D claim is withdrawn on its account. Row count
+re-checked: `work/req_D.tsv` has 115 rows (`MOD-001`..`MOD-115`), matching the text.

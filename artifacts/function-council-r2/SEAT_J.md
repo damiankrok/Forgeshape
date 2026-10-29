@@ -37,7 +37,7 @@ findings by ID instead of repeating them.
 | `PROJECT_STATUS.md` | *Known Issues / Blockers* (4018–4215), *Technical Debt* (4216–4700), including ARCH-HEALTH-01 `nextObjectId` and DEEP-AUDIT F-07/F-09. |
 | `PRODUCT.md` | Lines 476–583 (rename, hide, lock, duplicate) and 1397/1459 (dimension refusals). |
 | `artifacts/function-council-r2/` | `BEFORE.md` and `SEAT_A.md` … `SEAT_H.md`, read so this seat does not duplicate them. |
-| Fresh audit outputs (not regenerated here) | `scratchpad/fc2/host_selftests.txt` (`HOST_SELFTESTS_OK (4392 checks, 0 failed)`), `host_corpus_verdicts.txt` (72 fixtures), `release_guard.txt` (`RELEASE_SELFTEST_GUARD=PASS`), `run_status.txt`, and `evidence/device-run-40797031704/summary.json` (32 tests, none in this seat's classes). |
+| Fresh audit outputs (not regenerated here) | `scratchpad/fc2/host_selftests.txt` (`HOST_SELFTESTS_OK (4392 checks, 0 failed)`), `host_corpus_verdicts.txt` (72 fixtures), `release_guard.txt` (`RELEASE_SELFTEST_GUARD=PASS`), `run_status.txt`, and `evidence/device-run-40797031704/summary.json` (32 tests, none in this seat's classes). Added at repair: `evidence/device-run-40805804385/summary.json` (90/90, emulator only), which DID run this seat's persistence, recovery, process-death, object-command and JNI-hardening classes; see the androidTest note below. |
 
 ## Inspected code paths
 
@@ -132,6 +132,18 @@ These are what the tests actually assert:
   other classes below the most recent aggregate is `FULL_SHARDED_SUITE_PASS`
   `36607747079` on `fa0b6b4`, an **older tree** (E3). (Corrected in Round 2,
   objection C-12.)
+  **Superseded at repair by CI DEVICE `40805804385` (90/90, 25/25 startup
+  tokens in order, emulator only; `evidence/device-run-40805804385/`, recorded
+  in `TESTS.md`).** On the audited tree it ran `ProjectAutosaveRecoveryTest`
+  (14), `ProjectProcessDeathTest` (stage1..stage8), `ObjectCommandsTest` (1),
+  `JniBoundaryHardeningTest` (5), `ObjectsDeleteTest` (8), `ProjectTransferTest`
+  (13), `ImportedMeshDurableTest` (12), `MirrorSmokeTest`,
+  `BodyDimensionsSmokeTest`, `EditorWorkspaceLifecycleTest`,
+  `DiagnosticsAndRendererLossTest` and `SettingsPreferencesTest`, all passing
+  (counts from `instrumentation-junit.xml`). `HomeFlowTest` and
+  `EditorWorkspaceProjectActionsTest` were not in that run and keep their E3
+  `40782861799`. The `fa0b6b4` dating above no longer applies to the classes
+  this run covered.
   - **`ProjectAutosaveRecoveryTest`** (FSR1B-01..09): checkpoint isolation from
     the slot; one write per burst; a failed write leaves the previous
     checkpoint; quarantine; Recover restores values and a fresh history.
@@ -431,7 +443,10 @@ These are what the tests actually assert:
 5. **Saves and checkpoints are written temp-then-fsync-then-rename**
    (`ProjectSlot.java:83-98`, `ProjectCheckpoint.java:91-104`, E2). A failed
    checkpoint keeps the previous one (FSR1B-03, E3 `36607747079` on the
-   older tree `fa0b6b4`).
+   older tree `fa0b6b4`; superseded at repair: `ProjectAutosaveRecoveryTest`
+   passed 14/14 on this tree in CI DEVICE `40805804385`,
+   `evidence/device-run-40805804385/instrumentation-junit.xml`, emulator only.
+   The FSR1B-03 method name is not separately cross-checked in this repair).
 6. **The JNI enum and array inputs checked here are validated before
    use** (E2). The debug-only seams are **inert in release**, not compiled
    out: they remain exported with no-op bodies (`debugResetConstructionHistory`
@@ -497,16 +512,24 @@ These are what the tests actually assert:
 
 ## Unresolved dependencies and open questions
 
-- No device run in this audit exercised the persistence, recovery or JNI
-  hardening classes. `HomeFlowTest` and `EditorWorkspaceProjectActionsTest`
-  ran in C2 `40782861799` on an identical product/test tree; for
-  `ProjectAutosaveRecoveryTest`, `JniBoundaryHardeningTest` and
-  `ObjectCommandsTest` the newest aggregate is from the older tree `fa0b6b4`
-  (`36607747079`).
+- ~~No device run in this audit exercised the persistence, recovery or JNI
+  hardening classes. … for `ProjectAutosaveRecoveryTest`,
+  `JniBoundaryHardeningTest` and `ObjectCommandsTest` the newest aggregate is
+  from the older tree `fa0b6b4` (`36607747079`).~~ **Superseded by CI DEVICE
+  `40805804385` (90/90, emulator only, `evidence/device-run-40805804385/`,
+  recorded in `TESTS.md`)**, which ran all three on the audited tree
+  (`ProjectAutosaveRecoveryTest` 14, `JniBoundaryHardeningTest` 5,
+  `ObjectCommandsTest` 1, all passing) together with `ProjectProcessDeathTest`
+  stage1..stage8. `HomeFlowTest` and `EditorWorkspaceProjectActionsTest` still
+  rest on C2 `40782861799` on an identical product/test tree (E3).
 - Whether `renameTo` ever fails to replace on a shipped Android filesystem
   (J-04 likelihood, HJ-2) needs a device or filesystem test.
 - The ProjectProcessDeathTest flow needs the PowerShell persistence script.
-  `pwsh` is not available in this environment.
+  `pwsh` is not available in this environment. (Updated at repair: its eight
+  stages passed in CI DEVICE `40805804385`. Whether that CI run killed the
+  process between stages, as the script does, is not established by the
+  evidence files read here (`summary.json`, `instrumentation-junit.xml`), so
+  the real-process-death claim stays unverified by this seat.)
 - J-01 for Surface rests on source evidence only (E2). The host diagnostic
   ran CAD and Freeform.
 
@@ -516,8 +539,12 @@ These are what the tests actually assert:
   every cross-cutting rule rowed in `work/req_J.tsv`.
 - Three parts have no fresh run and rest on source or historic evidence (E2
   or E3):
-  - device-level journeys;
-  - the process-death and filesystem-failure paths;
+  - device-level journeys (partly closed at repair: CI DEVICE `40805804385`
+    ran the persistence, recovery, object-command and JNI-hardening classes,
+    emulator only);
+  - the process-death and filesystem-failure paths (the process-death stages
+    passed in `40805804385`, but a between-stage process kill is not evidenced
+    here; the filesystem-failure path still has no run);
   - Surface hidden-body edits.
 - The canonical master plan and owner-decision sources are not available,
   per `BEFORE.md`.
@@ -542,7 +569,7 @@ and in `work/req_J.tsv`. Unless a row says otherwise, nothing remains UNRESOLVED
 | C-9 | ADV-061: seams are inert, not compiled out; the guard does not probe them; the guard run had a rerun | `ci-release-selftest-guard.sh:11-17` probes `SelfTests` symbols and token strings only. No-op bodies at `forgeshape_jni.cpp:7967-7972` and `:9083`. `run_status.txt` records `guard_exit=2` at 00:54:48. `release_guard.txt` mtime is 00:57:29 and reads PASS | **CONCEDED.** Self-test absence: E1 PASS-REPRODUCED, stated as coming from the unrecorded rerun. Debug seams: PASS-SOURCE (E2), "inert in release". | Resolved; the rerun's own exit status is not recorded in `run_status.txt` and stays an open provenance note |
 | C-10 | Positive claim 2 over-generalised | `j4_replay.out` has exactly four refusals. J5 probes numeric values | **CONCEDED.** Reworded to the four probed refusals plus the 93 numeric refusals. The unprobed refusals are listed. | Resolved |
 | C-11 | ADV-001: J2 never reached a refused load | `J2_SUMMARY … loadRefused=0`. FSR1A_07 checks at `forgeshape_project_selftest.cpp:1834-1843` and FSR1A_13 at `:1845`. The fresh PROJECT suite is 256/0 (`host_selftests.txt:14`); that file prints suite totals, not check names | **CONCEDED.** The E1 now cites FSR1A_07 and FSR1A_13 through the fresh PROJECT suite pass. J2 is kept only for memory safety and decode/load agreement. | Resolved |
-| C-12 | Device dating for HomeFlowTest / EditorWorkspaceProjectActionsTest | `TESTS.md:75` lists both in `40782861799` 67/67. Product and androidTest trees are identical to `70a6c14` | **CONCEDED.** ADV-012, ADV-028, ADV-071, ADV-041 (and ADV-037, which also cites HomeFlowTest) now carry E3 `40782861799`. ADV-041 keeps its E1 from J4 and adds E3. "No device run on this tree" now applies only to `ProjectAutosaveRecoveryTest`, `JniBoundaryHardeningTest` and `ObjectCommandsTest`. | Resolved |
+| C-12 | Device dating for HomeFlowTest / EditorWorkspaceProjectActionsTest | `TESTS.md:75` lists both in `40782861799` 67/67. Product and androidTest trees are identical to `70a6c14` | **CONCEDED.** ADV-012, ADV-028, ADV-071, ADV-041 (and ADV-037, which also cites HomeFlowTest) now carry E3 `40782861799`. ADV-041 keeps its E1 from J4 and adds E3. "No device run on this tree" now applies only to `ProjectAutosaveRecoveryTest`, `JniBoundaryHardeningTest` and `ObjectCommandsTest` (superseded at repair: all three passed in CI DEVICE `40805804385`, 90/90, emulator only). | Resolved |
 | C-13 | ADV-039: J1 never cancels | `CADUXR1_33_edit_sketch_cancel_is_exact_non_mutation` (`forgeshape_sketch_ux_selftest.cpp:638`). Fresh SKETCH_UX is 118/0 | **CONCEDED.** That check is added as the Cancel evidence. The verdict stands. | Resolved |
 | C-14 | Claims 3, 4, 5, 7, 8 hold | — | Acknowledged. | Resolved |
 | C-15 | ADV-018 / J-03 has no repo source for the expectation | `projectSemanticFingerprint` mixes `nextObjectId` (`forgeshape_project_state.cpp:753`). The `.forge` rule stores the allocator mark. APP-H1 asks by fingerprint | **CONCEDED.** ADV-018 → BLOCKED-OWNER (OD-J3), H2-pending-decision. A note is added that CAD id marks are restored by Undo. | Resolved |

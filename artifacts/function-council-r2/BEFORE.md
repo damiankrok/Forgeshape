@@ -91,3 +91,10 @@ GitHub access through the MCP server (dispatch, logs, artifacts).
 3. Ten independent seats A–J, a two-round deliberation, adversarial
    verification of the strongest positive claims and highest-risk defects,
    then synthesis into the required files.
+
+## Correction recorded after the audit (append-only)
+
+The JNI row above counted 276 *lines* matching `Java_com_forgeshape_*`; there
+are **275 unique exports**, equal to the 275 `static native` declarations in
+`NativeViewport.java`. `debugInjectDeviceLoss` is defined twice (a debug body
+and a release stub under the build-type conditional), so it matches twice.

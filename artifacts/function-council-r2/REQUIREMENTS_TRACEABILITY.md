@@ -5,8 +5,9 @@ Audited tree: `70a6c14f703bfda2ab689b855126c1d12a541e41`. Its product tree
 The data is in [`requirements_traceability.tsv`](requirements_traceability.tsv):
 681 requirement rows, one header, 24 tab-separated columns. Fresh test
 executions and CI run ids are recorded once, in [TESTS.md](TESTS.md), which
-the coordinator writes. This file cites no run id that a seat row does not
-already carry.
+the coordinator writes. The only run ids this file cites beyond those the
+seat rows carry are the four coordinator CI runs listed under "Fresh runs on
+the audited tree" below, with their evidence directories.
 
 ## Status: PLAN-COVERAGE-PARTIAL
 
@@ -22,23 +23,81 @@ already carry.
 - **Consequence.** A requirement that exists only in the unavailable Master
   cannot appear here. The matrix is therefore a lower bound on the planned
   scope, not the whole of it.
-- **No adversarial verification file.** `work/VERIFICATION.md` does not exist
-  at synthesis time. A filesystem search found no `VERIFICATION*` file newer
-  than `BEFORE.md`. So no verdict here comes from an adversarial verification
-  pass. What was applied instead are the Round 2 outcomes recorded in each
-  `SEAT_*.md` "Round 2" section and in `work/delib_*.md`:
-  - **B-07 withdrawn.** `delib_E_to_B.md` #3. `CON-074` already excludes it,
-    and it remains only as hypothesis H-B4.
-  - **C-03 narrowed.** The Keep Sketch half is withdrawn
-    (`delib_F_to_C.md` #3). `CAD-063` carries only the Add/Cut half.
-  - **J-05 narrowed.** The revolve-axis half is withdrawn
-    (`delib_C_to_J.md` C-1). `ADV-063` is PASS-SOURCE-AND-RECORDED-RUNTIME.
-  - **H-01 promoted.** It is now `RND-006` DEFECT-CONFIRMED
-    (`delib_A_to_H.md` O-1; `delib_H_to_E.md` #10).
+- **Adversarial verification.** [`work/VERIFICATION.md`](work/VERIFICATION.md)
+  records the panel pass (three lenses per finding: reproduce, refute by code,
+  scope/severity; a finding survives when at least two uphold it).
+  - **Findings: 30 of 30 survived.** The panel took the top 30 of the 38
+    P0–P2 findings, and every one survived (the upheld count was 3/3 or
+    2/3). De-duplicated by root cause (A-01 = X-A01; B-02 = E-01;
+    A-04 = C-02 = D-02 = E-03; C-01 = F-02; A-05 = E-04) they are **23
+    distinct root causes**. So no DEFECT-CONFIRMED, PARTIAL or
+    DOC-DIVERGENCE row in this matrix rests on a refuted finding, and none
+    was relabelled or withdrawn.
+  - **Not panel-verified.** The 8 lower-ranked P2 findings and every P3
+    finding keep their seat grade. Rows resting only on them carry the seat's
+    verdict and are not adversarially confirmed.
+  - **Positive claims: 10 of 12 overstated.** Of the twelve strongest
+    positive claims, only Seat D's two stand (CAD, Freeform and Surface bodies
+    can never become a sculpt source; Freeform Symmetry is exact). The other
+    ten (Seat A ×2, B ×2, C ×2, E ×2, F ×2) were judged overstated at their
+    stated grade, typically because the cited test drives a native seam or
+    `syncFromNative()` rather than the real UI path, or because a property is
+    proven for the codec but not for every load entry point. The rule is that
+    they stay supported at E2 (source) and are **not** PASS-REPRODUCED.
+  - **Applied to the TSV** (coordinator reconciliation, 2026-10-29). The
+    repair round regraded the rows carrying those claims in
+    [`requirements_traceability.tsv`](requirements_traceability.tsv) (each
+    with an "FC2 repair:" `synthesis_note`) and re-stamped rows whose test
+    class ran fresh in `CI DEVICE` `40800569636` / `40805804385` (emulator,
+    see [TESTS.md](TESTS.md)). The totals below were recomputed with
+    `totals.py` after that: PASS-REPRODUCED 313, PASS-SOURCE-AND-RECORDED-RUNTIME
+    154, all other columns unchanged.
+  - **Round 2 outcomes that still apply** (`SEAT_*.md` "Round 2" sections,
+    `work/delib_*.md`):
+    - **B-07 withdrawn.** `delib_E_to_B.md` #3. `CON-074` already excludes it,
+      and it remains only as hypothesis H-B4.
+    - **C-03 narrowed.** The Keep Sketch half is withdrawn
+      (`delib_F_to_C.md` #3). `CAD-063` carries only the Add/Cut half.
+    - **J-05 narrowed.** The revolve-axis half is withdrawn
+      (`delib_C_to_J.md` C-1). `ADV-063` is PASS-SOURCE-AND-RECORDED-RUNTIME.
+    - **H-01 promoted.** It is now `RND-006` DEFECT-CONFIRMED
+      (`delib_A_to_H.md` O-1; `delib_H_to_E.md` #10). The panel upheld H-01
+      3/3.
+- **Fresh runs on the audited tree.** The coordinator ran these on the
+  audited tree; details are in [TESTS.md](TESTS.md). All device runs are on
+  an emulator, and each emitted 25/25 startup tokens in order.
+  - Local: host self-tests HOST_SELFTESTS_OK 4392/0 (25 suites, 17 oracles),
+    JVM 196/0/0, release guard PASS, host corpus verdicts for 72 fixtures
+    (`evidence/local/`).
+  - CI FAST `40796992679`: success, corpus parity 72/72
+    (`evidence/fast-run-40796992679/`).
+  - CI DEVICE `40797031704`: 32/32, the visual-evidence classes
+    (`evidence/device-run-40797031704/`).
+  - CI DEVICE `40800569636`: 77/77, Surface, Freeform, Sculpt, Import-sculpt,
+    CAD vertical slice, extent and `SketchUxTest`
+    (`evidence/device-run-40800569636/`).
+  - CI DEVICE `40805804385`: 90/90, persistence, transfer, process death,
+    objects, mirror, dimensions, lifecycle, JNI hardening, diagnostics and
+    renderer loss, and settings (`evidence/device-run-40805804385/`).
+- **Stale "not re-run" evidence in the TSV.** Some rows' `evidence_run_sha`
+  still says "historic" or "not re-run on 70a6c14", but a test class they cite
+  ran in one of the device runs above:
+  - In `40805804385`: `CON-007` (`ImportedMeshDurableTest`), `CON-029` and
+    `CON-038` (`ObjectCommandsTest`), `CON-046`, `CON-078` and `RND-016`
+    (`ObjectsDeleteTest`), `CON-052` (`MirrorSmokeTest`), `CON-059`
+    (`BodyDimensionsSmokeTest`), `DOC-014` and `DOC-065`
+    (`ProjectProcessDeathTest`), `DOC-064` (`EditorWorkspaceLifecycleTest`),
+    and `RND-008` (both of those classes).
+  - In `40800569636`: `CON-031` and `CON-077`
+    (`Stage027SculptWorkflowTest`), `CAD-012` (`SketchUxTest`), and `CAD-042`
+    and `CAD-067` (`CadVerticalSliceTest`).
 
-  If a VERIFICATION.md is produced later, rows whose verdict rests on a
-  finding it refutes must be relabelled hypothesis or withdrawn, and the
-  totals recomputed with the command below.
+  The match is by class name in the `tests` column, not by test method, so
+  no verdict was raised on this basis. C-06 (core sketch device classes not
+  re-verified) is narrowed but not closed: `SketchUxTest`,
+  `CadVerticalSliceTest` and `CadExtrudeExtentTest` ran in `40800569636`,
+  while `SpatialSketchTest`, `SketchExtrudeTest`, `CadCanvasExtrudeTest` and
+  the planar-face runtime class ran in none of the runs above.
 - **What each DEFECT-CONFIRMED rests on.** Every DEFECT-CONFIRMED row graded
   E2 is a source-derived proof that the seats did not reproduce at runtime.
   The grade is kept in `evidence_grade`.
@@ -150,23 +209,23 @@ USG = UNDETERMINED-SOURCE-GAP. A dot means zero.
 
 | Domain | Horizon | PR | PSR | IU | PART | DEF | REG | INA | DOC | NIBD | FND | BO | OOS | USG | Total |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Adversarial integrity | H0 | 4 | 3 | 3 | 1 | 1 | . | . | . | . | . | . | . | 1 | 13 |
+| Adversarial integrity | H0 | 2 | 5 | 3 | 1 | 1 | . | . | . | . | . | . | . | 1 | 13 |
 | Adversarial integrity | H1 | 1 | 1 | . | . | 1 | . | . | 1 | . | . | 1 | . | . | 5 |
 | Adversarial integrity | H2 | . | . | . | 1 | . | . | . | . | . | 2 | 3 | . | 1 | 7 |
 | Android UI/UX | H0 | 3 | 7 | 1 | 1 | 2 | . | . | . | . | . | . | . | . | 14 |
-| Android UI/UX | H1 | 10 | 13 | . | 2 | 7 | . | . | 1 | . | . | . | . | 1 | 34 |
+| Android UI/UX | H1 | 7 | 16 | . | 2 | 7 | . | . | 1 | . | . | . | . | 1 | 34 |
 | Android UI/UX | H2 | . | . | 1 | . | . | . | . | . | . | 1 | 2 | 2 | . | 6 |
 | Android UI/UX | NA | . | . | . | . | . | . | . | . | . | . | . | 1 | . | 1 |
 | App shell & project lifecycle | H0 | 2 | 14 | . | 1 | 2 | . | . | 1 | . | . | . | . | . | 20 |
 | App shell & project lifecycle | H1 | 4 | 24 | 2 | 6 | 5 | . | . | 7 | . | . | 2 | . | . | 50 |
 | App shell & project lifecycle | H2 | . | . | . | . | . | . | . | . | . | 3 | . | 1 | 1 | 5 |
 | CAD & sketch | H0 | 14 | . | . | . | . | . | . | . | . | . | . | . | . | 14 |
-| CAD & sketch | H1 | 79 | 4 | . | 3 | 2 | . | . | 1 | . | . | 1 | . | . | 90 |
+| CAD & sketch | H1 | 78 | 5 | . | 3 | 2 | . | . | 1 | . | . | 1 | . | . | 90 |
 | CAD & sketch | H2 | . | . | . | . | . | . | . | . | . | 5 | 1 | . | . | 6 |
-| Construction & objects | H0 | 21 | 13 | . | 1 | . | . | . | . | . | . | . | . | . | 35 |
-| Construction & objects | H1 | 25 | 16 | 1 | 1 | 3 | . | . | 1 | . | . | . | . | 1 | 48 |
+| Construction & objects | H0 | 20 | 14 | . | 1 | . | . | . | . | . | . | . | . | . | 35 |
+| Construction & objects | H1 | 24 | 17 | 1 | 1 | 3 | . | . | 1 | . | . | . | . | 1 | 48 |
 | Construction & objects | H2 | . | . | . | . | . | . | . | . | . | 2 | 2 | . | . | 4 |
-| Document, persistence & interchange | H0 | 14 | 12 | . | 2 | 3 | . | . | . | . | . | . | . | . | 31 |
+| Document, persistence & interchange | H0 | 13 | 13 | . | 2 | 3 | . | . | . | . | . | . | . | . | 31 |
 | Document, persistence & interchange | H1 | 9 | 1 | . | 2 | 4 | . | . | 2 | . | . | . | . | . | 18 |
 | Document, persistence & interchange | H2 | . | . | . | . | . | . | . | . | . | 1 | . | . | . | 1 |
 | Freeform | H1 | 17 | . | 3 | 1 | . | . | . | . | . | . | . | . | . | 21 |
@@ -182,13 +241,13 @@ USG = UNDETERMINED-SOURCE-GAP. A dot means zero.
 | Sculpt+cross-representation | H2 | . | . | . | . | . | . | . | . | . | 3 | . | . | . | 3 |
 | Surface | H1 | 15 | . | 4 | . | . | . | . | . | . | . | . | . | . | 19 |
 | Surface | H2 | . | . | . | . | . | . | . | . | . | 2 | . | . | . | 2 |
-| Test & CI evidence | H0 | 31 | 11 | 2 | 7 | 2 | . | . | 7 | . | . | 2 | . | 1 | 63 |
-| Test & CI evidence | H1 | 5 | 1 | . | 2 | . | . | . | . | . | . | 1 | . | . | 9 |
-| **All** | **H0** | 117 | 74 | 18 | 15 | 13 | . | . | 10 | . | . | 2 | . | 2 | 251 |
-| **All** | **H1** | 205 | 69 | 16 | 20 | 24 | . | . | 14 | . | . | 7 | . | 3 | 358 |
+| Test & CI evidence | H0 | 30 | 12 | 2 | 7 | 2 | . | . | 7 | . | . | 2 | . | 1 | 63 |
+| Test & CI evidence | H1 | 4 | 2 | . | 2 | . | . | . | . | . | . | 1 | . | . | 9 |
+| **All** | **H0** | 112 | 79 | 18 | 15 | 13 | . | . | 10 | . | . | 2 | . | 2 | 251 |
+| **All** | **H1** | 199 | 75 | 16 | 20 | 24 | . | . | 14 | . | . | 7 | . | 3 | 358 |
 | **All** | **H2** | 2 | . | 1 | 1 | . | . | 1 | . | . | 43 | 17 | 4 | 2 | 71 |
 | **All** | **NA** | . | . | . | . | . | . | . | . | . | . | . | 1 | . | 1 |
-| **All** | **all** | 324 | 143 | 35 | 36 | 37 | 0 | 1 | 24 | 0 | 43 | 26 | 5 | 7 | 681 |
+| **All** | **all** | 313 | 154 | 35 | 36 | 37 | 0 | 1 | 24 | 0 | 43 | 26 | 5 | 7 | 681 |
 
 Reading notes:
 

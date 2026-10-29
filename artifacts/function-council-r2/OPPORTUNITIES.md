@@ -7,21 +7,61 @@ task slices, the "leave alone" list and the recommended next stage are in
 `OWNER_DECISIONS_REQUIRED.md` (ids `OD-nn`). Findings, root causes (`RC-nn`) and
 contract rows (`CC-nn`) are defined in `COUNCIL_DELIBERATION.md`,
 `CONTRACT_CONFLICTS.md` and the seat files; they are linked here, not restated.
-Fresh test executions and CI run ids are owned by `TESTS.md` (coordinator, not
-yet written when this file was synthesised). Run ids below are the ones the
-seats cite; the evidence folders under `evidence/` hold the downloaded copies.
+Fresh test executions and CI run ids are owned by `TESTS.md` (written by the
+coordinator). The runs this file relies on, all on tree `70a6c14`, emulator only
+(`ForgeShape_CI_API36`, API 36, x86_64, SwiftShader), each with 25/25 startup
+tokens in emission order:
+
+- CI FAST `40796992679` success, corpus parity 72/72 (`evidence/fast-run-40796992679/`);
+- CI DEVICE `40797031704` 32/32, visual-evidence classes incl. `EditorWorkspaceLegibilityTest`
+  and `uilr106_backDismissesTheTopmostSurfaceBeforeItLeaves` (`evidence/device-run-40797031704/`);
+- CI DEVICE `40800569636` 77/77, Surface / Freeform / Sculpt / Import-sculpt / CAD vertical
+  slice / extent / `SketchUxTest` (`evidence/device-run-40800569636/`);
+- CI DEVICE `40805804385` 90/90, persistence, transfer, process death, objects, mirror,
+  dimensions, lifecycle, JNI hardening, diagnostics/renderer loss, settings
+  (`evidence/device-run-40805804385/`);
+- local: host self-tests `HOST_SELFTESTS_OK` 4392/0 (25 suites), JVM 196/0/0, release guard
+  PASS, host corpus verdicts 72 fixtures (`evidence/local/`).
+
+A green device run proves only that the classes it ran passed. Apart from the hit-area rects
+measured from the `40797031704` captures (OPP-07), no case in the three device runs exercises a
+CLASS 1 defect below, so a green run is never cited as evidence that one is absent, and no
+physical-device gate is closed by any of them.
 
 ## 0. Standing of every finding (read first)
 
-- **`work/VERIFICATION.md` did not exist at synthesis time** (checked again for
-  this file: `ls artifacts/function-council-r2/work/` lists only `delib_*.md`
-  and `req_*.tsv`). So **no finding here is labelled "survived adversarial
-  verification"**. A finding is entered as a class-1 defect only when all of
-  these hold:
+- **`work/VERIFICATION.md` now exists** and supersedes the earlier "not yet verified" wording
+  of this section (as `PRIORITISED_BACKLOG.md` §0 already records). Three lenses (reproduce,
+  refute-by-code, scope/severity) judged the top **30 of 38** P0–P2 findings; a finding
+  survives when at least 2 of 3 upheld it. **All 30 survived**, de-duplicating to **23
+  distinct root causes**. The 8 lower-ranked P2 findings and every P3 finding were NOT
+  panel-verified and keep their seat grade.
+- **Panel-verified cards (survived):** OPP-01 (B-02 = E-01, 3/3), OPP-02 (B-01, B-03, 3/3),
+  OPP-03 (A-04 = C-02 = D-02 = E-03, 3/3), OPP-04 (D-01, 3/3), OPP-05 (F-05, 3/3), OPP-06
+  (C-01 = F-02, 3/3), OPP-07 (F-01, 3/3), OPP-08 (F-04, 3/3), OPP-09 (E-02, 3/3), OPP-10
+  (H-01, 3/3), OPP-11 (G-01, 3/3). **OPP-12 (I-01 = H-13) is NOT in the panel table** and keeps
+  its seat grade, although it is filed with the P2 cards.
+- **Rows outside OPP-01..11 whose finding the panel also upheld:** OPP-14 (A-05 = E-04, 3/3),
+  OPP-15 (A-06, 3/3), OPP-31 (G-02, 2/3), OPP-39 (H-06, 2/3), OPP-40 (H-05, 2/3), OPP-G1
+  (A-02, 3/3), OPP-G2 (A-01 = X-A01, 3/3), OPP-G3 (F-03, 3/3). Every other P3 row (OPP-13,
+  OPP-16..30) and every other CLASS 2 row is **seat-graded only**.
+- **Survived, but not entered as a schedulable defect** because Round 2 regraded it to an OWNER
+  decision: A-03 (2/3, → OD-07) and A-07 (2/3, → OD-10). C-06 (2/3, "core sketch device classes
+  not re-verified on the audited tree") is **superseded by the fresh runs**: `CadVerticalSliceTest`,
+  `CadExtrudeExtentTest` and `SketchUxTest` passed in CI DEVICE `40800569636`. Note that the
+  `SketchUxTest` navigator case passing there does not contradict OPP-06: it is the false-green
+  recorded as CC-47.
+- **Positive claims:** 10 of 12 of the seats' strongest positive claims were judged overstated
+  (typically the cited test calls a native seam or `syncFromNative()` rather than the real UI
+  path, or a property is proven for the codec but not every load entry point). They stand at
+  E2 only and are not upgraded to PASS-REPRODUCED; nothing in this file relies on them as
+  reproduced.
+- A finding is entered as a class-1 defect only when all of these hold:
   1. it is DEFECT-CONFIRMED after Round 2 (`COUNCIL_DELIBERATION.md` §1, §4);
   2. it was not withdrawn or regraded to BLOCKED-OWNER / FUTURE-NOT-DUE
      (`COUNCIL_DELIBERATION.md` §0 table);
   3. its grade is E1 or E2 (no E5-only defect is listed).
+  No card had to be withdrawn: `work/VERIFICATION.md` refutes none of them.
 - For seven of them the synthesis re-read the cited source on this tree
   ("synth re-read", E2): `forgeshape_gltf_export.cpp:177-186` (export reads
   `body.transform()`), `forgeshape_jni.cpp:313-320` (`beginSketchView` frames
@@ -30,12 +70,11 @@ seats cite; the evidence folders under `evidence/` hold the downloaded copies.
   the three `DigitsKeyListener("0123456789.-")` sites, `EditorWorkspaceView.java:5675-5679`
   (Recover retires the checkpoint), and `isFaceSupportedCad` callers (only
   `forgeshape_body_commands.cpp:205` and the JNI query at `forgeshape_jni.cpp:7679`).
-- **When `VERIFICATION.md` is written**, any finding it does not uphold must be
-  relabelled hypothesis / withdrawn in this file and in the backlog.
 - Withdrawn or regraded, and therefore NOT listed as defects: B-07, the C-03
   Keep Sketch sub-claim, the J-05 revolve-axis half, J-01 (→ OD-12), J-03 / G-06
   (→ OD-13), E-08 (→ OD-11), A-03 (→ OD-07), A-07 (→ OD-10), H-05 / H-06 / H-07
-  (→ OD-19, no budget recorded).
+  (→ OD-19, no budget recorded; H-05 and H-06 survived the panel and remain as the
+  CLASS 2 rows OPP-40 / OPP-39 behind OD-19).
 
 ## 1. Field legend
 
@@ -82,7 +121,7 @@ of saved data proven at E1). Ordering is in `PRIORITISED_BACKLOG.md` §1.
 | Link | B-01, B-03 (DOC-DIVERGENCE `ARCHITECTURE.md:2606-2608`), RC-01, CC-02, TST-076 (no test) |
 | Horizon | H0/H1 — CLAUDE.md CAD-A3 "such a body is NOT independently transformable (`SceneObject::isFaceSupportedCad`)" |
 | User problem | Transform is offered; the gizmo is drawn away from the body; a typed or dragged value records an Undo step, marks the project unsaved and writes a checkpoint, while the body does not move. |
-| Evidence | E1 (seat B `diag_face_supported`, re-run by seat I): `gizmo visible=1`, `applyStatus=Applied`, `undoDepth 0->1`, `fingerprintChanged=1`, resolved model still `(0,0,3)`. Synth re-read: `isFaceSupportedCad` is read only by Duplicate and an unused JNI query. Not reproduced on a device. |
+| Evidence | E1 (seat B `diag_face_supported`, re-run by seat I): `gizmo visible=1`, `applyStatus=Applied`, `undoDepth 0->1`, `fingerprintChanged=1`, resolved model still `(0,0,3)`. Synth re-read: `isFaceSupportedCad` is read only by Duplicate and an unused JNI query. Panel 3/3. Not reproduced on a device: no case in CI DEVICE `40797031704`, `40800569636` or `40805804385` exercises it. |
 | Root-cause owner | `forgeshape_jni.cpp` `applyBoxTransform` (`:1335-1385`) and the gizmo activation / touch path (`:9932-9934`); `forgeshape_gizmo.cpp` `beginDrag`; Java `EditorWorkspaceView.java:3028-3033` (gizmo `offered`), `WorkspaceTrailingHostView.java:605-620` (Transform entry) |
 | Alternatives | (a) refuse below JNI with a named status and withdraw above it — the rule as written; (b) an "offset from face" placement — new durable semantics, a format change, H2. Recommended: (a). |
 | Android effect | Confusing no-op instrument; spurious dirty state; non-canonical transform bytes in `.forge` (`validateProjectDocument` checks only `transformValid`, `forgeshape_project_document.cpp:739`). |
@@ -168,7 +207,7 @@ of saved data proven at E1). Ordering is in `PRIORITISED_BACKLOG.md` §1.
 | Link | F-01, RC-20, CAD-024; coverage gap F-09 = I-08 |
 | Horizon | H0 — CLAUDE.md "48 dp is the interactive floor … it is the HIT AREA" |
 | User problem | Mis-taps; `sketch_navigator_flip` 36.2 dp sits 4 dp from two 48 dp arrows. |
-| Evidence | E1 (rects in this audit's CI DEVICE captures, see `TESTS.md`): Flip 95×126 px = 36.2 dp; Selection Outline On/Off 37.0 / 39.2 dp; `sketch_dimension_label` 43.4 dp. Cause E2: `EditorControlStyles.chip()` (`:366-382`) sets only a minimum height. |
+| Evidence | E1 (rects in this audit's CI DEVICE captures, `evidence/device-run-40797031704/`, see `TESTS.md`): Flip 95×126 px = 36.2 dp; Selection Outline On/Off 37.0 / 39.2 dp; `sketch_dimension_label` 43.4 dp. Cause E2: `EditorControlStyles.chip()` (`:366-382`) sets only a minimum height. |
 | Root-cause owner | `EditorControlStyles.java`, `SketchOrientationNavigatorView.java:134-137`, `DisplaySettingsPopoverView.java:230-299`, `SketchDimensionLabelView.java:79-90` |
 | Alternatives | (a) `setMinimumWidth(control_height)` in `chip()` plus a width floor for the navigator's weighted Flip; (b) per-site padding. (a) is one change. |
 | Android effect | Precision of touch on the smallest chips. |
@@ -185,7 +224,7 @@ of saved data proven at E1). Ordering is in `PRIORITISED_BACKLOG.md` §1.
 | Link | F-04 = CAD-115, RC-08, CC-06 (b) |
 | Horizon | H0/H1 — APP-H1 "Back is one step"; PRODUCT.md "Back returns to the extrusion" |
 | User problem | Same key means two things by API level; on current Android the app leaves with a revolve staged. |
-| Evidence | E2 (`hasDismissibleSurface` `EditorWorkspaceView.java:1112-1117` has no revolve term; the callback is armed only while it is true, `ForgeShapeActivity.java:121-160`); route evidence `uilr106` (fresh PASS). API 33–35 UNVERIFIED (E5). Not reproduced. |
+| Evidence | E2 (`hasDismissibleSurface` `EditorWorkspaceView.java:1112-1117` has no revolve term; the callback is armed only while it is true, `ForgeShapeActivity.java:121-160`); route evidence `uilr106_backDismissesTheTopmostSurfaceBeforeItLeaves` (fresh PASS in CI DEVICE `40797031704`, Add Primitive only). Panel 3/3. API 33–35 UNVERIFIED (E5). The Revolve case itself is not reproduced on a device. |
 | Root-cause owner | `EditorWorkspaceView.java` (`hasDismissibleSurface` vs `dismissTopmostSurface`) |
 | Alternatives | (a) add the revolve term; (b) derive `hasDismissibleSurface()` from the same ordered list `dismissTopmostSurface()` walks (prevents the next divergence — palettes, editors). Recommended: (b), scoped to non-bootstrap phases so OD-08 is not pre-empted. |
 | Android effect | Lost staged revolve intent (not project data). |
@@ -217,7 +256,7 @@ of saved data proven at E1). Ordering is in `PRIORITISED_BACKLOG.md` §1.
 | Link | H-01, RC-12, CC-43 (stale javadoc) |
 | Horizon | H0 — CLAUDE.md GPU rule ("rather than presenting a black viewport") |
 | User problem | A dead viewport with no message until the user leaves and returns. Autosave still protects edits. |
-| Evidence | E2 (only production caller of `checkRendererLifecycle` is `onResume`, `ForgeShapeActivity.java:336`; the render loop only stores an atomic, `forgeshape_jni.cpp:2049-2066`). Not reproduced (the debug injection seam is the supported route). |
+| Evidence | E2 (only production caller of `checkRendererLifecycle` is `onResume`, `ForgeShapeActivity.java:336`; the render loop only stores an atomic, `forgeshape_jni.cpp:2049-2066`). Panel 3/3. The defect is not reproduced: `DiagnosticsAndRendererLossTest` passed 9/9 in CI DEVICE `40805804385`, which shows the resume-time path works and does not exercise a mid-session report (the debug injection seam is the supported route). |
 | Root-cause owner | `ForgeShapeActivity.java`, `EditorWorkspaceView.java:6147-6155` |
 | Alternatives | (a) poll `rendererLifecycle()` in the existing refresh path; (b) a low-rate Choreographer tick; (c) a native → Java callback (new JNI upcall, more surface). Recommended (a) or (b). |
 | Effort | S, confidence M (device case through `debugInjectDeviceLoss`, never a real loss on the emulator) |
@@ -231,7 +270,7 @@ of saved data proven at E1). Ordering is in `PRIORITISED_BACKLOG.md` §1.
 | Link | G-01, RC-13 |
 | Horizon | H0 — the 25-token clean launch is the stated evidence contract (CLAUDE.md "Commands") |
 | User problem | None for the product; an arm64 debug launch is expected to print `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_FAIL`, which can hide a real FAIL. |
-| Evidence | E1 host (`clang++ -O1 -mfma` → `HOST_SELFTESTS_FAIL (4392 checks, 2 failed)`; `-ffp-contract=off` → 0 failed) + E2 arm64 assembly (`fmadd` at `arm64_forgeshape_history_selftest.s:3967`). Device outcome E5 / OWNER-PHYSICAL-UNVERIFIED. |
+| Evidence | E1 host (`clang++ -O1 -mfma` → `HOST_SELFTESTS_FAIL (4392 checks, 2 failed)`; `-ffp-contract=off` → 0 failed) + E2 arm64 assembly (`fmadd` at `arm64_forgeshape_history_selftest.s:3967`). Panel 3/3. Device outcome on arm64 E5 / OWNER-PHYSICAL-UNVERIFIED: the 25/25 tokens in CI DEVICE `40797031704`, `40800569636` and `40805804385` are from an x86_64 emulator and do not settle arm64 contraction. |
 | Root-cause owner | `forgeshape_history_selftest.cpp:474-480`, `forgeshape_cad_feature_selftest.cpp:5392-5394` |
 | Alternatives | (a) compute each oracle through the same runtime expression, or compare with a stated tolerance, and give the lens check a non-tied fixture; (b) pin `-ffp-contract=off` (OD-17; `PROJECT_STATUS.md:2447-2449` argues against it). Recommended (a); it needs no decision. |
 | PC relevance | High: any contracting desktop ABI (Windows-on-ARM, AArch64 Linux). |
@@ -246,7 +285,7 @@ of saved data proven at E1). Ordering is in `PRIORITISED_BACKLOG.md` §1.
 | Link | I-01 = H-13, RC-13, I-14 |
 | Horizon | H0 (evidence integrity) |
 | Problem | PROJECT is 256/256 (`forgeshape_jni.cpp:821`), 0 headroom; the next PROJECT check would be skipped on device silently. Precedent: CAD_FEATURE lost 49 checks at cap 512 (`artifacts/cad-r2-retained-sketch-parametric-ux/TESTS.md:76`). |
-| Evidence | E1 (seat I `cap_probe`: `cap=256 recorded=256`); no current loss. |
+| Evidence | E1 (seat I `cap_probe`: `cap=256 recorded=256`); no current loss. Seat grade only (not in the `work/VERIFICATION.md` panel). |
 | Root-cause owner | `Recorder::check` pattern in all suites; caps in `forgeshape_jni.cpp` |
 | Alternatives | (a) `count == cap` fails the suite, raise PROJECT/CAMERA caps; (b) committed expected-count table checked by `ci-device-smoke.sh` (I-14). Both are cheap; (a) is the guard, (b) the regression net. |
 | Effort | S, confidence H |
@@ -273,7 +312,7 @@ of saved data proven at E1). Ordering is in `PRIORITISED_BACKLOG.md` §1.
 | OPP-26 | I-11 | `EditorWorkspaceLegibilityTest` leaks `animator_duration_scale 0` on failure | E2 | test `:783/:798`, `@After` `:86-96` | restore in `@After` | XS, H | none |
 | OPP-27 | A-08 | Open-picker launch failure shows "Could not write the copy" | E2 | `EditorWorkspaceView.java:2090, 2652` | dedicated string | XS, H | none |
 | OPP-28 | D-07 | Resume Sculpt has no native sketch guard (chrome-only) | E2 | `forgeshape_jni.cpp` resume entry | refuse `in_sketch` below JNI | XS, M | none |
-| OPP-29 | B-05, CC-45 | derived names at the 96-byte cap truncated mid-suffix or dropped; comment cites a non-existent `LengthFilter` | E2 | `forgeshape_body_commands.cpp:~177` | truncate the base, keep the suffix (or refuse) | S, M | B OD-3 (name policy) — low stakes |
+| OPP-29 | B-05, CC-45 | derived names at the 96-byte cap truncated mid-suffix or dropped; comment cites a non-existent `LengthFilter` | E2 | `forgeshape_body_commands.cpp:~177` | truncate the base, keep the suffix (or refuse) | S, M | OD-31 (name policy; Seat B decision 3) — low stakes |
 | OPP-30 | A-11 | New Freeform refusal shows a raw token; non-Sculpt projects summarised "in Construction" | E2 | `EditorWorkspaceView.java:2448, 6190-6198` | route through `FreeformPresentation.refusalMessage`; mode word per representation | XS, H | none |
 
 **Gated defects** — mechanism confirmed, but the fix contradicts another owner

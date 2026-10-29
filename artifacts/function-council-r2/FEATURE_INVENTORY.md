@@ -52,20 +52,56 @@ green run, not of each method):
 | `HOST` | `HOST_SELFTESTS_OK (4392 checks, 0 failed)`, 25 suites, run by this audit (`evidence/local/host_selftests.txt`) | E1 |
 | `JVM` | 20 classes / 196 tests, 0 failures, run by this audit | E1 |
 
-By this split, 28 of the 70 androidTest classes with tests have an E1 run in
-this audit, 11 have a C2 run on the identical product tree, and the other 31
-rest on `OLD` runs (E2 arithmetic over the three `instrumentation-junit.xml`
-files and `TEST_COVERAGE_MATRIX.md` §4). The head SHA of each FC2 run is
-recorded in `TESTS.md`; Seat F records `40797031704` as `70a6c14`.
+By this split, 28 of the 70 androidTest classes with `@Test` methods have an
+E1 run in this audit (5 + 11 + 12 classes in the three FC2 DEVICE runs, 32/32,
+77/77 and 90/90, **199/199** in all, each with 25/25 startup tokens in order,
+emulator only), 11 have a C2 run on the identical product tree, and the other
+**31** rest on `OLD` runs only. The split is the one `TESTS.md` §3 states and
+§4 lists by name (31 of 70); it was re-derived for this file by listing every
+`app/src/androidTest/**/*.java` with at least one `@Test` (70) and subtracting
+the 28 + 11 classes named in the run lists above (E2 arithmetic). Every class
+tagged `OLD` in the tables below is one of `TESTS.md` §4's 31. (Earlier drafts
+cited `TEST_COVERAGE_MATRIX.md` §4 for this split; that section predates the
+FC2 runs and marks most of the 28 FC2 classes "older", so it is not the source.)
+The head SHA of each FC2 run (`9cfc3f5` for `40796992679`, `40797031704`,
+`40800569636`; `7c05748` for `40805804385`) is recorded in `TESTS.md` §1.2,
+whose product, test, script and workflow trees are byte-identical to
+`70a6c14`.
 
-**Verdicts on defects.** `work/VERIFICATION.md` (the adversarial verdicts) was
-**not present** in `work/` when this file was written (`ls work/` at write
-time: `delib_*.md`, `req_*.tsv` only). Every defect cited below is therefore the
-**seat's Round-2 verdict**, labelled "seat R2". A finding that
-`VERIFICATION.md` does not sustain must be relabelled hypothesis/withdrawn
-here. Findings already withdrawn by the seats in Round 2 (B-07, C-03's
-Keep-Sketch half, J-05's revolve half, F-06's column-offset fix) are not
-presented as defects.
+**Verdicts on defects.** `work/VERIFICATION.md` records the adversarial panel:
+the top 30 of 38 P0–P2 findings were each judged by three lenses (reproduce,
+refute-by-code, scope/severity), and **all 30 survived** (≥ 2 of 3 upheld; 23
+distinct root causes after de-duplication: A-01 = X-A01, B-02 = E-01,
+A-04 = C-02 = D-02 = E-03, C-01 = F-02, A-05 = E-04). No defect cited in this
+file is withdrawn by it. A defect the panel verified is labelled
+**"panel-verified"** below; every other defect (all P3 findings and the 8
+lower-ranked P2 findings) keeps the **seat's Round-2 verdict**, labelled
+"seat R2", and was not panel-verified. Severities are the seats' Round-2
+grades; where the panel record lists a different grade it is noted in §20.
+Findings already withdrawn by the seats in Round 2 (B-07, C-03's Keep-Sketch
+half, J-05's revolve half, F-06's column-offset fix) are not presented as
+defects.
+
+**Positive claims the panel judged overstated.** `work/VERIFICATION.md` put
+the twelve strongest positive claims to two skeptics each; **10 of 12 were
+judged overstated** at their stated grade (typically because the cited test
+calls a native seam or `syncFromNative()` rather than the real UI path, or the
+property is proven for the codec but not for every load entry point). Only
+Seat D's two (CAD / Freeform / Surface never become a sculpt source; Freeform
+Symmetry is exact bit for bit) stand. The rows below that restate one of the
+ten are therefore **source-supported (E2) only, not reproduced**, and are
+marked "panel: overstated":
+the shell phase re-derived from `projectOpen()` on every refresh, and a
+recreation landing where native says (§1, Home); a failed open being
+all-or-nothing with nothing changed (§1.1 Open File, §2 Recover, §4 Open
+Saved Project — see also E-12); hidden bodies excluded from draw and pick by one predicate
+(§11 Tap); a gizmo drag being one pointer and one step with full restore
+(§11 Gizmo drag); the native CAD/sketch suites and the 39 CAD corpus verdicts
+as proof of the whole CAD domain (`HOST` and corpus tags stand as run
+results, not as that claim); the `.forge` decoder/load fail-closed and the
+encoder canonical (the same load rows; the corpus parity and verdict runs in `TESTS.md` §1 stand as results); Home / New Project as opaque pages with
+New CAD entering XY at once (§1.1, §1.2 CAD); and System Back closing the
+topmost surface through the real key route (§18).
 
 **Horizons.** The canonical Master Plan and OWNER_DECISIONS are not available
 (`BEFORE.md`), so every control's horizon is the one reconstructed in the
@@ -82,7 +118,9 @@ happens when the act cannot succeed, below JNI and above it.
 
 The process starts with an EMPTY scene (`ConstructionScene(NoProjectTag)`);
 `EditorWorkspaceView.refreshShellPhase` (`:1999`) derives the page from
-`NativeViewport.projectOpen()` on every refresh (`APP-001`, `APP-004`).
+`NativeViewport.projectOpen()` on every refresh (`APP-001`, `APP-004`; E2 —
+panel: overstated as a reproduced claim, and E-02 shows a recreation can
+re-raise the recovery question over a live project).
 
 ### 1.1 Home (`HomeView`, inside `StartPageView`)
 
@@ -91,7 +129,7 @@ The process starts with an EMPTY scene (`ConstructionScene(NoProjectTag)`);
 | Home page | `home_surface`, `home_panel` (`HomeView.java:46`) | — | drawn exactly when `!projectOpen()` and no chooser / bootstrap / Settings page | — | APP-001..004, UI-001 | HomeFlowTest#e2eAppH1_01 (C2); SketchUxTest#cadUxR1_01_02_03 (FC2-D2) |
 | Wordmark / headline / mark | `start_page_wordmark`, `start_page_mark`, `start_page_product_name`, `start_page_headline` (`StartPageView.java:110-129`) | none (static vector, never interactive) | with Home and New Project | — | UI-001 | SketchUxTest (FC2-D2); `start_page_mark`, `start_page_product_name` referenced by no test |
 | **New Project** | `home_new_project` (`HomeView.java:49`) | opens New Project page (Java only) | Home | — | APP-002, APP-008, APP-020 (DOC-DIVERGENCE: description `strings.xml:29` names only CAD, A-09) | 14 classes incl. HomeFlowTest#e2eAppH1_02 (C2) |
-| **Open File…** | `home_open_file` (`HomeView.java:58`) | `ProjectTransfer` `ACTION_OPEN_DOCUMENT` → `onOpenProjectDocumentChosen` (`:6077`) → `NativeViewport.loadProject` | Home | cancel = no-op; damaged / truncated / newer / not-a-project → refused by codec status, nothing changes (APP-006, APP-031); picker launch failure message names the wrong act (A-08, APP-007 DEFECT-CONFIRMED seat R2, P3) | APP-006, APP-082 | HomeFlowTest#e2eAppH1_05/06/07 (C2); ProjectTransferTest (FC2-D3) |
+| **Open File…** | `home_open_file` (`HomeView.java:58`) | `ProjectTransfer` `ACTION_OPEN_DOCUMENT` → `onOpenProjectDocumentChosen` (`:6077`) → `NativeViewport.loadProject` | Home | cancel = no-op; damaged / truncated / newer / not-a-project → refused by codec status, nothing changes (APP-006, APP-031; E2 — panel: overstated, and the JNI load wrapper resets sketch/view/gesture state before a post-decode refusal, E-12); picker launch failure message names the wrong act (A-08, APP-007 DEFECT-CONFIRMED seat R2, P3) | APP-006, APP-082 | HomeFlowTest#e2eAppH1_05/06/07 (C2); ProjectTransferTest (FC2-D3) |
 | Settings | `home_settings` (`HomeView.java:68`) | opens Settings page | Home | — | APP-064, UI-054 | SettingsPreferencesTest#uiprefr1_01 (FC2-D3) |
 | (absent) Open Saved Project | — | — | **not offered at Home**; the slot can only be reopened from inside a project | — | APP-032 BLOCKED-OWNER (A-03) | — |
 
@@ -99,7 +137,7 @@ The process starts with an EMPTY scene (`ConstructionScene(NoProjectTag)`);
 
 | Control | id (def) | Act → native | Drawn / absent | Refusal | Req | Tests |
 | --- | --- | --- | --- | --- | --- | --- |
-| CAD | `new_project_cad` (`:51`) | `beginCadBootstrap` (`EditorWorkspaceView.java:2363`) → `sketchBegin(WORKPLANE_XY)` — no `ObjectId`, no body | New Project page | sketch begin failure stays on page | APP-011, CAD-001 (PARTIAL), UI-004 | HomeFlowTest#e2eAppH1_03 (C2); SketchUxTest#cadUxR1_05_06_07 (FC2-D2) |
+| CAD | `new_project_cad` (`:51`) | `beginCadBootstrap` (`EditorWorkspaceView.java:2363`) → `sketchBegin(WORKPLANE_XY)` — no `ObjectId`, no body (E2; panel: the "opaque pages, New CAD enters XY at once" claim is overstated as reproduced) | New Project page | sketch begin failure stays on page | APP-011, CAD-001 (PARTIAL), UI-004 | HomeFlowTest#e2eAppH1_03 (C2); SketchUxTest#cadUxR1_05_06_07 (FC2-D2) |
 | Sculpt | `new_project_sculpt` (`:60`) | `onNewSculptProjectChosen` (`:2403`): `beginSessionInitialization` → `sceneAddBody` → `applyConstructionSphere` → `freezeToSculpt` → `endSessionInitialization`; on refusal `closeProject` | page | any refusal closes the project again (APP-085 IMPLEMENTED-UNTESTED) | APP-015, CON-067, CON-089 | HomeFlowTest#e2eAppH1_04 (C2); SketchUxTest#cadUxR1_39 (FC2-D2) |
 | Freeform | `new_project_freeform` (`:69`) | `onNewFreeformProjectChosen` (`:2440`): bracket → `freeformCreateBody(FREEFORM_FORM_BOX)`; refusal → `closeProject`, status `freeformStatusToken` | page | refusal text bypasses `FreeformPresentation.refusalMessage` (A-11, APP-017 PARTIAL) | APP-016, MOD-069 | FreeformOwnerTest (FC2-D2); HomeFlowTest (C2) |
 | Surface | `new_project_surface` (`:78`) | `beginSurfaceSketch(NO_OBJECT, 0)` (`:2483`) → `surfaceBeginSketch(body, WORKPLANE_XY, offset)` | page | Back to Home before the first Finish costs nothing (APP-019 IMPLEMENTED-UNTESTED) | APP-018, MOD-102 | SurfaceOwnerTest (FC2-D2) |
@@ -130,11 +168,11 @@ causes, A-05; `UI-060`). Rows set `setSelected` + description.
 | Control | id (def) | Act → native | Drawn / absent | Refusal | Req | Tests |
 | --- | --- | --- | --- | --- | --- | --- |
 | Unsaved changes question | `unsaved_prompt`, `unsaved_prompt_panel` (`UnsavedChangesPromptView.java:35`) | shown when `projectDirty()` (fingerprint ≠ last Save/Open/Recover baseline, `EditorWorkspaceView.java:2597-2602`) before New Project…, Open Saved Project, Open File… | only when dirty | — | APP-033 | HomeFlowTest#e2eAppH1_08/09/10 (C2) |
-| Save and continue | `unsaved_save` (`:39`) | `saveProjectToSlot` (`:5458`: `encodeProject` → `ProjectSlot.write`, checkpoint cleared) → `proceedToLeave` | in question | failed save keeps the project (APP-036). **Before Open Saved Project this overwrites the slot it is about to open (A-01, APP-037, ADV-027 DEFECT-CONFIRMED seat R2, P2)** | APP-036, APP-037 | HomeFlowTest#e2eAppH1_10 covers Open File only (C2) |
+| Save and continue | `unsaved_save` (`:39`) | `saveProjectToSlot` (`:5458`: `encodeProject` → `ProjectSlot.write`, checkpoint cleared) → `proceedToLeave` | in question | failed save keeps the project (APP-036). **Before Open Saved Project this overwrites the slot it is about to open (A-01, APP-037, ADV-027 DEFECT-CONFIRMED, panel-verified 3/3, P2)** | APP-036, APP-037 | HomeFlowTest#e2eAppH1_10 covers Open File only (C2) |
 | Discard changes | `unsaved_discard` (`:48`) | retire checkpoint → `proceedToLeave` → `closeProject` | in question | Discard then a cancelled/refused Open leaves the dirty live project without a checkpoint (E-08, DOC-048 PARTIAL) | APP-035 | HomeFlowTest#e2eAppH1_09 (C2) |
 | Cancel — stay | `unsaved_cancel` (`:58`) | nothing | in question | System Back = Cancel | APP-034 | HomeFlowTest#e2eAppH1_08/10 (C2) |
-| Recovery question | `recovery_prompt`, `recovery_prompt_panel` (`RecoveryPromptView.java:49-54`) | `offerRecoveryIfPresent` (`:5579`) → `validateProject` (decodes, applies nothing) | once per process when `recovery.forge` decodes; corrupt/newer candidate quarantined | can reappear over the live project after a recreation (E-02, DOC-044 DEFECT-CONFIRMED seat R2, P2); `validateProject` accepts a PlanarFaces file `loadProject` refuses (E-05, DOC-028/ADV-003 DEFECT-CONFIRMED, P3) | APP-055, APP-081 | ProjectAutosaveRecoveryTest#fsr1b04_*, #fsr1b08_* (FC2-D3) |
-| Recover | `recovery_recover` (`:80`) | `onRecoverRequested` (`:5652`) → `loadProject` | in question | failed load changes nothing. After success the checkpoint is deleted and the project is marked persisted, so recovered work is protected nowhere (A-02, APP-057/ADV-026 DEFECT-CONFIRMED seat R2, P1; inverts pinned FSR1B-05 → owner decision) | APP-056, APP-057 | ProjectAutosaveRecoveryTest#fsr1b05/06; ProjectProcessDeathTest#stage6/8 (FC2-D3) |
+| Recovery question | `recovery_prompt`, `recovery_prompt_panel` (`RecoveryPromptView.java:49-54`) | `offerRecoveryIfPresent` (`:5579`) → `validateProject` (decodes, applies nothing) | once per process when `recovery.forge` decodes; corrupt/newer candidate quarantined | can reappear over the live project after a recreation (E-02, DOC-044 DEFECT-CONFIRMED, panel-verified 3/3, P2); `validateProject` accepts a PlanarFaces file `loadProject` refuses (E-05, DOC-028/ADV-003 DEFECT-CONFIRMED, P3) | APP-055, APP-081 | ProjectAutosaveRecoveryTest#fsr1b04_*, #fsr1b08_* (FC2-D3) |
+| Recover | `recovery_recover` (`:80`) | `onRecoverRequested` (`:5652`) → `loadProject` | in question | failed load changes nothing (E2; panel: overstated, see E-12). After success the checkpoint is deleted and the project is marked persisted, so recovered work is protected nowhere (A-02, APP-057/ADV-026 DEFECT-CONFIRMED, panel-verified 3/3, P1; inverts pinned FSR1B-05 → owner decision) | APP-056, APP-057 | ProjectAutosaveRecoveryTest#fsr1b05/06; ProjectProcessDeathTest#stage6/8 (FC2-D3) |
 | Discard (recovery) | `recovery_discard` (`:92`) | delete candidate only; slot untouched | in question | System Back over the question: DOC-DIVERGENCE (APP-060) | APP-058 | ProjectAutosaveRecoveryTest#fsr1b07 (FC2-D3) |
 
 ## 3. Global Toolbar (`GlobalToolbarView`)
@@ -151,7 +189,7 @@ causes, A-05; `UI-060`). Rows set `setSelected` + description.
 | Extrude | `extrude_sketch` (`:309`) | `onExtrudeRequested` (`:4781`) → `sketchCommit` (or first project: `commitFirstCadProject` path) | `sketchState == SKETCH_READY && extrudeReady && !revolving` (`:972`) — **withdrawn while the candidate is invalid** | native refuses an invalid commit all the same (`AmbiguousProfile`, `AddDisjoint`, `AddNoEffect`, `CutRemovesBody`, `CutNoIntersection`, CAD-061) | CAD-060, CAD-066, UI-082 | 11 classes; CadVerticalSliceTest#operation_refusal (FC2-D2); CadFillPickR2Test#devR2_05 (C2) |
 | Revolve | `revolve_sketch` (`:322`) | same `onExtrudeRequested` path; commit of the Revolve candidate | `SKETCH_READY && extrudeReady && revolving` (`:973`) | `RevolveProfileCrossesAxis`, `RevolveAxisUnresolved`, `RevolveAngleInvalid` … (CAD-078..081) | CAD-077..083, CAD-111 | CadRevolveOwnerTest#devRev01/06 (C2) |
 | Back to Home | `back_to_home` (`:343`) | `onBackToHomeRequested` (`:2576`) → `closeProject` (bootstrap: sketch discarded) | only in the CAD/Surface bootstrap (`:683`) | — | APP-014, APP-061 | HomeFlowTest#e2eAppH1_11 (C2) |
-| Export | `export_action` (`:394`) | `onExportGlbRequested` (`EditorWorkspaceView.java:5749`) → `exportGlb` bytes → `ACTION_CREATE_DOCUMENT` | over every open project; withdrawn in the bootstrap (`:684`) | `SingularTransform` / `MirroredTransform`; cancel writes nothing; a picker result after recreation writes nothing and is logged as cancel (A-06, APP-043 DEFECT-CONFIRMED seat R2, P3). **A face-supported CAD body is exported at its stored transform, not where it is drawn (E-01 = B-02, DOC-067/CON-025 DEFECT-CONFIRMED seat R2, P1)** | APP-046, APP-047, APP-048 (DOC-DIVERGENCE, D-06) | GlbExportTest (OLD); ImportedMeshSculptTest#imp01b14 (FC2-D2) |
+| Export | `export_action` (`:394`) | `onExportGlbRequested` (`EditorWorkspaceView.java:5749`) → `exportGlb` bytes → `ACTION_CREATE_DOCUMENT` | over every open project; withdrawn in the bootstrap (`:684`) | `SingularTransform` / `MirroredTransform`; cancel writes nothing; a picker result after recreation writes nothing and is logged as cancel (A-06, APP-043 DEFECT-CONFIRMED, panel-verified 3/3, P3). **A face-supported CAD body is exported at its stored transform, not where it is drawn (E-01 = B-02, DOC-067/CON-025 DEFECT-CONFIRMED, panel-verified 3/3, P1)** | APP-046, APP-047, APP-048 (DOC-DIVERGENCE, D-06) | GlbExportTest (OLD); ImportedMeshSculptTest#imp01b14 (FC2-D2) |
 | Display | `display_settings_button` (`:425`) | opens Display popover (§10) | editor phases | — | UI-061 | EditorWorkspaceDisplayTest (OLD); 12 classes |
 | Hide UI | `hide_ui_toggle` (`:436`) | `onChromeHideRequested` → `setChromeHidden(true)` (UI state only) | editor | — | UI-039 | EditorWorkspaceControlsTest (OLD) |
 | Show UI chip | `restore_ui_chip` (`EditorWorkspaceView.java:813`) | `setChromeHidden(false)` | only while chrome is hidden | — | UI-039 | EditorWorkspaceControlsTest (OLD) |
@@ -169,11 +207,11 @@ Back closes it (`APP-024`, `UI-007`).
 | Create · New Sketch | `project_new_sketch` (`ProjectDrawerPolicy.java:72`) | `onNewSketchSpatial` (`EditorWorkspaceView.java:3902`) → `supportChooserBegin` | `newSketchShown = projectOpen && !sculpting && !sketching && !chooserActive` | native refuses a begin in Sculpt (MOD-047) | APP-023, CAD-003 | OwnerProjectShellSketchSupportTest#devOss02/03; CadRetainedSketchOwnerTest (C2) |
 | Create · New Project… | `project_new` (`:73`) | unsaved guard → `closeProject` → New Project page | always in the drawer | unsaved question when dirty | APP-010, APP-033 | HomeFlowTest#e2eAppH1_08/09 (C2) |
 | Project · Save Project | `project_save` (`:74`) | `saveProjectToSlot` (`:5458`) → `encodeProject` → `ProjectSlot.write` (temp + fsync + rename) | always | failure reported, project stays live (APP-028); rename-fallback leaves a `.pending` only copy nothing reads (J-04, ADV-013 DEFECT-CONFIRMED seat R2, P3) | APP-027 | EditorWorkspaceProjectActionsTest#e2er1a01 (C2); ImportedMeshDurableTest#e2eImp01a06 (FC2-D3) |
-| Project · Open Saved Project | `project_open` (`:75`) | unsaved guard → `openSavedProjectSlot` (`:5483`) → `loadProject` | always; reads "No saved project yet" and disabled with no slot (APP-029) | refused load changes nothing (APP-031); **load does not end a Freeform edit session (D-03 = E-07, MOD-083/APP-087/DOC-052 DEFECT-CONFIRMED seat R2, P3)**; **JNI load wrapper mutates sketch/view/gesture state before a post-decode refusal (E-12, DOC-087 DEFECT-CONFIRMED seat R2, P3)** | APP-030 | EditorWorkspaceProjectActionsTest#e2er1a04..06 (C2); ImportedMeshDurableTest#e2eImp01a06 (FC2-D3) |
+| Project · Open Saved Project | `project_open` (`:75`) | unsaved guard → `openSavedProjectSlot` (`:5483`) → `loadProject` | always; reads "No saved project yet" and disabled with no slot (APP-029) | refused load changes nothing (APP-031; E2, panel: overstated); **load does not end a Freeform edit session (D-03 = E-07, MOD-083/APP-087/DOC-052 DEFECT-CONFIRMED seat R2, P3)**; **JNI load wrapper mutates sketch/view/gesture state before a post-decode refusal (E-12, DOC-087 DEFECT-CONFIRMED seat R2, P3)** | APP-030 | EditorWorkspaceProjectActionsTest#e2er1a04..06 (C2); ImportedMeshDurableTest#e2eImp01a06 (FC2-D3) |
 | Transfer · Save Copy… | `project_save_copy` (`:76`) | `onSaveCopyRequested` (`:5709`): `encodeProject` BEFORE the picker → `ACTION_CREATE_DOCUMENT` → write truncating | always | cancel no-op; recreation while picker open writes nothing silently (A-06, APP-043) | APP-042, APP-045 | ProjectTransferTest#fsr1b10_* (FC2-D3) |
 | Transfer · Open File… | `project_open_file` (`:78`) | unsaved guard → `ACTION_OPEN_DOCUMENT` → `onOpenProjectDocumentChosen` (`:6077`) → `loadProject`; never writes the slot | always | as Open Saved Project | APP-044, APP-045 | ProjectTransferTest#fsr1b11_*, #fsr1b12_* (FC2-D3); HomeFlowTest#e2eAppH1_10 (C2) |
 | Transfer · Share Diagnostics… | `project_share_diagnostics` (`:80`) | bounded local report → `ACTION_CREATE_DOCUMENT` | always | — | APP-071 | DiagnosticsAndRendererLossTest#fsr1b15_*, #e2er1b08_* (FC2-D3) |
-| Import · Import GLB… | `import_glb` (`:82`) | picker → `applyImportedGlbBytes` (`:5877`) → `importGlbDurable` (ONE Undo for all objects) | `showImportAvailable(!sculpting)` (`EditorWorkspaceView.java:2823`) | Sculpt: absent, late result refused, native refuses (APP-025). **While a sketch or the support chooser is open the row is drawn and the import is accepted, switching the active body and recording a step (A-04 = C-02 = D-02 = E-03; APP-026/CAD-099/MOD-049/DOC-072/ADV-046 DEFECT-CONFIRMED seat R2, P2, E1 host diag `diag_import_during_sketch`)** | APP-049, APP-050 | ImportedMeshDurableTest (FC2-D3); ImportGlbSculptGuardTest#d1_02..04 (FC2-D2) |
+| Import · Import GLB… | `import_glb` (`:82`) | picker → `applyImportedGlbBytes` (`:5877`) → `importGlbDurable` (ONE Undo for all objects) | `showImportAvailable(!sculpting)` (`EditorWorkspaceView.java:2823`) | Sculpt: absent, late result refused, native refuses (APP-025). **While a sketch or the support chooser is open the row is drawn and the import is accepted, switching the active body and recording a step (A-04 = C-02 = D-02 = E-03; APP-026/CAD-099/MOD-049/DOC-072/ADV-046 DEFECT-CONFIRMED, panel-verified 3/3, P2, E1 host diag `diag_import_during_sketch`)** | APP-049, APP-050 | ImportedMeshDurableTest (FC2-D3); ImportGlbSculptGuardTest#d1_02..04 (FC2-D2) |
 | Application · Settings… | `project_settings` (`:83`) | opens Settings page | always | — | APP-064 | SettingsPreferencesTest#uiprefr1_02 (FC2-D3) |
 
 No OBJ, FBX or other interchange row exists (`APP-052`;
@@ -203,7 +241,7 @@ ProjectTransferTest#fsr1b18, FC2-D3).
 | Control | id (def) | Act → native | Drawn / absent | Refusal | Req | Tests |
 | --- | --- | --- | --- | --- | --- | --- |
 | History capsule | `history_group` (`EditorWorkspaceView.java:750`) | container | editor | — | UI-069 | EditorWorkspaceLegibilityTest (FC2-D1) |
-| Undo / Redo | `undo_action` (`:751`), `redo_action` (`:760`) | `onHistoryStepRequested` (`:3591`) → `historyUndo` / `historyRedo`; native routes to `ConstructionHistory` or the active body's `SculptHistory` by product mode; enabled = `historyUndoAvailable/RedoAvailable` | drawn in both modes | Construction Undo refused in a sketch (CON-068). **Sculpt Undo after a NotRetained (> 1 MiB) stroke lands on a state that never existed and clears `hasEdits` (D-01, MOD-021 DEFECT-CONFIRMED seat R2, P2, E1 `diag_d3`)** | CON-063..070, MOD-018..027 | EditorWorkspaceHistoryTest (OLD); SculptUndoTest (FC2-D2); FreeformOwnerTest, SurfaceOwnerTest (FC2-D2) |
+| Undo / Redo | `undo_action` (`:751`), `redo_action` (`:760`) | `onHistoryStepRequested` (`:3591`) → `historyUndo` / `historyRedo`; native routes to `ConstructionHistory` or the active body's `SculptHistory` by product mode; enabled = `historyUndoAvailable/RedoAvailable` | drawn in both modes | Construction Undo refused in a sketch (CON-068). **Sculpt Undo after a NotRetained (> 1 MiB) stroke lands on a state that never existed and clears `hasEdits` (D-01, MOD-021 DEFECT-CONFIRMED, panel-verified 3/3, P2, E1 `diag_d3`)** | CON-063..070, MOD-018..027 | EditorWorkspaceHistoryTest (OLD); SculptUndoTest (FC2-D2); FreeformOwnerTest, SurfaceOwnerTest (FC2-D2) |
 | Sculpt History (navigator toggle) | `history_navigator_action` (`:775`) | opens navigator | Sculpt only (`refreshHistoryNavigator` `:3502`) | — | MOD-031, UI-063 | SculptHistoryNavigatorTest#e2eSchnav01 (FC2-D2) |
 | Navigator / list / row | `history_navigator` (`SculptHistoryNavigatorView.java:79`), `history_navigator_list` (`:104`), `history_navigator_row` (`:169`) | `onSculptHistoryStateChosen` (`:3560`) → `sculptJumpToHistoryCursor` (= repeated `undoStroke`/`redoStroke`) | while open; five rows visible, scrolls | `NothingToDo` on the current row, `OutOfRange` never clamped (MOD-030) | MOD-028..030 | SculptHistoryNavigatorTest#e2eSchnav02..09 (FC2-D2); list/row ids referenced by no test |
 | History (body) | `feature_history_action` (`:790`) | opens the History surface | `FeatureHistoryPresentation.controlShown = projectOpen && !sketching && !sculpting && bodyHasHistory` (CAD or Surface body) — **drawn over a hidden body too (J-01, BLOCKED-OWNER OD-J1)** | — | CAD-093, UI-030 | CadParametricHistoryOwnerTest (C2); SurfaceOwnerTest (FC2-D2) |
@@ -234,7 +272,7 @@ ProjectTransferTest#fsr1b18, FC2-D3).
 | --- | --- | --- | --- | --- | --- | --- |
 | Host / rail / scroll | `workspace_trailing_host` (`:174`), `tool_rail_scroll` (`:180`), `tool_rail` (`ToolRailView.java:97`) | containers | withdrawn in the bootstrap before a sketch begins (`renderTrailingHost` `:3106`) and while Display suspends it | — | UI-039, UI-058 | EditorWorkspaceLegibilityTest (FC2-D1) |
 | Shape | `tool_rail_shape` (`:618`) | `onToolSelected` (`:5148`) → opens Shape context (precision surface §9) / Freeform cage editing for a Freeform body (`refreshFreeformEdit` `:6354` → `freeformBeginEdit`) | not for an Imported Mesh (`shapeOffered = !sceneActiveBodyIsImported()`) | native refuses shape Apply on an imported body (CON-007) | CON-007, MOD-090 | ImportedMeshDurableTest#imp01a14 (FC2-D3) |
-| Transform | `tool_rail_place` (`:605`) | `uiState` tool → gizmo via `refreshTransformGizmo` (`:3007`) → `setGizmoActive` | Construction, every representation | gizmo not offered over a locked body (`transformOffered` `:3046`). **Offered over a face-supported CAD body whose placement is derived, so a typed/dragged write records a step and changes nothing visible (B-01, CON-024/TST-076 DEFECT-CONFIRMED seat R2, P2)** | CON-008..023 | EditorWorkspaceGizmoTest (OLD); EditorWorkspaceLegibilityTest#uilr113/114 (FC2-D1) |
+| Transform | `tool_rail_place` (`:605`) | `uiState` tool → gizmo via `refreshTransformGizmo` (`:3007`) → `setGizmoActive` | Construction, every representation | gizmo not offered over a locked body (`transformOffered` `:3046`). **Offered over a face-supported CAD body whose placement is derived, so a typed/dragged write records a step and changes nothing visible (B-01, CON-024/TST-076 DEFECT-CONFIRMED, panel-verified 3/3, P2)** | CON-008..023 | EditorWorkspaceGizmoTest (OLD); EditorWorkspaceLegibilityTest#uilr113/114 (FC2-D1) |
 | Move / Rotate / Scale | `transform_mode_group` (`:198`), `transform_mode_move/rotate/scale` (`:199-208`) | `onTransformModeRequested` (`:3118`) → `setGizmoMode` (no history, no publish) | `transformOffered` | — | CON-015, CON-021 | EditorWorkspaceLegibilityTest#uilr101/103 (FC2-D1) |
 | World / Local | `transform_space_group` (`:214`), `transform_space_world/local` (`:215-219`) | `onTransformSpaceRequested` (`:3130`) → `setGizmoSpace` | `transformOffered && GIZMO_SPACE_SELECTABLE` (absent in Scale) | World in Scale refused (CON-015) | CON-015 | EditorWorkspaceLegibilityTest#uilr109 (FC2-D1) |
 | Dimensions / Relative scale | `body_size_group` (`:241`), `body_dimensions` (`:242`), `body_relative_scale` (`:246`) | `onBodyDimensionsRequested` (`:4992`) / `onRelativeScaleRequested` (`:5021`) → `setBodyDimensionsMode` | `transformOffered && BODY_DIM_SUPPORTED` (Construction body only) | locked, hidden, Imported, CAD refused (CON-058); entering Dimensions withdraws the gizmo below JNI (CON-059) | CON-054..060 | BodyDimensionsSmokeTest#e2eDim020m01 (FC2-D3) |
@@ -246,7 +284,7 @@ ProjectTransferTest#fsr1b18, FC2-D3).
 
 | Control | id (def) | Act → native | Drawn / absent | Refusal | Req | Tests |
 | --- | --- | --- | --- | --- | --- | --- |
-| Inspector, title, scroll, body, footer, close | `property_inspector` (`:90`), `inspector_title` (`:112`), `inspector_toggle` (`:117`), `inspector_scroll` (`:128`), `inspector_body` (`:151`), `inspector_footer` (`:159`) | containers; close | opened from a control, absent otherwise; bottom sheet in compact windows | Back closes it via its own exit (uilr116); **in the CAD bootstrap Back discards the sketch instead (F-03, UI-009 DEFECT-CONFIRMED seat R2, P2)** | UI-039, UI-047 | EditorWorkspaceLegibilityTest#uilr107..110, #uilr116 (FC2-D1) |
+| Inspector, title, scroll, body, footer, close | `property_inspector` (`:90`), `inspector_title` (`:112`), `inspector_toggle` (`:117`), `inspector_scroll` (`:128`), `inspector_body` (`:151`), `inspector_footer` (`:159`) | containers; close | opened from a control, absent otherwise; bottom sheet in compact windows | Back closes it via its own exit (uilr116); **in the CAD bootstrap Back discards the sketch instead (F-03, UI-009 DEFECT-CONFIRMED, panel-verified 3/3, P2)** | UI-039, UI-047 | EditorWorkspaceLegibilityTest#uilr107..110, #uilr116 (FC2-D1) |
 | Shape: primitive chooser and rows | `primitive_chooser` (`ConstructionShapeEditorView.java:153`), `primitive_option_*` (`:40-42`), `primitive_row_*` (`:87-108`) | draft only; selecting a kind publishes nothing (CON-005) | Shape tool, Construction body | — | CON-005 | EditorWorkspaceControlsTest (OLD) |
 | Shape fields | `field_box_width/height/depth`, `field_cylinder_diameter/height`, `field_sphere_diameter`, `field_cone_diameter/height`, `field_capsule_diameter/total_height`, `field_plane_width/depth` (`:89-109`) | draft values (comma accepted, `NumericPropertyRow.java:109`) | per kind | non-finite, ≤ 0, `RelationInvalid` (capsule height < diameter) refused, never clamped (CON-002, CON-003) | CON-002, CON-003 | EditorWorkspaceControlsTest (OLD); HOST CONSTRUCTION_* suites |
 | Apply Shape | `apply_shape` (`:135`) | `submitDraftShape` (`:396`) → `applyConstruction{Box,Cylinder,Sphere,Cone,Capsule,Plane}` (ONE Undo) | Shape tool | refused values change nothing (EditorWorkspaceHistoryTest#s01905) | CON-002..006 | EditorWorkspaceHistoryTest#s01902 (OLD) |
@@ -274,7 +312,7 @@ truth, no dirty flag. Read back by `refreshDisplaySettings` (`:6312`).
 | Smooth / Faceted | `surface_shading_smooth/faceted` (`:150-160`) | `setSurfaceShading` | always | — | — | EditorWorkspaceDisplayTest (OLD) |
 | Perspective / Orthographic | `projection_perspective/orthographic` (`:183-193`) | `setProjectionMode` | always | — | — | EditorWorkspaceDisplayTest (OLD); CadRetainedSketchOwnerTest#d19 (C2) |
 | Grid On / Off | `view_grid_on/off` (`:229-244`) | `setGridVisible` | always | chips built like the outline chips (width not measured; F-01) | — | EditorWorkspaceDisplayTest (OLD) |
-| Selection Outline On / Off | `view_selection_outline_on/off` (`:277-292`) | `setSelectionOutlineVisible` | always | **hit area 37.0 / 39.2 dp wide, below the 48 dp floor (F-01, UI-013 DEFECT-CONFIRMED seat R2, P2, E1 measured)** | CON-083, UI-061 | SelectionOutlineTest (OLD); SelectionOutlineVisualEvidenceTest (FC2-D1) |
+| Selection Outline On / Off | `view_selection_outline_on/off` (`:277-292`) | `setSelectionOutlineVisible` | always | **hit area 37.0 / 39.2 dp wide, below the 48 dp floor (F-01, UI-013 DEFECT-CONFIRMED, panel-verified 3/3, P2, E1 measured)** | CON-083, UI-061 | SelectionOutlineTest (OLD); SelectionOutlineVisualEvidenceTest (FC2-D1) |
 
 ## 11. Viewport affordances without a semantic id (`ForgeShapeSurfaceView`)
 
@@ -286,9 +324,9 @@ input crosses JNI as platform-neutral samples (`forgeshape_input.h`).
 | --- | --- | --- | --- | --- | --- |
 | One-finger drag off any handle | Construction, Ready | orbit | — | CAD-016, CON-011 | EditorWorkspaceGizmoTest#s02029and30 (OLD) |
 | Two-finger pan / pinch | all (incl. sketch drawing) | pan / zoom; a gesture that becomes multi-touch mutates no sculpt vertex | — | MOD-044, UI-078 | SculptUndoTest (FC2-D2) |
-| Tap | Construction | pick → `sceneSelectBody` (hidden bodies not pickable) | in Sculpt refused before the pick (`FORGESHAPE_SCENE_SELECT_REFUSED:in_sculpt_mode:viewport_tap`) | CON-026, CON-076, MOD-040 | SelectionOutlineTest#e2eSeloutr1_02_03 (OLD); Stage027SculptWorkflowTest#guard1 (FC2-D2) |
-| Gizmo handle drag | Transform | writes `ConstructionTransform` throughout; one pointer, ONE step; second pointer / cancel restores | locked refused; face-supported not refused (B-01) | CON-008..013 | EditorWorkspaceGizmoTest (OLD) |
-| Dimension labels X/Y/Z + editor | Dimensions mode | `body_dimension_labels` (`BodyDimensionLabelsView.java:91`), `body_dimension_label_x/y/z` (`:55-56`), `body_dimension_editor` (`:109`), `field_body_dimension` (`:118`), `apply_body_dimension` (`:148`) → `onBodyDimensionEntered` (`:5062`) → `applyBodyDimension` | zero / negative / non-finite / degenerate axis refused; **field drops the comma: "2,5" → 25 (F-05, UI-051/ADV-067 DEFECT-CONFIRMED seat R2, P2, E2)** | CON-054..056 | BodyDimensionsSmokeTest (FC2-D3); Ui3dStateCorrectionTest (OLD) |
+| Tap | Construction | pick → `sceneSelectBody` (hidden bodies not pickable; E2 — panel: the single-predicate claim is overstated as reproduced) | in Sculpt refused before the pick (`FORGESHAPE_SCENE_SELECT_REFUSED:in_sculpt_mode:viewport_tap`) | CON-026, CON-076, MOD-040 | SelectionOutlineTest#e2eSeloutr1_02_03 (OLD); Stage027SculptWorkflowTest#guard1 (FC2-D2) |
+| Gizmo handle drag | Transform | writes `ConstructionTransform` throughout; one pointer, ONE step; second pointer / cancel restores (E2; panel: overstated as reproduced) | locked refused; face-supported not refused (B-01) | CON-008..013 | EditorWorkspaceGizmoTest (OLD) |
+| Dimension labels X/Y/Z + editor | Dimensions mode | `body_dimension_labels` (`BodyDimensionLabelsView.java:91`), `body_dimension_label_x/y/z` (`:55-56`), `body_dimension_editor` (`:109`), `field_body_dimension` (`:118`), `apply_body_dimension` (`:148`) → `onBodyDimensionEntered` (`:5062`) → `applyBodyDimension` | zero / negative / non-finite / degenerate axis refused; **field drops the comma: "2,5" → 25 (F-05, UI-051/ADV-067 DEFECT-CONFIRMED, panel-verified 3/3, P2, E2)** | CON-054..056 | BodyDimensionsSmokeTest (FC2-D3); Ui3dStateCorrectionTest (OLD) |
 | Sculpt stroke | Sculpt | one completed stroke = one `SculptHistory` entry | — | MOD-018 | SculptUndoTest (FC2-D2) |
 | Sketch draw / select / snap | Sketch Editing | per rail tool; one finger never orbits | — | UI-078, CAD-028 | CadSketchDraftingOwnerTest#devDr04 (C2) |
 | Ready region / face tap | Sketch Ready | pure toggle of the cell under the Down pixel, through the camera captured at Down; inside 24 px slop no orbit | `ray_parallel`, `invalid_face`, `selection_cap` (debug token `FORGESHAPE_SKETCH_TAP:*`) | CAD-043, CAD-044 | CadFillPickR2Test, CadMultiFaceOwnerTest (C2) |
@@ -319,7 +357,7 @@ whenever a sketch is active; Finish never opens the precision surface.
 | --- | --- | --- | --- | --- | --- | --- |
 | Navigator, view label | `sketch_orientation_navigator` (`:77`), `sketch_navigator_view_label` (`:90`) | reads `sketchViewState` every refresh | Editing only | — | UI-019, UI-020 | SketchUxTest (FC2-D2) |
 | Plane XY / XZ / YZ | `sketch_navigator_plane_xy/xz/yz` (`:66-68`) | `onSketchPlaneChosen` (`:4043`) → `sketchSetSupportPlane` | enabled only while the sketch is EMPTY and world-supported; hidden/disabled otherwise | `SketchNotEmpty`, face-supported `InvalidWorkplane` (CAD-012); chip width ~45 dp computed, not measured (UI-021 UNDETERMINED) | CAD-012 | SketchUxTest#cadUxR1_14_15 (FC2-D2) |
-| Flip | `sketch_navigator_flip` (`:118`) | `onSketchViewFlipRequested` (`:4060`) → `sketchSetViewFlipped` | Editing | **changes the label and the stored view state but not the camera (`beginSketchView` frames `frame()`, `viewFrame()` has no production caller) — C-01 = F-02, CAD-013/UI-018 DEFECT-CONFIRMED seat R2, P2, E1 probe P1; hit area 36.2 dp wide (F-01, UI-012, E1)** | CAD-013, CAD-014 | SketchUxTest#cadUxR1_08_09_10 asserts only the stored flag (false-green, F-02) |
+| Flip | `sketch_navigator_flip` (`:118`) | `onSketchViewFlipRequested` (`:4060`) → `sketchSetViewFlipped` | Editing | **changes the label and the stored view state but not the camera (`beginSketchView` frames `frame()`, `viewFrame()` has no production caller) — C-01 = F-02, CAD-013/UI-018 DEFECT-CONFIRMED, panel-verified 3/3, P2, E1 probe P1; hit area 36.2 dp wide (F-01, UI-012, E1)** | CAD-013, CAD-014 | SketchUxTest#cadUxR1_08_09_10 asserts only the stored flag (false-green, F-02) |
 | −90° / +90° | `sketch_navigator_rotate_ccw` (`:115`), `sketch_navigator_rotate_cw` (`:126`) | `onSketchViewRotateRequested` (`:4066`) → `sketchRotateView` | Editing | same as Flip: no camera change (C-01) | CAD-013 | SketchUxTest#cadUxR1_11_12_13 asserts only `SKETCH_VIEW_QUARTER_TURNS` |
 
 ### 12.3 Selected Line dimension (`SketchDimensionLabelView`)
@@ -335,7 +373,7 @@ succeed; Trim / Extend are tap modes offered whatever is selected (`CAD-037`).
 
 | Control | id (def) | Act → native | Refusal | Req | Tests |
 | --- | --- | --- | --- | --- | --- |
-| Modify toggle, palette | `sketch_modify` (`:106`), `sketch_modify_toggle` (`:112`), `sketch_actions_palette` (`:122`) | open/close | **not in Back's dismissal chain: Back in the bootstrap discards the sketch (F-03, UI-024 DEFECT-CONFIRMED seat R2)** | CAD-037, UI-023 | CadSketchDraftingOwnerTest (C2) |
+| Modify toggle, palette | `sketch_modify` (`:106`), `sketch_modify_toggle` (`:112`), `sketch_actions_palette` (`:122`) | open/close | **not in Back's dismissal chain: Back in the bootstrap discards the sketch (F-03, UI-024 DEFECT-CONFIRMED, panel-verified 3/3)** | CAD-037, UI-023 | CadSketchDraftingOwnerTest (C2) |
 | Select multiple | `sketch_action_select_multiple` (`:56`) | `onSketchMultiSelectToggled` (`:4473`) → `sketchSetMultiSelect` | — | CAD-035 | devDr09 (C2) |
 | Dimension + kind chips (length, angle, horizontal, vertical, width, height, radius, diameter, edge length, arc radius, sweep, edge angle) | `sketch_action_dimension` (`:56`), `sketch_dimension_kind_*` (`:65-70`) | `onSketchDimensionKindChosen` (`:4435`) → `sketchAddDimension`; angle: `sketchBeginDimensionAngle` (`:4448`) | `SketchDimensionConflict` (CAD-030) | CAD-029, CAD-030 | devDr02 (C2); horizontal/vertical/edge_length/edge_angle referenced by no test |
 | Make Construction / Make Regular | `sketch_action_construction` (`:57`) | `onSketchModifyAction` (`:4338`) → `sketchToggleConstruction` | — | CAD-027 | devDr01 (C2); SurfaceOwnerTest (FC2-D2) |
@@ -394,7 +432,7 @@ slots 32..58); nothing here is truth. Every touch target ≥ 48 dp and never
 | Angle field / canvas label + editor | `field_revolve_angle` (`:326`); `cad_revolve_angle_label` (`CadRevolveAngleLabelView.java:57`), `cad_revolve_angle_value` (`:60`), `cad_revolve_angle_editor` (`:71`), `field_revolve_angle_canvas` (`:80`), `apply_revolve_angle` (`:107`) | `onRevolveAngleEntered` (`:4667`) → `sketchSetRevolveAngle` | label at the projected half-angle point; hidden when it does not project | outside [0.001, 360] or non-finite `RevolveAngleInvalid`, never clamped; comma accepted (`:87`) | CAD-079, UI-029 | CadRevolveOwnerTest#devRev02 (C2) |
 | Ring handle drag (no id) | — | whole degrees via `setRevolveAngle`; never orbits | — | second pointer / Cancel restores | CAD-082 | CadRevolveOwnerTest#devRev03 (C2) |
 | Flip direction | `sketch_revolve_flip` (`:331`) | `onRevolveFlipRequested` (`:4655`) → `sketchFlipRevolve` | while revolving | reverses direction, never the angle's sign | CAD-079 | CadRevolveOwnerTest#devRev04 (C2) |
-| Extrude instead | `sketch_revolve_back_to_extrude` (`:355`) | `onRevolveEndRequested` (`:4630`) → `sketchEndRevolve` | `extrudeInsteadShown` | **System Back in this state on API 36 backgrounds the app (F-04, CAD-115/UI-010 DEFECT-CONFIRMED seat R2, P2, E2; API 33-35 UNVERIFIED)** | CAD-115 | CadRevolveOwnerTest presses the control, sends no Back key |
+| Extrude instead | `sketch_revolve_back_to_extrude` (`:355`) | `onRevolveEndRequested` (`:4630`) → `sketchEndRevolve` | `extrudeInsteadShown` | **System Back in this state on API 36 backgrounds the app (F-04, CAD-115/UI-010 DEFECT-CONFIRMED, panel-verified 3/3, P2, E2; API 33-35 UNVERIFIED)** | CAD-115 | CadRevolveOwnerTest presses the control, sends no Back key |
 | Revolve (commit) | `sketch_revolve_commit` (`:369`), toolbar `revolve_sketch` | commit | `commitShown`: candidate Ok | `RevolveProfileCrossesAxis`, `RevolveComponentsOverlap` (CAD-081) | CAD-080..083, CAD-111 | CadRevolveOwnerTest#devRev06..08 (C2) |
 
 ## 15. Sculpt mode
@@ -453,13 +491,13 @@ Freeform (MOD-062).
 | System Back at Home | platform's own (leaves the app) | — | APP-061 | HomeFlowTest#e2eAppH1_11 (C2) |
 | System Back on New Project / Settings | to Home / to where opened | — | APP-061, APP-064 | HomeFlowTest#e2eAppH1_11 (C2); SettingsPreferencesTest (FC2-D3) |
 | System Back in the CAD bootstrap | `dismissTopmostSurface` (`EditorWorkspaceView.java:1177-1184`) cancels the sketch and returns Home **before** closing an open precision surface or palette | F-03 (UI-009, UI-024) | APP-061, UI-009 | HomeFlowTest#e2eAppH1_11 tests with nothing open only |
-| System Back with an anchored surface open | closes the topmost (Objects, Add Primitive, precision, Display, strip, navigator) | — | APP-062, UI-036 | EditorWorkspaceLegibilityTest#uilr106 (FC2-D1, real `KEYCODE_BACK`) |
+| System Back with an anchored surface open | closes the topmost (Objects, Add Primitive, precision, Display, strip, navigator); E2 — panel: overstated as a whole-product claim (F-03, F-04 are counter-cases) | — | APP-062, UI-036 | EditorWorkspaceLegibilityTest#uilr106 (FC2-D1, real `KEYCODE_BACK`) |
 | System Back inside an in-project sketch / cage edit / Dimensions with nothing open | owner records disagree (APP-063 PARTIAL, UI-083 DOC-DIVERGENCE, A-10) | BLOCKED-OWNER | APP-063 | — |
 | System Back during an in-project Revolve | F-04 (API 36: backgrounds the app) | F-04 | CAD-115 | none |
-| Activity recreation (palette, dark mode, font scale, locale) | `configChanges` lacks `uiMode`, `fontScale`, `locale` (`AndroidManifest.xml:31`); saved baseline lost (A-05), recovery question can reappear (E-02), pending picker bytes lost (A-06) | DEFECT-CONFIRMED seat R2 | APP-039, DOC-044, DOC-049 | SettingsPreferencesTest#uiprefr1_05 (FC2-D3) does not assert the baseline |
+| Activity recreation (palette, dark mode, font scale, locale) | `configChanges` lacks `uiMode`, `fontScale`, `locale` (`AndroidManifest.xml:31`); saved baseline lost (A-05), recovery question can reappear (E-02), pending picker bytes lost (A-06) | DEFECT-CONFIRMED, panel-verified 3/3 (A-05 = E-04, E-02, A-06) | APP-039, DOC-044, DOC-049 | SettingsPreferencesTest#uiprefr1_05 (FC2-D3) does not assert the baseline |
 | Rotation | not a recreation (configChanges); layout re-derived | — | UI-046 | CadRetainedSketchOwnerTest#d18 (C2) |
 | Process death | autosave checkpoint; recovery question on next cold launch | after Recover, nothing protects the work (A-02) | APP-053..056 | ProjectProcessDeathTest#stage1..8 (FC2-D3) |
-| Renderer stops mid-session | reported only at the next resume (H-01, RND-006 DEFECT-CONFIRMED seat R2, P2, E2) | — | APP-072, RND-006 | DiagnosticsAndRendererLossTest#e2er1b07 (FC2-D3) uses the injection seam |
+| Renderer stops mid-session | reported only at the next resume (H-01, RND-006 DEFECT-CONFIRMED, panel-verified 3/3, P2, E2) | — | APP-072, RND-006 | DiagnosticsAndRendererLossTest#e2er1b07 (FC2-D3) uses the injection seam |
 | Number / letter keys | debug fixtures in a debug build only; no-op in release | — | APP-076 | release guard PASS (`evidence/local/release_guard.txt`) |
 | Ctrl+Z / Ctrl+S / Escape | not mapped | — | APP-077, UI-080 FUTURE-NOT-DUE | — |
 
@@ -507,37 +545,38 @@ that finds the view another way (e.g. `object_row` via `rowFor`, row acts in
 `FeatureHistoryView` via the rows container); a missing id reference is a
 lead, not a proof that the act is untested.
 
-## 20. Control-level findings collected here (seat R2 verdicts; see the seat files)
+## 20. Control-level findings collected here (seat R2 verdicts and the `work/VERIFICATION.md` panel)
 
-| Finding | Control(s) | Verdict (seat R2) | Grade | Severity |
-| --- | --- | --- | --- | --- |
-| E-01 = B-02 | `export_action` over a face-supported CAD body | DEFECT-CONFIRMED | E1 (seat diag `export_face`) | P1 |
-| A-02 | `recovery_recover` | DEFECT-CONFIRMED (owner decision: inverts FSR1B-05) | E2 | P1 |
-| A-01 | `unsaved_save` before `project_open` | DEFECT-CONFIRMED | E2 | P2 |
-| A-04 = C-02 = D-02 = E-03 | `import_glb` while sketching | DEFECT-CONFIRMED | E1 + E2 | P2 |
-| B-01 | `tool_rail_place`, `apply_transform` on a face-supported body | DEFECT-CONFIRMED | E1 | P2 |
-| C-01 = F-02 | `sketch_navigator_flip`, `_rotate_ccw`, `_rotate_cw` | DEFECT-CONFIRMED | E1 + E2 | P2 |
-| F-01 | `sketch_navigator_flip`, `view_selection_outline_on/off`, `sketch_dimension_label` | DEFECT-CONFIRMED | E1 | P2 |
-| F-03 | System Back in the bootstrap with a panel or palette open | DEFECT-CONFIRMED | E2 | P2 |
-| F-04 | System Back during an in-project Revolve (API 36) | DEFECT-CONFIRMED | E2 | P2 |
-| F-05 | `field_body_dimension`, `field_cad_extrude_depth/second`, `field_sketch_line_length` | DEFECT-CONFIRMED | E2 | P2 |
-| D-01 | `undo_action` in Sculpt after a NotRetained stroke | DEFECT-CONFIRMED | E1 | P2 |
-| E-02 | `recovery_prompt` after a recreation | DEFECT-CONFIRMED | E2 | P2 |
-| H-01 | (no control) renderer stop not reported | DEFECT-CONFIRMED | E2 | P2 |
-| A-05 | Settings palette rows → saved baseline | DEFECT-CONFIRMED | E2 | P3 |
-| A-06 | `project_save_copy`, `export_action` across a recreation | DEFECT-CONFIRMED | E2/E5 | P3 |
-| A-08 | `home_open_file` picker launch failure text | DEFECT-CONFIRMED | E2 | P3 |
-| B-04 | `object_row_lock` + selection change / Undo | PARTIAL | E2 | P3 |
-| B-05 | `object_row_duplicate` / Mirror names at 96 bytes | DEFECT-CONFIRMED | E1 | P3 |
-| C-03 | `sketch_operation_add/cut` with a full sketch table | DEFECT-CONFIRMED | E2 (E1 for the domain refusal) | P3 |
-| C-04 | `apply_sketch_line_length` refusal name | PARTIAL | E1 | P3 |
-| D-03 = E-07 | `project_open` / `project_open_file` over a Freeform cage edit | DEFECT-CONFIRMED | E1 | P3 |
-| D-05 | `clear_mask` | PARTIAL | E1 | P3 |
-| D-07 | `resume_sculpt` while sketching (native) | PARTIAL | E2 | P3 |
-| D-08 | `freeform_symmetry_*`, `freeform_level_*` | PARTIAL | E2 | P3 |
-| E-12 | `project_open` / `project_open_file` post-decode refusal | DEFECT-CONFIRMED | E2 | P3 |
-| F-06 | `status_message` in Sculpt | DEFECT-CONFIRMED | E1 | P3 |
-| J-01 | `feature_history_action`, `edit_cad_sketch`, Surface edit over a hidden body | BLOCKED-OWNER (refusal) / PARTIAL (no preview) | E1 | P3 |
-| J-02 | `field_freeform_distance`, `field_surface_*` unit | DEFECT-CONFIRMED | E1 (arithmetic) + E2 (wiring) | P3 |
-| J-04 | `project_save` rename fallback | DEFECT-CONFIRMED | E2 | P3 |
-| A-03 | (absent) Open Saved Project at Home | BLOCKED-OWNER | E2 | P2 |
+| Finding | Control(s) | Verdict (seat R2) | Grade | Severity | Panel (`work/VERIFICATION.md`) |
+| --- | --- | --- | --- | --- | --- |
+| E-01 = B-02 | `export_action` over a face-supported CAD body | DEFECT-CONFIRMED | E1 (seat diag `export_face`) | P1 | survived 3/3 (both) |
+| A-02 | `recovery_recover` | DEFECT-CONFIRMED (owner decision: inverts FSR1B-05) | E2 | P1 | survived 3/3 |
+| A-01 | `unsaved_save` before `project_open` | DEFECT-CONFIRMED | E2 | P2 | survived 3/3 (= X-A01, 3/3) |
+| A-04 = C-02 = D-02 = E-03 | `import_glb` while sketching | DEFECT-CONFIRMED | E1 + E2 | P2 | survived 3/3 (all four) |
+| B-01 | `tool_rail_place`, `apply_transform` on a face-supported body | DEFECT-CONFIRMED | E1 | P2 | survived 3/3 |
+| C-01 = F-02 | `sketch_navigator_flip`, `_rotate_ccw`, `_rotate_cw` | DEFECT-CONFIRMED | E1 + E2 | P2 | survived 3/3 (both) |
+| F-01 | `sketch_navigator_flip`, `view_selection_outline_on/off`, `sketch_dimension_label` | DEFECT-CONFIRMED | E1 | P2 | survived 3/3 |
+| F-03 | System Back in the bootstrap with a panel or palette open | DEFECT-CONFIRMED | E2 | P2 | survived 3/3 |
+| F-04 | System Back during an in-project Revolve (API 36) | DEFECT-CONFIRMED | E2 | P2 | survived 3/3 |
+| F-05 | `field_body_dimension`, `field_cad_extrude_depth/second`, `field_sketch_line_length` | DEFECT-CONFIRMED | E2 | P2 | survived 3/3 |
+| D-01 | `undo_action` in Sculpt after a NotRetained stroke | DEFECT-CONFIRMED | E1 | P2 | survived 3/3 |
+| E-02 | `recovery_prompt` after a recreation | DEFECT-CONFIRMED | E2 | P2 | survived 3/3 |
+| H-01 | (no control) renderer stop not reported | DEFECT-CONFIRMED | E2 | P2 | survived 3/3 |
+| A-05 | Settings palette rows → saved baseline | DEFECT-CONFIRMED | E2 | P3 | survived 3/3 (= E-04, 3/3); panel record lists P2 |
+| A-06 | `project_save_copy`, `export_action` across a recreation | DEFECT-CONFIRMED | E2/E5 | P3 | survived 3/3; panel record lists P2 |
+| A-08 | `home_open_file` picker launch failure text | DEFECT-CONFIRMED | E2 | P3 | not panel-verified (seat grade only) |
+| B-04 | `object_row_lock` + selection change / Undo | PARTIAL | E2 | P3 | not panel-verified (seat grade only) |
+| B-05 | `object_row_duplicate` / Mirror names at 96 bytes | DEFECT-CONFIRMED | E1 | P3 | not panel-verified (seat grade only) |
+| C-03 | `sketch_operation_add/cut` with a full sketch table | DEFECT-CONFIRMED | E2 (E1 for the domain refusal) | P3 | not panel-verified (seat grade only) |
+| C-04 | `apply_sketch_line_length` refusal name | PARTIAL | E1 | P3 | not panel-verified (seat grade only) |
+| D-03 = E-07 | `project_open` / `project_open_file` over a Freeform cage edit | DEFECT-CONFIRMED | E1 | P3 | not panel-verified (seat grade only) |
+| D-05 | `clear_mask` | PARTIAL | E1 | P3 | not panel-verified (seat grade only) |
+| D-07 | `resume_sculpt` while sketching (native) | PARTIAL | E2 | P3 | not panel-verified (seat grade only) |
+| D-08 | `freeform_symmetry_*`, `freeform_level_*` | PARTIAL | E2 | P3 | not panel-verified (seat grade only) |
+| E-12 | `project_open` / `project_open_file` post-decode refusal | DEFECT-CONFIRMED | E2 | P3 | not panel-verified (seat grade only) |
+| F-06 | `status_message` in Sculpt | DEFECT-CONFIRMED | E1 | P3 | not panel-verified (seat grade only) |
+| J-01 | `feature_history_action`, `edit_cad_sketch`, Surface edit over a hidden body | BLOCKED-OWNER (refusal) / PARTIAL (no preview) | E1 | P3 | not panel-verified (seat grade only) |
+| J-02 | `field_freeform_distance`, `field_surface_*` unit | DEFECT-CONFIRMED | E1 (arithmetic) + E2 (wiring) | P3 | not panel-verified (seat grade only) |
+| J-04 | `project_save` rename fallback | DEFECT-CONFIRMED | E2 | P3 | not panel-verified (seat grade only) |
+| A-03 | (absent) Open Saved Project at Home | BLOCKED-OWNER | E2 | P2 | survived 2/3 |
+| A-07 | `unsaved_prompt` when leaving with an open sketch or staged edit (fingerprint-only dirty test) | DEFECT-CONFIRMED | E2 | P2 | survived 2/3 |

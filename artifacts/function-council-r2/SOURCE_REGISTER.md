@@ -33,7 +33,7 @@ run during this audit (2026-10-29).
 | `artifacts/modeling-r1-owner-shell-sketch-fix/SUMMARY.md`, `OWNER_FEEDBACK.md` | 167 / 31 | `636797e` / `6157f4d` 2026-10-06 | mark + drawer (`MODELING-R1-OWNER-CORRECTION`) | E3 |
 | `artifacts/cad-r2-c2-picking-seam/SUMMARY.md`, `TESTS.md` | 84 / 103 | `70a6c14` 2026-10-28 | last DEVICE runs `40782861799` (HomeFlowTest, EditorWorkspaceProjectActionsTest, OwnerProjectShellSketchSupportTest) and `40776968165` | E3 for this product tree |
 | `artifacts/cad-r2-c1-quality-gate/SUMMARY.md` | 106 | `08406cf` 2026-10-28 | previous device union | E3 (older head, same shell code) |
-| `artifacts/cad-vertical-slice-r1/FULLSHARDED_C4.md` | 247 | `a1b50f2` 2026-09-29 | last `FULL_SHARDED_SUITE_PASS` (`CI FULL SHARDED 36607747079` on `fa0b6b4`) | E3 for the persistence / transfer / settings classes, OLDER tree |
+| `artifacts/cad-vertical-slice-r1/FULLSHARDED_C4.md` | 247 | `a1b50f2` 2026-09-29 | last `FULL_SHARDED_SUITE_PASS` (`CI FULL SHARDED 36607747079` on `fa0b6b4`) | last full-sharded aggregate (OLDER tree). The persistence / transfer / settings classes now also have fresh focused evidence on this tree: CI DEVICE `40805804385` (§3b) |
 | `artifacts/function-council-r1/COUNCIL_FINDINGS.md`, `SUMMARY.md` | 211 / 90 | `ba2e2e4` 2026-09-29 | D1–D7 | re-checked on this tree (see SEAT_A.md); not promoted without re-check |
 | `artifacts/function-council-c1-d1/SUMMARY.md` | 106 | `509de02` 2026-09-29 | D1 fix, "Import GLB during an open sketch" recorded debt | re-checked: still present (A-04) |
 | `artifacts/fable-cad-architecture-audit-r1/OWNER_DECISIONS.md` | 114 | `83c79e0` 2026-09-30 | audit-local owner decisions | NOT a canonical OWNER_DECISIONS file; not used as authority |
@@ -41,13 +41,36 @@ run during this audit (2026-10-29).
 
 ## 3. Fresh evidence produced in this audit (read, not fabricated)
 
+All paths are relative to `artifacts/function-council-r2/` and persist in the repository checkout.
+The canonical test record for every run below is `TESTS.md` (written by the coordinator); this
+table only registers the sources. Session-scratchpad paths used in earlier drafts
+(`/tmp/claude-0/.../scratchpad/fc2/*`) do not persist and are superseded by `evidence/local/*`.
+
+### 3a. Local host / JVM / guard runs (`evidence/local/`)
+
 | Artifact | Producer | Content used |
 | --- | --- | --- |
-| `/tmp/claude-0/-home-user-Forgeshape/2f5454c6-63b1-52b8-b92c-5f8b69c420c6/scratchpad/fc2/host_selftests.txt` | audit orchestrator, `host_exit=0` 2026-10-29 00:53:46Z | `HOST_SELFTESTS_OK (4392 checks, 0 failed)`, 25 `HOST_SUITE_OK` (PROJECT 256, SCENE 175, CONSTRUCTION_HISTORY 147, GLTF_EXPORT 93, GLTF_IMPORT 189 ...) |
-| `.../fc2/host_corpus_verdicts.txt` | `corpus_verdicts_exit=0` | 72 fixtures, verdict per fixture |
-| `.../fc2/gradle.txt` | `gradle_exit=0` | `BUILD SUCCESSFUL`; `:app:testDebugUnitTest UP-TO-DATE` (JVM XML results dated 2026-10-28T18:46Z, 20 classes, 196 tests, 0 failures) |
-| `.../fc2/release_guard.txt` | `guard_exit=2` | `RELEASE_SELFTEST_GUARD=ERROR ANDROID_HOME/ANDROID_SDK_ROOT is not set` — environment error, NOT a product verdict |
-| `/tmp/claude-0/fc2-scratch/seatA/diag_import_during_sketch.cpp` (+ binary) | Seat A | E1 for A-04 (see SEAT_A.md for the exact command and output) |
+| `evidence/local/host_selftests.txt` | coordinator, `host_exit=0` 2026-10-29 00:53:46Z (`evidence/local/run_status.txt`) | `HOST_SELFTESTS_OK (4392 checks, 0 failed)`, 25 `HOST_SUITE_OK` suites, `CAD_R2_ORACLE_PASS=17` (17 oracles) |
+| `evidence/local/host_corpus_verdicts.txt` | coordinator, `corpus_verdicts_exit=0` | `CORPUS_FIXTURES 72`, one verdict per fixture |
+| `evidence/local/gradle_build_tail.txt` | coordinator, `gradle_exit=0` | `BUILD SUCCESSFUL` (first run; `:app:testDebugUnitTest` was UP-TO-DATE there, so it is NOT the JVM evidence) |
+| `evidence/local/gradle_unit_rerun_tail.txt` | coordinator, fresh `--rerun-tasks` | `BUILD SUCCESSFUL`, `22 actionable tasks: 22 executed`; JVM result 196 tests / 0 failures / 0 skipped as recorded in `TESTS.md` (the tail itself does not print the count) |
+| `evidence/local/release_guard.txt` | coordinator, rerun | `RELEASE_SELFTEST_GUARD=PASS` (release x86_64 / arm64-v8a: 0 `SelfTests` symbols, 0 self-test strings). The earlier attempt (`guard_exit=2` in `run_status.txt`, `ANDROID_HOME/ANDROID_SDK_ROOT is not set`) was an environment error, not a product verdict, and is superseded by this PASS |
+| `evidence/local/run_status.txt` | coordinator | exit codes and timestamps of the first local pass |
+| `/tmp/claude-0/fc2-scratch/seatA/diag_import_during_sketch.cpp` (+ binary) | Seat A | E1 for A-04 (see SEAT_A.md for the exact command and output); scratch path, NOT persisted |
+
+### 3b. GitHub Actions runs on audited tree `70a6c14` (emulator only)
+
+| Run | Workflow | Evidence directory | Result used |
+| --- | --- | --- | --- |
+| `40796992679` | CI FAST | `evidence/fast-run-40796992679/` | success; `forge-corpus-parity.txt`: `FORGE_CORPUS_PARITY=PASS (72/72 byte-identical)`; `release-selftest-guard.md`, `verify-device-guards.txt`, `toolchain-manifest.txt` |
+| `40797031704` | CI DEVICE | `evidence/device-run-40797031704/` | 32/32 (`instrumentation-counts.txt`: `run=32 failed=0`); visual-evidence classes; 25/25 startup tokens in order (`selftest-tokens-found.txt`, `summary.json`) |
+| `40800569636` | CI DEVICE | `evidence/device-run-40800569636/` | 77/77 (`run=77 failed=0`); Surface / Freeform / Sculpt / Import-sculpt / CAD vertical slice / extent / SketchUx classes; 25/25 startup tokens in order |
+| `40805804385` | CI DEVICE | `evidence/device-run-40805804385/` | 90/90 (`run=90 failed=0`); `ProjectAutosaveRecoveryTest`, `ProjectTransferTest`, `ProjectProcessDeathTest`, `ImportedMeshDurableTest`, `ObjectsDeleteTest`, `ObjectCommandsTest`, `MirrorSmokeTest`, `BodyDimensionsSmokeTest`, `EditorWorkspaceLifecycleTest`, `JniBoundaryHardeningTest`, `DiagnosticsAndRendererLossTest`, `SettingsPreferencesTest`; 25/25 startup tokens in order (`summary.json`) |
+
+Limits: every device run is on the `ForgeShape_CI_API36` emulator (swiftshader). Per `CLAUDE.md`
+(`CI-CLOUD-R1`) none of them closes a physical-device gate (stylus, pressure, hover, hardware GPU,
+16 KB pages, real-device performance). No `-FullSharded` aggregate was run in this audit, so
+`FULL_SHARDED_SUITE_PASS` is still only the older `36607747079` on `fa0b6b4` (§2).
 
 ## 4. Source gaps (NOT AVAILABLE) and what each limits
 

@@ -5,8 +5,12 @@ Old items come from `artifacts/function-council-r1/COUNCIL_FINDINGS.md` (tree
 seat record: `SEAT_E.md` "Debt recheck" (D1..D7, import during sketch); other seats
 cited per row. Source lines marked **(synth)** were re-read for this file with
 `sed -n` / `grep` on this tree; nothing was executed for this file beyond those
-greps. Adversarial verification (`work/VERIFICATION.md`) did not exist when this
-was written (see `COUNCIL_DELIBERATION.md` §0).
+greps. Adversarial verification is recorded in `work/VERIFICATION.md` (three
+lenses per finding; 30 of 38 P0–P2 findings panel-verified, all 30 survived; 10 of
+12 strongest positive claims judged overstated); this file was re-checked against
+it (see the note under §1). Fresh device runs on this product tree (emulator only,
+25/25 startup tokens in order) are listed in `TESTS.md`: CI DEVICE `40797031704`,
+`40800569636`, `40805804385`; evidence under `evidence/device-run-<id>/`.
 
 Status vocabulary: **CLOSED** (fixed in code, with proof), **CONFIRMED-OPEN**
 (mechanism still present), **PARTIAL** (narrowed, mitigated, or only part still
@@ -16,13 +20,20 @@ true), **UNDETERMINED** (not decidable from what this audit ran or read).
 
 | Old | Item | Status | Current evidence (file:line) | Test proof | Backlog entry (one per root cause) |
 | --- | --- | --- | --- | --- | --- |
-| D1 | Import GLB reachable and unguarded in Sculpt | **CLOSED** | `forgeshape_jni.cpp:8592` refuses `RefusedInSculpt`; chrome `EditorWorkspaceView.java:2823` (`showImportAvailable(!sculpting)`), `:5837/5856/5884` | `ImportGlbSculptGuardTest` d1_02..04, CI DEVICE `36643101662` (E3, FUNCTION-COUNCIL-C1-D1); GLTF_IMPORT host suite 189/0 in this audit's run (E1) | none. Its sibling (import during a SKETCH) is open, see §2 — not a regression of D1 |
+| D1 | Import GLB reachable and unguarded in Sculpt | **CLOSED** | `forgeshape_jni.cpp:8592` refuses `RefusedInSculpt`; chrome `EditorWorkspaceView.java:2823` (`showImportAvailable(!sculpting)`), `:5837/5856/5884` | `ImportGlbSculptGuardTest` d1_02..04 ran fresh **3/3** in CI DEVICE `40800569636` (77/77, E1 emulator; `evidence/device-run-40800569636/instrumentation-junit.xml`, 0 failures); earlier CI DEVICE `36643101662` (E3, FUNCTION-COUNCIL-C1-D1); GLTF_IMPORT host suite 189/0 in this audit's run (E1) | none. Its sibling (import during a SKETCH) is open, see §2 — not a regression of D1 |
 | D2 | Navigator Flip / ±90° do not move the camera | **CONFIRMED-OPEN** | `beginSketchView` reads `sketchSession().frame()` (`forgeshape_jni.cpp:318-319` **(synth)**); `SketchSession::viewFrame()` (`forgeshape_sketch_session.cpp:648`) has no production caller | seat C probe P1 (E1): `frame()_unchanged_view_after_flip=1 … viewFrame()_differs=1`. `SketchUxTest` (`:199-233`) reads only state bits, so its green run in `40800569636` does not cover it (F-02) | RC-03 (C-01 = F-02) |
 | D3 | A palette change forgets that the project was saved | **CONFIRMED-OPEN, wider** | `persistedFingerprint` / `everPersisted` are View fields (`EditorWorkspaceView.java:271-272`), not in `EditorUiState.carryAcrossRecreation`; `requestTheme` → `recreate()` (`ForgeShapeActivity.java:268-280`); also any configuration change missing from `AndroidManifest.xml:31` (`uiMode`, `fontScale`, `locale`, `keyboard`, `navigation`) | E2 only; seat A states the existing test is blind to it | RC-04 (A-05 = E-04); same root as E-02, A-06 |
 | D4 | Undo after an over-cap stroke lands on a never-existing state | **CONFIRMED-OPEN** | `SculptHistory::record` clears `redo_` then returns `NotRetained` without clearing `undo_` (`forgeshape_sculpt_history.cpp:91-97` **(synth)**) | seat D `diag_d3.out` (E1): `undo_lands_on_a_state_that_existed=0`, `hasEdits=0` after Undo. Existing `SCUNDO_23_an_oversized_stroke_is_refused_by_name` asserts NotRetained only with an empty undo stack (`forgeshape_sculpt_selftest.cpp:1777-1797`) and is misnamed (the stroke is applied) | RC-11 (D-01) |
 | D5 | Sketch overlay stale after a pinch zoom | **CLOSED** | `SketchSession::overlay` bumps `overlayRevision_` on a camera-only rebuild (`forgeshape_sketch_session.cpp:3768-3779`, commit `5da5d85`) | host check `CADFC1_S4_a_a_zoom_rebuild_advances_the_overlay_revision`, SKETCH_UX 118/0 in this audit's host run (E1) | none. `PROJECT_STATUS.md:382` and `:4245-4246` still list it open → `CONTRACT_CONFLICTS.md` CC-26 (not a regression) |
 | D6 | Clear Mask drawn and then refused | **PARTIAL (mechanism CONFIRMED-OPEN; impact narrowed)** | `canClearMask` has no entry-size test (`forgeshape_sculpt.cpp:1687-1690` **(synth)**). Round 2 (seat G → D #5): reachable only for a mask over ~87,371 vertices (`n·12 + 128` B > 1 MiB) or after eviction | E2 only; no test drives an over-cap Clear Mask | RC-10 (D-05) |
 | D7 | `closeProject` does not refuse an open Construction edit, while load does | **PARTIAL** | `forgeshape_jni.cpp:8968-8990` (`closeProject` clears the history, `ConstructionHistory::clear` sets `editOpen_ = false`, `forgeshape_history.cpp:221-227`); load refuses at `forgeshape_project_state.cpp:250`. All five callers are shell paths after the dirty guard (`EditorWorkspaceView.java:2420, 2446, 2580, 2641, 2721`) | `FSR1A_13_a_load_during_an_open_edit_is_refused` (`forgeshape_project_selftest.cpp:2490`) covers the load side only (E1 via PROJECT 256/0) | RC-07 (E-10). Whether this asymmetry is a defect is a recorded disagreement (`COUNCIL_DELIBERATION.md` D-8) |
+
+**Cross-check against `work/VERIFICATION.md`.** No disposition above is
+contradicted by the panel. The open items' members were upheld: D2 (C-01, F-02,
+3/3), D3 (A-05, E-04, 3/3), D4 (D-01, 3/3). D6 (D-05) and D7 (E-10) are not among
+the 30 panel-verified findings, so they keep their seat grade and are
+not panel-verified. The two CLOSED items rest on fresh E1 runs (D1: `40800569636`;
+D5: host SKETCH_UX), not on a positive claim the panel judged overstated.
 
 ## 2. Debts named in the task
 
@@ -37,7 +48,9 @@ true), **UNDETERMINED** (not decidable from what this audit ran or read).
 - Contrast: `sceneAddBody` refuses `in_sketch` (`forgeshape_jni.cpp:3246-3265`).
 - Proof: E1 twice — seat A `diag_import_during_sketch` (`commit=Ok bodies 1→2
   active 1→2 undo_depth=1`, `SEATA_IMPORT_DURING_SKETCH=ACCEPTED`), seat D
-  `diag_d6.out` (`status=Ok`, sketch still active). No device test.
+  `diag_d6.out` (`status=Ok`, sketch still active). Panel-verified: A-04, C-02,
+  D-02 and E-03 each upheld 3/3 (`work/VERIFICATION.md`). No device test drives
+  it: `ImportGlbSculptGuardTest`, green in `40800569636`, covers Sculpt only.
 - FC-R1 recorded this as debt in `FUNCTION-COUNCIL-C1-D1`; it is the same
   mechanism as then, so **not a regression**. One backlog entry: RC-02 (members
   A-04, C-02, D-02, E-03, ADV-046).
@@ -157,7 +170,10 @@ helpers" (J-05). No user-visible effect; P3.
   E-01 / B-02; A-12 / D-06; I-05 / G-02; F-09 / I-08.
 - **Do not file as defects**: H-05, H-06, H-07 (no budget recorded,
   BLOCKED-OWNER); G-06 / J-03 (OD-J3); J-01 (OD-J1); E-08 (OWNER); A-03, A-07
-  (OWNER); B-07 (withdrawn).
+  (OWNER); B-07 (withdrawn). The panel upheld the MECHANISMS of H-05, H-06
+  (2/3), A-03 (2/3; regraded P2 BLOCKED-OWNER) and A-07 (2/3)
+  (`work/VERIFICATION.md`); what stays undecided is the owner budget or policy,
+  so they are risks / owner decisions, not refuted.
 - **Doc-only corrections** (D5 listed open, `metersPerPixel` sentence, stale
   counts) belong to one documentation task, not to the product backlog; see
   `CONTRACT_CONFLICTS.md`.

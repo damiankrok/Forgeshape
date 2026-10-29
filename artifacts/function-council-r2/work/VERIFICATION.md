@@ -22,7 +22,7 @@ Panel-verified: 30 of 38 P0–P2 findings (top 30 by severity); the remaining 8 
 | B-03 | B | P2 | 3/3 | yes | ARCHITECTURE.md claims isFaceSupportedCad keeps the gizmo and exact-value editors off; no code does | `ARCHITECTURE.md:2607-2608` |
 | C-01 | C | P2 | 3/3 | yes | Orientation navigator Flip and +-90 do not move the camera | `app/src/main/cpp/forgeshape_jni.cpp:313-319 (beginSketchView reads frame()); :6611-6648; forgeshape_sketch_session.cpp:648 viewFrame has no production caller; A` |
 | C-02 | C | P2 | 3/3 | yes | Import GLB accepted while a sketch is open (same as Seat A A-04) | `forgeshape_jni.cpp:8594-8600 (Sculpt guard only); EditorWorkspaceView.java:2823 showImportAvailable(!sculpting)` |
-| C-06 | C | P2 | 2/3 | yes | Core sketch device classes not re-verified on the audited tree | `SketchUxTest, SpatialSketchTest (last run 36465122847/36548109667); SketchExtrudeTest, CadVerticalSliceTest, CadCanvasExtrudeTest, CadExtrudeExtentTest, CadPlan` |
+| C-06 | C | P2 | 2/3 | yes | Core sketch device classes not re-verified on the audited tree — **narrowed by run `40800569636`** | `Re-verified green in CI DEVICE 40800569636 (77/77, emulator only; evidence artifacts/function-council-r2/evidence/device-run-40800569636/, recorded in TESTS.md): SketchUxTest (14), CadVerticalSliceTest (9), CadExtrudeExtentTest (5). Still not re-verified on this tree (absent from 40797031704, 40800569636 and 40805804385): SpatialSketchTest (last 36465122847), SketchExtrudeTest, CadCanvasExtrudeTest, CadPlanarFaceRuntimeTest, CadPlanarFaceOwnerCorrectionTest (last recorded 2026-10-05). Same narrowing as SEAT_C.md C-06 Round 2, OWNER_DECISIONS_REQUIRED.md:187-189, PRIORITISED_BACKLOG.md:57` |
 | D-01 | D | P2 | 3/3 | yes | Undo after an over-cap (NotRetained) sculpt stroke lands on a never-existing state and clears hasEdits | `app/src/main/cpp/forgeshape_sculpt_history.cpp:80-101 (record keeps undo stack on NotRetained); forgeshape_sculpt.cpp:1640 undoStroke; consumers SculptContextVi` |
 | D-02 | D | P2 | 3/3 | yes | Import GLB is offered and accepted while a sketch is open | `EditorWorkspaceView.java:2823 showImportAvailable(!sculpting); ProjectDrawerPolicy.java:107 markShown; forgeshape_jni.cpp:8590-8597 (Sculpt-only guard); forgesh` |
 | E-02 | E | P2 | 3/3 | yes | The recovery question reappears over the live project after an Activity recreation in a process that had no candidate at launch | `EditorWorkspaceView.java:1027-1029 and 5579-5582; EditorUiState.java:151; ForgeShapeActivity.java:268-280; AndroidManifest.xml:31` |
@@ -39,7 +39,7 @@ Panel-verified: 30 of 38 P0–P2 findings (top 30 by severity); the remaining 8 
 | H-05 | H | P2 | 2/3 | yes | Heavy CAD derivation (Finish arrangement, entity placement, candidate regeneration) runs synchronously under g_stateMutex on the UI or render thread | `app/src/main/cpp/forgeshape_jni.cpp:4400-4420 (sketchFinish), :1733 (render-thread evaluateCandidate), :5098; forgeshape_sketch_session.cpp:2987-3029` |
 | H-06 | H | P2 | 2/3 | yes | Each sculpt stroke sample costs a whole-mesh republish, a full render-mesh rebuild, a full upload and a GPU drain | `app/src/main/cpp/forgeshape_jni.cpp:10036-10040; forgeshape_sculpt.cpp:611; forgeshape_renderer.cpp:1119, 868, 749` |
 
-Duplicates by root cause (from the verdict notes and the seat records): A-01 = X-A01; B-02 = E-01; A-04 = C-02 = D-02 = E-03; C-01 = F-02; A-05 = E-04. De-duplicated, the panel confirmed **23 distinct root causes** (4 ranked P1 by their seats: A-01, A-02, A-03, B-02, see severity notes in `COUNCIL_DELIBERATION.md` for the round-2 regrades, e.g. A-01 → P2/H1, A-03 → P2 BLOCKED-OWNER).
+Duplicates by root cause (from the verdict notes and the seat records): A-01 = X-A01; B-02 = E-01; A-04 = C-02 = D-02 = E-03; C-01 = F-02; A-05 = E-04. De-duplicated, the panel confirmed **23 distinct root causes** (six table rows carry a seat P1 — A-01, A-02, A-03, B-02, E-01, X-A01 — which are **four P1 root causes** because X-A01 duplicates A-01 and E-01 duplicates B-02: A-01, A-02, A-03, B-02; see severity notes in `COUNCIL_DELIBERATION.md` for the round-2 regrades, e.g. A-01 → P2/H1, A-03 → P2 BLOCKED-OWNER).
 
 ## Positive-claim challenges (two skeptics each; a claim *stands* only if neither refuted it)
 
@@ -62,4 +62,17 @@ Duplicates by root cause (from the verdict notes and the seat records): A-01 = X
 
 ## Not panel-verified (seat grade only)
 
-8 P2 findings ranked below the top 30; listed in the seat files with their own grades.
+8 P2 findings ranked below the top 30, each keeping its seat grade (mark these `seat`, never `panel`):
+
+| ID | Seat | Seat grade | Title (seat heading) |
+| --- | --- | --- | --- |
+| H-07 | H | P2 (risk) | The render loop never idles while a surface is attached (`SEAT_H.md:219`) |
+| H-08 | H | P2 (debt, still open) | F-07: face-supported bodies re-derive their face frame (`SEAT_H.md:227`) |
+| I-01 | I | P2 | A device suite silently drops checks past its result cap; PROJECT is at 256 (`SEAT_I.md:89`) |
+| I-02 | I | P2 | The 25 suites re-run on every Activity start (`SEAT_I.md:112`) |
+| I-03 | I | P2 | A task-branch push runs no CI, contrary to CLAUDE.md (`SEAT_I.md:146`) |
+| I-05 | I | P2 | CI FAST does not run the native suites or the corpus-verdict diff (`SEAT_I.md:186`) |
+| I-06 | I | P2 | No exhaustive aggregate covers the current tree (`SEAT_I.md:196`) |
+| I-08 | I | P2 | Most device "touches" cannot detect chrome standing over the target (`SEAT_I.md:226`) |
+
+Count check (recomputed from the seat headings): 30 panel rows above + these 8 = 38 P0–P2 findings at seat grade before Round 2, matching the header line. Seats G and J contribute no unverified P2 (G-01, G-02 are in the panel; J-01..J-05 are P3).

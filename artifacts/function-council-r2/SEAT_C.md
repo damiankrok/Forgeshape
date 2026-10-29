@@ -118,7 +118,7 @@ Parity with the PowerShell builder was not run locally because there is no pwsh.
 - chrome policy in Ready;
 - drafting label stand-off and priority hiding.
 
-**androidTest (E3, historic CI DEVICE).** Classes and the runs that recorded them:
+**androidTest (E3 historic CI DEVICE, except the three rows run in this audit, E1 emulator).** Classes and the runs that recorded them:
 
 | Class | Tests | Last recorded run |
 | --- | --- | --- |
@@ -130,12 +130,12 @@ Parity with the PowerShell builder was not run locally because there is no pwsh.
 | CadSketchDraftingOwnerTest | 14 | C2 `40782861799` |
 | CadParametricHistoryOwnerTest | 3 | C2 `40782861799` |
 | OwnerProjectShellSketchSupportTest | 5 | C2 `40782861799` |
-| SketchUxTest | 14 | `36465122847` / `36548109667` (cad-vertical-slice-r1) |
+| SketchUxTest | 14 | `40800569636` on `70a6c14` (this audit, E1 emulator) |
 | SpatialSketchTest | 8 | `36465122847` (cad-vertical-slice-r1) |
 | SketchExtrudeTest | 9 | cad-v6-s2-owner-feedback-multiface, 2026-10-05 |
-| CadVerticalSliceTest | 9 | cad-v6-s2-owner-feedback-multiface, 2026-10-05 |
+| CadVerticalSliceTest | 9 | `40800569636` on `70a6c14` (this audit, E1 emulator) |
 | CadCanvasExtrudeTest | 11 | cad-v6-s2-owner-feedback-multiface, 2026-10-05 |
-| CadExtrudeExtentTest | 5 | cad-v6-s2-owner-feedback-multiface, 2026-10-05 |
+| CadExtrudeExtentTest | 5 | `40800569636` on `70a6c14` (this audit, E1 emulator) |
 | CadPlanarFaceRuntimeTest | 6 | cad-v6-s2-owner-feedback-multiface, 2026-10-05 |
 | CadPlanarFaceOwnerCorrectionTest | 5 | cad-v6-s2-owner-feedback-multiface, 2026-10-05 |
 
@@ -271,18 +271,19 @@ They link against the audit's fresh host objects of `70a6c14` (`build/host-selft
 - **Grade:** E2 + E1 (P7).
 - **Fix:** update all three comments.
 
-**C-06: P2 (risk). Device evidence for the core sketch classes is not current on the audited tree. PARTIAL.** *(Round 2: narrowed. SketchUxTest (14), CadVerticalSliceTest (9) and CadExtrudeExtentTest (5) are green on this tree in this audit's run `40800569636` (E3, API 36 emulator). Still stale: SpatialSketchTest, SketchExtrudeTest, CadCanvasExtrudeTest, CadPlanarFaceRuntimeTest and CadPlanarFaceOwnerCorrectionTest.)*
+**C-06: P2 (risk). Device evidence for the core sketch classes is not current on the audited tree. PARTIAL.** *(Round 2: narrowed. SketchUxTest (14), CadVerticalSliceTest (9) and CadExtrudeExtentTest (5) are green on this tree in this audit's run `40800569636` (E1, emulator only; evidence `artifacts/function-council-r2/evidence/device-run-40800569636/`, recorded in TESTS.md). Still stale: SpatialSketchTest, SketchExtrudeTest, CadCanvasExtrudeTest, CadPlanarFaceRuntimeTest and CadPlanarFaceOwnerCorrectionTest.)*
 
-- **The gap:** these classes have no run on the C2 tree, `f3db953`, the same as `70a6c14`:
-  - SketchUxTest and SpatialSketchTest: last recorded at cad-vertical-slice-r1 (`36465122847`, `36548109667`).
-  - SketchExtrudeTest, CadVerticalSliceTest, CadCanvasExtrudeTest, CadExtrudeExtentTest,
-    CadPlanarFaceRuntimeTest and CadPlanarFaceOwnerCorrectionTest: last recorded 2026-10-05.
+- **The gap:** these five classes have no run on the C2 tree, `f3db953`, the same as `70a6c14`
+  (none of them appears in `40797031704`, `40800569636` or `40805804385`):
+  - SpatialSketchTest: last recorded at cad-vertical-slice-r1 (`36465122847`).
+  - SketchExtrudeTest, CadCanvasExtrudeTest, CadPlanarFaceRuntimeTest and
+    CadPlanarFaceOwnerCorrectionTest: last recorded 2026-10-05.
 - **What has changed since (corrected in Round 2):** 126 is the `6c9f156..70a6c14` (main..HEAD)
   count, not commits after those runs. The command `git log --oneline --since=2026-10-06 70a6c14` gives 75 commits, of which
   26 touch `app/src/main`. Seat F counted 28 and 77; the boundary depends on the time zone.
 - **What PROJECT_STATUS requires:** the Tier-5 aggregate before the v6 branch merges, and none has run on this tree.
 - **Grade:** E3/E4.
-- **Fix:** one focused CI DEVICE union of the eight classes on the audited tree, following Tier 2 of
+- **Fix:** one focused CI DEVICE union of the five still-stale classes on the audited tree, following Tier 2 of
   TEST-OWNER-04.
 
 ## Re-checks of FUNCTION-COUNCIL-R1 leads on this tree
@@ -370,7 +371,7 @@ They link against the audit's fresh host objects of `70a6c14` (`build/host-selft
      - The boss and the pocket follow the base cap.
      - The reopened `.forge` matches the pre-close bytes and fingerprint, with an empty history after load.
    - Tests: host CADVS_SES, R2_HIST, R2_DATA; device CadVerticalSliceTest (green on this tree in
-     `40800569636`, E3) and CadParametricHistoryOwnerTest.
+     `40800569636`, E1 emulator) and CadParametricHistoryOwnerTest.
 2. **J-C2 (negative, fail closed): a refused Cut.**
    - Steps: on a body, a face sketch with a rectangle placed off the body. Choose Cut.
    - Expected:
@@ -418,7 +419,8 @@ They link against the audit's fresh host objects of `70a6c14` (`build/host-selft
 - C-02 is owned jointly with Seat A (A-04).
 - Local corpus parity was not run (no pwsh). CI FAST `40787465884` is the evidence (E3).
 - `forgeshape_renderer.cpp` (preview tint and candidate substitution) cannot be host-tested. Its
-  evidence is device-only and stale (C-06).
+  evidence is device-only: CadVerticalSliceTest and CadExtrudeExtentTest ran on this tree in
+  `40800569636` (E1, emulator only); the canvas/planar-face classes stay stale (C-06).
 - H-02 (UI-thread evaluation) needs Seat D/E (performance/Android) confirmation.
 
 Completeness: **PARTIAL**.
@@ -428,8 +430,12 @@ Completeness: **PARTIAL**.
 - **Why it is still PARTIAL:**
   - The canonical master plan and owner-decision files are unavailable, so the requirement horizons
     are reconstructed from repo records.
-  - This seat ran no device or CI dispatch, so the Android/UI parts of the journeys rest on historic
-    E3 runs, and several core sketch classes are stale on this tree (C-06).
+  - This seat ran no device or CI dispatch itself. The coordinator's runs on this tree
+    (`40797031704`, `40800569636`, `40805804385`; emulator only, recorded in TESTS.md) cover
+    SketchUxTest, CadVerticalSliceTest and CadExtrudeExtentTest at E1; the other Android/UI parts
+    rest on historic E3 runs, and five core sketch classes (SpatialSketchTest, SketchExtrudeTest,
+    CadCanvasExtrudeTest, CadPlanarFaceRuntimeTest, CadPlanarFaceOwnerCorrectionTest) are stale on
+    this tree (C-06). No emulator run closes a physical-device gate.
 
 ## Round 2 — objections from seat F and responses
 

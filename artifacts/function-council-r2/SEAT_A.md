@@ -66,7 +66,7 @@ Native (`app/src/main/cpp/`): `forgeshape_jni.cpp` `encodeProject` 8387, `loadPr
 | Corpus | 72 `.forge` fixtures | decode verdict per fixture (e.g. `truncated_v1` Truncated, `unsupported_major_v1` UnsupportedMajor) | **E1**: `fc2/host_corpus_verdicts.txt`, `CORPUS_FIXTURES 72` |
 | JVM | `ProjectDrawerPolicyTest` (9), `AppPreferencesTest` (13), `AppThemeTest` (10), `EditorUiStateTest` (10), `DiagnosticLogTest` (11), `WorkspaceLayoutModeTest` (15) … 20 classes / 196 | drawer order, `perform` closes first, mark/New Sketch predicates; preference parsing; palette set | **E1** (R2 correction): `fc2/gradle_unit_rerun.txt` executed `:app:testDebugUnitTest` fresh (`22 actionable tasks: 22 executed`), XML 2026-10-29T00:57:26Z, e.g. `ProjectDrawerPolicyTest` 9/0, `AppPreferencesTest` 13/0, `AppThemeTest` 10/0 |
 | Device (this product tree) | `HomeFlowTest` E2E-APPH1-01..12, `EditorWorkspaceProjectActionsTest` (9), `OwnerProjectShellSketchSupportTest` devOss01..05 | cold Home, four-option chooser + Back, CAD bootstrap → first body, New Sculpt, Open File from Home, cancel/corrupt open at Home, unsaved Cancel/Discard/Save(Open File path), Back in Home/chooser/bootstrap/unsaved, recreation at Home/bootstrap; slot save/refusals/fresh history; mark → left drawer → New Sketch | **E3**: `CI DEVICE 40782861799` @`30b561b` (67/67) |
-| Device (older trees) | `ProjectAutosaveRecoveryTest` FSR1B-01..09, `ProjectTransferTest` FSR1B-10..13/18, `ProjectProcessDeathTest` stage1-8, `SettingsPreferencesTest` UIPREFR1-*, `DiagnosticsAndRendererLossTest`, `ImportedMeshSculptTest`, `ImportGlbSculptGuardTest` | autosave policy, recovery offer/quarantine/recover/discard, SAF copy/open/cancel, real process death, preferences byte-identity | **E3**: `CI FULL SHARDED 36607747079` @`fa0b6b4` (older shell; Freeform/Surface New Project added later); `FreeformOwnerTest`/`SurfaceOwnerTest` in `CI DEVICE 37472535341` @`30833aa` |
+| Device (older trees) | `ProjectAutosaveRecoveryTest` FSR1B-01..09, `ProjectTransferTest` FSR1B-10..13/18, `ProjectProcessDeathTest` stage1-8, `SettingsPreferencesTest` UIPREFR1-*, `DiagnosticsAndRendererLossTest`, `ImportedMeshSculptTest`, `ImportGlbSculptGuardTest` | autosave policy, recovery offer/quarantine/recover/discard, SAF copy/open/cancel, real process death, preferences byte-identity | **E3**: `CI FULL SHARDED 36607747079` @`fa0b6b4` (older shell; Freeform/Surface New Project added later); `FreeformOwnerTest`/`SurfaceOwnerTest` in `CI DEVICE 37472535341` @`30833aa`. **Superseded:** fresh @`70a6c14` in `CI DEVICE 40805804385` (90/90; the five persistence/settings/diagnostics classes) and `CI DEVICE 40800569636` (77/77; the two Import-sculpt classes), emulator only — see `TESTS.md` |
 | Release guard | `RELEASE_SELFTEST_GUARD` | no self-test symbols/strings in release | **E1** (R2 correction): `fc2/release_guard.txt` (rewritten 00:57:29) `RELEASE_SELFTEST_GUARD=PASS`, release x86_64 and arm64-v8a 0 symbols / 0 strings; `run_status.txt` `guard_exit=2` is the first attempt only |
 
 Coverage blind spots relevant to findings: no test drives Open Saved Project through the unsaved
@@ -278,6 +278,14 @@ cold launch then asks "Unsaved work found" for work already stored. E2. **PARTIA
   keyboard expectations cannot be judged (APP-077..079).
 - Device evidence for the persistence / transfer / settings classes is from `fa0b6b4` (older shell);
   no fresh device run was made by this seat.
+  **Superseded (repair):** the coordinator's fresh `CI DEVICE 40805804385` (audited tree `70a6c14`,
+  emulator only, 90/90, 25/25 startup tokens in order) ran `ProjectAutosaveRecoveryTest` (14/0),
+  `ProjectTransferTest` (13/0), `ProjectProcessDeathTest` (8/0), `SettingsPreferencesTest` (15/0) and
+  `DiagnosticsAndRendererLossTest` (9/0); evidence `artifacts/function-council-r2/evidence/device-run-40805804385/`.
+  `ImportedMeshSculptTest` (9) and `ImportGlbSculptGuardTest` (3) ran in `CI DEVICE 40800569636`
+  (77/77; `evidence/device-run-40800569636/`). See `TESTS.md`. This seat still made no device run of its
+  own, and a passing run is not a reproduction of A-01, A-02, A-05 or A-06, so those stay
+  source-proven only. Emulator CI closes no physical-device gate.
 - (R2) The release guard WAS obtained on the second attempt: PASS (see coverage table).
 - Physical device, stylus and OWNER visual matters (palettes, start pages) remain
   OWNER-PHYSICAL-UNVERIFIED.

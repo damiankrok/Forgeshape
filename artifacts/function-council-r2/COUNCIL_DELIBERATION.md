@@ -2,9 +2,13 @@
 
 Tree `70a6c14` (product tree `app/src/main` = `f3db953`). Inputs: `SEAT_A.md` …
 `SEAT_J.md` (each with its Round 2 section), `work/req_*.tsv`, `work/delib_*.md`,
-`SOURCE_REGISTER.md`. Fresh test and CI run ids belong to `TESTS.md` (the
-coordinator's file, not yet written when this was synthesised); run ids quoted
-here are the ones the seats cite, and each was checked against the seat text, not
+`SOURCE_REGISTER.md`, `work/VERIFICATION.md`. Fresh test and CI run ids are
+recorded in `TESTS.md` (the coordinator's file); this audit's fresh runs are CI FAST
+`40796992679` and CI DEVICE `40797031704` (32/32), `40800569636` (77/77) and
+`40805804385` (90/90), emulator only, each with 25/25 startup tokens in order
+(`evidence/fast-run-40796992679/`, `evidence/device-run-40797031704/`,
+`evidence/device-run-40800569636/`, `evidence/device-run-40805804385/`). Other run
+ids quoted here are the ones the seats cite, checked against the seat text, not
 re-derived.
 
 Seat statuses: A PARTIAL, B PARTIAL, C PARTIAL, D PARTIAL, E COMPLETE, F PARTIAL,
@@ -15,21 +19,36 @@ horizons H0/H1/H2 are reconstructed from repo records (**PARTIAL-PLAN-SOURCE-GAP
 
 ## 0. Adversarial verification — outcome
 
-**`work/VERIFICATION.md` does not exist at synthesis time** (checked:
-`ls artifacts/function-council-r2/work/` lists only `delib_*.md` and `req_*.tsv`;
-a filesystem search found no `VERIFICATION*.md` newer than `BEFORE.md`).
-Consequences, applied throughout this file and its two siblings:
+`work/VERIFICATION.md` records the adversarial pass (workflow run
+`wf_8b7c4db9-993`; written by the coordinator mechanically from the raw result).
+Each P0–P2 finding was judged by three lenses (L1 reproduce, L2 refute-by-code,
+L3 scope/severity) and survives when at least 2 of 3 upheld it.
 
-- No finding below is labelled "verified by the adversarial pass". A finding's
-  standing is its seat's grade **after Round 2** plus any cross-seat
-  re-reproduction recorded in the deliberation files (listed in §3).
-- Where a seat's own "Adversarial counterexample attempts" section refuted a
-  candidate, that refutation is reported as the seat's (E1/E2 as it states).
-- When `VERIFICATION.md` is written, any finding it does not uphold must be
-  re-labelled hypothesis/withdrawn here; this file must not be cited as
-  verified until then.
+- **Panel-verified: 30 of 38 P0–P2 findings (the top 30 by severity); all 30
+  survived** — 24 at 3/3 and 6 at 2/3 (A-03, A-07, C-06, G-02, H-05, H-06).
+  No finding in §1 or §4 is withdrawn by verification. De-duplicated
+  (A-01 = X-A01; B-02 = E-01; A-04 = C-02 = D-02 = E-03; C-01 = F-02;
+  A-05 = E-04) the panel confirmed 23 distinct root causes. The other 8
+  lower-ranked P2 findings keep their seat grade and are **not** panel-verified.
+- The panel judged severity at the seats' Round 1 grades. Where Round 2 regraded
+  (A-01 P1 → P2/H1; A-03 → BLOCKED-OWNER; A-05 P2 → P3 in seat A's text, P2 as
+  E-04; A-06 → P3; A-07 → BLOCKED-OWNER; C-06 narrowed), this file keeps the
+  post-Round-2 grade: surviving the panel confirms the mechanism, not the
+  original severity.
+- **Positive claims: 10 of the 12 strongest were judged overstated** at their
+  stated grade (seat A's two Home/load claims, seat B's hidden-body predicate and
+  gizmo-drag claims, seat C's native-domain and 39-fixture corpus claims, seat E's
+  fail-closed load and canonical-encoder claims, seat F's start-page and System
+  Back claims). Only seat D's two (CAD/Freeform/Surface never a sculpt source;
+  exact Freeform Symmetry) stand. The ten remain supported at E2 (source) and are
+  **not** upgraded to PASS-REPRODUCED; nothing in this file asserts them as
+  reproduced. This is consistent with §2.1 (E-12: "Both stay fail-closed"
+  struck) and with RC-07 / RC-16, which record the load and codec gaps.
 
-Findings withdrawn or narrowed by deliberation (not by verification):
+Findings withdrawn or narrowed by deliberation. The three withdrawals (B-07, the
+C-03 Keep Sketch sub-claim, the J-05 revolve-axis half) were not among the 30
+panel rows, so verification contradicts none of them; A-07 was panel-verified
+(2/3) and its mechanism stands — only its grade moved to BLOCKED-OWNER:
 
 | Item | Change | Where recorded |
 | --- | --- | --- |
@@ -139,7 +158,15 @@ grades are the seat's.
   Activity start, ~9.5 s each; 304.4 s of 667 s test time.
 - **I-03 P2 DOC-DIVERGENCE** — a task-branch push triggers no CI.
 - **I-05 P2 PARTIAL** — CI FAST runs neither the native suites nor corpus verdicts.
-- **I-06 P2 PARTIAL** — 54 of 70 device classes have no run on the current product tree.
+- **I-06 P2 PARTIAL** — **31 of 70** device classes have no run on the current
+  product tree (corrected from the seat's 54, which predates this audit's later
+  runs; `SEAT_I.md` I-06 still carries 54). 39 ran on product `f3db953`: 28 fresh
+  here (`40797031704` 5 classes 32/32, `40800569636` 11 classes 77/77,
+  `40805804385` 12 classes 90/90; `evidence/device-run-40797031704/`,
+  `evidence/device-run-40800569636/`, `evidence/device-run-40805804385/`) plus 11
+  in C2's `40776968165` + `40782861799` (E3). The 31 are listed in `TESTS.md` §4
+  (same count as `RISK_REGISTER.md` R-36); no `FULL_SHARDED_SUITE_PASS` exists on
+  this tree.
 - **I-08 P2 PARTIAL** — most device touches bypass hit testing (8 classes use decor-root input).
 - I-04 P3 stale counts (six places), I-07 P3 (= H-03), I-09..I-11, I-13 P3, I-10 IMPLEMENTED-UNTESTED, I-14 INFO.
 
@@ -218,14 +245,14 @@ objections changed whether a mechanism exists.
 | F #6 → C (commit counts after the last core-sketch runs) | Seat C conceded C-06 was overtaken by `40800569636` for three classes, but recomputed: `git log --oneline --since=2026-10-06 70a6c14` gives 75 commits / 26 touching `app/src/main`, not seat F's 77 / 28. Attributed to the time-zone boundary of `--since`. No conclusion depends on the difference. |
 | D 2 → A (narrow) | A-02's sentence "no test leaves a project after Recover" stands: FSR1B-05 asserts checkpoint retirement but does not background or leave afterwards. |
 
-### 2.2 Items still UNRESOLVED after Round 2
+### 2.2 Items still UNRESOLVED after Round 2 (U-1 and U-4 since closed)
 
 | # | Item | Raised in | Owner of closure |
 | --- | --- | --- | --- |
-| U-1 | Release-guard provenance: `run_status.txt` records `guard_exit=2` at 00:54:48; `release_guard.txt` (mtime 00:57:29) reads `RELEASE_SELFTEST_GUARD=PASS`; the rerun's command and exit code are recorded nowhere. Seats now rest the PASS on CI FAST `40796992679` (`release-selftest-guard.md` PASS) and label the local file "provenance incomplete". Seat G marked it RESOLVED by timestamp ordering; seats B, E, I, F, D still list it open. | A→H O-18, B→I 11, E→B 5, F→C 12, G→D 19, H→E 18-21, I→F 15, J→G 12 | coordinator (`TESTS.md`) |
+| U-1 | ~~Release-guard provenance~~ **RESOLVED by `TESTS.md` L5**: the first local run failed on environment (`ERROR ANDROID_HOME/ANDROID_SDK_ROOT is not set`, `run_status.txt` `guard_exit=2`); the rerun `bash scripts/ci-release-selftest-guard.sh` with `ANDROID_HOME=/root/android-sdk` gave `RELEASE_SELFTEST_GUARD=PASS` (release x86_64 / arm64-v8a: 0 `SelfTests` symbols, 0 self-test strings; `evidence/local/release_guard.txt`). CI FAST `40796992679` independently shows PASS (`evidence/fast-run-40796992679/release-selftest-guard.md`). The same applies to `RISK_REGISTER.md` R-42, which this file does not edit. | A→H O-18, B→I 11, E→B 5, F→C 12, G→D 19, H→E 18-21, I→F 15, J→G 12 | closed (coordinator, `TESTS.md` L5) |
 | U-2 | Whether `loadProject` ends the support chooser, Dimensions mode and the gizmo. Native `loadProject` does not call `supportChooser().cancel()` (`closeProject` does, `forgeshape_jni.cpp:8976`); the Java post-load path was not traced. | H→E 17 | open trace (UNDETERMINED-SOURCE-GAP) |
 | U-3 | `TEST_COVERAGE_MATRIX.md:184` still says "112 in 9 classes" (seat I's corrected count: 8 classes, ~106 call sites); the gizmo coverage note (locked/hidden/undo-of-unlock) is missing from the matrix. | B→I 8, 21 | coordinator |
-| U-4 | Count of refused-corpus status names: seat E counts 22 of 28 `InvalidSemanticValue` (`fc2/host_corpus_verdicts.txt`), seat H's text had 24. | H→E 15 | coordinator (re-read the one file) |
+| U-4 | ~~Count of refused-corpus status names~~ **RESOLVED**: the fresh `evidence/local/host_corpus_verdicts.txt` (`TESTS.md` L2, `CORPUS_FIXTURES 72`) has 28 refused fixtures, 22 of them `InvalidSemanticValue` (plus one each `BadPayload`, `ChecksumMismatch`, `Truncated`, `UnknownRequiredSection`, `UnresolvedReference`, `UnsupportedMajor`). Seat E's 22 is correct; seat H's 24 is withdrawn. | H→E 15 | closed |
 
 ## 3. Cross-seat re-reproductions made during Round 2 (E1)
 
@@ -276,7 +303,7 @@ No fictitious consensus is claimed; these remain open.
 
 | # | Disagreement | Positions | Why unresolved |
 | --- | --- | --- | --- |
-| D-1 | Release-guard provenance (U-1) | G: resolved by mtime ordering. B, D, E, F, I: open until the rerun's command and exit are recorded. All agree CI FAST `40796992679` shows PASS. | Only the coordinator ran the rerun. |
+| D-1 | ~~Release-guard provenance (U-1)~~ **Closed** | G: resolved by mtime ordering. B, D, E, F, I: open until the rerun's command and exit were recorded. All agreed CI FAST `40796992679` shows PASS. | `TESTS.md` L5 now records the rerun command, environment and PASS; the open positions' condition is met. Kept here only so the numbering stays stable. |
 | D-2 | Recover semantics (A-02) | A, D: P1 defect against CLAUDE.md "Autosave protects work". The shipped text (`PRODUCT.md:193-194`) and the pinned test FSR1B-05 say recovered work is not asked about and the checkpoint is retired. | Fixing it inverts a pinned assertion; OWNER decision 2. |
 | D-3 | Severity of the lost "saved" baseline (D3) | Seat A: P3 (fail-safe: an extra question, never a loss). Seat E: P2 (E-04). Neither seat objected to the other's grade in Round 2. | Severity scale is seat-local; both agree on the mechanism (E2). |
 | D-4 | Grade of import-during-sketch | Seat E's E-03 and debt table still say "E2, runtime not reproduced"; seats A and D reproduced it at E1. | Seat E's section predates the cross-seat runs. Synthesis uses E1 (domain) + E2 (JNI/Java). |

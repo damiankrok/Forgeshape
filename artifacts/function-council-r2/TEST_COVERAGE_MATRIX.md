@@ -8,17 +8,26 @@ Evidence grades: **E1** = produced in this audit (fresh local run, fresh CI run,
 or a seat-I scratch diagnostic); **E2** = source; **E3** = a recorded historic
 run; **E4** = a document claim; **E5** = inference.
 
-Fresh runs this matrix rests on:
+Fresh runs this matrix rests on (durable copies under
+`artifacts/function-council-r2/evidence/`; run ids and results are as recorded
+in `TESTS.md`, which also records each CI run's head SHA):
 
 | Run | Tree | Result | Where |
 | --- | --- | --- | --- |
-| Host suites, local | `70a6c14` | `HOST_SELFTESTS_OK (4392 checks, 0 failed)`, 25 suites | scratchpad `fc2/host_selftests.txt` (E1) |
-| JVM, local | `70a6c14` | 20 classes, 196 tests, 0 failures, 0 skipped | `app/build/test-results/testDebugUnitTest/*.xml` (00:57 UTC) (E1) |
-| Release guard, local | `70a6c14` | `RELEASE_SELFTEST_GUARD=PASS` (first attempt in `run_status.txt` exited 2; the rerun file says PASS) | `fc2/release_guard.txt` (E1) |
-| Corpus verdicts, local | `70a6c14` | 72 lines; identical to `artifacts/modeling-r1-owner-shell-sketch-fix/corpus_verdicts_after.txt` | `fc2/host_corpus_verdicts.txt` (E1) |
-| `CI FAST` `40796992679` | `9cfc3f5` (app, scripts, workflows, testdata identical to `70a6c14`) | corpus parity 72/72, guard PASS, TESTRUNTIME-01..26, THR1-01..10, DEV2/DEV3 PASS | `fc2/ci/fast` (E1) |
-| `CI DEVICE` `40797031704` | `70a6c14` | 25/25 tokens in order, `NATIVE_VIEWPORT_OK`, 0 failure lines; 5 classes, 32/32 | `fc2/ci/dev1` (E1) |
-| Seat-I scratch | `70a6c14` objects | cap probe, reverse-order run, Surface fixture attribution, release `.so` scan | `/tmp/claude-0/fc2-scratch/I/` (E1) |
+| Host suites, local | `70a6c14` | `HOST_SELFTESTS_OK (4392 checks, 0 failed)`, 25 suites, 17 oracles (`CAD_R2_ORACLE_PASS=17`) | `evidence/local/host_selftests.txt` (E1) |
+| JVM, local (`--rerun-tasks`) | `70a6c14` | 20 classes, 196 tests, 0 failures, 0 skipped | `evidence/local/gradle_unit_rerun_tail.txt` (BUILD SUCCESSFUL); per-class counts from `app/build/test-results/testDebugUnitTest/*.xml` (E1) |
+| Release guard, local | `70a6c14` | `RELEASE_SELFTEST_GUARD=PASS` (first attempt in `run_status.txt` exited 2; the rerun file says PASS, its command and exit code not recorded) | `evidence/local/release_guard.txt`, `evidence/local/run_status.txt` (E1, supporting; `CI FAST` is the authoritative guard run) |
+| Corpus verdicts, local | `70a6c14` | `CORPUS_FIXTURES 72`: 44 Ok, 28 refused | `evidence/local/host_corpus_verdicts.txt` (E1) |
+| `CI FAST` `40796992679` | see `TESTS.md` (app, scripts, workflows, testdata identical to `70a6c14`) | success; corpus parity 72/72, guard PASS, TESTRUNTIME-01..26, THR1-01..10, DEV2/DEV3 PASS | `evidence/fast-run-40796992679/` (E1) |
+| `CI DEVICE` `40797031704` (**FC2-D1**) | `70a6c14` | 25/25 tokens in order, `NATIVE_VIEWPORT_OK`, 0 failure lines; 5 classes (visual-evidence and legibility), 32/32 | `evidence/device-run-40797031704/` (E1, emulator) |
+| `CI DEVICE` `40800569636` (**FC2-D2**) | see `TESTS.md` | 25/25 tokens in order, `NATIVE_VIEWPORT_OK`, 0 failure lines; 11 classes (Surface, Freeform, Sculpt, Import-sculpt, CAD vertical slice, extent, SketchUx), 77/77 | `evidence/device-run-40800569636/` (E1, emulator) |
+| `CI DEVICE` `40805804385` (**FC2-D3**) | see `TESTS.md` | 25/25 tokens in order, `NATIVE_VIEWPORT_OK`, 0 failure lines; 12 classes (persistence, transfer, process death, objects, Mirror, dimensions, lifecycle, JNI hardening, diagnostics/renderer loss, settings), 90/90 | `evidence/device-run-40805804385/` (E1, emulator) |
+| Seat-I scratch | `70a6c14` objects | cap probe, reverse-order run, Surface fixture attribution, release `.so` scan | session scratch `/tmp/claude-0/fc2-scratch/I/` — **no durable copy under `evidence/`**; results quoted from `SEAT_I.md` (E1 at the time, not re-checkable from this directory) |
+
+All three device runs are emulator-only (API 36 x86_64, SwiftShader, AVD
+`ForgeShape_CI_API36`, per each run's `summary.json`). They close no
+physical-device gate (stylus, pressure, hover, hardware GPU, 16 KB pages,
+real-device performance).
 
 ## 1. Inventory
 
@@ -63,12 +72,15 @@ rest (seat-I `cap_probe`: PROJECT at cap 200 records 200 and reports OK; E1).
 | SKETCH_UX | 118 / 118 | 256 | 138 | CADUXR1 50, CADUXS1 40, CADFC1 13, CADUXS1C1 13 | sketch UX, arc/spline, extrude tool | view vs plane, dimension, anchors, feature view | — |
 | BODY_DIMENSIONS | 102 / 102 | 256 | 154 | DIM020M 102 | dimensions | derived size, anchors, refusals | — |
 | MIRROR | 62 / 62 | 128 | 66 | MIRROR01 62 | body Mirror | identity, one Undo | — |
-| CAD_FEATURE | 638 / 638 | 1024 | 386 | CADVS* ~150, CADV6* ~70, DR_* 84, REV 31+9, PFS1 39, FILL 44, R2_* 74, R2_OR 17 oracles, MF 19, OSS 17, PAR 16, HUD3D 9, PICK_R2 9, C1_CH 6, PICK_C2 6 | regions, chain, Add/Cut, v6, Revolve, drafting, R2 retained sketch | kernel results measured, codec v5..v8, 17 independent geometry oracles | perf line truncated on device (I-07) |
+| CAD_FEATURE | 638 / 638 | 1024 | 386 | CADVS* ~150, CADV6* ~70, DR_* 84, REV 31+9, PFS1 39, FILL 44, R2_* 74, R2_OR 17 oracles, MF 19, OSS 17, PAR 16, HUD3D 9, PICK_R2 9, C1_CH 6, PICK_C2 6 | regions, chain, Add/Cut, v6, Revolve, drafting, R2 retained sketch | kernel results measured, codec v5..v8, 17 `R2_OR` geometry oracles reported passing on host (`CAD_R2_ORACLE_PASS=17`); "the whole CAD domain passes" was judged overstated by the panel (`work/VERIFICATION.md`, seat C claim), so this is a host check count, not proof of independence or coverage | perf line truncated on device (I-07); oracle line absent on device (`CAD_R2_ORACLE_PASS` count 0) |
 | FREEFORM | 74 / 74 | 256 | 182 | FF_01..22, FF_SESSION | Freeform cage | Catmull-Clark counts, crease, symmetry, FRFM v1 | — |
 | SURFACE | 40 / 40 | 128 | 88 | SURF_01..24, SURF_AUTH_01..08 | Surface | patch/extrude/revolve/loft/trim/stitch/thicken and refusals, SURF v1 | 40 checks for seven kinds |
 
 Ordering: the 25 suites in reverse order, with CAD_FEATURE and PROJECT run twice
-more, give identical counts and 0 failures (seat-I `rev_order`, E1).
+more, give identical counts and 0 failures (seat-I `rev_order`, E1) — **with an
+empty process scene only**: `forgeshape_primitive_selftest.cpp:122-128` reads
+`constructionScene().hasProject()` and short-circuits, so a warm-restart run
+can pass vacuously (untested, E2; seat I R2 concession 13).
 
 ## 3. JVM classes (196 tests, run in `CI FAST`)
 
@@ -104,8 +116,19 @@ the viewport view (`SketchTestSupport.tapViewport/dragSketch/tapSketch`), which
 skips any chrome standing over the point; **P** = `View.performClick()`, which
 skips hit-testing and occlusion; **N** = the act is a JNI call. Current-tree
 evidence: **C2** = in `CI DEVICE` `40776968165`/`40782861799` on product
-`f3db953` (126/126, E3); **FC2** = in this audit's `40797031704` (32/32, E1);
-**older** = last device evidence predates the CAD-R2 product changes.
+`f3db953` (126/126, E3); **FC2-D1** = this audit's `40797031704` (5 classes,
+32/32, E1); **FC2-D2** = `40800569636` (11 classes, 77/77, E1); **FC2-D3** =
+`40805804385` (12 classes, 90/90, E1); **older** = last device evidence
+predates the CAD-R2 product changes. Per-class test counts below equal the
+`testcase` counts in each run's `instrumentation-junit.xml`.
+
+Split (recomputed from the tags below): **28** of the 70 classes have an FC2
+run (5 + 11 + 12, 199 tests), **11** a C2 run, **31** rest on older runs.
+`FEATURE_INVENTORY.md` §0 cites this split. A green FC2 run means the class
+passed on the emulator on this tree; it does NOT upgrade a claim the panel
+judged overstated (`work/VERIFICATION.md`: 10 of 12 strongest positive claims
+overstated, typically because the test calls a native seam or `syncFromNative()`
+rather than the real UI path) — the Input column says which path a class uses.
 
 | Class | Tests | Domain / journey | Input | Asserts | Current-tree evidence |
 | --- | ---: | --- | --- | --- | --- |
@@ -120,24 +143,24 @@ evidence: **C2** = in `CI DEVICE` `40776968165`/`40782861799` on product
 | CadParametricHistoryOwnerTest | 3 | History edit of earlier step | D, V | rebuild, failing row | C2 |
 | HomeFlowTest | 12 | Home, New Project, bootstrap, Open File, unsaved guard | V, P, N | no active-body read, empty history | C2 |
 | EditorWorkspaceProjectActionsTest | 7 | project surface | P | refused Open costs nothing | C2 |
-| Ui3dStateAuditTest | 9 | UI/3D audit ledger | V, P | records rather than asserts (javadoc :34-47); ledger 119 PASS + 68 PASS/3 CLAMPED/1 NOT_MEASURED | FC2 |
-| EditorWorkspaceLegibilityTest | 20 | trailing cluster, contrast, gizmo touch contract | P | measured bounds | FC2 |
-| SketchUxVisualEvidenceTest | 1 | OWNER frames | V | frames + facts; fixed 400 ms before capture | FC2 |
-| UiPrefVisualEvidenceTest | 1 | OWNER frames, palettes | P | 20 frames; fixed 400 ms | FC2 |
-| SelectionOutlineVisualEvidenceTest | 1 | OWNER frames, outline | V, P | waits presented frames; band pixel counts | FC2 |
+| Ui3dStateAuditTest | 9 | UI/3D audit ledger | V, P | records rather than asserts (javadoc :34-47); ledger 119 PASS + 68 PASS/3 CLAMPED/1 NOT_MEASURED | FC2-D1 |
+| EditorWorkspaceLegibilityTest | 20 | trailing cluster, contrast, gizmo touch contract | P | measured bounds | FC2-D1 |
+| SketchUxVisualEvidenceTest | 1 | OWNER frames | V | frames + facts; fixed 400 ms before capture | FC2-D1 |
+| UiPrefVisualEvidenceTest | 1 | OWNER frames, palettes | P | 20 frames; fixed 400 ms | FC2-D1 |
+| SelectionOutlineVisualEvidenceTest | 1 | OWNER frames, outline | V, P | waits presented frames; band pixel counts | FC2-D1 |
 | SpatialSketchTest | 8 | support chooser, hover, dependents | V | native kinds; latent order dependence (E3) | older |
-| SketchUxTest | 14 | navigator, dimension, arc/spline, Edit Sketch | V | native sketch state | older |
+| SketchUxTest | 14 | navigator, dimension, arc/spline, Edit Sketch | V | native sketch state bits only (`:199-233`); does NOT cover the navigator Flip/±90° camera (C-01 = F-02, `COUNCIL_DEBT_RECHECK.md` D2) | FC2-D2 |
 | SketchExtrudeTest | 9 | sketch to body | V, P | body is CAD | older |
-| CadVerticalSliceTest | 9 | regions, Add/Cut, HUD | V, P | volume/shells from regenerated solid | older |
+| CadVerticalSliceTest | 9 | regions, Add/Cut, HUD | V, P | volume/shells from regenerated solid | FC2-D2 |
 | CadCanvasExtrudeTest | 11 | arrow drag | V, MotionEvent | frozen basis, cancel | older |
-| CadExtrudeExtentTest | 5 | extent selector, Flip | V, P | presence/absence | older |
+| CadExtrudeExtentTest | 5 | extent selector, Flip | V, P | presence/absence | FC2-D2 |
 | CadPlanarFaceRuntimeTest | 6 | planar faces J1..J6 | V | native faces | older |
 | CadPlanarFaceOwnerCorrectionTest | 5 | every cell by window tap | window MotionEvent | cells | older |
 | CadA3VisualEvidenceTest | 1 | OWNER frames | V | fixed 400 ms | older |
 | Ui3dStateCorrectionTest | 12 | anchored chrome follows projection (CI DEVICE default) | MotionEvent | anchor error | older |
 | Ui3dDimensionVisibilityTest | 2 | dimension pixels | V | pixels after fixed 500 ms | older |
-| SurfaceOwnerTest | 3 | Surface journey | D, P | native feature list, Undo | older (modeling-foundations-r1) |
-| FreeformOwnerTest | 3 | Freeform journey | D | cage ids, Undo | older (modeling-foundations-r1) |
+| SurfaceOwnerTest | 3 | Surface journey | D, P | native feature list, Undo | FC2-D2 |
+| FreeformOwnerTest | 3 | Freeform journey | D | cage ids, Undo | FC2-D2 |
 | EditorWorkspaceGizmoTest | 46 | gizmo drags, refusals | MotionEvent, P | transform written | older |
 | EditorWorkspaceHistoryTest | 20 | Undo/Redo from chrome | P, N | depths | older |
 | EditorWorkspaceControlsTest | 23 | control ids | P | ids act; leaves a frozen mesh (E3 C3) | older |
@@ -155,30 +178,30 @@ evidence: **C2** = in `CI DEVICE` `40776968165`/`40782861799` on product
 | EditorWorkspaceObjectsTest | 10 | rows by id, viewport pick | MotionEvent | no reset by design | older |
 | EditorWorkspaceFoundationTest | 8 | rail defects | P, MotionEvent | — | older |
 | EditorWorkspaceGestureTest | 6 | gesture ownership, IME | MotionEvent to chrome | consumption | older |
-| EditorWorkspaceLifecycleTest | 3 | HOME/resume | lifecycle | shell rebuilt from native | older |
+| EditorWorkspaceLifecycleTest | 3 | HOME/resume | lifecycle | shell rebuilt from native | FC2-D3 |
 | EditorWorkspaceSculptRetentionTest | 2 | Start/Back/Resume | P | no sculpt loss | older |
-| SculptUndoTest | 10 | one stroke = one entry | MotionEvent | depths | older |
-| SculptBrushStage025Test | 8 | Flatten/Crease/Mask | MotionEvent | vertices | older |
-| SculptHistoryNavigatorTest | 9 | navigator jump | P | cursor | older |
-| Stage027SculptWorkflowTest | 4 | Isolate/Hide | V | pixels after fixed 600 ms | older |
-| ImportedMeshSculptTest | 9 | sculpt over imported | P | arrays immutable | older |
-| ImportGlbSculptGuardTest | 3 | Import not a Sculpt act | P, N | withdrawn + refused | older |
-| ImportedMeshDurableTest | 12 | durable import, IMPT | N, P | one Undo, round trip, 7 packaged fixtures load | older |
+| SculptUndoTest | 10 | one stroke = one entry | MotionEvent | depths | FC2-D2 |
+| SculptBrushStage025Test | 8 | Flatten/Crease/Mask | MotionEvent | vertices | FC2-D2 |
+| SculptHistoryNavigatorTest | 9 | navigator jump | P | cursor | FC2-D2 |
+| Stage027SculptWorkflowTest | 4 | Isolate/Hide | V | pixels after fixed 600 ms | FC2-D2 |
+| ImportedMeshSculptTest | 9 | sculpt over imported | P | arrays immutable | FC2-D2 |
+| ImportGlbSculptGuardTest | 3 | Import not a Sculpt act | P, N | withdrawn + refused | FC2-D2 |
+| ImportedMeshDurableTest | 12 | durable import, IMPT | N, P | one Undo, round trip, 7 packaged fixtures load | FC2-D3 |
 | GlbExportTest | 24 | export | N | independent `GlbDocument` reader | older |
 | GlbImportPreviewTest | 23 | diagnostic preview (no user control) | N | — | older |
 | GlbImportExternalR1Test | 14 | diagnostic preview subset | N | — | older |
-| ProjectAutosaveRecoveryTest | 14 | autosave, recovery | N, P | `awaitIdle`, no sleeps | older |
-| ProjectProcessDeathTest | 8 | real process death | lifecycle | recovery | older |
-| ProjectTransferTest | 13 | SAF `Uri` boundary | N | nothing of storage reaches the document | older |
-| ObjectsDeleteTest | 8 | Delete | MotionEvent, P | one Undo, last-body refusal | older |
-| ObjectCommandsTest | 1 | rename/hide/lock/duplicate | P | — | older |
-| MirrorSmokeTest | 1 | Mirror | P | — | older |
-| BodyDimensionsSmokeTest | 1 | Dimensions | P | native placement | older |
+| ProjectAutosaveRecoveryTest | 14 | autosave, recovery | N, P | `awaitIdle`, no sleeps | FC2-D3 |
+| ProjectProcessDeathTest | 8 | real process death | lifecycle | recovery | FC2-D3 |
+| ProjectTransferTest | 13 | SAF `Uri` boundary | N | nothing of storage reaches the document | FC2-D3 |
+| ObjectsDeleteTest | 8 | Delete | MotionEvent, P | one Undo, last-body refusal | FC2-D3 |
+| ObjectCommandsTest | 1 | rename/hide/lock/duplicate | P | — | FC2-D3 |
+| MirrorSmokeTest | 1 | Mirror | P | — | FC2-D3 |
+| BodyDimensionsSmokeTest | 1 | Dimensions | P | native placement | FC2-D3 |
 | SelectionOutlineTest | 19 | outline passes | V, P | renderer counters | older |
 | RendererCounterContinuityTest | 1 | counters across restart | lifecycle | — | older |
-| DiagnosticsAndRendererLossTest | 9 | injected device loss | N | `assumeTrue` can skip e2er1b07 (:245) | older |
-| JniBoundaryHardeningTest | 5 | JNI misuse | N, MotionEvent | `debugActiveBodyMisuseCount` | older |
-| SettingsPreferencesTest | 15 | Settings page | P | byte-identical project | older |
+| DiagnosticsAndRendererLossTest | 9 | injected device loss | N | `assumeTrue` can skip e2er1b07 (:245); in `40805804385` the junit has 0 `<skipped/>` | FC2-D3 |
+| JniBoundaryHardeningTest | 5 | JNI misuse | N, MotionEvent | `debugActiveBodyMisuseCount` | FC2-D3 |
+| SettingsPreferencesTest | 15 | Settings page | P | byte-identical project | FC2-D3 |
 
 Totals by input path (call sites, E2): `performClick()` 482 in 67 files;
 viewport-direct helpers 170 in 26 classes; decor-root rig acts and gestures 112 in
@@ -188,26 +211,34 @@ viewport-direct helpers 170 in 26 classes; decor-root rig acts and gestures 112 
 
 | Family | Count | Pinned by | Parity | Attribution of corrupt ones |
 | --- | ---: | --- | --- | --- |
-| Envelope (`corrupt_crc`, `truncated`, `unknown_*`, `unsupported_major`) + Construction/Sculpt/Imported | 12 | PROJECT (FSR1A, IMP01A/B) | FAST 72/72 (E1) | distinct statuses (ChecksumMismatch, Truncated, UnknownRequiredSection, UnsupportedMajor) (E1) |
-| `SCNE` v2 | 2 | PROJECT (OBJ018A) | E1 | BadPayload (E1) |
-| `CADB` v1..v8 (incl. `mixed_cad*`) | 52 | CAD, CAD_A3, CAD_FEATURE (hex literals) | E1 | all InvalidSemanticValue/UnresolvedReference; the four sampled CADB pairs (two_sides, bad_plane, revolve bad_axis, bad_operation) differ from their parent by 5–8 bytes (seat-I `cmp`, E1); the rest not sampled |
-| `FRFM` v1 | 3 | FF_20 | E1 | 6-byte delta (E1) |
-| `SURF` v1 | 3 | SURF_22 | E1 | parent + Trim naming feature 7 → `UnknownFeature`; the same Trim naming feature 1 → Ok (seat-I `surf_attr`, E1) |
+| Envelope (`corrupt_crc`, `truncated`, `unknown_*`, `unsupported_major`) + Construction/Sculpt/Imported | 12 | PROJECT (FSR1A, IMP01A/B) | FAST 72/72 (E1) | 4 refused, distinct statuses (ChecksumMismatch, Truncated, UnknownRequiredSection, UnsupportedMajor) (E1). Refusal total 21 + 1 + 1 + 1 + 4 = 28; 22 of the 28 are `InvalidSemanticValue` |
+| `SCNE` v2 | 2 | PROJECT (OBJ018A) | E1 | 1 refused, BadPayload (E1) |
+| `CADB` v1..v8 (incl. `mixed_cad*`) | 52 | CAD, CAD_A3, CAD_FEATURE (hex literals) | E1 | 21 refused: 20 `InvalidSemanticValue`, 1 `UnresolvedReference` (`cad_dependency_cycle_v2`). These are codec status CLASSES, not per-fixture expected names — no expected-verdict file exists, and "refused by name" claims (seat C 39 CAD fixtures, seat E 28/28) were judged overstated (`work/VERIFICATION.md`); the four sampled CADB pairs (two_sides, bad_plane, revolve bad_axis, bad_operation) differ from their parent by 5–8 bytes (seat-I `cmp`, E1); the rest not sampled |
+| `FRFM` v1 | 3 | FF_20 | E1 | 1 refused, `InvalidSemanticValue`; 6-byte delta (E1) |
+| `SURF` v1 | 3 | SURF_22 | E1 | 1 refused, `InvalidSemanticValue`; parent + Trim naming feature 7 → `UnknownFeature`; the same Trim naming feature 1 → Ok (seat-I `surf_attr`, E1) |
 
 ## 6. Domain × layer summary
 
-| Domain | Host | JVM | Device (current tree) | Device (older) | Physical |
-| --- | --- | --- | --- | --- | --- |
-| CAD sketch/feature/R2 | 977 checks | 5 classes | 11 classes (C2) | 11 more classes | OWNER-PHYSICAL-UNVERIFIED |
-| Sculpt | 655 | — | — | 7 classes | stylus/pressure OWNER-PHYSICAL-UNVERIFIED |
-| Construction/objects/gizmo/camera/picking | 1672 | 2 | — | 15+ classes | — |
-| Persistence | 256 + fixtures | — | — | 3 classes | — |
-| Import/export | 282 | — | — | 5 classes | — |
-| Renderer | 436 | 1 | 1 visual (FC2) | 3 classes | hardware GPU OWNER-PHYSICAL-UNVERIFIED |
-| Freeform | 74 | 1 | — | 1 class (3 tests) | — |
-| Surface | 40 | 1 | — | 1 class (3 tests) | — |
-| Chrome/layout/theme | — | 9 | 3 (FC2) | ~18 classes | OWNER visual |
-| Release binary | guard only | — | never executed | never executed | — |
+Every one of the 70 androidTest classes in §4 is counted in exactly one row
+(column totals: C2 11, FC2 28, older 31; JVM 20). Host checks sum to 4392.
+
+| Domain | Host | JVM | Device C2 (E3, product `f3db953`) | Device FC2 (E1, this tree, emulator) | Device older | Physical |
+| --- | --- | --- | --- | --- | --- | --- |
+| CAD sketch/feature/R2 | 977 checks (CAD, CAD_A3, SKETCH_UX, CAD_FEATURE) | 8 | 8 (CadRetainedSketchOwner, OwnerProjectShellSketchSupport, CadMultiFaceOwner, CadFillPickR2, CadHud3dOwner, CadRevolveOwner, CadSketchDraftingOwner, CadParametricHistoryOwner) | 4 (D2: SketchUx, CadVerticalSlice, CadExtrudeExtent; D1: SketchUxVisualEvidence) | 7 (SpatialSketch, SketchExtrude, CadCanvasExtrude, CadPlanarFaceRuntime, CadPlanarFaceOwnerCorrection, CadA3VisualEvidence, Ui3dDimensionVisibility) | OWNER-PHYSICAL-UNVERIFIED |
+| Home / project shell / lifecycle | within CAD_A3 (`CADA3_BOOT` 13) | 2 (ProjectDrawerPolicy, EditorUiState) | 2 (HomeFlow, EditorWorkspaceProjectActions) | 1 (D3: EditorWorkspaceLifecycle) | — | — |
+| Sculpt (incl. sculpt over Imported Mesh) | 655 | — | — | 6 (D2: SculptUndo, SculptBrushStage025, SculptHistoryNavigator, Stage027SculptWorkflow, ImportedMeshSculpt, ImportGlbSculptGuard) | 1 (EditorWorkspaceSculptRetention) | stylus/pressure OWNER-PHYSICAL-UNVERIFIED |
+| Construction/objects/gizmo/camera/picking | 1672 | 2 (PointerSemantics, LengthUnit) | — | 5 (D3: ObjectsDelete, ObjectCommands, MirrorSmoke, BodyDimensionsSmoke, JniBoundaryHardening) | 6 (EditorWorkspaceGizmo, …History, …Controls, …Pointer, …Objects, …Gesture) | — |
+| Persistence (`.forge`, autosave, transfer, process death) | 256 + 72 fixtures | — | — | 3 (D3: ProjectAutosaveRecovery, ProjectProcessDeath, ProjectTransfer) | — | — |
+| Import/export | 282 | — | — | 1 (D3: ImportedMeshDurable) | 3 (GlbExport, GlbImportPreview, GlbImportExternalR1) | — |
+| Renderer / diagnostics | 436 | 2 (DisplaySettingsContract, DiagnosticLog) | — | 2 (D1: SelectionOutlineVisualEvidence; D3: DiagnosticsAndRendererLoss) | 2 (SelectionOutline, RendererCounterContinuity) | hardware GPU OWNER-PHYSICAL-UNVERIFIED (SwiftShader only) |
+| Freeform | 74 | 1 | — | 1 (D2: FreeformOwner, 3 tests) | — | — |
+| Surface | 40 | 1 | — | 1 (D2: SurfaceOwner, 3 tests) | — | — |
+| Settings / preferences / theme | within GIZMO (`uipref` 21) | 2 (AppPreferences, AppTheme) | — | 2 (D1: UiPrefVisualEvidence; D3: SettingsPreferences) | 1 (EditorWorkspaceTheme) | OWNER visual |
+| Chrome/layout | — | 2 (ChromeMotion, WorkspaceLayoutMode) | 1 (EditorWorkspaceCorrection) | 2 (D1: Ui3dStateAudit, EditorWorkspaceLegibility) | 11 (Ui3dStateCorrection, EditorWorkspace Display, UnifiedRightHost, Mobile, Architecture, ChromeComposition, RightHostPlacement, Composition, Layout, Motion, Foundation) | OWNER visual |
+| Release binary | guard only | — | never executed | never executed | never executed | — |
+
+No full-sharded aggregate (`FULL_SHARDED_SUITE_PASS`) exists on this tree; the
+31 `older` classes are the gap.
 
 ## 7. False-green register
 
@@ -216,8 +247,8 @@ viewport-direct helpers 170 in 26 classes; decor-root rig acts and gestures 112 
 | FG-1 | Device `Recorder` drops checks past the cap and still prints OK | PROJECT exactly at 256/256 | E1 |
 | FG-2 | CI DEVICE checks token presence/order, never per-suite counts | no expected counts anywhere | E2 |
 | FG-3 | `performClick` and viewport-direct taps cannot see chrome occlusion | 652 call sites | E2 |
-| FG-4 | Audit ledger rows are not in `summary.json` | ledger clean in FC2 | E1 |
-| FG-5 | Ignored/assumption statuses are `<skipped/>`, not failures | one `assumeTrue` site | E2 (hypothesis) |
+| FG-4 | Audit ledger rows are not in `summary.json` | ledger clean in FC2-D1 | E1 |
+| FG-5 | Ignored/assumption statuses are `<skipped/>`, not failures | one `assumeTrue` site; it did not fire in FC2-D3 (0 `<skipped/>` in `evidence/device-run-40805804385/instrumentation-junit.xml`) | E1 for that run, E2 otherwise |
 | FG-6 | Fixed delays before pixel asserts can read a stale frame | 5 capture sites | E2 |
 | FG-7 | Generic codec status cannot say WHY a fixture is refused | mitigated by minimal-delta construction | E1 |
 | FG-8 | Device perf line truncated at 1023 chars | CAD-R2 keys lost on device | E1 |

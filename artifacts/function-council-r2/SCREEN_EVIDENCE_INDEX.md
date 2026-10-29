@@ -2,9 +2,10 @@
 
 Audited tree `70a6c14f703bfda2ab689b855126c1d12a541e41`. This index lists every PNG set under
 `artifacts/` as it stands on that tree, with what is recorded about where it came from. Seat F
-took no new screenshots. The only captures made during this audit are the coordinator's CI
-DEVICE run `40797031704` (first table). Everything else is historical (grade E3 at best), and
-none of it is physical-device evidence.
+took no new screenshots. The captures made during this audit are the coordinator's CI DEVICE
+runs `40797031704` (§1.1, 104 PNG) and `40800569636` (§1.2, 40 PNG); run `40805804385` kept only
+its two harness PNG (§1.3). Everything else is historical (grade E3 at best), and none of it,
+fresh or historical, is physical-device evidence. Run results are recorded in `TESTS.md`.
 
 How provenance was read:
 `git log --diff-filter=A -- <dir>/*.png` gives the commit that added each set to this repository.
@@ -19,13 +20,15 @@ here. It is recorded as "dossier-stated, not resolvable".
 Density on every recorded emulator run is 420 dpi, which is 2.625 px/dp, so 48 dp = 126 px.
 The exception is `uiaudit1`'s expanded captures, taken at density 1.5 according to its README.
 
-## 1. Fresh captures in this audit (coordinator CI DEVICE `40797031704`)
+## 1. Fresh captures in this audit (coordinator CI DEVICE runs)
+
+### 1.1 CI DEVICE `40797031704` (104 PNG)
 
 - Run on `ForgeShape_CI_API36` / `emulator-5580`, confirmed by `emu avd name`.
 - Image: `android-36;google_apis;x86_64`, `medium_phone` profile, 1080x2400 at 420 dpi, GPU `swiftshader_indirect`.
 - 25 of 25 `*_SELFTEST_OK` tokens in order, plus `NATIVE_VIEWPORT_OK`.
 - Five classes ran: 32 tests, 0 failed.
-- Tree: `70a6c14`. Files: `artifacts/function-council-r2/evidence/device-run-40797031704/`.
+- Head: `9cfc3f5`, which differs from the audited `70a6c14` only by `artifacts/function-council-r2/BEFORE.md` (`git diff --stat 70a6c14 9cfc3f5`), so the product tree is the audited one. Files: `artifacts/function-council-r2/evidence/device-run-40797031704/`.
 
 **This is emulator evidence. It is not a physical-device PASS.**
 
@@ -39,6 +42,34 @@ The exception is `uiaudit1`'s expanded captures, taken at density 1.5 according 
 
 `EditorWorkspaceLegibilityTest` (20 tests) ran in the same job with no captures. Its assertions
 are cited in `UI_SCREEN_STATE_MATRIX.tsv`.
+
+### 1.2 CI DEVICE `40800569636` (40 PNG)
+
+- Same emulator configuration as §1.1 (`ForgeShape_CI_API36` / `emulator-5580`, confirmed by `emu avd name`; `android-36;google_apis;x86_64`, `medium_phone`, 1080x2400 at 420 dpi, `swiftshader_indirect`).
+- 25 of 25 `*_SELFTEST_OK` tokens in order, plus `NATIVE_VIEWPORT_OK`, 0 failure token lines (`summary.json`, `selftest-tokens-found.txt`).
+- Eleven classes ran: 77 tests, 0 failed (`instrumentation-counts.txt`, `instrumentation-junit.xml`). Only three of them kept screenshots.
+- Head `9cfc3f5` (see §1.1). Files: `artifacts/function-council-r2/evidence/device-run-40800569636/`.
+
+**This is emulator evidence. It is not a physical-device PASS.**
+
+| Set (under `screens/`) | Count | Test (class.method) | Configuration | What it shows | Facts file |
+| --- | --- | --- | --- | --- | --- |
+| `cad-vertical-slice-r1-after/01..20` (with `02b`, `13b` and two `16_*`) | 23 | `CadVerticalSliceTest` (9 methods, e.g. `owner_rectangle_circle_region`, `compact_extrude_hud`, `new_body_then_add_same_body`, `same_body_cut`, `operation_refusal`, `feature_edit_roundtrip`, `ui_context_withdrawal`, `owner_rectangle_two_circles_union`, `merged_selection_feeds_same_body_add_and_cut`) | portrait (1080x2400 per facts) | Rectangle + circle as two regions; ring selected and hatched; ring + disk union; compact HUD One Side, extent palette, Symmetric, labels on; Add preview/commit; Cut preview/commit; Cut-misses refusal preview; feature edit open; upstream edit carrying the Add; feature chain reopened; Ready chrome; precision surface on request; face unions; merged Add and Cut | 9 `facts-*.txt`: region areas, HUD dock box and value rotation, Ready host rect, refusal badge description, drag depths, preview timings |
+| `modeling-freeform/01..06` | 6 | `FreeformOwnerTest.devFf01_new_freeform_box_vertex_tap_and_gizmo_drag_is_one_undo`, `devFf02_push_pull_insert_loop_crease_and_extrude_are_one_undo_each`, `devFf03_symmetry_subdivision_and_save_reopen_keep_the_exact_cage` | portrait | Freeform box; vertex dragged; edge loop and crease; extruded; subdivision level 0 and level 3 | 3 `facts-*.txt`: moved vertex position, saved byte count |
+| `modeling-surface/01..04` | 9 | `SurfaceOwnerTest.devSurf01_patch_trim_tube_stitch_and_save_reopen`, `devSurf02_open_extrude_thicken_and_edit_the_first_feature`, `devSurf03_revolve_an_open_profile_and_loft_two_sections` | portrait | Patch, trimmed, stitched; open extruded wall, thickened, first feature edited, staged failure (`04_staged_failure` shows the Surface context surface with the staged `Edit Thicken 2` editor); revolved open profile, lofted | 3 `facts-*.txt`: saved byte counts, `surf01.digest`, History rows read as text, `surf02.staged_failure` message |
+| `startup-screenshot.png`, `post-test-screenshot.png` | 2 | CI DEVICE harness | portrait | Cold launch; state after the tests | `summary.json` |
+
+The other eight classes (`Stage027SculptWorkflowTest`, `SculptHistoryNavigatorTest`,
+`SculptUndoTest`, `SculptBrushStage025Test`, `ImportGlbSculptGuardTest`, `ImportedMeshSculptTest`,
+`CadExtrudeExtentTest`, `SketchUxTest`) ran with no captures kept.
+
+### 1.3 CI DEVICE `40805804385` (2 PNG)
+
+Twelve classes, 90 tests, 0 failed, 25 of 25 startup tokens in order (head `7c05748`, see
+`TESTS.md`). Only the harness `startup-screenshot.png` and `post-test-screenshot.png` were kept
+under `artifacts/function-council-r2/evidence/device-run-40805804385/`; there is no `screens/`
+directory. It adds no screen evidence for persistence, transfer, Objects, Mirror, Dimensions or
+Settings beyond those two frames.
 
 ## 2. Historical sets (pre-audit, E3; trees differ from `70a6c14` unless stated)
 
@@ -72,17 +103,19 @@ are cited in `UI_SCREEN_STATE_MATRIX.tsv`.
 
 No committed screenshot exists for:
 
-- the Freeform context surface;
-- the Surface context and Surface Finish surfaces;
-- the History surface (Steps/Sketches/Features). Its acts are asserted at font 1.3 and 1.5 by `CadRetainedSketchOwnerTest.d17`, with no capture;
+- the History surface (Steps/Sketches/Features) open. Its acts are asserted at font 1.3 and 1.5 by `CadRetainedSketchOwnerTest.d17`, with no capture; `SurfaceOwnerTest.devSurf02` in run `40800569636` reads a Surface body's History rows as text into its facts file but captures the viewport and the Surface context surface, not the History list;
 - the Mirror plane chooser;
 - the unsaved-changes and recovery questions;
 - any font scale above 1.0;
 - any tablet or foldable window on this tree.
 
+The Freeform and Surface context surfaces are no longer gaps: run `40800569636` captured them
+(§1.2; e.g. `modeling-freeform/03_loop_and_crease.png` shows the `Cage` context surface with
+Insert Loop and Crease, `modeling-surface/04_staged_failure.png` the `Surface` context surface
+with the staged Thicken editor). Whether any of its frames shows the Surface Finish surface
+itself open is not stated in its facts files and was not established here, so that one stays
+UNVERIFIED rather than claimed.
+
 Expanded layouts exist only from historical audits with a density override (`uiaudit1` E01–E04,
-`stage019`/`stage020` "expanded"). Revolve exists only as the CI run `37391067580` dev captures.
-
-## Fresh CI DEVICE evidence (appended by coordinator)
-
-_Reserved for the coordinator. Seat F did not write below this line._
+`stage019`/`stage020` "expanded"). Revolve exists only as the historical CI run `37391067580` captures. All fresh captures (§1) are
+phone-sized emulator frames (1080x2400 portrait), except `ui-pref-r1` capture 16 (landscape 2400x1080).

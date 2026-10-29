@@ -153,7 +153,10 @@ R2 (seat H obj 15): the script only prints names; no expected-file was passed. T
 
 **Corpus parity with the PowerShell builder.** NOT RUN locally (no `pwsh`).
 E3: CI FAST `40787465884` step ".forge corpus parity" (72/72), as recorded in
-`BEFORE.md`.
+`BEFORE.md`. Superseded by a fresh run on the audited tree: CI FAST
+`40796992679`, `FORGE_CORPUS_PARITY=PASS (72/72 byte-identical)`
+(`artifacts/function-council-r2/evidence/fast-run-40796992679/forge-corpus-parity.txt`),
+E1 (CI).
 
 **JVM (fresh, E1).** 20 classes, 196 tests, 0 failures, 0 errors (JUnit XML).
 `DiagnosticLogTest` (11) is the only class in this domain. No JVM test covers
@@ -161,6 +164,22 @@ E3: CI FAST `40787465884` step ".forge corpus parity" (72/72), as recorded in
 
 **androidTest (historic, E3; not run in this audit).** Counts from
 `PROJECT_STATUS.md` 3379-3419:
+
+> **Superseding note (repair pass).** The heading above is stale for six of
+> these classes. CI DEVICE `40805804385` (emulator only, AVD
+> `ForgeShape_CI_API36`, swiftshader; 90/90, 0 failures, 25/25 startup tokens
+> in order) ran `ProjectAutosaveRecoveryTest` (14), `ProjectTransferTest` (13),
+> `ProjectProcessDeathTest` (8), `ImportedMeshDurableTest` (12),
+> `EditorWorkspaceLifecycleTest` (3) and `DiagnosticsAndRendererLossTest` (9)
+> — counts read from
+> `artifacts/function-council-r2/evidence/device-run-40805804385/instrumentation-junit.xml`
+> and `summary.json`. These are now **E1 (emulator)**. `ImportGlbSculptGuardTest`
+> (3) ran in CI DEVICE `40800569636` (77/77; evidence
+> `artifacts/function-council-r2/evidence/device-run-40800569636/`), also E1
+> (emulator). `EditorWorkspaceProjectActionsTest`, `HomeFlowTest`,
+> `GlbExportTest` and `GlbImportExternalR1Test` appear in none of the three
+> device runs' evidence and stay E3 historic. Emulator CI closes no
+> physical-device gate. See `TESTS.md`.
 
 | Class | Tests | Cases in this domain |
 | --- | --- | --- |
@@ -170,7 +189,7 @@ E3: CI FAST `40787465884` step ".forge corpus parity" (72/72), as recorded in
 | `EditorWorkspaceProjectActionsTest` | — | `e2er1a01/04/05/06` |
 | `HomeFlowTest` | 12 | `e2eAppH1_01..12` |
 | `ImportedMeshDurableTest` | — | — |
-| `ImportGlbSculptGuardTest` | 3 | `d1_02..04`; CI DEVICE `36643101662` attempt 2 |
+| `ImportGlbSculptGuardTest` | 3 | `d1_02..04`; CI DEVICE `36643101662` attempt 2 (historic); fresh in `40800569636` (E1, emulator) |
 | `GlbExportTest` | — | — |
 | `GlbImportExternalR1Test` | — | — |
 | `DiagnosticsAndRendererLossTest` | 9 | — |
@@ -273,7 +292,7 @@ g++ -std=c++17 -O1 -Iapp/src/main/cpp -Iapp/src/main/cpp/third_party/manifold/in
   - R2 regrade (seat H obj 2): "those edits are lost" is E5. It needs
     `onStop`'s immediate checkpoint on the old worker to race the new
     constructor's read; the race itself is HYP-E7.
-- **Grade and verdict.** E2, plus the E3 mechanism in `fsr1b04`.
+- **Grade and verdict.** E2, plus the mechanism in `fsr1b04` (E3 historic; re-run green in CI DEVICE `40805804385`, E1 emulator — it shows the mechanism, it does not assert the defect).
   DEFECT-CONFIRMED.
 - **Fix.** Call `uiState.recordRecoveryResolved()` after the first
   `offerRecoveryIfPresent()` in a process, whatever its outcome. Or offer only
@@ -490,7 +509,7 @@ Grade E2. Verdict DOC-DIVERGENCE.
 
 | Item | Status now | Evidence |
 | --- | --- | --- |
-| D1, Import in Sculpt | **CLOSED** | `forgeshape_jni.cpp:8592` (`RefusedInSculpt`), `EditorWorkspaceView.java:2823/5837/5856/5884`. Tests `ImportGlbSculptGuardTest` d1_02..04 (CI DEVICE `36643101662`, attempt 2, E3) and GLTF_IMPORT host 189/0 (E1) |
+| D1, Import in Sculpt | **CLOSED** | `forgeshape_jni.cpp:8592` (`RefusedInSculpt`), `EditorWorkspaceView.java:2823/5837/5856/5884`. Tests `ImportGlbSculptGuardTest` d1_02..04 (CI DEVICE `36643101662`, attempt 2, E3; fresh in CI DEVICE `40800569636`, E1 emulator) and GLTF_IMPORT host 189/0 (E1) |
 | D2, navigator Flip/±90° do not move the camera | **CONFIRMED-OPEN** | `beginSketchView` reads `sketchSession().frame()` (`forgeshape_jni.cpp:318-319`); `SketchSession::viewFrame()` (`forgeshape_sketch_session.cpp:648`) has no production caller (`grep viewFrame() *.cpp`). `sketchSetViewFlipped` and `sketchRotateView` (6611-6645) call `beginSketchView`. E2 |
 | D3, palette change forgets the saved baseline | **CONFIRMED-OPEN** | E-04: `EditorWorkspaceView.java:271-272`, `ForgeShapeActivity.java:268-280`. E2 |
 | D4, Undo after an over-cap stroke | **CONFIRMED-OPEN** | `SculptHistory::record` clears redo (`forgeshape_sculpt_history.cpp:91`) and returns `NotRetained` while keeping the undo stack (93-97). Entries hold absolute positions. E2 |
@@ -583,11 +602,23 @@ Grade E2. Verdict DOC-DIVERGENCE.
 ## Positive claims with evidence
 
 - **The decoder fails closed.** No crash, and no partial load, on 34,615
-  adversarial inputs (E1, `codec_diag.out`).
+  adversarial inputs (E1, `codec_diag.out`). **Qualified (repair pass):**
+  `work/VERIFICATION.md` judged this claim overstated at its stated grade.
+  It holds at the codec/`loadProjectDocument` level only; the JNI load path
+  mutates sketch/view/gesture state before a post-decode refusal (E-12), and
+  the fuzz measured scene, fingerprint and body count only. Supported at
+  E1/E2 for the codec; NOT PASS-REPRODUCED for every load entry point.
 - **The writer is canonical.**
   - Every valid committed fixture (43) re-encodes byte-identically, and so
     does a load → capture → encode round trip (E1).
-  - The PowerShell builder parity is 72/72 in CI FAST `40787465884` (E3).
+  - The PowerShell builder parity is 72/72 in CI FAST `40787465884` (E3),
+    and fresh in CI FAST `40796992679` (E1, CI).
+  - **Qualified (repair pass):** `work/VERIFICATION.md` judged "the encoder
+    is canonical and matches the committed corpus" overstated at its stated
+    grade (its general reading: a property proven for the codec is not
+    thereby proven for every entry point). Related seat finding: E-06 (the
+    codec accepts two encodings of one semantic face). Supported at E1/E2
+    for the committed corpus, not PASS-REPRODUCED.
 - **28/28 refusal fixtures are refused, with the status the self-tests and
   builder expect; the specific planted cause is not asserted** (22 are the
   coarse `InvalidSemanticValue`). Every valid CAD fixture regenerates. E1 for
@@ -601,7 +632,7 @@ Grade E2. Verdict DOC-DIVERGENCE.
   - Native guard at `forgeshape_jni.cpp:8592`; chrome withdrawal at
     `EditorWorkspaceView.java:2823`; picker guard at 5856 (E2).
   - `ImportGlbSculptGuardTest` d1_02..04 passed in CI DEVICE `36643101662`
-    attempt 2 (E3).
+    attempt 2 (E3), and again in CI DEVICE `40800569636` (E1, emulator).
 - **Release builds carry no self-tests.** `RELEASE_SELFTEST_GUARD=PASS`,
   0 symbols and 0 strings in release on both ABIs (E1). `run_status.txt`
   records `guard_exit=2` despite that PASS line; see open questions.
@@ -634,10 +665,12 @@ Grade E2. Verdict DOC-DIVERGENCE.
 ## Unresolved dependencies and open questions
 
 - Corpus parity with the PowerShell builder was not run locally. CI FAST is the
-  only evidence.
-- No androidTest was run in this audit. Device behaviour of Save, Open,
-  recovery and process death is E3 historic, not physical-device evidence.
-  These remain OWNER-PHYSICAL-UNVERIFIED.
+  only evidence (fresh: `40796992679`, 72/72).
+- ~~No androidTest was run in this audit.~~ Superseded: Save, Open, transfer,
+  recovery, process death, imported-mesh durability, lifecycle and renderer
+  loss ran in CI DEVICE `40805804385` (90/90, emulator only; E1 emulator).
+  This is still not physical-device evidence; those behaviours remain
+  OWNER-PHYSICAL-UNVERIFIED.
 - `run_status.txt` says `guard_exit=2` while `release_guard.txt` ends
   `RELEASE_SELFTEST_GUARD=PASS`. The script exits 2 only for missing tools or
   APKs, before printing. This is a runner-capture question for the orchestrator
@@ -651,8 +684,11 @@ Grade E2. Verdict DOC-DIVERGENCE.
 
 COMPLETE for the seat's assigned scope (codec, corpus, fingerprint, Android
 persistence/lifecycle, GLB bounds, D1..D7 plus the sketch-import re-check).
-Device-runtime claims are E3 historic by environment, and corpus parity with
-the PowerShell builder is E3 (CI FAST) because there is no `pwsh`.
+Device-runtime claims for the persistence/lifecycle classes are E1 (emulator)
+from CI DEVICE `40805804385` (and `40800569636` for `ImportGlbSculptGuardTest`);
+classes absent from those runs stay E3 historic; nothing here is physical-device
+evidence. Corpus parity with the PowerShell builder is E1 (CI FAST
+`40796992679`) because there is no local `pwsh`.
 
 ## Round 2 — objections from seat H and responses
 
@@ -680,7 +716,7 @@ no build, no product edit). Corrections are applied in place above and in
 | 15 | "Refused by expected name 28/28" overstated | CONCEDE, with a count correction | `fc2/host_corpus_verdicts.txt`: 22 (not 24) of the 28 are `InvalidSemanticValue`; the others are BadPayload, ChecksumMismatch, Truncated, UnknownRequiredSection, UnresolvedReference, UnsupportedMajor (1 each). No expected-file argument was given. Claim reworded; DOC-010 graded E1 (refusal) / E2-E5 (cause) | RESOLVED (count differs from seat H by 2) |
 | 16 | PROJECT 256/0 equals the device cap | CONCEDE | `kMaxProjectChecks = 256` (`forgeshape_jni.cpp:821`); `Recorder::check` drops past `max` (`forgeshape_project_selftest.cpp:21-32`); host harness allocates 8192 (`scripts/host-native-selftests.sh:104`), so the host emitting exactly 256 is the suite's true size today. Footnote added | RESOLVED |
 | 17 | Load does not end the chooser, Dimensions, gizmo | CONCEDE | `loadProject` has no `supportChooser().cancel()` (closeProject does, `jni:8976`). Whether Java's post-load `dismissPrimarySurfacesExcept(null)` / `onNativeStateChanged` ends them was not traced. DOC-052 scope extended; those parts UNDETERMINED-SOURCE-GAP / E5. E-07 stands | UNRESOLVED (trace pending) |
-| 18-21 | Positive claims upheld (writer canonical; fuzz at domain level; D1/D5 closed; release has no self-tests) | AGREED | `guard_exit=2` vs `RELEASE_SELFTEST_GUARD=PASS` stays an orchestrator question | UNRESOLVED (orchestrator: guard exit code) |
+| 18-21 | Positive claims upheld (writer canonical; fuzz at domain level; D1/D5 closed; release has no self-tests) | AGREED (repair pass: `work/VERIFICATION.md` later judged "decoder fail-closed" and "encoder canonical" overstated at stated grade; both qualified in Positive claims, not PASS-REPRODUCED) | `guard_exit=2` vs `RELEASE_SELFTEST_GUARD=PASS` stays an orchestrator question | UNRESOLVED (orchestrator: guard exit code) |
 | 22 | H-E4: add render-thread half | CONCEDE, with a line correction | The render loop takes `g_stateMutex` per frame at `forgeshape_jni.cpp:1870-1872` (seat H's 1822-1826 is the `g_viewport.mutex` wait). `encodeProject` holds `g_stateMutex` (`:8391`). The autosave worker's encode freezes the viewport the same way. Kept as hypothesis; reachability E5, OWNER-PHYSICAL-UNVERIFIED | RESOLVED |
 
 Totals: 15 objections conceded (incl. additions: 1, 2, 5, 7-17, 22), 0 rebutted, 7 agreed

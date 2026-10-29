@@ -5,20 +5,30 @@ byte-identical to `f3db953`). Research only: nothing under `app/`, `scripts/`,
 `.github/` or the owner documents was changed to produce this file.
 
 **Inputs.** `SEAT_A.md` … `SEAT_J.md` (with Round 2), `work/req_*.tsv`,
-`work/delib_*.md`, `SOURCE_REGISTER.md`, `COUNCIL_DELIBERATION.md`,
-`COUNCIL_DEBT_RECHECK.md`, `PORTABILITY_MATRIX.md`, `evidence/`. Fresh run ids
-are owned by `TESTS.md` (the coordinator's file; not present when this was
-written). Lines marked **(synth)** were re-read or re-grepped on this tree for
-this file; the exact commands are in §8.
+`work/delib_*.md`, `work/VERIFICATION.md`, `SOURCE_REGISTER.md`,
+`COUNCIL_DELIBERATION.md`, `COUNCIL_DEBT_RECHECK.md`, `CONTRACT_CONFLICTS.md`,
+`PORTABILITY_MATRIX.md`, `evidence/`. Fresh run ids and their records are owned
+by `TESTS.md`. Lines marked **(synth)** were re-read or re-grepped on this tree
+for this file; the exact commands are in §8.
 
-**Verification status.** `work/VERIFICATION.md` (the adversarial pass) did
-**not exist** when this file was written (`ls work/` lists only `delib_*.md` and
-`req_*.tsv`; no `VERIFICATION*.md` anywhere on disk newer than `BEFORE.md`).
-Every defect cited here carries its seat's post-Round-2 verdict and grade, not
-an adversarial verdict. When `VERIFICATION.md` exists, any finding it does not
-uphold must be relabelled hypothesis/withdrawn here and in `RISK_REGISTER.md`.
-`CONTRACT_CONFLICTS.md`, cited by the deliberation for documentation drift, was
-also not present at write time.
+**Verification status.** `work/VERIFICATION.md` (the adversarial pass, three
+lenses per finding, run `wf_8b7c4db9-993`) panel-verified the top 30 of 38
+P0–P2 findings and **all 30 survived** (23 distinct root causes after
+de-duplication). Every panel-verified defect cited here therefore carries both
+its seat's post-Round-2 verdict and a surviving adversarial verdict; of the
+ids this file cites, the panel-verified ones are A-01, A-02, A-04, A-05, A-06,
+B-01, B-02 (= E-01), B-03, C-01 (= F-02), D-01, E-02, E-03, E-04, F-03, F-04,
+F-05, G-01, G-02, H-05, H-06. Every other id cited here (C-03, D-05, D-07,
+D-08, E-05, E-06, E-07, E-12, E-13 = H-02, G-03, G-04, G-05, G-06, G-07, H-03,
+H-07, H-08, H-11, H-13, H-17, I-01, I-03, I-05, I-10, I-14, J-03, J-05) keeps
+its seat grade only and is not panel-verified. `VERIFICATION.md` also judged **10 of 12** strongest
+positive claims *overstated at their stated grade* — they remain supported at
+E2 (source) but are not PASS-REPRODUCED. Three of those touch this file and are
+qualified where they appear: Hidden enforced by one predicate in
+`ConstructionScene::snapshot` (seat B), `.forge` load fail-closed with no partial
+load (seat E), and the encoder canonical and matching the corpus (seat E).
+`CONTRACT_CONFLICTS.md` now exists and owns the contract-level documentation
+drift; the DOC-DIVERGENCE rows here are the architecture-side view of it.
 
 Plan-source gap: the canonical Master Plan, `OWNER_DECISIONS_*`,
 `MASTER_PLAN_HISTORY_*` and `PROJECT_STATE` are unavailable (`BEFORE.md`
@@ -48,7 +58,7 @@ assignment with the code. Rows not listed were not contradicted by any seat.
 | `.forge` codec ownership (`ARCHITECTURE.md` Ownership: `forgeshape_project_bytes` + `forgeshape_project_document`) | those two | `FRFM` and `SURF` sections live in `forgeshape_project_freeform.{h,cpp}` (169 lines) and `forgeshape_project_surface.{h,cpp}` (232 lines), which the Ownership table does not name (they appear only as section names at `ARCHITECTURE.md:5481, 5498`); `forgeshape_object_id.h` is likewise unnamed | DOC-DIVERGENCE (omission, no behavioural consequence) | E2 **(synth)** |
 | Gesture arbitration (`ARCHITECTURE.md` Ownership: "the sketch arbitration block in `forgeshape_jni.cpp`") | JNI TU | `touchEvent` `forgeshape_jni.cpp:9503-10319` arbitrates sketch, chooser, gizmo, freeform, sculpt, camera and selection | matches the document; it is product policy inside the Android adapter TU (G-07, FUTURE-NOT-DUE for a second shell) | E2 |
 | Sculpt history (`CLAUDE.md` `ARCH-OWNER-12`) | `SculptHistory` | one owner, but `record` clears `redo_` and returns `NotRetained` without clearing `undo_` (`forgeshape_sculpt_history.cpp:91-97`) | DEFECT-CONFIRMED P2 (D-01 = FC-R1 D4) | E1 (`diag_d3`) |
-| Hidden is enforced in exactly ONE place (`CLAUDE.md` Stage 018A) | `ConstructionScene::snapshot` | renderer and picker consume `viewSceneSnapshot()`; no seat found a second predicate | matches (no contradiction found) | E2 (seat B), E1 host SCENE 175/0 |
+| Hidden is enforced in exactly ONE place (`CLAUDE.md` Stage 018A) | `ConstructionScene::snapshot` | renderer and picker consume `viewSceneSnapshot()`; no seat found a second predicate | matches at source; the "single predicate" positive claim was judged overstated by `work/VERIFICATION.md` (not upgraded to PASS-REPRODUCED) | E2 (seat B), E1 host SCENE 175/0 |
 
 ## 2. Coupling hot spots
 
@@ -132,15 +142,15 @@ were found, not a metric.
 
 | Invariant | The one place | Evidence |
 | --- | --- | --- |
-| Hidden = not drawn and not picked | `ConstructionScene::snapshot` / `viewSceneSnapshot()` | E2 (seat B); host SCENE 175/0 (E1) |
+| Hidden = not drawn and not picked | `ConstructionScene::snapshot` / `viewSceneSnapshot()` | E2 (seat B); host SCENE 175/0 (E1). Positive claim judged overstated at its grade by `work/VERIFICATION.md`: supported at E2, not PASS-REPRODUCED |
 | Body delete / rename / hide / lock / duplicate / mirror are representation-neutral one-step acts | `forgeshape_body_delete.{h,cpp}`, `forgeshape_body_commands.{h,cpp}` | host SCENE, MIRROR (E1); `ObjectsDeleteTest`, `ObjectCommandsTest`, `MirrorSmokeTest` in FC2-D3 `40805804385` (E1, emulator) |
 | Resize arithmetic | `forgeshape_body_dimensions.{h,cpp}` (pure function) | host BODY_DIMENSIONS (E1) |
 | Euler ↔ matrix bridge | `forgeshape_transform.h` | host CONSTRUCTION_TRANSFORM, GIZMO (E1) |
-| `.forge` layout, all-or-nothing load | codec + `loadProjectDocument` | 72/72 host corpus verdicts (E1), CI FAST corpus parity 72/72 (`evidence/fast-run-40796992679/forge-corpus-parity.txt`); 34,615-input fuzz with CRC recomputed: every input refused by name or loaded Ok (seat E, E1). Exceptions: E-05 (decode/validate accept, load refuses) and E-06 (two encodings of one face token), both P3 E1 |
+| `.forge` layout, all-or-nothing load | codec + `loadProjectDocument` | 72/72 host corpus verdicts (E1), CI FAST corpus parity 72/72 (`evidence/fast-run-40796992679/forge-corpus-parity.txt`); 34,615-input fuzz with CRC recomputed: every input refused by name or loaded Ok (seat E, E1). Exceptions: E-05 (decode/validate accept, load refuses) and E-06 (two encodings of one face token), both P3 E1. Seat E's "fail-closed, no partial load" and "encoder canonical" positive claims were judged overstated by `work/VERIFICATION.md` (proven for the codec, not for every load entry point): supported at E2, not PASS-REPRODUCED |
 | Whole-state CAD validation; preview = candidate | `validateCadBodyState`, `SketchSession::evaluateCandidate` | host CAD_FEATURE, CAD_R2 (E1) |
 | Construction transaction boundary | `ConstructionHistory` / `ScopedConstructionEdit` | host CONSTRUCTION_HISTORY 147/0 (E1) |
 | Manifold isolation | `forgeshape_cad_kernel.cpp` | E2 **(synth)** |
-| Self-test code absent from release | CMake `NDEBUG` gating + release guard | CI FAST `40796992679` `RELEASE_SELFTEST_GUARD=PASS`, 0 symbols / 0 strings on both release ABIs (E1); local rerun provenance incomplete (U-1) |
+| Self-test code absent from release | CMake `NDEBUG` gating + release guard | CI FAST `40796992679` `RELEASE_SELFTEST_GUARD=PASS`, 0 symbols / 0 strings on both release ABIs (E1); local rerun `RELEASE_SELFTEST_GUARD=PASS` with `ANDROID_HOME=/root/android-sdk` (`TESTS.md` L5, `evidence/local/release_guard.txt`, E1; U-1 closed) |
 
 ### 3.2 Scattered — and where the scatter already produced a defect
 
@@ -197,7 +207,7 @@ Desktop work is H2 (FUTURE-NOT-DUE); nothing in this file marks it missing.
 | Gradle deprecations | "Deprecated Gradle features were used … incompatible with Gradle 9.0" (8.14.3). Not acted on: `CLAUDE.md` forbids broad AGP/Gradle upgrades as a side effect | E1 (observation) |
 | Host native suites | `HOST_SELFTESTS_OK (4392 checks, 0 failed)`, 25 suites | E1 `evidence/local/host_selftests.txt` |
 | Corpus | host verdicts 72/72 as expected (E1); CI FAST parity `committed=72 generated=72 mismatches=0` | E1 `evidence/fast-run-40796992679/forge-corpus-parity.txt` |
-| Release self-test guard | CI FAST: PASS on both release ABIs. Local: first run `guard_exit=2` (`ANDROID_HOME` not set, environment error); a later local file reads PASS whose command/exit is unrecorded | E1 (CI); local provenance incomplete (U-1, `COUNCIL_DELIBERATION.md` §2.2) |
+| Release self-test guard | CI FAST `40796992679`: PASS on both release ABIs (`evidence/fast-run-40796992679/release-selftest-guard.md`). Local: first run `guard_exit=2` (`ANDROID_HOME` not set, environment error, `evidence/local/run_status.txt`); rerun of `bash scripts/ci-release-selftest-guard.sh` with `ANDROID_HOME=/root/android-sdk` → `RELEASE_SELFTEST_GUARD=PASS` (release x86_64 3,256,192 B / arm64-v8a 2,916,104 B, 0 `SelfTests` symbols, 0 self-test strings) | E1 (CI and local; `TESTS.md` L5, `evidence/local/release_guard.txt`); U-1 closed (`COUNCIL_DELIBERATION.md` §2.2) |
 | 16 KB page alignment | every `LOAD` segment 0x4000 on arm64-v8a and x86_64 release libs | E1 (seat G reproducing seat J, `readelf -lW`); runtime on a 16 KB-page device OWNER-PHYSICAL-UNVERIFIED |
 | NDK pin | `ndkVersion '29.0.14206865'` (`app/build.gradle:9`) | E2 **(synth)** |
 | Product C++ warning flags | product target gets `-std=c++17` only (`app/build.gradle:31`); Manifold `-O2 -w` (`CMakeLists.txt:179`); no `-Wall` in the product build; the host script compiles with `-Wall -Wextra` (`scripts/host-native-selftests.sh:56`) | E2 **(synth)** |
@@ -205,7 +215,7 @@ Desktop work is H2 (FUTURE-NOT-DUE); nothing in this file marks it missing.
 | FP-contraction policy | none (`CMakeLists.txt`); NDK arm64 emits `fmadd` at -O0; two oracles fail under `-mfma` (G-01, DEFECT-CONFIRMED P2); x86_64 CI cannot see it | E1 host + E2 arm64 asm; device E5 |
 | Shaders | 10/10 `glslc --target-env=vulkan1.0` + `spirv-val` | E1 (seat G) |
 | CI coverage of the native layer | CI FAST runs no host suites and no corpus-verdict diff (I-05 = G-02); task-branch pushes trigger no workflow (`ci-fast.yml:12-17`, I-03) | E2 |
-| Device evidence on this product tree | FC2-D1 `40797031704` 32/32, FC2-D2 `40800569636` 77/77, FC2-D3 `40805804385` 90/90 (each 25/25 tokens in order, 0 failure lines; emulator, SwiftShader); C2 `40776968165` 59/59 + `40782861799` 67/67 (E3). 28 of 70 classes have an E1 run, 11 a C2 run, 31 rest on older trees; no `FULL_SHARDED_SUITE_PASS` on this tree (last `36607747079` on `fa0b6b4`) | E1 (emulator only) / E3 — `FEATURE_INVENTORY.md` §0; head SHAs in `TESTS.md` |
+| Device evidence on this product tree | FC2-D1 `40797031704` 32/32, FC2-D2 `40800569636` 77/77, FC2-D3 `40805804385` 90/90 (each 25/25 tokens in order, 0 failure lines; emulator, SwiftShader); C2 `40776968165` 59/59 + `40782861799` 67/67 (E3). 28 of 70 classes have an E1 run, 11 a C2 run, 31 rest on older trees; no `FULL_SHARDED_SUITE_PASS` on this tree (last `36607747079` on `fa0b6b4`) | E1 (emulator only; 199/199 across 28 classes, `TESTS.md` §1; evidence `evidence/device-run-40797031704/`, `evidence/device-run-40800569636/`, `evidence/device-run-40805804385/`) / E3 — `FEATURE_INVENTORY.md` §0; head SHAs in `TESTS.md`. No physical-device gate is closed by these runs |
 | Release APK executed | never, by any tier (I-10) | E2 |
 
 ## 7. Evidenced technical debt

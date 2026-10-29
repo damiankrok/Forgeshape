@@ -34,8 +34,21 @@ FG-3). Each journey names the path its test uses: **touch** (decor-root
 `MotionEvent`, `ModelingOwnerRig`), **viewport** (event sent to the
 SurfaceView), **click** (`performClick`), **JNI**.
 
-Defect verdicts are the seats' Round-2 verdicts; `work/VERIFICATION.md` was not
-present when this file was written and must be reconciled with it.
+Defect verdicts are the seats' Round-2 verdicts, reconciled with
+`work/VERIFICATION.md` (three-lens panel; 30 of 38 P0–P2 findings
+panel-verified, all 30 survived). The panel upheld the findings behind the
+"source predicts FAIL" journeys: A-01 (N12), A-02 (N13), A-04
+(N11; same root cause as C-02 / D-02 / E-03), B-01 and B-02 / E-01 (N18),
+C-01 / F-02 (N17; F-01, also cited there, survived too), D-01 (N19), E-02 and
+A-05 (N21), F-03 (N14), F-04 (N15) and F-05 (N16), each upheld 3/3 by the lenses.
+**D-03 (N20) and J-01 (N22) were NOT panel-verified** — neither appears in
+`VERIFICATION.md` — so N20 and N22 rest on the seat grade alone (Seat D / Seat
+J host diagnostics, E1). The panel also judged 10 of 12 strongest positive
+claims overstated at their stated grade, among them "a failed open is
+all-or-nothing" (A, E) and "System Back closes the topmost surface on API 36"
+(F); the PASS-RECORDED statuses of N01, N02 and the Back observation below
+are therefore read strictly as "the named test passed on the named path", not
+as proof of the broader property.
 
 ## Summary
 
@@ -401,7 +414,7 @@ present when this file was written and must be reconciled with it.
 - **Actions:** Freeform project, Shape held, face 3 selected → mark → Open Saved Project (another Freeform project whose body has the same id).
 - **Expected:** cage edit ended and selection empty after the load.
 - **Today:** session and selection survive; `pushPull(0.1)` acts on the other project's face 3 (Seat D `diag_d2`, E1).
-- **Status: UNVERIFIED — source predicts FAIL** (D-03 = E-07, P3).
+- **Status: UNVERIFIED — source predicts FAIL** (D-03 = E-07, P3; seat grade only — not panel-verified in `work/VERIFICATION.md`).
 
 ### N21 — Save → palette change → leave; no recovery question (J-A6 = J-E3)
 - **Actions:** Save Project → Settings → choose another palette (Activity recreated) → back → wait ≥ 0.9 s → New Project….
@@ -413,7 +426,7 @@ present when this file was written and must be reconciled with it.
 - **Actions:** CAD project, body hidden from its row → `feature_history_action` → Extrude row → type a depth → Finish → Extrude.
 - **Rule status:** whether this must be refused is an owner question (OD-J1); no solid preview is drawn for the hidden target (`applyCadOperationPreviewLocked` replaces only snapshot items).
 - **Today:** `beginEdit=Ok … commitEdit=Ok depth 1.5 → 3.0, undoSteps 1 → 2, visible=0` (Seat J `j1_hidden_edit`, E1).
-- **Status: UNVERIFIED — BLOCKED-OWNER** for the refusal; the missing preview is PARTIAL (J-01).
+- **Status: UNVERIFIED — BLOCKED-OWNER** for the refusal; the missing preview is PARTIAL (J-01; seat grade only — not panel-verified in `work/VERIFICATION.md`).
 
 ---
 
@@ -426,7 +439,9 @@ present when this file was written and must be reconciled with it.
    runs only.
 2. Of 22 negative journeys (J07's staged-failure half is also negative), 10 are
    PASS-RECORDED (N01–N10); 12 have no test: 11 are predicted to fail by source
-   (N11–N21) and 1 is BLOCKED-OWNER (N22).
+   (N11–N21) and 1 is BLOCKED-OWNER (N22). Of these 12, 10 (N11–N19, N21)
+   rest on panel-verified findings; N20 (D-03) and N22 (J-01) rest on seat
+   grades only.
 3. Reopen is asserted through JNI `loadProject(encodeProject())` in J05, J06,
    J11, J16 and through the drawer Save / Open Saved Project only in J26 and
    ImportedMeshDurableTest#e2eImp01a06. No journey reopens a Freeform or
