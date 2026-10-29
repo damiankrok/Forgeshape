@@ -34,8 +34,10 @@ where it meets placement, the gizmo, the transform editors and export placement.
   `/tmp/claude-0/-home-user-Forgeshape/2f5454c6-63b1-52b8-b92c-5f8b69c420c6/scratchpad/fc2/host_selftests.txt`
   (`HOST_SELFTESTS_OK (4392 checks, 0 failed)`, 25 suites), `run_status.txt`
   (`host_exit=0`, `corpus_verdicts_exit=0`, `gradle_exit=0`, `guard_exit=2`),
-  `release_guard.txt` (`RELEASE_SELFTEST_GUARD=ERROR ANDROID_HOME/ANDROID_SDK_ROOT is not set`
-  — an environment error, not a product verdict), and JVM XML results in
+  `release_guard.txt` (as it stands now, mtime 00:57: ends `RELEASE_SELFTEST_GUARD=PASS` —
+  release x86_64 and arm64-v8a 0 symbols / 0 strings, debug 35 symbols / 398 strings;
+  corrected in Round 2, the earlier "ERROR" quote was wrong; `run_status.txt` still
+  says `guard_exit=2` at 00:54, an orchestrator question about a rerun), and JVM XML results in
   `app/build/test-results/testDebugUnitTest/` (timestamps 2026-10-29T00:57Z, 0 failures).
 
 ## Inspected code paths (file:line, functions)
@@ -141,8 +143,15 @@ for `diag_face_supported`, `diag_objects`, `diag_math` (sources in the same dire
 - Product reachability (E2): select a face-supported body → Transform rail → the gizmo
   is offered and the placement editor is shown; nothing refuses.
 - Impact: the instrument is drawn away from the body; drags and typed values record
-  Undo steps, dirty the project and trigger checkpoints with no visible change; the
-  stored transform then leaks into export (B-02).
+  Undo steps, dirty the project (so leaving asks the unsaved-changes question) and make
+  autosave write a checkpoint for a change nobody can see; the stored transform then
+  leaks into export (B-02 / E-01). It also puts non-canonical placement truth into
+  `.forge`: `validateProjectDocument` checks only `transformValid`
+  (`forgeshape_project_document.cpp:739`), so a non-identity transform on a
+  face-supported body is saved, reopened and fingerprinted, and two projects that look
+  identical have different bytes and fingerprints (E2; cross-seat with seat E). The
+  touch path to `gizmo.beginDrag` (`jni:9932-9934`) has no face-support check either.
+  Saved E1 artefact: `/tmp/claude-0/fc2-scratch/E-vs-B/diag_face_supported.out`.
 - Verdict: DEFECT-CONFIRMED (host E1 + source E2; not reproduced on a device).
 - Isolated fix: refuse `applyBoxTransform` and `GizmoSession::beginDrag`/`setGizmoActive`
   when the active body `isFaceSupportedCad()` (named status), and withdraw the
@@ -161,11 +170,20 @@ for `diag_face_supported`, `diag_objects`, `diag_math` (sources in the same dire
 - Impact: any project with a face-supported New Body exports a GLB whose dependent
   body sits at the world origin (or wherever B-01 left it), not on the producer's face —
   silent geometry misplacement in the interchange file.
-- Verdict: DEFECT-CONFIRMED (E1). Cross-seat: export / CAD.
+- Second form (E2, Round 2): when `resolveWorldModel` returns false (stale lineage,
+  missing producer) the snapshot leaves the body out (`forgeshape_scene.cpp:359-365`),
+  but `captureGlbExportScene` loops over every `bodyAt(i)` with no resolve
+  (`gltf_export.cpp:167-185`) and still writes it at its stored transform.
+- Verdict: DEFECT-CONFIRMED (E1). MERGED with seat E's E-01 (primary, export is I/O):
+  two independent E1 reproductions — seat E's fixture-based `export_face` on
+  `cad_face_sketch_cap_v2`, `cad_face_sketch_side_v2`, `cad_face_chain_v2`, and this
+  seat's programmatic `diag_face_supported` (saved:
+  `/tmp/claude-0/fc2-scratch/E-vs-B/diag_face_supported.out`). P1.
 - Isolated fix: in `captureGlbExportScene`, take the model from
   `scene.resolveWorldModel(id)` and split it into `T` (column 3) and `L` (upper 3×3);
-  keep the determinant refusals. No `.forge` or GLB layout change. Add a
-  `GLTF_EXPORT` check for a face-supported dependent.
+  keep the determinant refusals; when `resolveWorldModel` returns false, REFUSE the
+  export by name rather than writing the body at its stored transform. No `.forge` or
+  GLB layout change. Add a `GLTF_EXPORT` check for a face-supported dependent.
 
 ### B-03 — P2 — ARCHITECTURE.md states a guard that does not exist
 
@@ -191,7 +209,8 @@ for `diag_face_supported`, `diag_objects`, `diag_math` (sources in the same dire
   no product path was found that reaches the drag.
 - Verdict: PARTIAL (defence-in-depth gap against `CLAUDE.md` "removing a control is
   not removing a guard"). Fix: `GizmoSession::beginDrag` refuses a locked (and, see
-  B-01, face-supported) active body by name.
+  B-01, face-supported) active body by name — one refusal serving both B-04 and B-01.
+  Saved E1 artefact: `/tmp/claude-0/fc2-scratch/E-vs-B/diag_objects.out` (case 1).
 
 ### B-05 — P3 — Derived names at the 96-byte cap are truncated mid-suffix or dropped
 
@@ -202,23 +221,33 @@ for `diag_face_supported`, `diag_objects`, `diag_math` (sources in the same dire
   copy empty.
 - Impact: `PRODUCT.md` 516-553 promises `<name> copy`, `<name> copy 2`; long names get
   a cut-off `co` or no name. Cosmetic, deterministic.
+- Mirror shares `derivedBodyName`; only Duplicate was exercised, so the Mirror half is
+  E2, not E1. Saved E1 artefact: `/tmp/claude-0/fc2-scratch/E-vs-B/diag_objects.out` (case 4).
+- Also DOC-DIVERGENCE (E2): the fallback comment "Unreachable for any scene this
+  product can build" (`forgeshape_body_commands.cpp:177`) is false — a 96-byte name is
+  reachable through Rename, and no Java `LengthFilter` exists in `app/src/main/java`.
 - Verdict: DEFECT-CONFIRMED. Fix: truncate the base at a UTF-8 boundary to
-  `96 − len(suffix)` before appending.
+  `96 − len(suffix)` before appending, and correct the comment.
 
-### B-06 — P3 — The gizmo and placement editor stay over a hidden active body (unspecified)
+### B-06 — owner-pending (no severity) — The gizmo and placement editor stay over a hidden active body (unspecified)
 
 - Path: `refreshTransformGizmo` `offered` (`EditorWorkspaceView.java:3028-3033`) and
   `GizmoSession::snapshot` (`gizmo.cpp:1197`) ignore visibility, whereas Dimensions
   refuses a hidden body (`body_dimensions.cpp:443`).
 - Repro (E1, `diag_objects` 2): hidden active body → `inSnapshot=0`, `gizmoVisible=1`.
-- Verdict: UNDETERMINED-SOURCE-GAP (no rule decides it). Owner decision below.
+- Verdict: UNDETERMINED-SOURCE-GAP (no rule decides it), owner-pending, no ranked
+  severity (Round 2). Owner decision below. Saved E1 artefact:
+  `/tmp/claude-0/fc2-scratch/E-vs-B/diag_objects.out` (case 2).
 
-### B-07 — P3 — `sceneAddBody` has no `hasProject()` guard
+### B-07 — WITHDRAWN as a defect (Round 2) — `sceneAddBody` has no `hasProject()` guard
 
-- Path: `forgeshape_jni.cpp:3238-3262` creates a default Box whatever the scene holds.
-  At Home it would fabricate a project, contrary to APP-H1 "nothing fabricates a default
-  primitive". No UI path calls it at Home (Home/New Project are opaque start pages).
-- Verdict: PARTIAL (E2; reachability not shown). Fix: refuse when `!hasProject()`.
+- Withdrawn: `onNewSculptProjectChosen` (`EditorWorkspaceView.java:2402-2406`) calls
+  `sceneAddBody()` at Home on purpose inside `beginSessionInitialization()` — the seeded
+  sphere APP-H1 describes — and `ensureConstructionProjectForTest` (`:2739-2749`) relies
+  on it. APP-H1's "nothing fabricates a default primitive" is about the shell inventing
+  a body, not a creation the user chose. The earlier fix (`!hasProject()`) would have
+  broken New Sculpt project creation.
+- Remains only as HYPOTHESIS H-B4 (E5), below.
 
 ## Hypotheses (unproven)
 
@@ -230,6 +259,9 @@ for `diag_face_supported`, `diag_objects`, `diag_math` (sources in the same dire
   a saved file fail to reopen. Not supported: `validateProjectDocument` checks only
   `transformValid` (`forgeshape_project_document.cpp:739`), not identity, so the file
   reopens; the risk is the silent export drift (B-02), not a load refusal (E2).
+- H-B4 (E5): a stray caller of `sceneAddBody` outside the session-initialization
+  bracket could create a project from Home. No such caller found. Any guard would have
+  to be `!hasProject() && !sessionInitializationOpen`, never a bare `!hasProject()`.
 - H-B3 (carried debt, not my seat to close): Stage027 GUARD-2 is not asked on the load
   path (`PROJECT_STATUS.md` Technical Debt "GUARD-2 guards the two Sculpt ENTRY points").
 
@@ -250,7 +282,9 @@ for `diag_face_supported`, `diag_objects`, `diag_math` (sources in the same dire
 6. Face-supported body through the transform write and the exporter: succeeded → B-01, B-02.
 7. Duplicate of a 96-byte / 93-byte name: succeeded → B-05.
 8. `loadProject` while a gizmo drag holds an open edit: refused
-   `RefusedEditInProgress` (`forgeshape_project_state.cpp:250-251`). Failed to break (E2).
+   `RefusedEditInProgress` (`forgeshape_project_state.cpp:250-251`), asserted by
+   `forgeshape_project_selftest.cpp:2490` `FSR1A_13_a_load_during_an_open_edit_is_refused`
+   (PROJECT suite, fresh host run). Failed to break (E1).
 
 ## Positive claims with evidence
 
@@ -259,9 +293,14 @@ for `diag_face_supported`, `diag_objects`, `diag_math` (sources in the same dire
   `obj018a_03_*`).
 - One drag = one step, cancel/second pointer restores nine values exactly (E1 `GIZMO`).
 - ObjectIds are never reused across delete, undo and close (E1 suites + `diag_objects`).
-- Mirror is an exact reflection by a proper rotation at adversarial poses (E1 `diag_math`).
+- Mirror is an exact reflection by a proper rotation at the SAMPLED adversarial poses
+  (E1 for the samples: worst relative error 0 over 9 pose/plane pairs × 3 points,
+  `/tmp/claude-0/fc2-scratch/E-vs-B/diag_math.out`); the "for any q" claim rests on
+  the algebra and `MIRROR01-*`, not on the diagnostic — sampled, not proven.
 - Dimension anchors and Relative Scale refusals hold (E1 `diag_math`, `DIM020M-*`).
-- Rename takes UTF-16 through `utf16ToUtf8` (`jni:131-146`), not `GetStringUTFChars` (E2).
+- Rename takes UTF-16 through `readJavaString` → `utf16ToUtf8` (`jni:131-146`, used at
+  `jni:3421`), not `GetStringUTFChars` (E2); round trip asserted by
+  `obj018a_02_utf16_round_trip_is_exact` (E1).
 - Every refusal path in object commands mints no id and records no step
   (`MIRROR01-11`, `IMP01B_21`, `DIM020M-08/15`; E1).
 
@@ -287,7 +326,9 @@ for `diag_face_supported`, `diag_objects`, `diag_math` (sources in the same dire
 
 1. Confirm that a face-supported CAD body must offer no Transform entry, no gizmo and no
    placement editor (CLAUDE.md says so; the product currently offers all three), versus
-   a future "offset from face" placement (would need durable semantics).
+   a future "offset from face" placement (would need durable semantics). Also: should the
+   decoder REFUSE a non-identity stored transform on a face-supported body, or should a
+   load ignore it (it is currently accepted and fingerprinted)?
 2. Whether the gizmo and the exact placement editor should be withdrawn over a hidden
    active body (Dimensions already is).
 3. Derived-name policy at the 96-byte cap (truncate base vs. refuse vs. current).
@@ -303,10 +344,44 @@ for `diag_face_supported`, `diag_objects`, `diag_math` (sources in the same dire
   dedupe there.
 - Selection outline rendering (`forgeshape_renderer.cpp`, mask + composite) is not
   host-buildable; only its policy constants and CPU reference were inspected.
-- The release guard in this audit's run ended `ERROR ANDROID_HOME/ANDROID_SDK_ROOT is not
-  set`; it produced no verdict about self-test symbols.
+- The release guard file as it stands (`release_guard.txt`, mtime 00:57) ends
+  `RELEASE_SELFTEST_GUARD=PASS` (release 0 symbols / 0 strings on both ABIs, debug 35 /
+  398). `run_status.txt` still records `guard_exit=2` at 00:54 — orchestrator question
+  (apparent rerun after the status line), not an ERROR.
+- Sketch rule cross-reference: `importGlbDurable` (`jni:8586-8600`) asks only
+  `inSculptMode()`, so Import is the one creation / body-switching route not refused in
+  a sketch — recorded once in the synthesis as seat E's E-03 (E2), not a seat B defect.
 
 Completeness: PARTIAL — every in-scope rule was traced to source and host evidence and
 three defects were reproduced on the host, but no device or physical-device run of this
 domain's androidTest classes was executed on the audited tree, and the canonical master
 plan / owner-decision files were unavailable (horizons reconstructed from repo records).
+
+## Round 2 — objections from seat E and responses
+
+Every objection was re-checked against the tree (`app/src/main` at 70a6c14) and against
+seat E's saved outputs in `/tmp/claude-0/fc2-scratch/E-vs-B/`. Commands used: `sed -n`
+over the cited lines, `grep -n` for `resolveWorldModel`, `LengthFilter`, `FSR1A_13_a` and
+`expandedRow() != null`, `awk` over the `e2eMirror0101` body, and `tail` / `cat` over
+`fc2/release_guard.txt` and `run_status.txt`.
+
+| # | Objection | Response | Status |
+|---|---|---|---|
+| 1 | B-02 and E-01 are the same defect; merge them, with E-01 as primary; add the case where an unresolved support is still exported. | **CONCEDED.** `gltf_export.cpp:177-179` reads the stored transform. `scene.cpp:359-365` leaves out a body whose support does not resolve, and `gltf_export.cpp:167-185` loops over every `bodyAt(i)` with no resolve. B-02 is now merged with E-01, which is primary, and stays P1 / DEFECT-CONFIRMED with two E1 reproductions (seat E's fixture-based `export_face`, and the programmatic `diag_face_supported.out`). The fix now says to refuse by name when `resolveWorldModel` is false; that case is graded E2. CON-025 is updated. | RESOLVED |
+| 2 | B-01's impact on persistence is understated. | **CONCEDED.** The impact now covers the dirty prompt, autosave writing a checkpoint for a change no one can see, and the non-canonical `.forge` placement (`project_document.cpp:739` checks only `transformValid`; two projects that look the same have different bytes and fingerprints). It also covers the touch path `jni:9932-9934`. Owner question 1 now also asks whether the decoder should refuse or ignore that transform. Stays P2 / DEFECT-CONFIRMED, cross-seat with E. | RESOLVED |
+| 3 | B-07's fix would break New Sculpt project creation. | **CONCEDED.** `onNewSculptProjectChosen` (`EditorWorkspaceView.java:2402-2406`) calls `sceneAddBody` at Home on purpose, inside `beginSessionInitialization`, and `ensureConstructionProjectForTest` (`:2739-2749`) relies on it. B-07 is withdrawn as a defect. It is kept only as HYPOTHESIS H-B4 (E5), which notes that any guard would have to be `!hasProject() && !sessionInitializationOpen`. The fix line is removed from CON-074. | RESOLVED |
+| 4 | CON-074 mixes two requirements. | **CONCEDED.** The stated requirement is met at `jni:1350-1357`. CON-074 is regraded PASS-SOURCE-AND-RECORDED-RUNTIME (E2 + E3 HomeFlowTest) with no severity. | RESOLVED |
+| 5 | The release guard is misreported. | **CONCEDED.** `release_guard.txt` currently ends `RELEASE_SELFTEST_GUARD=PASS`: release on both ABIs has 0 symbols and 0 strings, and debug has 35 / 398. Both sentences are corrected. The fact that `run_status.txt` still says `guard_exit=2` (00:54) is carried as an orchestrator question, not reported as an ERROR. | RESOLVED (orchestrator question open) |
+| 6 | B-04 is accurate; optionally move the refusal into `beginDrag` so it covers locked and face-supported bodies together. | **ACCEPTED.** The fix is reworded so that `GizmoSession::beginDrag` refuses locked and face-supported bodies together. Saved E1 artefact: `diag_objects.out` case 1. | RESOLVED |
+| 7 | B-05 stands; add the false comment as DOC-DIVERGENCE; the Mirror half is E2. | **CONCEDED.** The comment at `body_commands.cpp:177` is false, and `grep LengthFilter` over `app/src/main/java` finds nothing. That comment is now a DOC-DIVERGENCE (E2). The Mirror half is E2 because only Duplicate was exercised. Stays DEFECT-CONFIRMED / P3. CON-036 is updated. | RESOLVED |
+| 8 | CON-052 cites the wrong evidence for the Back half. | **CONCEDED.** The `e2eMirror0101` body contains no Back press. Opening the chooser is E3. Back is E2 (`hasDismissibleSurface` `:1112-1116`) and its verdict is IMPLEMENTED-UNTESTED. | RESOLVED |
+| 9 | CON-070's citation is missing the check for its second clause. | **CONCEDED.** Added `forgeshape_project_selftest.cpp:2490` `FSR1A_13_a_load_during_an_open_edit_is_refused`. Adversarial #8 is now E1, which matches the row. | RESOLVED |
+| 10 | CON-001/038/077 miss the Import route that is not guarded in a sketch. | **CONCEDED as a cross-reference.** `importGlbDurable` (`jni:8586-8600`) checks only `inSculptMode()`. The rows keep PASS for their own entry points (`jni:3206/3246`) and now point to E-03, which is recorded once in the synthesis and not as a seat B defect. | RESOLVED |
+| 11 | CON-088 is consistent; note E-07; E-10 applies only to edits the gizmo does not own. | **ACCEPTED.** E-07 is noted on CON-088. `setActive(false)` cancels a captured drag (`gizmo.cpp:1138-1143`) before the history is cleared. | RESOLVED |
+| 12 | Horizon and source labels (CON-079, CON-032). | **CONCEDED.** CON-079's source is now PRODUCT.md "Several bodies, and which one you are editing" (line 431). CON-032 / B-06 now carry no ranked severity and are labelled owner-pending. No change to CON-053/061/062/078/024/025. | RESOLVED |
+| 13 | Check the five strongest positive claims; reword the Mirror claim as "sampled". | **CONCEDED** for Mirror: it now says "sampled, not proven" (worst error 0 over 9 × 3 samples), and the "for any q" claim rests on the algebra and `MIRROR01-*`. The other four stand. The rename claim now also cites `jni:3421` and `obj018a_02_utf16_round_trip_is_exact`. | RESOLVED |
+| 14 | No output files were saved for B's diagnostics. | **CONCEDED.** B-01, B-02, B-04, B-05, B-06, CON-024/025/030/032/036 now cite `/tmp/claude-0/fc2-scratch/E-vs-B/{diag_face_supported,diag_objects,diag_math}.out` as the saved E1 artefacts. | RESOLVED |
+
+Net change: 12 conceded with corrections, 2 accepted with no change to the verdict
+(6, 11), 0 rebutted. B-07 is withdrawn, and B-02 is merged into E-01. The only open item
+is the orchestrator question about `guard_exit=2` versus `RELEASE_SELFTEST_GUARD=PASS`.
