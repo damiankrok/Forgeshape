@@ -1,0 +1,73 @@
+case	action	surface	anchor_kind	expect_x	expect_y	actual_x	actual_y	error_px	error_dp	verdict	note
+UI3D-04	dimensions_open	S19 body_dimension_label_x	WORLD_ANCHORED	610.98	1307.76	611.00	1308.00	0.24	0.09	PASS	
+UI3D-04	dimensions_open	S19 body_dimension_label_y	WORLD_ANCHORED	397.68	1076.05	398.00	1076.00	0.32	0.12	PASS	
+UI3D-04	dimensions_open	S19 body_dimension_label_z	WORLD_ANCHORED	330.04	1257.37	330.50	1257.00	0.59	0.23	PASS	
+UI3D-04	after_move	S19 body_dimension_label_x	WORLD_ANCHORED	1024.13	1208.72	1023.00	1209.00	1.17	0.44	CLAMPED	
+UI3D-04	after_move	S19 body_dimension_label_y	WORLD_ANCHORED	782.92	968.31	783.00	968.00	0.32	0.12	PASS	
+UI3D-04	after_move	S19 body_dimension_label_z	WORLD_ANCHORED	710.30	1159.83	710.50	1160.00	0.26	0.10	PASS	
+UI3D-04	after_rotate	S19 body_dimension_label_x	WORLD_ANCHORED	965.97	1141.31	966.00	1141.00	0.31	0.12	PASS	
+UI3D-04	after_rotate	S19 body_dimension_label_y	WORLD_ANCHORED	647.91	1065.99	648.00	1066.00	0.09	0.03	PASS	
+UI3D-04	after_rotate	S19 body_dimension_label_z	WORLD_ANCHORED	687.42	1275.57	687.50	1276.00	0.43	0.17	PASS	
+UI3D-04	after_scale	S19 body_dimension_label_x	WORLD_ANCHORED	948.85	1067.35	948.50	1067.00	0.49	0.19	PASS	
+UI3D-04	after_scale	S19 body_dimension_label_y	WORLD_ANCHORED	446.45	1055.34	446.50	1055.00	0.34	0.13	PASS	
+UI3D-04	after_scale	S19 body_dimension_label_z	WORLD_ANCHORED	484.26	1285.84	484.50	1286.00	0.29	0.11	PASS	
+UI3D-04	after_typed_dimension	S19 body_dimension_label_x	WORLD_ANCHORED	936.91	1069.58	936.50	1070.00	0.59	0.23	PASS	
+UI3D-04	after_typed_dimension	S19 body_dimension_label_y	WORLD_ANCHORED	446.45	1055.34	446.50	1055.00	0.34	0.13	PASS	
+UI3D-04	after_typed_dimension	S19 body_dimension_label_z	WORLD_ANCHORED	484.26	1285.84	484.50	1286.00	0.29	0.11	PASS	
+UI3D-04	after_undo	S19 body_dimension_label_x	WORLD_ANCHORED	948.85	1067.35	948.50	1067.00	0.49	0.19	PASS	
+UI3D-04	after_undo	S19 body_dimension_label_y	WORLD_ANCHORED	446.45	1055.34	446.50	1055.00	0.34	0.13	PASS	
+UI3D-04	after_undo	S19 body_dimension_label_z	WORLD_ANCHORED	484.26	1285.84	484.50	1286.00	0.29	0.11	PASS	
+UI3D-08	one_side_staged	S35 cad_extrude value	FEATURE_ANCHORED	405.32	1168.66	405.32	1168.66	0.00	0.00	PASS	scale=0.9505158066749573 extent=0.0 rotation=-28.08275
+UI3D-08	after_arrow_drag	S35 cad_extrude value	FEATURE_ANCHORED	352.36	1196.91	352.36	1196.91	0.00	0.00	PASS	scale=0.9505158066749573 extent=0.0 rotation=-28.082745
+UI3D-08	after_orbit	S35 cad_extrude value	FEATURE_ANCHORED	698.71	1331.84	698.71	1331.84	0.00	0.00	PASS	scale=0.950515866279602 extent=0.0 rotation=65.90799
+UI3D-08	after_zoom_out	S35 cad_extrude value	FEATURE_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the leader projects but the value is not on screen
+UI3D-08	after_zoom_in	S35 cad_extrude value	FEATURE_ANCHORED	698.71	1331.84	698.71	1331.84	0.00	0.00	PASS	scale=0.9505161046981812 extent=0.0 rotation=65.908
+UI3D-09	symmetric	S35 cad_extrude value	FEATURE_ANCHORED	698.71	1331.84	698.71	1331.84	0.00	0.00	PASS	scale=0.9505161046981812 extent=1.0 rotation=65.908
+UI3D-09	two_sides	S35 cad_extrude value	FEATURE_ANCHORED	698.71	1331.84	698.71	1331.84	0.00	0.00	PASS	scale=0.9505161046981812 extent=2.0 rotation=65.908
+UI3D-09	two_sides	S36 cad_extrude_second_value	FEATURE_ANCHORED	560.83	1023.50	560.83	1023.50	0.00	0.00	PASS	scale=0.9505161046981812 extent=2.0 rotation=65.90801
+UI3D-09	two_sides_after_side_a_drag	S35 cad_extrude value	FEATURE_ANCHORED	723.21	1386.62	723.21	1386.62	0.00	0.00	PASS	scale=0.9505161046981812 extent=2.0 rotation=65.90798
+UI3D-09	two_sides_after_side_a_drag	S36 cad_extrude_second_value	FEATURE_ANCHORED	560.83	1023.50	560.83	1023.50	0.00	0.00	PASS	scale=0.9505161046981812 extent=2.0 rotation=65.90801
+UI3D-09	two_sides_after_side_b_drag	S35 cad_extrude value	FEATURE_ANCHORED	723.21	1386.62	723.21	1386.62	0.00	0.00	PASS	scale=0.9505161046981812 extent=2.0 rotation=65.90798
+UI3D-09	two_sides_after_side_b_drag	S36 cad_extrude_second_value	FEATURE_ANCHORED	536.34	968.72	536.34	968.72	0.00	0.00	PASS	scale=0.9505161046981812 extent=2.0 rotation=65.908005
+UI3D-09	side_b_zeroed	S36 cad_extrude_second_value	FEATURE_ANCHORED	597.69	1147.02	597.69	1147.02	0.00	0.00	PASS	scale=0.9505161046981812 extent=2.0 rotation=0.0
+UI3D-07	line_selected	S31 sketch_dimension_label	WORLD_ANCHORED	540.00	1222.64	540.50	1223.00	0.62	0.24	PASS	length=1.6m
+UI3D-07	length_applied	S31 sketch_dimension_label	WORLD_ANCHORED	463.96	1222.64	464.00	1223.00	0.36	0.14	PASS	length=1.0m
+UI3D-07	after_pan	S31 sketch_dimension_label	WORLD_ANCHORED	559.96	1286.64	560.00	1287.00	0.36	0.14	PASS	length=1.0m
+UI3D-05	before_camera	S19 body_dimension_label_x	WORLD_ANCHORED	610.98	1307.76	611.00	1308.00	0.24	0.09	PASS	
+UI3D-05	before_camera	S19 body_dimension_label_y	WORLD_ANCHORED	397.68	1076.05	398.00	1076.00	0.32	0.12	PASS	
+UI3D-05	before_camera	S19 body_dimension_label_z	WORLD_ANCHORED	330.04	1257.37	330.50	1257.00	0.59	0.23	PASS	
+UI3D-05	after_orbit	S19 body_dimension_label_x	WORLD_ANCHORED	488.16	1190.58	488.00	1191.00	0.45	0.17	PASS	
+UI3D-05	after_orbit	S19 body_dimension_label_y	WORLD_ANCHORED	208.45	1239.36	208.00	1239.00	0.57	0.22	PASS	
+UI3D-05	after_orbit	S19 body_dimension_label_z	WORLD_ANCHORED	280.59	1405.41	280.50	1405.00	0.42	0.16	PASS	
+UI3D-05	after_orbit_then_chrome_sync	S19 body_dimension_label_x	WORLD_ANCHORED	488.16	1190.58	488.00	1191.00	0.45	0.17	PASS	
+UI3D-05	after_orbit_then_chrome_sync	S19 body_dimension_label_y	WORLD_ANCHORED	208.45	1239.36	208.00	1239.00	0.57	0.22	PASS	
+UI3D-05	after_orbit_then_chrome_sync	S19 body_dimension_label_z	WORLD_ANCHORED	280.59	1405.41	280.50	1405.00	0.42	0.16	PASS	
+UI3D-05	after_pan	S19 body_dimension_label_x	WORLD_ANCHORED	575.35	1248.71	575.00	1249.00	0.45	0.17	PASS	
+UI3D-05	after_pan	S19 body_dimension_label_y	WORLD_ANCHORED	305.37	1303.97	305.00	1304.00	0.38	0.14	PASS	
+UI3D-05	after_pan	S19 body_dimension_label_z	WORLD_ANCHORED	372.38	1466.61	372.50	1467.00	0.41	0.16	PASS	
+UI3D-05	after_pan_then_chrome_sync	S19 body_dimension_label_x	WORLD_ANCHORED	575.35	1248.71	575.00	1249.00	0.45	0.17	PASS	
+UI3D-05	after_pan_then_chrome_sync	S19 body_dimension_label_y	WORLD_ANCHORED	305.37	1303.97	305.00	1304.00	0.38	0.14	PASS	
+UI3D-05	after_pan_then_chrome_sync	S19 body_dimension_label_z	WORLD_ANCHORED	372.38	1466.61	372.50	1467.00	0.41	0.16	PASS	
+UI3D-05	after_zoom_out	S19 body_dimension_label_x	WORLD_ANCHORED	527.96	1197.26	528.00	1197.00	0.26	0.10	PASS	
+UI3D-05	after_zoom_out	S19 body_dimension_label_y	WORLD_ANCHORED	431.01	1206.54	431.00	1207.00	0.46	0.17	PASS	
+UI3D-05	after_zoom_out	S19 body_dimension_label_z	WORLD_ANCHORED	465.81	1296.01	465.50	1296.00	0.31	0.12	PASS	
+UI3D-05	after_zoom_in	S19 body_dimension_label_x	WORLD_ANCHORED	575.35	1248.71	575.00	1249.00	0.45	0.17	PASS	
+UI3D-05	after_zoom_in	S19 body_dimension_label_y	WORLD_ANCHORED	305.37	1303.97	305.00	1304.00	0.38	0.14	PASS	
+UI3D-05	after_zoom_in	S19 body_dimension_label_z	WORLD_ANCHORED	372.38	1466.61	372.50	1467.00	0.41	0.16	PASS	
+UI3D-05	after_zoom_then_chrome_sync	S19 body_dimension_label_x	WORLD_ANCHORED	575.35	1248.71	575.00	1249.00	0.45	0.17	PASS	
+UI3D-05	after_zoom_then_chrome_sync	S19 body_dimension_label_y	WORLD_ANCHORED	305.37	1303.97	305.00	1304.00	0.38	0.14	PASS	
+UI3D-05	after_zoom_then_chrome_sync	S19 body_dimension_label_z	WORLD_ANCHORED	372.38	1466.61	372.50	1467.00	0.41	0.16	PASS	
+UI3D-10	committed	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	520.86	1281.53	521.00	1282.00	0.49	0.19	PASS	scale=0.98992413
+UI3D-10	after_move	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	876.70	1211.28	877.00	1211.00	0.41	0.16	PASS	scale=1.0351243
+UI3D-10	after_rotate	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	876.70	1211.28	877.00	1211.00	0.41	0.16	PASS	scale=1.0351243
+UI3D-10	after_scale	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	876.70	1211.28	877.00	1211.00	0.41	0.16	PASS	scale=1.0351243
+UI3D-10	after_gizmo_drag	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	937.03	1233.25	937.00	1233.00	0.25	0.10	PASS	scale=1.0549573
+UI3D-10	after_orbit	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	843.33	939.84	843.00	940.00	0.37	0.14	PASS	scale=0.9261394
+UI3D-10	after_zoom_out	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	606.37	1143.08	606.00	1143.00	0.38	0.14	PASS	scale=0.4
+UI3D-10	finish_again	S35 cad_extrude value	FEATURE_ANCHORED	638.01	1148.33	638.01	1148.33	0.00	0.00	PASS	scale=0.9505161046981812 extent=0.0 rotation=27.488575
+UI3D-06	dimensions_on_body_B	S19 body_dimension_label_x	WORLD_ANCHORED	1196.14	1612.42	1023.00	1612.00	173.14	65.96	CLAMPED	
+UI3D-06	dimensions_on_body_B	S19 body_dimension_label_y	WORLD_ANCHORED	1036.69	1370.12	1023.00	1370.00	13.69	5.21	CLAMPED	
+UI3D-06	dimensions_on_body_B	S19 body_dimension_label_z	WORLD_ANCHORED	913.93	1628.60	914.00	1629.00	0.41	0.16	PASS	
+UI3D-06	switched_to_body_A	S19 body_dimension_label_x	WORLD_ANCHORED	594.73	1386.23	595.00	1386.00	0.35	0.13	PASS	
+UI3D-06	switched_to_body_A	S19 body_dimension_label_y	WORLD_ANCHORED	375.52	1145.11	376.00	1145.00	0.49	0.19	PASS	
+UI3D-06	switched_to_body_A	S19 body_dimension_label_z	WORLD_ANCHORED	306.75	1330.50	306.50	1331.00	0.56	0.21	PASS	

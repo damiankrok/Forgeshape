@@ -1,0 +1,2 @@
+committed=72 generated=72 mismatches=0
+FORGE_CORPUS_PARITY=PASS (72/72 byte-identical)
