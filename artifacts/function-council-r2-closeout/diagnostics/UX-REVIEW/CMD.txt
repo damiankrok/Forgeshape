@@ -1,0 +1,15 @@
+Seat: ANDROID UX REVIEW (FUNCTION-COUNCIL-R2-CLOSEOUT-R1). No build, no device, no gradle.
+
+1) Rect arithmetic over recorded view rects (inputs copied from facts.txt of CI DEVICE run 40797031704):
+   cd /tmp && python3 -I /home/user/Forgeshape/artifacts/function-council-r2-closeout/diagnostics/UX-REVIEW/rect_overlap.py \
+       > /home/user/Forgeshape/artifacts/function-council-r2-closeout/diagnostics/UX-REVIEW/rect_overlap.out
+   exit=0
+
+2) Test inventory of the three council CI DEVICE runs (read-only extraction from instrumentation-junit.xml):
+   for d in device-run-*; do grep -o 'classname="[^"]*" name="[^"]*"' $d/instrumentation-junit.xml ...; done
+   (run in artifacts/function-council-r2/evidence) -> 199 testcases: 32 (40797031704), 77 (40800569636), 90 (40805804385). exit=0
+
+3) Screenshots inspected with the Read tool (images), all 1080x2400 portrait at 420 dpi (wm_size/wm_density in environment-manifest.txt); font scale is NOT recorded in the manifest (1.0 is the coordinator note in ANDROID_UI_UX_AUDIT.md:222, E4):
+   40797031704: cad-a3-c2-sketch-ux-r1/03,04,06,07,08; ui-3d-state-audit-r1/ui3d03_02,ui3d03_04,ui3d06_04,ui3d11_01;
+                sel-out-r1/11; ui-pref-r1/02
+   40800569636: cad-vertical-slice-r1-after/05,16; modeling-freeform/03; modeling-surface/04

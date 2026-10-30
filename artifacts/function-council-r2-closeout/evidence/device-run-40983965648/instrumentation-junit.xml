@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.forgeshape.app.EditorWorkspaceGizmoTest" tests="73" failures="1">
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02029and30_theGizmoTakesOnlyTheGesturesThatStartOnAHandle"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02033_aStylusDragsAHandleThroughTheSameSolver"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02037_theModeSelectorIsReachableAndCollisionFreeInEveryWindow"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r218_bothSelectorsAreReachableAndCollisionFreeInEveryWindow"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r218_scaleIsLocalOnlyAndRestoresTheRememberedSpace"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02040_aShapeChangeStillPublishes"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02006to09_eachMoveAxisChangesOnlyItsOwnCoordinate"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02038and39_transformOnlyWorkPublishesNoMeshRevision"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02032_aSecondPointerCancelsAndRestores"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02012_oneDragIsOneStepWhateverTheSampleCount"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02031_cancelLeavesNoOpenTransaction"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020pre0103_answeringTheStartQuestionLeavesAnEmptyHistory"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r201_scaleRoundTripsThroughHistory"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02034_chromeOverTheViewportBlocksThroughHitsToTheGizmo"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02041_theGizmoPassDoesNotDisturbTheRestOfTheFrame"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r209to11_axisPlaneAndUniformScale"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r212and13_oneScaleDragIsOneStepAndCancelRestoresExactly"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r220_scaleAndItsHistoryPublishNoMeshRevision"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r214_gizmoAndExactTransformAreOneTruth"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02018to20_aLongRingDragIsContinuousAndPassesAFullTurn"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02011_aTapOnAHandleCreatesNoHistory"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02021and22_aRingDragCommitsOneStepAndCancelsExactly"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02026_exactApplyRepositionsTheGizmo"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020pre05_realHistorySurvivesRotationAndResumeAfterSeeding"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02035_handleHitRegionsMeetThe48DpFloor"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02005_modeSelectorCreatesNoHistoryAndNoPublication"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02028_twoBodiesUndoChronologicallyAndIndependently"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r216_everyHandleIsClassifiedAtItsOwnPixel"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02003_sculptHidesTheGizmoAndItsControls"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02023and24_undoAndRedoBracketOneDrag"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02004_changingActiveBodyRetargetsWithoutHistory"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020pre04_directSculptThenBackRevealsNoInitialisationStep"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02027_aNewDragInvalidatesTheRedo"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r205to07_worldAndLocalRotationDifferOnAMixedBody"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r215_nonUniformScaleReachesPickingAndNotTheGizmo"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r203_everyMovePlaneMovesOnlyInItsPlane"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02014to17_eachRingChangesOnlyItsOwnRotation"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020pre02_theDirectSculptStartupPathIsProductionReachable"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02013_cancelRestoresTheExactPreDragPlacement"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02025_exactTransformReadsTheGizmoResult"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02001_shapeContextHidesTheGizmo"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02010_aNearCameraParallelAxisStaysFinite"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r204_localSpaceMovesAlongTheBodyOwnAxis"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s020r202_exactApplyIsAtomicAndRefusesAnImpossibleScale"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02002_transformContextShowsTheGizmoForTheActiveBody"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceGizmoTest" name="s02036_gizmoScreenSizeStaysWithinItsBand"></testcase>
+  <testcase classname="com.forgeshape.app.Ui3dStateCorrectionTest" name="ui3dc1_07_labelsFollowMoveRotateAndScale"></testcase>
+  <testcase classname="com.forgeshape.app.Ui3dStateCorrectionTest" name="ui3dc1_09c_closingTheModeClearsTheCachedOwner"></testcase>
+  <testcase classname="com.forgeshape.app.Ui3dStateCorrectionTest" name="ui3dc1_04_clampIsTheViewportAndAnUnclampedSurfaceIsNotPushedIn"></testcase>
+  <testcase classname="com.forgeshape.app.Ui3dStateCorrectionTest" name="ui3dc1_08_theLabelsNeverStandOnThePreviousBody"></testcase>
+  <testcase classname="com.forgeshape.app.Ui3dStateCorrectionTest" name="ui3dc1_11_cadExtrudeClusterTracksAndKeepsItsAuthoredScale"></testcase>
+  <testcase classname="com.forgeshape.app.Ui3dStateCorrectionTest" name="ui3dc1_10_deleteAndUndoLeaveNoGhostChrome"></testcase>
+  <testcase classname="com.forgeshape.app.Ui3dStateCorrectionTest" name="ui3dc1_03_noSystematicOffsetRemains"></testcase>
+  <testcase classname="com.forgeshape.app.Ui3dStateCorrectionTest" name="ui3dc1_02_theOverlayIsPaddedAndTheLabelIsStillOnItsAnchor"></testcase>
+  <testcase classname="com.forgeshape.app.Ui3dStateCorrectionTest" name="ui3dc1_09b_sculptDoesNotInheritGhostLabels"></testcase>
+  <testcase classname="com.forgeshape.app.Ui3dStateCorrectionTest" name="ui3dc1_06_labelsFollowOrbitPanAndZoom"></testcase>
+  <testcase classname="com.forgeshape.app.Ui3dStateCorrectionTest" name="ui3dc1_05_labelsAppearOnTheFrameTheModeOpens"></testcase>
+  <testcase classname="com.forgeshape.app.Ui3dStateCorrectionTest" name="ui3dc1_09a_hidingTheOwnerWithdrawsTheLabels"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a02_theObjectsCapsuleNamesTheActiveBodyAndOffersThePlus"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a07_closingAddPrimitiveLeavesOneObjectsControlBehind"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a06_choosingPlaneRoutesThroughTheNativePlanePath"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a05_choosingSphereCreatesABodyThatIsNativelyASphere"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a10_theToolRailKeepsItsIconsAndItsTouchFloor"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a11_restingSculptHasNoBottomAnchorAndKeepsItsBrushControls"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a04_addPrimitiveOffersTheSixRealPrimitivesAndNothingElse"><failure message="status -2">java.lang.AssertionError: and the palette holds exactly those seven, the fallback, and no placeholder expected:&lt;8&gt; but was:&lt;12&gt;
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:647)
+	at com.forgeshape.app.EditorWorkspaceMobileTest.lambda$uir4a04_addPrimitiveOffersTheSixRealPrimitivesAndNothingElse$9(EditorWorkspaceMobileTest.java:274)
+	at com.forgeshape.app.EditorWorkspaceMobileTest$$ExternalSyntheticLambda38.run(D8$$SyntheticClass:0)
+	at com.forgeshape.app.WorkspaceTestSupport$1.perform(WorkspaceTestSupport.java:59)
+	at com.forgeshape.app.WorkspaceTestSupport$1.perform(WorkspaceTestSupport.java:54)
+	at androidx.test.core.app.ActivityScenario.lambda$onActivity$2$androidx-test-core-app-ActivityScenario(ActivityScenario.java:794)
+	at androidx.test.core.app.ActivityScenario$$ExternalSyntheticLambda2.run(D8$$SyntheticClass:0)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:524)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at android.app.Instrumentation$SyncRunnable.run(Instrumentation.java:2616)
+	at android.os.Handler.handleCallback(Handler.java:995)
+	at android.os.Handler.dispatchMessage(Handler.java:103)
+	at android.os.Looper.loopOnce(Looper.java:248)
+	at android.os.Looper.loop(Looper.java:338)
+	at android.app.ActivityThread.main(ActivityThread.java:9067)
+	at java.lang.reflect.Method.invoke(Native Method)
+	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:593)
+	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:932)
+</failure></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a08_exactShapeIsOneActionAwayAndEditsTheActiveBody"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a17_everyWindowUsesOneInteractionVocabulary"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a02b_expandingTheCapsuleShowsTheOneSceneList"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a15_theNewChromeSurfacesNeverLeakAGestureToTheViewport"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a09_exactTransformIsReachableAndKeepsItsConvention"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a03_addPrimitiveIsAnchoredToTheControlThatOpenedIt"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a14_openingContextSurfacesRebuildsNoGeometry"></testcase>
+  <testcase classname="com.forgeshape.app.EditorWorkspaceMobileTest" name="uir4a01_restingConstructionHasNoFullWidthBottomSurface"></testcase>
+</testsuite>

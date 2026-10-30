@@ -1,0 +1,5 @@
+-- ForgeShape: using glslc at /root/android-sdk/ndk/29.0.14206865/shader-tools/linux-x86_64/glslc
+CMake Error: The following variables are used in this project, but they are set to NOTFOUND.
+    linked by target "forgeshape_native" in directory /home/user/Forgeshape/app/src/main/cpp
+    linked by target "forgeshape_native" in directory /home/user/Forgeshape/app/src/main/cpp
+    linked by target "forgeshape_native" in directory /home/user/Forgeshape/app/src/main/cpp

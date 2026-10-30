@@ -1,0 +1,2 @@
+d0fed3950e098b9606330a3fcf0eee1e8429bb14eb9019f61180b00c1a6d0cbc  ./post-test-screenshot.png
+73d58f34d21db7a520b5cbd75f30417cdd8b4b832ac8853f655a9b08e7d98c62  ./startup-screenshot.png

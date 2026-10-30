@@ -1,0 +1,85 @@
+B1 JNI exports (JNIEXPORT ... Java_com_forgeshape_app_NativeViewport_*): 276
+B1b distinct export names: 275
+B1c JNIEXPORT lines in jni.cpp: 276
+B1d Java_ exports outside NativeViewport in any .cpp: 0
+B2 'static native' declarations in NativeViewport.java: 275
+B2b Java files declaring a native method (regex '^\s*(public |private |protected )?(static )?native '): NativeViewport.java 
+B1e names defined twice (preprocessor variants): Java_com_forgeshape_app_NativeViewport_debugInjectDeviceLoss 
+B1f export-name set equals Java native-name set: yes
+B3 JNI upcalls in jni.cpp (FindClass|GetMethodID|GetStaticMethodID|Call*Method|RegisterNatives|AttachCurrentThread): 0
+B4 files under cpp/ (forgeshape_*) including an <android/...> header:
+forgeshape_jni.cpp
+forgeshape_renderer.cpp
+forgeshape_renderer.h
+B4b #include <jni.h> files:
+forgeshape_jni.cpp
+B5 ANativeWindow occurrences per file:
+app/src/main/cpp/forgeshape_renderer.h:5
+app/src/main/cpp/forgeshape_jni.cpp:11
+app/src/main/cpp/forgeshape_renderer.cpp:10
+B5b ANativeWindow_* call sites (renderer.cpp):
+372:    ANativeWindow_acquire(window);
+448:            ANativeWindow_getWidth(window_), ANativeWindow_getHeight(window_));
+500:        ANativeWindow_release(window_);
+2105:        extent.width = static_cast<uint32_t>(ANativeWindow_getWidth(window_));
+2106:        extent.height = static_cast<uint32_t>(ANativeWindow_getHeight(window_));
+2211:            ANativeWindow_getWidth(window_), ANativeWindow_getHeight(window_),
+B5c ANativeWindow_* call sites (jni.cpp):
+9405:    ANativeWindow* window = ANativeWindow_fromSurface(env, surface);
+9412:            ANativeWindow_getWidth(window), ANativeWindow_getHeight(window));
+9417:        g_camera.setViewport(ANativeWindow_getWidth(window), ANativeWindow_getHeight(window));
+9430:        ANativeWindow_release(g_viewport.pendingWindow);
+9482:        ANativeWindow_release(g_viewport.pendingWindow);
+B6 Android-only Vulkan symbols in renderer.{h,cpp}:
+app/src/main/cpp/forgeshape_renderer.h:9:// Required before <vulkan/vulkan.h> to expose VkAndroidSurfaceCreateInfoKHR
+app/src/main/cpp/forgeshape_renderer.h:10:// and vkCreateAndroidSurfaceKHR.
+app/src/main/cpp/forgeshape_renderer.h:11:#ifndef VK_USE_PLATFORM_ANDROID_KHR
+app/src/main/cpp/forgeshape_renderer.h:12:#define VK_USE_PLATFORM_ANDROID_KHR
+app/src/main/cpp/forgeshape_renderer.cpp:262:        VK_KHR_ANDROID_SURFACE_EXTENSION_NAME,
+app/src/main/cpp/forgeshape_renderer.cpp:442:    VkAndroidSurfaceCreateInfoKHR surfaceInfo{};
+app/src/main/cpp/forgeshape_renderer.cpp:443:    surfaceInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+app/src/main/cpp/forgeshape_renderer.cpp:445:    FS_VK_CHECK(vkCreateAndroidSurfaceKHR(instance_, &surfaceInfo, nullptr, &surface_),
+app/src/main/cpp/forgeshape_renderer.cpp:446:                "vkCreateAndroidSurfaceKHR");
+B6b all instance/device extension names requested by renderer.cpp:
+261:VK_KHR_SURFACE_EXTENSION_NAME
+262:VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
+552:VK_KHR_SWAPCHAIN_EXTENSION_NAME
+599:VK_KHR_SWAPCHAIN_EXTENSION_NAME
+B7 __android_log_print / FS_LOG sites: jni.cpp=362 renderer.cpp=43 other=0
+B8 process-scoped accessor callers in renderer.*: 0
+B9 translateAction + touchEvent locations in jni.cpp:
+404:bool translateAction(jint androidAction, forgeshape::TouchAction* out) {
+9503:Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint action,
+9510:    if (!translateAction(action, &translated)) {
+B10 Java file counts: total=85; importing android.*=63; not importing android.*=22
+B10b java without android imports:
+AppPreferences.java AppTheme.java CadHud3dPresentation.java CadHudPresentation.java CadHudTouchAttribution.java CadRevolvePresentation.java DiagnosticLog.java EditorUiState.java ExactExpression.java FeatureHistoryPresentation.java FreeformPresentation.java GizmoStrokeWeight.java Handedness.java InspectorHost.java LengthUnit.java ProjectDrawerPolicy.java SketchBrowserPresentation.java SketchChromePolicy.java SketchDraftingPresentation.java SurfacePresentation.java ToolbarRowBudget.java WorkspaceLayoutMode.java 
+B11 lines: jni.cpp=10337 renderer=4574 java_total=33208
+B12 MSVC-sensitive grep over neutral sources (product+selftests, excl jni/renderer/third_party):
+  __builtin_             0 files
+  __attribute__          0 files
+  M_PI\b                 0 files
+  #pragma GCC            0 files
+  __int128               0 files
+  typeof\(               0 files
+  \bVLA                  0 files
+  alloca\(               0 files
+  __restrict             0 files
+  \bssize_t\b            0 files
+  <unistd.h>             0 files
+  <pthread.h>            0 files
+  <sys/                  0 files
+  std::aligned_alloc     0 files
+B12b designated initializers '{ .x =' / '{.x=' (C++20 under MSVC /std:c++17 is an error):
+B12c 'long' as a type in code (not comments/strings/long long):
+forgeshape_cad_revolve_selftest.cpp:117:long eulerCharacteristic(const ConstructionMesh& mesh) {
+forgeshape_cad_revolve_selftest.cpp:128:    return static_cast<long>(used.size()) - static_cast<long>(edges.size())
+forgeshape_cad_revolve_selftest.cpp:129:           + static_cast<long>(mesh.indices.size() / 3u);
+forgeshape_gltf_import_selftest.cpp:125:    out.insert(out.end(), original.begin() + static_cast<long>(binHeader) + 8,
+forgeshape_gltf_import_selftest.cpp:126:               original.begin() + static_cast<long>(binHeader) + 8 + binLength);
+B13 manifold include sites: forgeshape_cad_kernel.cpp 
+B14 manifest:
+4:    <uses-feature
+5:        android:name="android.hardware.vulkan.version"
+15:          configChanges is kept and widened, deliberately. Letting the system
+31:            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|screenLayout|density"

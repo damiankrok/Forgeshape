@@ -1,0 +1,41 @@
+INSTRUMENTATION_STATUS: class=com.forgeshape.app.EditorWorkspaceMobileTest
+INSTRUMENTATION_STATUS: current=65
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=73
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=uir4a04_addPrimitiveOffersTheSixRealPrimitivesAndNothingElse
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.forgeshape.app.EditorWorkspaceMobileTest
+INSTRUMENTATION_STATUS: current=65
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=73
+INSTRUMENTATION_STATUS: stack=java.lang.AssertionError: and the palette holds exactly those seven, the fallback, and no placeholder expected:<8> but was:<12>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:647)
+	at com.forgeshape.app.EditorWorkspaceMobileTest.lambda$uir4a04_addPrimitiveOffersTheSixRealPrimitivesAndNothingElse$9(EditorWorkspaceMobileTest.java:274)
+	at com.forgeshape.app.EditorWorkspaceMobileTest$$ExternalSyntheticLambda38.run(D8$$SyntheticClass:0)
+	at com.forgeshape.app.WorkspaceTestSupport$1.perform(WorkspaceTestSupport.java:59)
+	at com.forgeshape.app.WorkspaceTestSupport$1.perform(WorkspaceTestSupport.java:54)
+	at androidx.test.core.app.ActivityScenario.lambda$onActivity$2$androidx-test-core-app-ActivityScenario(ActivityScenario.java:794)
+	at androidx.test.core.app.ActivityScenario$$ExternalSyntheticLambda2.run(D8$$SyntheticClass:0)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:524)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at android.app.Instrumentation$SyncRunnable.run(Instrumentation.java:2616)
+	at android.os.Handler.handleCallback(Handler.java:995)
+	at android.os.Handler.dispatchMessage(Handler.java:103)
+	at android.os.Looper.loopOnce(Looper.java:248)
+	at android.os.Looper.loop(Looper.java:338)
+	at android.app.ActivityThread.main(ActivityThread.java:9067)
+	at java.lang.reflect.Method.invoke(Native Method)
+	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:593)
+	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:932)
+
+INSTRUMENTATION_STATUS: stream=
+Error in uir4a04_addPrimitiveOffersTheSixRealPrimitivesAndNothingElse(com.forgeshape.app.EditorWorkspaceMobileTest):
+java.lang.AssertionError: and the palette holds exactly those seven, the fallback, and no placeholder expected:<8> but was:<12>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:647)
+	at com.forgeshape.app.EditorWorkspaceMobileTest.lambda$uir4a04_addPrimitiveOffersTheSixRealPrimitivesAndNothingElse$9(EditorWorkspaceMobileTest.java:274)
+	at com.forgeshape.app.EditorWorkspaceMobileTest$$ExternalSyntheticLambda38.run(D8$$SyntheticClass:0)
