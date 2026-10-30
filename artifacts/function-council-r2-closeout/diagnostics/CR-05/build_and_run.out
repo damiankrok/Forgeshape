@@ -1,0 +1,148 @@
+# product sources copied unchanged (sha256 prefix: product copy verdict)
+AutosaveController 794582a8f038cae6 794582a8f038cae6 SAME
+ProjectCheckpoint 47acfb4bff243c63 47acfb4bff243c63 SAME
+ProjectSlot d6c8fd103738ce43 d6c8fd103738ce43 SAME
+EditorUiState 94613fe35d73c7f0 94613fe35d73c7f0 SAME
+LengthUnit 07f2db08578fb1ec 07f2db08578fb1ec SAME
+DiagnosticLog 3a6a4a4362154fcf 3a6a4a4362154fcf SAME
+javac_exit=0
+
+=== A01_save_and_continue_before_open_saved
+  01 cold launch (workspace constructor)                live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  02 new project A (unpersisted)                        live="A"      slot=absent   ckpt=absent   dirty=true  everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence MANUAL_SAVE bytes=1
+  03 Save Project                                       live="A"      slot="A"      ckpt=absent   dirty=false everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  04 edit -> A+b                                        live="A+b"    slot="A"      ckpt=absent   dirty=true  everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=1
+  [diag info ] persistence AUTOSAVE_CHECKPOINT bytes=3,ms=2
+  05 autosave debounce drained                          live="A+b"    slot="A"      ckpt="A+b"    dirty=true  everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=1
+  06 drawer: Open Saved Project                         live="A+b"    slot="A"      ckpt="A+b"    dirty=true  everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=true  undo=1
+  [diag info ] persistence MANUAL_SAVE bytes=3
+  [diag info ] persistence MANUAL_OPEN bytes=3
+  07 unsaved question: Save and continue                live="A+b"    slot="A+b"    ckpt=absent   dirty=false everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  A01_SLOT_NO_LONGER_HOLDS_A=OBSERVED
+  A01_OPENED_PROJECT_IS_THE_LIVE_ONE_NOT_THE_SAVED_ONE=OBSERVED
+  A01_UNDO_HISTORY_EMPTIED_BY_THE_RELOAD=OBSERVED
+  A01_A_EXISTS_IN_NO_FILE=OBSERVED
+
+=== A02_recovered_work_protected_nowhere
+  01 cold launch (workspace constructor)                live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  02 new project, edit -> W+1 (never saved)             live="W+1"    slot=absent   ckpt=absent   dirty=true  everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=1
+  [diag info ] persistence AUTOSAVE_CHECKPOINT bytes=3,ms=2
+  03 autosave debounce drained                          live="W+1"    slot=absent   ckpt="W+1"    dirty=true  everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=1
+  [diag info ] recovery CANDIDATE_OFFERED bytes=3
+  04 background + process death + cold launch           live=<home>   slot=absent   ckpt="W+1"    dirty=false everPersisted=false resolved=false recoveryPrompt=true  unsavedPrompt=false undo=0
+  [diag info ] recovery RECOVERED
+  05 Recover                                            live="W+1"    slot=absent   ckpt=absent   dirty=false everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  06 background (onStop immediate checkpoint drained)   live="W+1"    slot=absent   ckpt=absent   dirty=false everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  A02_NO_CHECKPOINT_AFTER_RECOVER_AND_BACKGROUND=OBSERVED
+  A02_NOT_IN_SLOT=OBSERVED
+  A02_NOT_DIRTY_SO_LEAVING_ASKS_NOTHING=OBSERVED
+  autosave counters: writes=0 skippedUnchanged=1
+  07 second process death + cold launch                 live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  A02_RECOVERED_WORK_LOST_ON_SECOND_DEATH=OBSERVED
+
+=== A02b_recover_then_new_project
+  01 cold launch (workspace constructor)                live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence AUTOSAVE_CHECKPOINT bytes=3,ms=0
+  [diag info ] recovery CANDIDATE_OFFERED bytes=3
+  02 cold launch with candidate W+1                     live=<home>   slot=absent   ckpt="W+1"    dirty=false everPersisted=false resolved=false recoveryPrompt=true  unsavedPrompt=false undo=0
+  [diag info ] recovery RECOVERED
+  03 Recover                                            live="W+1"    slot=absent   ckpt=absent   dirty=false everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  04 drawer: New Project...                             live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  A02b_NEW_PROJECT_ASKED_NOTHING_AND_CLOSED_RECOVERED_WORK=OBSERVED
+
+=== A02_control_open_file_keeps_protection
+  01 cold launch (workspace constructor)                live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  02 Open File... applied a document F                  live="F"      slot=absent   ckpt=absent   dirty=false everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence AUTOSAVE_CHECKPOINT bytes=1,ms=8
+  03 background                                         live="F"      slot=absent   ckpt="F"      dirty=false everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  CONTROL_OPEN_FILE_IS_CHECKPOINTED=OBSERVED
+
+=== A02_control_edit_after_recover
+  01 cold launch (workspace constructor)                live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence AUTOSAVE_CHECKPOINT bytes=3,ms=1
+  [diag info ] recovery CANDIDATE_OFFERED bytes=3
+  [diag info ] recovery RECOVERED
+  02 Recover                                            live="W+1"    slot=absent   ckpt=absent   dirty=false everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence AUTOSAVE_CHECKPOINT bytes=5,ms=2
+  03 edit -> W+1+2, background                          live="W+1+2"  slot=absent   ckpt="W+1+2"  dirty=true  everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=1
+  CONTROL_ONE_EDIT_AFTER_RECOVER_RESTORES_A_CHECKPOINT=OBSERVED
+
+=== A05_saved_baseline_lost_on_recreation
+  01 cold launch (workspace constructor)                live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  02 new project S                                      live="S"      slot=absent   ckpt=absent   dirty=true  everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence MANUAL_SAVE bytes=1
+  03 Save Project                                       live="S"      slot="S"      ckpt=absent   dirty=false everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  04 Settings: choose another palette (recreate)        live="S"      slot="S"      ckpt=absent   dirty=true  everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  A05_FINGERPRINT_UNCHANGED=OBSERVED
+  A05_DIRTY_FLIPPED_FALSE_TO_TRUE=OBSERVED
+  05 drawer: New Project...                             live="S"      slot="S"      ckpt=absent   dirty=true  everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=true  undo=0
+  A05_UNSAVED_QUESTION_OVER_A_SAVED_PROJECT=OBSERVED
+
+=== A05_control_no_recreation
+  01 cold launch (workspace constructor)                live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence MANUAL_SAVE bytes=1
+  02 Save Project                                       live="S"      slot="S"      ckpt=absent   dirty=false everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  03 drawer: New Project...                             live=<home>   slot="S"      ckpt=absent   dirty=false everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  CONTROL_NO_QUESTION_WITHOUT_RECREATION=OBSERVED
+
+=== E02_recovery_question_over_live_project
+  01 cold launch (workspace constructor)                live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  02 New Project (no recovery question ever asked)      live="L"      slot=absent   ckpt=absent   dirty=true  everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence AUTOSAVE_CHECKPOINT bytes=3,ms=2
+  03 edit -> L+e, autosave debounce drained             live="L+e"    slot=absent   ckpt="L+e"    dirty=true  everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=1
+  [diag info ] recovery CANDIDATE_OFFERED bytes=3
+  04 Settings: choose another palette (recreate)        live="L+e"    slot=absent   ckpt="L+e"    dirty=true  everPersisted=false resolved=false recoveryPrompt=true  unsavedPrompt=false undo=1
+  E02_RECOVERY_PROMPT_SHOWN_OVER_OPEN_PROJECT=OBSERVED
+  [diag info ] recovery RECOVERED
+  05 user presses Recover on that prompt                live="L+e"    slot=absent   ckpt=absent   dirty=false everPersisted=true  resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  E02_RECOVER_RELOADED_AND_EMPTIED_UNDO=OBSERVED
+
+=== E02_control_candidate_answered_at_launch
+  01 cold launch (workspace constructor)                live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence AUTOSAVE_CHECKPOINT bytes=3,ms=1
+  [diag info ] recovery CANDIDATE_OFFERED bytes=3
+  02 cold launch: candidate offered                     live=<home>   slot=absent   ckpt="C+1"    dirty=false everPersisted=false resolved=false recoveryPrompt=true  unsavedPrompt=false undo=0
+  [diag info ] recovery DISCARDED
+  03 Discard                                            live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence AUTOSAVE_CHECKPOINT bytes=3,ms=1
+  04 new project, edit, autosave drained                live="L+e"    slot=absent   ckpt="L+e"    dirty=true  everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=1
+  05 recreate (palette)                                 live="L+e"    slot=absent   ckpt="L+e"    dirty=true  everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=1
+  CONTROL_NO_PROMPT_WHEN_RESOLVED_WAS_RECORDED=OBSERVED
+
+=== E02b_saved_work_offered_as_recovery
+  01 cold launch (workspace constructor)                live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence MANUAL_SAVE bytes=1
+  02 Save Project (checkpoint retired)                  live="S"      slot="S"      ckpt=absent   dirty=false everPersisted=true  resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  03 palette change #1 (recreate)                       live="S"      slot="S"      ckpt=absent   dirty=true  everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence AUTOSAVE_CHECKPOINT bytes=1,ms=0
+  04 app backgrounded (new controller's onStop)         live="S"      slot="S"      ckpt="S"      dirty=true  everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] recovery CANDIDATE_OFFERED bytes=1
+  05 palette change #2 (recreate)                       live="S"      slot="S"      ckpt="S"      dirty=true  everPersisted=false resolved=false recoveryPrompt=true  unsavedPrompt=false undo=0
+  E02b_SAVED_UNCHANGED_PROJECT_OFFERED_AS_UNSAVED_WORK=OBSERVED
+
+=== A06_TRANSCRIPT_ONLY_pending_bytes_lost
+  01 cold launch (workspace constructor)                live=<home>   slot=absent   ckpt=absent   dirty=false everPersisted=false resolved=false recoveryPrompt=false unsavedPrompt=false undo=0
+  02 Save Copy... (bytes staged, picker launched)       live="P"      slot=absent   ckpt=absent   dirty=true  everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] persistence AUTOSAVE_CHECKPOINT bytes=1,ms=1
+  03 config change while picker is open (recreate)      live="P"      slot=absent   ckpt="P"      dirty=true  everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  [diag info ] transfer SAVE_COPY_CANCELLED
+  04 picker returns a destination                       live="P"      slot=absent   ckpt="P"      dirty=true  everPersisted=false resolved=true  recoveryPrompt=false unsavedPrompt=false undo=0
+  outcome=CANCELLED(no status shown) lastStatus=''
+  A06_TRANSCRIPT_RESULT_IS_TREATED_AS_CANCEL=OBSERVED
+
+=== EditorUiState declared fields (real class, reflection)
+  static EditorUiState carriedAcrossRecreation
+  static int CONSTRUCTION_TOOL_SHAPE
+  static int CONSTRUCTION_TOOL_TRANSFORM
+         LengthUnit displayUnit
+         int draftPrimitiveKind
+         int constructionTool
+         boolean constructionPrecisionOpen
+         boolean sculptPrecisionOpen
+         boolean newProjectChooserOpen
+  static boolean recoveryResolved
+         boolean settingsOpen
+         boolean chromeHidden
+CR05_HARNESS_DONE
+java_exit=0

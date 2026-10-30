@@ -1,0 +1,18 @@
+=== CR-03 scenario E ===
+glb: bytes=1648 export_ok=1
+sketch_begin=Ok
+[before_import] hasProject=0 bodies=0 active=0 undo=0 redo=0 editInProgress=0 sketch_active=1 sketch_state=Editing sketch_entities=1 sketch_plane=0 chooser_active=0 sculpt=0 fingerprint=0000000000000000
+  import: parse=Ok commit=Ok
+importGlbDurable_return=0
+[after_import] hasProject=1 bodies=1 active=1 undo=1 redo=0 editInProgress=0 sketch_active=1 sketch_state=Editing sketch_entities=1 sketch_plane=0 chooser_active=0 sculpt=0 fingerprint=080652afb78c99bb
+    body[0] id=1 rep=Imported
+finish=Ok
+sketchCommit=Ok created=2 firstProjectPath=0
+[after_commit] hasProject=1 bodies=2 active=2 undo=2 redo=0 editInProgress=0 sketch_active=0 sketch_state=Inactive sketch_entities=0 sketch_plane=0 chooser_active=0 sculpt=0 fingerprint=29ef57807cb4067a
+    body[0] id=1 rep=Imported
+    body[1] id=2 rep=CAD
+jni_undo_1=MOVED
+[after_undo_1] hasProject=1 bodies=1 active=1 undo=1 redo=1 editInProgress=0 sketch_active=0 sketch_state=Inactive sketch_entities=0 sketch_plane=0 chooser_active=0 sculpt=0 fingerprint=ff7756b1d87deb3a
+    body[0] id=1 rep=Imported
+jni_undo_2=MOVED
+[after_undo_2] hasProject=0 bodies=0 active=0 undo=0 redo=2 editInProgress=0 sketch_active=0 sketch_state=Inactive sketch_entities=0 sketch_plane=0 chooser_active=0 sculpt=0 fingerprint=0000000000000000

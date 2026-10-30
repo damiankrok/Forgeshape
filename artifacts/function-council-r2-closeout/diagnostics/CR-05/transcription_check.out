@@ -1,0 +1,386 @@
+git HEAD of product tree: 642e47f ; last product commit: b227a0b
+----- EditorWorkspaceView.java:127,127
+   127	    private final EditorUiState uiState = EditorUiState.forNewWorkspace();
+----- EditorWorkspaceView.java:271,272
+   271	    private long persistedFingerprint;
+   272	    private boolean everPersisted;
+----- EditorWorkspaceView.java:1019,1030
+  1019	        autosave = new AutosaveController(context);
+  1020	
+  1021	        // The recovery question is asked ONCE PER PROCESS and before Home: this
+  1022	        // is the moment the session begins, and it begins once. An Activity
+  1023	        // recreation — a theme change, a rotation the config did not absorb —
+  1024	        // rebuilds this view, and asking again there would present a second
+  1025	        // decision about a candidate the user has already answered. Home itself
+  1026	        // is not remembered: it is derived from whether a project is open.
+  1027	        if (!uiState.recoveryResolved()) {
+  1028	            offerRecoveryIfPresent();
+  1029	        }
+  1030	        refreshShellPhase();
+----- EditorWorkspaceView.java:2597,2614
+  2597	    boolean projectDirty() {
+  2598	        if (!NativeViewport.projectOpen()) {
+  2599	            return false;
+  2600	        }
+  2601	        return !everPersisted || NativeViewport.projectFingerprint() != persistedFingerprint;
+  2602	    }
+  2603	
+  2604	    /** Records that the live project now equals what the user has stored. */
+  2605	    private void noteProjectPersisted() {
+  2606	        persistedFingerprint = NativeViewport.projectFingerprint();
+  2607	        everPersisted = true;
+  2608	    }
+  2609	
+  2610	    /** Records that the live project exists nowhere the user chose. */
+  2611	    private void noteProjectUnpersisted() {
+  2612	        everPersisted = false;
+  2613	        persistedFingerprint = 0L;
+  2614	    }
+----- EditorWorkspaceView.java:2623,2691
+  2623	    private void leaveProjectFor(int intent) {
+  2624	        if (projectDirty()) {
+  2625	            pendingLeave = intent;
+  2626	            unsavedPrompt.showStatus("", R.attr.fsTextSecondary);
+  2627	            unsavedPrompt.setVisibility(VISIBLE);
+  2628	            refreshShellPhase();
+  2629	            return;
+  2630	        }
+  2631	        proceedToLeave(intent);
+  2632	    }
+  2633	
+  2634	    /** Continues what the unsaved-changes question was guarding. */
+  2635	    private void proceedToLeave(int intent) {
+  2636	        switch (intent) {
+  2637	            case LEAVE_NEW_PROJECT:
+  2638	                // The project closes NOW, so the chooser stands over Home and
+  2639	                // Cancel from it lands at Home rather than back in a project
+  2640	                // the user has already decided to leave.
+  2641	                NativeViewport.closeProject();
+  2642	                dismissPrimarySurfacesExcept(null);
+  2643	                finishEditing();
+  2644	                noteProjectUnpersisted();
+  2645	                uiState.setNewProjectChooserOpen(true);
+  2646	                onNativeStateChanged();
+  2647	                break;
+  2648	            case LEAVE_OPEN_FILE:
+  2649	                // The current project stays live until a file actually opens:
+  2650	                // a cancelled picker or a refused file costs it nothing.
+  2651	                if (transferHost == null || !transferHost.requestOpenProjectDocument()) {
+  2652	                    showStatus(getContext().getString(R.string.status_project_copy_failed),
+  2653	                            R.attr.fsTextError);
+  2654	                }
+  2655	                break;
+  2656	            case LEAVE_OPEN_SLOT:
+  2657	                openSavedProjectSlot();
+  2658	                break;
+  2659	            default:
+  2660	                break;
+  2661	        }
+  2662	    }
+  2663	
+  2664	    @Override
+  2665	    public void onUnsavedSaveRequested() {
+  2666	        final int intent = pendingLeave;
+  2667	        if (!saveProjectToSlot()) {
+  2668	            // A failed save keeps the project alive and the question open, so
+  2669	            // the user can choose again knowing what happened.
+  2670	            unsavedPrompt.showStatus(
+  2671	                    getContext().getString(R.string.status_project_save_failed),
+  2672	                    R.attr.fsTextError);
+  2673	            return;
+  2674	        }
+  2675	        pendingLeave = LEAVE_NONE;
+  2676	        unsavedPrompt.setVisibility(GONE);
+  2677	        proceedToLeave(intent);
+  2678	    }
+  2679	
+  2680	    @Override
+  2681	    public void onUnsavedDiscardRequested() {
+  2682	        final int intent = pendingLeave;
+  2683	        pendingLeave = LEAVE_NONE;
+  2684	        unsavedPrompt.setVisibility(GONE);
+  2685	        // Discarding means the checkpoint that was protecting these changes has
+  2686	        // nothing left to protect: left in place it would offer the very work
+  2687	        // the user just chose to drop on the next launch.
+  2688	        ProjectCheckpoint.clear(getContext());
+  2689	        Diagnostics.info(DiagnosticLog.CAT_PERSISTENCE, "UNSAVED_DISCARDED", null);
+  2690	        proceedToLeave(intent);
+  2691	    }
+----- EditorWorkspaceView.java:5458,5472
+  5458	    private boolean saveProjectToSlot() {
+  5459	        final byte[] bytes = NativeViewport.encodeProject();
+  5460	        if (bytes == null || bytes.length == 0
+  5461	                || !ProjectSlot.write(getContext(), bytes)) {
+  5462	            return false;
+  5463	        }
+  5464	        // The work the checkpoint was protecting is now in the slot the user
+  5465	        // named, so the checkpoint has nothing left to protect and is retired.
+  5466	        // Autosave writes a fresh one the moment the project changes again.
+  5467	        ProjectCheckpoint.clear(getContext());
+  5468	        autosave.noteProjectPersisted();
+  5469	        noteProjectPersisted();
+  5470	        Diagnostics.info(DiagnosticLog.CAT_PERSISTENCE, "MANUAL_SAVE",
+  5471	                "bytes=" + bytes.length);
+  5472	        return true;
+----- EditorWorkspaceView.java:5483,5513
+  5483	    private void openSavedProjectSlot() {
+  5484	        final byte[] bytes = ProjectSlot.read(getContext());
+  5485	        if (bytes == null) {
+  5486	            showStatus(getContext().getString(R.string.status_project_none), R.attr.fsTextError);
+  5487	            return;
+  5488	        }
+  5489	        final int status = NativeViewport.loadProject(bytes);
+  5490	        if (status != NativeViewport.PROJECT_OK) {
+  5491	            // Nothing to refresh: a refused load changed nothing below JNI, so
+  5492	            // re-reading would repaint the same values it already shows.
+  5493	            showStatus(getContext().getString(projectFailureMessage(status)),
+  5494	                    R.attr.fsTextError);
+  5495	            return;
+  5496	        }
+  5497	        // Everything on screen is now describing a scene that no longer exists:
+  5498	        // the active body, its dimensions, its placement, the mode, the scene
+  5499	        // list and whether Undo is available have all been replaced at once.
+  5500	        // One re-read from native truth answers all of it, which is exactly
+  5501	        // what syncFromNative is for.
+  5502	        // The live project and the internal slot now agree, so the next
+  5503	        // checkpoint of unchanged work is free rather than merely fast. The
+  5504	        // checkpoint is retired for the same reason a Save retires it.
+  5505	        ProjectCheckpoint.clear(getContext());
+  5506	        autosave.noteProjectPersisted();
+  5507	        noteProjectPersisted();
+  5508	        Diagnostics.info(DiagnosticLog.CAT_PERSISTENCE, "MANUAL_OPEN",
+  5509	                "bytes=" + bytes.length);
+  5510	        dismissPrimarySurfacesExcept(null);
+  5511	        onNativeStateChanged();
+  5512	        showStatus(getContext().getString(R.string.status_project_opened, projectSummary()),
+  5513	                R.attr.fsTextSuccess);
+----- EditorWorkspaceView.java:5579,5604
+  5579	    private boolean offerRecoveryIfPresent() {
+  5580	        if (!ProjectCheckpoint.exists(getContext())) {
+  5581	            return false;
+  5582	        }
+  5583	        final byte[] bytes = ProjectCheckpoint.read(getContext());
+  5584	        final int status = bytes == null
+  5585	                ? NativeViewport.PROJECT_NO_DATA
+  5586	                : NativeViewport.validateProject(bytes);
+  5587	        if (status != NativeViewport.PROJECT_OK) {
+  5588	            // Nothing has been applied and nothing can have been: validate is a
+  5589	            // decode into temporary state. The live project is whatever a fresh
+  5590	            // launch built, untouched.
+  5591	            ProjectCheckpoint.quarantine(getContext());
+  5592	            uiState.recordRecoveryResolved();
+  5593	            Diagnostics.warn(DiagnosticLog.CAT_RECOVERY, "CANDIDATE_QUARANTINED",
+  5594	                    "status=" + status);
+  5595	            showStatus(getContext().getString(R.string.status_recovery_failed),
+  5596	                    R.attr.fsTextError);
+  5597	            return false;
+  5598	        }
+  5599	        Diagnostics.info(DiagnosticLog.CAT_RECOVERY, "CANDIDATE_OFFERED",
+  5600	                "bytes=" + bytes.length);
+  5601	        recoveryPrompt.setVisibility(VISIBLE);
+  5602	        return true;
+  5603	    }
+  5604	
+----- EditorWorkspaceView.java:5652,5701
+  5652	    public void onRecoverRequested() {
+  5653	        uiState.recordRecoveryResolved();
+  5654	        recoveryPrompt.setVisibility(GONE);
+  5655	
+  5656	        final byte[] bytes = ProjectCheckpoint.read(getContext());
+  5657	        final int status = bytes == null
+  5658	                ? NativeViewport.PROJECT_NO_DATA
+  5659	                : NativeViewport.loadProject(bytes);
+  5660	        if (status != NativeViewport.PROJECT_OK) {
+  5661	            // Between the offer and the press the file became unreadable. The
+  5662	            // load is fail-closed, so the live project is exactly what it was;
+  5663	            // the candidate is retired so the next launch does not re-offer it.
+  5664	            ProjectCheckpoint.quarantine(getContext());
+  5665	            Diagnostics.error(DiagnosticLog.CAT_RECOVERY, "RECOVER_FAILED",
+  5666	                    "status=" + status);
+  5667	            refreshShellPhase();
+  5668	            home.showStatus(getContext().getString(R.string.status_recovery_failed),
+  5669	                    R.attr.fsTextError);
+  5670	            return;
+  5671	        }
+  5672	        // Recovered work is the live project now, and the checkpoint has done
+  5673	        // its job. It is retired rather than kept: leaving it would offer the
+  5674	        // same work again on the next launch, as though it had been lost twice.
+  5675	        ProjectCheckpoint.clear(getContext());
+  5676	        autosave.noteProjectPersisted();
+  5677	        // What was recovered is what the user has: a New Project straight after
+  5678	        // this asks nothing, exactly as after an Open.
+  5679	        noteProjectPersisted();
+  5680	        dismissPrimarySurfacesExcept(null);
+  5681	        onNativeStateChanged();
+  5682	        Diagnostics.info(DiagnosticLog.CAT_RECOVERY, "RECOVERED",
+  5683	                "bodies=" + NativeViewport.sceneBodyCount());
+  5684	        showStatus(getContext().getString(R.string.status_recovery_recovered, projectSummary()),
+  5685	                R.attr.fsTextSuccess);
+  5686	    }
+  5687	
+  5688	    @Override
+  5689	    public void onDiscardRecoveryRequested() {
+  5690	        uiState.recordRecoveryResolved();
+  5691	        recoveryPrompt.setVisibility(GONE);
+  5692	        // The only thing discarded is the checkpoint. The manual slot is not
+  5693	        // touched, not read and not written by this — which is exactly what the
+  5694	        // option's description promises the user.
+  5695	        ProjectCheckpoint.clear(getContext());
+  5696	        Diagnostics.info(DiagnosticLog.CAT_RECOVERY, "DISCARDED", null);
+  5697	        // Discarding means starting normally: Home, which was deferred to make
+  5698	        // room for this question, stands now and carries the verdict.
+  5699	        refreshShellPhase();
+  5700	        home.showStatus(getContext().getString(R.string.status_recovery_discarded),
+  5701	                R.attr.fsTextPrimary);
+----- EditorWorkspaceView.java:5709,5726
+  5709	    public void onSaveCopyRequested() {
+  5710	        setProjectPanelOpen(false);
+  5711	        // Encoded before the picker is shown, so a project that cannot be
+  5712	        // encoded says so immediately instead of after the user has chosen a
+  5713	        // destination and watched an empty file appear there.
+  5714	        final byte[] bytes = NativeViewport.encodeProject();
+  5715	        if (bytes == null || bytes.length == 0) {
+  5716	            showStatus(getContext().getString(R.string.status_project_no_encode),
+  5717	                    R.attr.fsTextError);
+  5718	            return;
+  5719	        }
+  5720	        pendingCopyBytes = bytes;
+  5721	        if (transferHost == null || !transferHost.requestCreateProjectDocument()) {
+  5722	            pendingCopyBytes = null;
+  5723	            showStatus(getContext().getString(R.string.status_project_copy_failed),
+  5724	                    R.attr.fsTextError);
+  5725	        }
+  5726	    }
+----- EditorWorkspaceView.java:5778,5800
+  5778	    private byte[] pendingGlbBytes;
+  5779	
+  5780	    /** Stages the bytes an export would write, without opening a picker. */
+  5781	    void onExportGlbRequestedForTest(byte[] bytes) {
+  5782	        pendingGlbBytes = bytes;
+  5783	    }
+  5784	
+  5785	    /** The user picked somewhere to put the exported model. */
+  5786	    void onCreateGlbDocumentChosen(android.net.Uri destination) {
+  5787	        final byte[] bytes = pendingGlbBytes;
+  5788	        pendingGlbBytes = null;
+  5789	        if (destination == null || bytes == null) {
+  5790	            // Cancel. A no-op by construction: nothing was written, and the
+  5791	            // export direction only ever read the project.
+  5792	            Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "EXPORT_GLB_CANCELLED", null);
+  5793	            return;
+  5794	        }
+  5795	        if (!ProjectTransfer.writeTo(getContext(), destination, bytes)) {
+  5796	            showStatus(getContext().getString(R.string.status_export_glb_failed),
+  5797	                    R.attr.fsTextError);
+  5798	            return;
+  5799	        }
+  5800	        Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "EXPORT_GLB_WROTE",
+----- EditorWorkspaceView.java:6004,6004
+  6004	    private byte[] pendingCopyBytes;
+----- EditorWorkspaceView.java:6047,6064
+  6047	    void onCreateProjectDocumentChosen(android.net.Uri destination) {
+  6048	        final byte[] bytes = pendingCopyBytes;
+  6049	        pendingCopyBytes = null;
+  6050	        if (destination == null || bytes == null) {
+  6051	            // Cancel. A no-op by construction: nothing was written, the manual
+  6052	            // slot was never involved, and the live project was only read.
+  6053	            Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "SAVE_COPY_CANCELLED", null);
+  6054	            return;
+  6055	        }
+  6056	        if (!ProjectTransfer.writeTo(getContext(), destination, bytes)) {
+  6057	            showStatus(getContext().getString(R.string.status_project_copy_failed),
+  6058	                    R.attr.fsTextError);
+  6059	            return;
+  6060	        }
+  6061	        Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "SAVE_COPY_WROTE",
+  6062	                "bytes=" + bytes.length);
+  6063	        showStatus(getContext().getString(R.string.status_project_copy_saved, projectSummary()),
+  6064	                R.attr.fsTextSuccess);
+----- EditorWorkspaceView.java:6104,6111
+  6104	        // The file IS what the user has stored, so a New Project straight
+  6105	        // after this asks nothing.
+  6106	        noteProjectPersisted();
+  6107	        dismissPrimarySurfacesExcept(null);
+  6108	        onNativeStateChanged();
+  6109	        // The live project is now something that exists nowhere in this app's
+  6110	        // own storage, so it is exactly the case autosave is for.
+  6111	        noteProjectMaybeDirty();
+----- ForgeShapeActivity.java:268,280
+   268	    void requestTheme(AppTheme theme) {
+   269	        final AppPreferences before = AppPreferencesStore.current(this);
+   270	        if (theme == null || !AppPreferencesStore.update(this, before.withPalette(theme))) {
+   271	            return;  // already wearing it; recreating would flash for nothing
+   272	        }
+   273	        // The session state goes with it. Changing colour must not also snap
+   274	        // the display unit back to meters, close the Property Inspector or
+   275	        // re-point the Tool Rail — none of which the user asked for.
+   276	        if (workspace != null) {
+   277	            EditorUiState.carryAcrossRecreation(workspace.uiState());
+   278	        }
+   279	        recreate();
+   280	    }
+----- ForgeShapeActivity.java:353,359
+   353	    protected void onStop() {
+   354	        super.onStop();
+   355	        Diagnostics.info(DiagnosticLog.CAT_LIFECYCLE, "ACTIVITY_STOP",
+   356	                isChangingConfigurations() ? "config" : "background");
+   357	        if (workspace != null) {
+   358	            workspace.requestImmediateCheckpoint();
+   359	        }
+----- ForgeShapeActivity.java:513,537
+   513	    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+   514	        super.onActivityResult(requestCode, resultCode, data);
+   515	        if (workspace == null) {
+   516	            return;
+   517	        }
+   518	        final android.net.Uri uri =
+   519	                (resultCode == RESULT_OK && data != null) ? data.getData() : null;
+   520	        switch (requestCode) {
+   521	            case REQUEST_CREATE_PROJECT_DOCUMENT:
+   522	                workspace.onCreateProjectDocumentChosen(uri);
+   523	                break;
+   524	            case REQUEST_OPEN_PROJECT_DOCUMENT:
+   525	                workspace.onOpenProjectDocumentChosen(uri);
+   526	                break;
+   527	            case REQUEST_CREATE_DIAGNOSTICS_DOCUMENT:
+   528	                workspace.onCreateDiagnosticsDocumentChosen(uri);
+   529	                break;
+   530	            case REQUEST_CREATE_GLB_DOCUMENT:
+   531	                workspace.onCreateGlbDocumentChosen(uri);
+   532	                break;
+   533	            case REQUEST_OPEN_GLB_DOCUMENT:
+   534	                workspace.onOpenGlbDocumentChosen(uri);
+   535	                break;
+   536	            default:
+   537	                break;
+----- ForgeShapeActivity.java:569,584
+   569	    protected void onDestroy() {
+   570	        super.onDestroy();
+   571	        // ALWAYS, configuration change included, and that is the difference
+   572	        // between this and native code. The render thread and every GPU buffer
+   573	        // are expensive and are deliberately kept alive across a recreation; the
+   574	        // autosave worker is one thread that the rebuilt workspace immediately
+   575	        // replaces with its own, so keeping the old one would leak a thread per
+   576	        // theme change. Releasing does not cancel the checkpoint `onStop` just
+   577	        // asked for — see AutosaveController#release.
+   578	        if (workspace != null) {
+   579	            workspace.releaseAutosave();
+   580	        }
+   581	        if (!isChangingConfigurations()) {
+   582	            NativeViewport.stop();
+   583	        }
+   584	    }
+----- AndroidManifest.xml:31
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|screenLayout|density"
+----- ProjectTransfer.java:95-100,122-126
+    static Intent createDocumentIntent() {
+        final Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(CREATE_MIME_TYPE);
+        intent.putExtra(Intent.EXTRA_TITLE, SUGGESTED_FILE_NAME);
+        return intent;
+    static Intent createGlbDocumentIntent() {
+        final Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(GLB_MIME_TYPE);
+        intent.putExtra(Intent.EXTRA_TITLE, SUGGESTED_GLB_FILE_NAME);

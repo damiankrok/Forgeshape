@@ -1,0 +1,23 @@
+{
+  "result": "PASS",
+  "detail": "25/25 startup tokens in order, NATIVE_VIEWPORT_OK, 0 failure tokens; com.forgeshape.app.GlbExportTest,com.forgeshape.app.SpatialSketchTest,com.forgeshape.app.SketchExtrudeTest,com.forgeshape.app.CadCanvasExtrudeTest,com.forgeshape.app.CadPlanarFaceRuntimeTest,com.forgeshape.app.CadPlanarFaceOwnerCorrectionTest OK (63 tests)",
+  "phase": "done",
+  "serial": "emulator-5580",
+  "avd": "ForgeShape_CI_API36",
+  "avd_name_confirmed": "ForgeShape_CI_API36",
+  "system_image": "system-images;android-36;google_apis;x86_64",
+  "device_profile": "medium_phone",
+  "gpu_mode": "swiftshader_indirect",
+  "boot_seconds": "51",
+  "startup_seconds": "21",
+  "startup_capture_used": "1",
+  "selftest_tokens_expected": 25,
+  "selftest_tokens_found": 25,
+  "selftest_tokens_in_order": true,
+  "native_viewport_ok": true,
+  "failure_token_lines": 0,
+  "test_class": "com.forgeshape.app.GlbExportTest,com.forgeshape.app.SpatialSketchTest,com.forgeshape.app.SketchExtrudeTest,com.forgeshape.app.CadCanvasExtrudeTest,com.forgeshape.app.CadPlanarFaceRuntimeTest,com.forgeshape.app.CadPlanarFaceOwnerCorrectionTest",
+  "tests_run": 63,
+  "tests_failed": 0,
+  "test_seconds": "1365"
+}

@@ -1,0 +1,15 @@
+778f324fd348a09f3c1cfd89b6ea32491b6bbb697be69c6849fde3b597c02a84  ./post-test-screenshot.png
+38a03239264d06a19a0d267eef4ae8985c0038e448f1e5a918a25b7c3061cd00  ./screens/cad-foundation-c2/zoom_close.png
+727b5731248ebba9baa673a679a67334766f3fae2a6e389401a92dd63511d03e  ./screens/cad-foundation-c2/zoom_far.png
+24b3e576f939a8d7b4f2fe9b5fd48c30f2d5ccd864659e629d7f398d1f3ea22b  ./screens/cad-foundation-c2/zoom_normal.png
+a7358f6085e1c866d8b7ad291adbbf90620db2024644593928983405a52d2768  ./screens/cad-foundation-c2/zoom_very_far.png
+d448a945d7c1568c39d387a4a0f553bb4acff25769b7e64dc8a5000b00d05cf2  ./screens/cad-v6-s2-correction/j1_00_finished.png
+e27882ec66e891e9446d5a1ecd734ced3a7bc2d57eebf33c3487aa1a415911ff  ./screens/cad-v6-s2-correction/j1_03_three_cells.png
+c2b99fb00ac9e43febeac19d2d8f1919d80f471d825c22531fabfe58639bc685  ./screens/cad-v6-s2-correction/j1_08_all_cells.png
+8711c7f498461904f6245293f0f876a307caa612824f04f450c9f6eeeeafb7a5  ./screens/cad-v6-s2-correction/j5_distance_140.png
+d4a5d2799b6a29d279d655bc356595626ef8f1653ff45ff740d5898e5d949829  ./screens/cad-v6-s2-correction/j5_distance_35.png
+5fb35d12a30002e8de2dd5359dd3b06d8bb3b963476662b5124b9f8d4ffa4b31  ./screens/cad-v6-s2-correction/j5_distance_70.png
+252390de2766335332c84fb788b9777eb1b63df5a1905c63f73f3d7e5bd125d8  ./screens/cad-v6-s2-correction/j5_orbit_step_0.png
+746d51c73208e2c6b0b767aadbd1868734e395e3d20cb633d428368aa1bcde62  ./screens/cad-v6-s2-correction/j5_orbit_step_12.png
+f72cb80a2e4c75161fed7cb78dcab04528ead2bf9e87250c117fda9f087287f4  ./screens/cad-v6-s2-correction/j5_orbit_step_24.png
+cd9c3da8082c0373a52805c0ad5764248d3762237ab5631c170d37ee6cfbe71a  ./startup-screenshot.png

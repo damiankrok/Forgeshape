@@ -1,0 +1,27 @@
+CR-04 — exact commands (host Linux, g++, product tree identical to 70a6c14; `git diff --stat 70a6c14 HEAD -- app` is empty)
+
+CPP=/home/user/Forgeshape/app/src/main/cpp
+D=/home/user/Forgeshape/artifacts/function-council-r2-closeout/diagnostics/CR-04
+S=/tmp/claude-0/fc2c-scratch/CR-04
+mkdir -p $S/obj && cd $S
+
+# 1. Every product + self-test translation unit except forgeshape_jni.cpp and
+#    forgeshape_renderer.cpp, with the flags of scripts/host-native-selftests.sh
+#    (COMMON + -Wall -Wextra -Wno-unused-parameter). 98 objects.     exit=0
+ls $CPP/forgeshape_*.cpp | grep -v -e forgeshape_jni.cpp -e forgeshape_renderer.cpp \
+ | xargs -P4 -I{} sh -c 'g++ -std=c++17 -O1 -g0 -I'$CPP' -I'$CPP'/third_party/manifold/include \
+     -DMANIFOLD_PAR=-1 -DMANIFOLD_NO_IOSTREAM -DMANIFOLD_NO_FILESYSTEM -Wall -Wextra \
+     -Wno-unused-parameter -c {} -o obj/$(basename {} .cpp).o'
+ar rcs libfs.a obj/*.o
+
+# 2. Link the diagnostic (vendored-kernel archive = the one host-native-selftests.sh
+#    caches; the vendored tree is unmodified).                         exit=0
+g++ -std=c++17 -O1 -g0 -I$CPP -Wall -Wextra -Wno-unused-parameter \
+    $D/cr04_notretained_undo.cpp libfs.a /home/user/Forgeshape/build/host-selftests/kernel/libmanifold.a -o cr04
+
+# 3. Run (exit 1 = at least one CONTRACT check failed; 9 FAIL lines, all in the
+#    two SUBJECT scenarios; both CONTROL scenarios all PASS).
+./cr04 > cr04.out ; echo $?          -> 1
+./cr04 > cr04_rerun.out ; cmp cr04.out cr04_rerun.out   -> identical (deterministic)
+
+Recorded output: cr04.out (copied verbatim from $S/cr04.out). No binary is committed.

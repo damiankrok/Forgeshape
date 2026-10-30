@@ -1,0 +1,28 @@
+CR-06 diagnostics — exact commands and exit codes (baseline product tree 70a6c14; run 2026-10-30, Linux host, g++ / OpenJDK 21.0.12.1)
+Binaries and class files live only in /tmp/claude-0/fc2c-scratch/CR-06 (never committed).
+
+1) Host native objects (the unmodified script, own output dir, kernel lib copied from build/host-selftests):
+   S=/tmp/claude-0/fc2c-scratch/CR-06
+   mkdir -p $S/host/kernel && cp build/host-selftests/kernel/libmanifold.a $S/host/kernel/
+   HOST_SELFTEST_OUT=$S/host bash scripts/host-native-selftests.sh SKETCH_UX
+   -> "HOST_SUITE_OK SKETCH_UX (118 checks, 0 failed, 5 ms)" / "HOST_SELFTESTS_OK (118 checks, 0 failed)"  exit=0
+
+2) Native diagnostic (comma -> model; navigator camera):
+   CPP=app/src/main/cpp
+   g++ -std=c++17 -O1 -g0 -I$CPP -I$CPP/third_party/manifold/include -DMANIFOLD_PAR=-1 \
+       -DMANIFOLD_NO_IOSTREAM -DMANIFOLD_NO_FILESYSTEM \
+       artifacts/function-council-r2-closeout/diagnostics/CR-06/cr06_native.cpp \
+       $S/host/obj/*.o $S/host/kernel/libmanifold.a -o $S/cr06_native          exit=0
+   $S/cr06_native > cr06_native.out                                             exit=0
+
+3) Java diagnostic (product LengthUnit/ExactExpression/CadRevolvePresentation compiled UNMODIFIED;
+   NativeViewport.java here is a constants-only stub so CadRevolvePresentation compiles):
+   J=app/src/main/java/com/forgeshape/app
+   javac -d $S/jcls $J/LengthUnit.java $J/ExactExpression.java $J/CadRevolvePresentation.java \
+         diagnostics/CR-06/NativeViewport.java diagnostics/CR-06/CommaDiag.java  exit=0
+   for L in "en US" "de DE" "pl PL" "fr FR"; do set -- $L;
+       java -Duser.language=$1 -Duser.country=$2 -cp $S/jcls com.forgeshape.app.CommaDiag; done
+   -> CommaDiag.out (each run exit=0; the four locale blocks are identical apart from default_locale)
+
+Not runnable here: android.text.method.DigitsKeyListener (android.jar is stubs), the Android back
+dispatcher, layout measurement. Those are E2 (source) / E3 (recorded CI DEVICE 40797031704 facts).

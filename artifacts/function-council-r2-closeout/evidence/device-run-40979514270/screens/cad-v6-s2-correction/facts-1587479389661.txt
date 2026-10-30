@@ -1,0 +1,6 @@
+sketch.grid_step=0.25
+sketch.unit=0.25
+tap.a_only=413.26456,1136.6323 corridor=false status=0
+tap.lens=630.30756,1224.9546 corridor=false status=0
+tap.b_only=737.7014,1267.8958 corridor=false status=0
+j3.union_volume_m3=0.626977791684375

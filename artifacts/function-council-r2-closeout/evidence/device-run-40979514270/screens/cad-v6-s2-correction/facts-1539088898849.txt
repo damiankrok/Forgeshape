@@ -1,0 +1,4 @@
+sketch.grid_step=0.25
+sketch.unit=0.25
+tap.loop_out=413.26456,1675.2578 corridor=false status=0
+j4.spline_cell_volume_m3=0.12000361525294419

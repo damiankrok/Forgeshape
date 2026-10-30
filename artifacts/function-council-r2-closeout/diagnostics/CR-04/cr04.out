@@ -1,0 +1,123 @@
+INFO kMaxSculptHistoryEntryBytes=1048576 entries=32 total=4194304
+=== SCENARIO CONTROL_A_no_big_stroke (normal=3 big=0)
+INFO froze=1 vertices=62500 hitsCentre=1 mode_sculpt=1
+INFO stroke1 moved=1 undoDepth=1 topVertices=149 topPayload=4300 notRetained=0
+INFO stroke2 moved=1 undoDepth=2 topVertices=151 topPayload=4356 notRetained=0
+INFO stroke3 moved=1 undoDepth=3 topVertices=148 topPayload=4272 notRetained=0
+INFO navigator before undo: cursor=3 stateCount=4
+INFO undo=ok hasEdits=1
+  afterUndo vs S0: maxAbs=0.024182 differingVertices=300
+  afterUndo vs S1: maxAbs=0.024073 differingVertices=151
+  afterUndo vs S2: maxAbs=0.000000 differingVertices=0
+  afterUndo vs S3: maxAbs=0.023746 differingVertices=148
+  afterUndo vs S_big(or dup of Sn in control A): maxAbs=0.023746 differingVertices=148
+  afterUndo nearest existing state maxAbs=0.000000 match=2
+PASS K3_undo_lands_on_a_state_that_existed
+INFO afterUndo differsFromS0=1 hasEdits=1
+PASS K4_hasEdits_truthful_after_undo
+INFO redo=ok hasEdits=1
+  afterRedo vs S0: maxAbs=0.024182 differingVertices=448
+  afterRedo vs S1: maxAbs=0.024073 differingVertices=299
+  afterRedo vs S2: maxAbs=0.023746 differingVertices=148
+  afterRedo vs S3: maxAbs=0.000000 differingVertices=0
+  afterRedo vs S_big(or dup of Sn in control A): maxAbs=0.000000 differingVertices=0
+  afterRedo nearest existing state maxAbs=0.000000 match=3
+PASS K5_redo_lands_on_a_state_that_existed
+INFO jump0=ok hasEdits=0
+  afterJump0 vs S0: maxAbs=0.000000 differingVertices=0
+  afterJump0 vs S1: maxAbs=0.024182 differingVertices=149
+  afterJump0 vs S2: maxAbs=0.024182 differingVertices=300
+  afterJump0 vs S3: maxAbs=0.024182 differingVertices=448
+  afterJump0 vs S_big(or dup of Sn in control A): maxAbs=0.024182 differingVertices=448
+  afterJump0 nearest existing state maxAbs=0.000000 match=0
+PASS K6_navigator_row0_is_a_state_that_existed
+PASS K7_hasEdits_truthful_after_jump
+=== SCENARIO CONTROL_B_big_stroke_on_empty_stack (normal=0 big=1)
+INFO froze=1 vertices=62500 hitsCentre=1 mode_sculpt=1
+INFO big stroke moved=1 verticesChanged=62440 payloadIfRetained~=1748448 cap=1048576 undoDepth=0 notRetained=1 hasEdits=1
+PASS K1_oversized_stroke_applies
+PASS K2_and_is_named_not_retained_and_not_pushed
+INFO navigator before undo: cursor=0 stateCount=1
+INFO undo=nothing_to_do hasEdits=1
+  afterUndo vs S0: maxAbs=0.024248 differingVertices=62440
+  afterUndo vs S_big(or dup of Sn in control A): maxAbs=0.000000 differingVertices=0
+  afterUndo nearest existing state maxAbs=0.000000 match=1
+PASS K3_undo_lands_on_a_state_that_existed
+INFO afterUndo differsFromS0=1 hasEdits=1
+PASS K4_hasEdits_truthful_after_undo
+INFO redo=nothing_to_do hasEdits=1
+  afterRedo vs S0: maxAbs=0.024248 differingVertices=62440
+  afterRedo vs S_big(or dup of Sn in control A): maxAbs=0.000000 differingVertices=0
+  afterRedo nearest existing state maxAbs=0.000000 match=1
+PASS K5_redo_lands_on_a_state_that_existed
+INFO jump0=nothing_to_do hasEdits=1
+  afterJump0 vs S0: maxAbs=0.024248 differingVertices=62440
+  afterJump0 vs S_big(or dup of Sn in control A): maxAbs=0.000000 differingVertices=0
+  afterJump0 nearest existing state maxAbs=0.000000 match=1
+PASS K6_navigator_row0_is_a_state_that_existed
+PASS K7_hasEdits_truthful_after_jump
+=== SCENARIO SUBJECT_big_stroke_after_3_retained (normal=3 big=1)
+INFO froze=1 vertices=62500 hitsCentre=1 mode_sculpt=1
+INFO stroke1 moved=1 undoDepth=1 topVertices=149 topPayload=4300 notRetained=0
+INFO stroke2 moved=1 undoDepth=2 topVertices=151 topPayload=4356 notRetained=0
+INFO stroke3 moved=1 undoDepth=3 topVertices=148 topPayload=4272 notRetained=0
+INFO big stroke moved=1 verticesChanged=62416 payloadIfRetained~=1747776 cap=1048576 undoDepth=3 notRetained=1 hasEdits=1
+PASS K1_oversized_stroke_applies
+PASS K2_and_is_named_not_retained_and_not_pushed
+INFO navigator before undo: cursor=3 stateCount=4
+INFO undo=ok hasEdits=1
+  afterUndo vs S0: maxAbs=0.043968 differingVertices=62268
+  afterUndo vs S1: maxAbs=0.043968 differingVertices=62268
+  afterUndo vs S2: maxAbs=0.024054 differingVertices=62268
+  afterUndo vs S3: maxAbs=0.024054 differingVertices=62416
+  afterUndo vs S_big(or dup of Sn in control A): maxAbs=0.047676 differingVertices=148
+  afterUndo nearest existing state maxAbs=0.024054 match=-1
+FAIL K3_undo_lands_on_a_state_that_existed
+INFO afterUndo differsFromS0=1 hasEdits=1
+PASS K4_hasEdits_truthful_after_undo
+INFO redo=ok hasEdits=1
+  afterRedo vs S0: maxAbs=0.043968 differingVertices=62416
+  afterRedo vs S1: maxAbs=0.043968 differingVertices=62416
+  afterRedo vs S2: maxAbs=0.024054 differingVertices=62416
+  afterRedo vs S3: maxAbs=0.024054 differingVertices=62268
+  afterRedo vs S_big(or dup of Sn in control A): maxAbs=0.023930 differingVertices=148
+  afterRedo nearest existing state maxAbs=0.023930 match=-1
+FAIL K5_redo_lands_on_a_state_that_existed
+INFO jump0=ok hasEdits=0
+  afterJump0 vs S0: maxAbs=0.024054 differingVertices=61968
+  afterJump0 vs S1: maxAbs=0.024182 differingVertices=62117
+  afterJump0 vs S2: maxAbs=0.024182 differingVertices=62268
+  afterJump0 vs S3: maxAbs=0.024182 differingVertices=62416
+  afterJump0 vs S_big(or dup of Sn in control A): maxAbs=0.047676 differingVertices=448
+  afterJump0 nearest existing state maxAbs=0.024054 match=-1
+FAIL K6_navigator_row0_is_a_state_that_existed
+FAIL K7_hasEdits_truthful_after_jump
+=== SCENARIO SUBJECT_big_stroke_after_1_retained (normal=1 big=1)
+INFO froze=1 vertices=62500 hitsCentre=1 mode_sculpt=1
+INFO stroke1 moved=1 undoDepth=1 topVertices=149 topPayload=4300 notRetained=0
+INFO big stroke moved=1 verticesChanged=62440 payloadIfRetained~=1748448 cap=1048576 undoDepth=1 notRetained=1 hasEdits=1
+PASS K1_oversized_stroke_applies
+PASS K2_and_is_named_not_retained_and_not_pushed
+INFO navigator before undo: cursor=1 stateCount=2
+INFO undo=ok hasEdits=0
+  afterUndo vs S0: maxAbs=0.024248 differingVertices=62291
+  afterUndo vs S1: maxAbs=0.024248 differingVertices=62440
+  afterUndo vs S_big(or dup of Sn in control A): maxAbs=0.034108 differingVertices=149
+  afterUndo nearest existing state maxAbs=0.024248 match=-1
+FAIL K3_undo_lands_on_a_state_that_existed
+INFO afterUndo differsFromS0=1 hasEdits=0
+FAIL K4_hasEdits_truthful_after_undo
+INFO redo=ok hasEdits=1
+  afterRedo vs S0: maxAbs=0.024248 differingVertices=62440
+  afterRedo vs S1: maxAbs=0.024248 differingVertices=62291
+  afterRedo vs S_big(or dup of Sn in control A): maxAbs=0.011322 differingVertices=149
+  afterRedo nearest existing state maxAbs=0.011322 match=-1
+FAIL K5_redo_lands_on_a_state_that_existed
+INFO jump0=ok hasEdits=0
+  afterJump0 vs S0: maxAbs=0.024248 differingVertices=62291
+  afterJump0 vs S1: maxAbs=0.024248 differingVertices=62440
+  afterJump0 vs S_big(or dup of Sn in control A): maxAbs=0.034108 differingVertices=149
+  afterJump0 nearest existing state maxAbs=0.024248 match=-1
+FAIL K6_navigator_row0_is_a_state_that_existed
+FAIL K7_hasEdits_truthful_after_jump
+RESULT failures=9

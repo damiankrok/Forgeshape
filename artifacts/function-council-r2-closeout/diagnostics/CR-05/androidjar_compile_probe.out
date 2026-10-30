@@ -1,0 +1,9 @@
+$ javac -nowarn -d out2 -cp /root/android-sdk/platforms/android-36/android.jar -sourcepath /home/user/Forgeshape/app/src/main/java AutosaveController.java ProjectCheckpoint.java ProjectSlot.java EditorUiState.java
+Note: /home/user/Forgeshape/app/src/main/java/com/forgeshape/app/Diagnostics.java uses or overrides a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+javac_exit=0
+$ javac -d out2 -cp out2:android.jar Probe.java && java -cp out2:android.jar com.forgeshape.app.Probe
+EditorUiState: loads and constructs on plain JVM against android.jar classes
+android.os.HandlerThread (needed by AutosaveController:89): java.lang.RuntimeException: Stub!
+android.content.Context is abstract in android.jar: true
+java_exit=0

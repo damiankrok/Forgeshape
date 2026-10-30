@@ -1,0 +1,5 @@
+sketch.grid_step=0.25
+sketch.unit=0.25
+tap.lens=540.0,1136.6323 corridor=false status=0
+tap.b_only=664.29114,1238.5428 corridor=false status=0
+tap.lens=561.98346,1197.6354 corridor=true status=0

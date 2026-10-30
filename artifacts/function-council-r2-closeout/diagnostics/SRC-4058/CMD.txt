@@ -1,0 +1,10 @@
+# SRC-4058 extraction generator (row data + quote verification). Not a product diagnostic.
+# Run from any directory; Python 3, isolated mode. Writes the TSV and prints "rows N" plus any BAD line
+# (a BAD line = quote not found verbatim in the source after whitespace collapse, quote >200 chars, or duplicate quote).
+mkdir -p /tmp/claude-0/fc2c-scratch/SRC-4058
+python3 -I artifacts/function-council-r2-closeout/diagnostics/SRC-4058/gen_extract_SRC-4058.py \
+  artifacts/function-council-r2-closeout/sources \
+  /tmp/claude-0/fc2c-scratch/SRC-4058/out.tsv
+# recorded output (2026-10-30): "rows 453", no BAD lines, exit 0
+cmp /tmp/claude-0/fc2c-scratch/SRC-4058/out.tsv artifacts/function-council-r2-closeout/work/extract_SRC-4058.tsv
+# recorded: identical, exit 0

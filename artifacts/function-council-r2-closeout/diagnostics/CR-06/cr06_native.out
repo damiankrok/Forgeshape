@@ -1,0 +1,28 @@
+A1 extrude finish=Ok depth_before=1 setExtrudeSide(true,25)=Ok depth_after=25
+A2 line applyLineLength(25)=Ok end=(15,20) length=25
+A3 body applyBodyDimension(axis=0,25) status=0 scaleX 1 -> 12.5 undoDepth=1
+A1 extrude finish=Ok depth_before=1 setExtrudeSide(true,2.5)=Ok depth_after=2.5
+A2 line applyLineLength(2.5)=Ok end=(1.5,2) length=2.5
+A3 body applyBodyDimension(axis=0,2.5) status=0 scaleX 1 -> 1.25 undoDepth=1
+A1 extrude finish=Ok depth_before=1 setExtrudeSide(true,10005)=Ok depth_after=10005
+A2 line applyLineLength(10005)=Ok end=(6003,8004) length=10005
+A3 body applyBodyDimension(axis=0,10005) status=0 scaleX 1 -> 5002.5 undoDepth=1
+B0 frame()     u=(1,0,0) v=(0,1,0) n=(0,0,1)
+B0 viewFrame() u=(1,0,0) v=(0,1,0) n=(0,0,1)
+B0 camera(beginSketchView) eye=(0.0000,0.0000,250.0000) target=(0.0000,0.0000,0.0000)
+B0 camera(beginSketchView) view=[1.0000,0.0000,-0.0000,0.0000,-0.0000,1.0000,-0.0000,0.0000,0.0000,0.0000,1.0000,0.0000,-0.0000,-0.0000,-250.0000,1.0000]
+B1 frame()     u=(1,0,0) v=(0,1,0) n=(0,0,1)
+B1 viewFrame() u=(1,0,0) v=(-0,-1,-0) n=(-0,-0,-1)
+B1 camera(beginSketchView) eye=(0.0000,0.0000,250.0000) target=(0.0000,0.0000,0.0000)
+B1 camera(beginSketchView) view=[1.0000,0.0000,-0.0000,0.0000,-0.0000,1.0000,-0.0000,0.0000,0.0000,0.0000,1.0000,0.0000,-0.0000,-0.0000,-250.0000,1.0000]
+B1 control camera(viewFrame) eye=(0.0000,0.0000,-250.0000) target=(0.0000,0.0000,0.0000)
+B1 control camera(viewFrame) view=[1.0000,0.0000,-0.0000,0.0000,0.0000,-1.0000,-0.0000,0.0000,0.0000,0.0000,-1.0000,0.0000,-0.0000,-0.0000,-250.0000,1.0000]
+B1 viewFlipped=1 camera_view_identical_to_B0=1 control_differs_from_B0=1
+B2 viewFrame() u=(-0,-1,-0) v=(1,0,0) n=(0,0,1)
+B2 camera(beginSketchView) eye=(0.0000,0.0000,250.0000) target=(0.0000,0.0000,0.0000)
+B2 camera(beginSketchView) view=[1.0000,0.0000,-0.0000,0.0000,-0.0000,1.0000,-0.0000,0.0000,0.0000,0.0000,1.0000,0.0000,-0.0000,-0.0000,-250.0000,1.0000]
+B2 control camera(viewFrame) eye=(0.0000,0.0000,250.0000) target=(0.0000,0.0000,0.0000)
+B2 control camera(viewFrame) view=[0.0000,1.0000,-0.0000,0.0000,-1.0000,0.0000,-0.0000,0.0000,0.0000,0.0000,1.0000,0.0000,-0.0000,-0.0000,-250.0000,1.0000]
+B2 quarterTurns=1 camera_view_identical_to_B0=1 control_differs_from_B0=1
+B3 viewFrame() u=(0,1,0) v=(-1,-0,-0) n=(0,0,1)
+B3 quarterTurns=3 camera_view_identical_to_B0=1 control_differs_from_B0=1

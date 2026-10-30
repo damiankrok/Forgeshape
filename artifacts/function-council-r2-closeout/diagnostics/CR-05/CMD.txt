@@ -1,0 +1,41 @@
+CR-05 — Recovery, Save-and-continue, Activity recreation — exact commands
+Baseline product tree: 70a6c14 (verified: `git diff 70a6c14 HEAD -- app/ | wc -l` = 0 on the audit branch)
+Environment: Linux container, OpenJDK javac/java from PATH, android.jar = /root/android-sdk/platforms/android-36/android.jar
+No gradle. No device. No emulator. No product file modified. Binaries only under /tmp/claude-0/fc2c-scratch/CR-05/.
+
+1. Can the product persistence classes run on a plain JVM?
+   cd /tmp/claude-0/fc2c-scratch/CR-05/androidjar
+   javac -nowarn -d out2 -cp android.jar -sourcepath app/src/main/java \
+       AutosaveController.java ProjectCheckpoint.java ProjectSlot.java EditorUiState.java   -> exit 0
+   javac -d out2 -cp out2:android.jar androidjar_Probe.java ; java -cp out2:android.jar com.forgeshape.app.Probe -> exit 0
+   Output: androidjar_compile_probe.out
+   Result: all four COMPILE against android.jar; at RUN time EditorUiState works, but
+   android.os.HandlerThread (AutosaveController:89) throws "java.lang.RuntimeException: Stub!"
+   and android.content.Context is abstract. EditorWorkspaceView / ForgeShapeActivity /
+   ProjectTransfer cannot run off-device at all (View, Activity, ContentResolver, Uri).
+
+2. Host reproduction (real classes + sandbox shims)
+   bash artifacts/function-council-r2-closeout/diagnostics/CR-05/build_and_run.sh > build_and_run.out 2>&1
+   script exit 0; inside it: javac_exit=0, java_exit=0
+   Output: build_and_run.out (JAVA_TOOL_OPTIONS banner lines removed)
+   What is REAL (byte-identical copies, sha256 printed SAME in the output):
+     AutosaveController.java, ProjectCheckpoint.java, ProjectSlot.java, EditorUiState.java,
+     LengthUnit.java, DiagnosticLog.java
+   What is a SHIM (shim/): android.content.Context (getFilesDir -> a fresh temp dir per scenario),
+     android.os.{Handler,HandlerThread,Looper,SystemClock} (single-thread queue, Android ordering,
+     removeCallbacks, quitSafely), com.forgeshape.app.Diagnostics (prints tokens),
+     com.forgeshape.app.NativeViewport (FAKE: project = opaque byte string; fingerprint = FNV-1a 64
+     of it; loadProject replaces it and empties undo).
+   What is a TRANSCRIPTION (harness/WorkspaceTranscript.java): the persistence-relevant methods of
+     EditorWorkspaceView.java, line-cited; UI-only statements replaced by booleans/status strings.
+   Lifecycle edges are modelled from ForgeShapeActivity.java (requestTheme :268-280, onStop :353-359,
+     onDestroy :569-584). In `recreate()` the old worker's queued onStop write is drained BEFORE the
+     new workspace is built (deterministic choice; the real order is a race, see E-02 notes).
+
+3. Transcription check (read-only; prints every cited product line)
+   bash artifacts/function-council-r2-closeout/diagnostics/CR-05/transcription_check.sh > transcription_check.out 2>&1
+   exit 0
+
+Exit codes recorded: step 1 javac 0 / java 0; step 2 script 0 (javac 0, java 0); step 3 0.
+User files: none touched. Every scenario's filesDir is a mktemp directory under
+/tmp/claude-0/fc2c-scratch/CR-05/run/.
