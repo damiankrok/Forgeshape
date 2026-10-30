@@ -1,0 +1,19 @@
+PER_LEVEL signature+resolveFace(+farCap enum) median_us=6.6
+CHAIN n=0 built=1 items=1 snapshot_median_us=0.5 last_z=0.000 resolved=1
+FAN   n=0 built=1 items=1 snapshot_median_us=0.4
+PLAIN n=0 items=1 snapshot_median_us=0.4
+CHAIN n=1 built=1 items=2 snapshot_median_us=5.5 last_z=1.000 resolved=1
+FAN   n=1 built=1 items=2 snapshot_median_us=5.5
+PLAIN n=1 items=2 snapshot_median_us=0.8
+CHAIN n=8 built=1 items=9 snapshot_median_us=166.7 last_z=8.000 resolved=1
+FAN   n=8 built=1 items=9 snapshot_median_us=41.0
+PLAIN n=8 items=9 snapshot_median_us=3.6
+CHAIN n=16 built=1 items=17 snapshot_median_us=673.2 last_z=16.000 resolved=1
+FAN   n=16 built=1 items=17 snapshot_median_us=81.6
+PLAIN n=16 items=17 snapshot_median_us=6.8
+CHAIN n=32 built=1 items=33 snapshot_median_us=2551.4 last_z=32.000 resolved=1
+FAN   n=32 built=1 items=33 snapshot_median_us=161.1
+PLAIN n=32 items=33 snapshot_median_us=12.9
+CHAIN n=64 built=1 items=65 snapshot_median_us=10427.1 last_z=64.000 resolved=1
+FAN   n=64 built=1 items=65 snapshot_median_us=344.0
+PLAIN n=64 items=65 snapshot_median_us=25.9

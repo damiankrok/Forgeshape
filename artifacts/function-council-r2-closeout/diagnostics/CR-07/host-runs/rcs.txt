@@ -1,0 +1,7 @@
+clang-fma-on rc=1
+clang-fma-fast rc=1
+clang-fma-off rc=0
+gcc-fma-fast rc=0
+clang-nofma rc=0
+gcc-O2-fma-fast rc=1
+clang-fma-on-O0 rc=1

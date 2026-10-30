@@ -1,0 +1,6 @@
+NO_DIGEST_LITERAL corrupt_crc_v1.forge
+NO_DIGEST_LITERAL truncated_v1.forge
+NO_DIGEST_LITERAL unknown_optional_v1.forge
+NO_DIGEST_LITERAL unknown_required_v1.forge
+NO_DIGEST_LITERAL unsupported_major_v1.forge
+fixtures=72 digest_literal_in_selftest_source=67

@@ -1,0 +1,30 @@
+CAMERA                   host= 119 device_cap= 128 recorded_at_cap= 119 headroom=    9 ok
+PICKING                  host= 185 device_cap= 256 recorded_at_cap= 185 headroom=   71 ok
+DYNAMIC_MESH             host=  91 device_cap= 128 recorded_at_cap=  91 headroom=   37 ok
+CONSTRUCTION_BOX         host= 100 device_cap= 128 recorded_at_cap= 100 headroom=   28 ok
+CONSTRUCTION_TRANSFORM   host= 121 device_cap= 192 recorded_at_cap= 121 headroom=   71 ok
+CONSTRUCTION_PRIMITIVE   host= 126 device_cap= 256 recorded_at_cap= 126 headroom=  130 ok
+CONSTRUCTION_SPHERE      host= 105 device_cap= 192 recorded_at_cap= 105 headroom=   87 ok
+CONE_CAPSULE             host= 163 device_cap= 256 recorded_at_cap= 163 headroom=   93 ok
+SCULPT_BRUSH_KERNEL      host= 655 device_cap= 768 recorded_at_cap= 655 headroom=  113 ok
+RENDER_SHADING           host= 412 device_cap= 512 recorded_at_cap= 412 headroom=  100 ok
+SCENE                    host= 175 device_cap= 256 recorded_at_cap= 175 headroom=   81 ok
+CONSTRUCTION_HISTORY     host= 147 device_cap= 256 recorded_at_cap= 147 headroom=  109 ok
+GIZMO                    host= 176 device_cap= 256 recorded_at_cap= 176 headroom=   80 ok
+PROJECT                  host= 256 device_cap= 256 recorded_at_cap= 256 headroom=    0 AT_CAP
+RENDER_RECOVERY          host=  24 device_cap= 128 recorded_at_cap=  24 headroom=  104 ok
+GLTF_EXPORT              host=  93 device_cap= 128 recorded_at_cap=  93 headroom=   35 ok
+GLTF_IMPORT              host= 189 device_cap= 256 recorded_at_cap= 189 headroom=   67 ok
+CAD                      host= 155 device_cap= 256 recorded_at_cap= 155 headroom=  101 ok
+CAD_A3                   host=  66 device_cap= 128 recorded_at_cap=  66 headroom=   62 ok
+SKETCH_UX                host= 118 device_cap= 256 recorded_at_cap= 118 headroom=  138 ok
+BODY_DIMENSIONS          host= 102 device_cap= 256 recorded_at_cap= 102 headroom=  154 ok
+MIRROR                   host=  62 device_cap= 128 recorded_at_cap=  62 headroom=   66 ok
+CAD_R2_ORACLE_PASS=17
+CAD_R2_ORACLE_PASS=17
+CAD_FEATURE              host= 638 device_cap=1024 recorded_at_cap= 638 headroom=  386 ok
+FREEFORM                 host=  74 device_cap= 256 recorded_at_cap=  74 headroom=  182 ok
+SURFACE                  host=  40 device_cap= 128 recorded_at_cap=  40 headroom=   88 ok
+PROJECT host_last_check[255]=DAR1_02_rebinding_mid_stroke_drops_the_stroke_and_records_it_nowhere
+PROJECT cap=255 recorded=255 failed=0 last=DAR1_02_the_loaded_mesh_is_exactly_the_document_s verdict=OK (check 'DAR1_02_rebinding_mid_stroke_drops_the_stroke_and_records_it_nowhere' silently absent)
+SIM 257 checks (257th fails) cap=256 recorded=256 failed=0 device_token=FORGESHAPE_PROJECT_SELFTEST_OK (256 checks)

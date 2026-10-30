@@ -1,0 +1,13 @@
+ALIAS -- alias -> root-cause map and counts (FUNCTION-COUNCIL-R2-CLOSEOUT-R1)
+No product code is read or built; no binaries. Inputs are the read-only FC2 dossier
+(artifacts/function-council-r2/**) and the closeout's own diagnostics outputs (CR-01..CR-07,
+I01-panel1, PANEL-H08-1), which are only cited.
+
+cd /home/user/Forgeshape
+python3 -I artifacts/function-council-r2-closeout/diagnostics/ALIAS/build_alias_map.py /home/user/Forgeshape \
+    > artifacts/function-council-r2-closeout/diagnostics/ALIAS/build_alias_map.out 2>&1      # exit 0
+  -> writes artifacts/function-council-r2-closeout/ALIAS_TO_ROOT_CAUSE.tsv (251 rows)
+  -> asserts: the 37 DEFECT-CONFIRMED ids of requirements_traceability.tsv == the 37 requirement_row aliases;
+     alias ids unique; every root_cause_id exists in the catalog
+python3 -I artifacts/function-council-r2-closeout/diagnostics/ALIAS/count_aliases.py /home/user/Forgeshape \
+    > artifacts/function-council-r2-closeout/diagnostics/ALIAS/count_aliases.out 2>&1        # exit 0

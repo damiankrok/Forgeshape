@@ -1,0 +1,9 @@
+== probe_a64_off.s:  fmul d1, d0, d1; fadd d0, d0, d1;
+== probe_aarch64-O0.s:  fmadd d0, d0, d1, d2;
+== probe_aarch64-O2.s:  fmadd d0, d0, d2, d1;
+== probe_x86_64-O0.s:  addsd %xmm1, %xmm0; mulsd %xmm1, %xmm0; addsd %xmm1, %xmm0;
+== probe_x86_64-O2.s:  addsd %xmm1, %xmm0; mulsd .LCPI0_2(%rip), %xmm0; addsd .LCPI0_3(%rip), %xmm0;
+== c-O1.s:  vaddsd %xmm0, %xmm1, %xmm1; vfmadd213sd .LCPI0_3(%rip), %xmm1, %xmm0 # xmm0 = (xmm1 * xmm0) + mem;
+== c-O2.s:  vaddsd %xmm0, %xmm1, %xmm1; vfmadd213sd .LCPI0_3(%rip), %xmm1, %xmm0 # xmm0 = (xmm1 * xmm0) + mem;
+== g-O1.s:  vmulsd .LC0(%rip), %xmm0, %xmm0; vaddsd .LC1(%rip), %xmm0, %xmm0; vaddsd %xmm0, %xmm0, %xmm0;
+== g-O2.s:  vfmadd132sd .LC0(%rip), %xmm1, %xmm0; vaddsd %xmm0, %xmm0, %xmm0;

@@ -1,0 +1,23 @@
+# POSCLAIM — positive-claim re-check diagnostics (audit only; no product file touched)
+# Tree: HEAD c51fdb3; app/ scripts/ testdata/ unchanged vs 70a6c14 (git diff --quiet 70a6c14 HEAD -- app scripts testdata -> exit 0)
+# Host: x86_64 Linux, g++ 13, flags exactly as scripts/host-native-selftests.sh (-std=c++17 -O1 -g0, MANIFOLD_PAR=-1, NO_IOSTREAM, NO_FILESYSTEM)
+S=/tmp/claude-0/fc2c-scratch/POSCLAIM ; D=artifacts/function-council-r2-closeout/diagnostics/POSCLAIM ; CPP=app/src/main/cpp
+
+# 1. Fresh full host suite run (product objects rebuilt from scratch: rm -rf $S/host/obj first; kernel lib reused from the same tree's earlier CR-07 build)
+HOST_SELFTEST_OUT=$S/host bash scripts/host-native-selftests.sh > $D/host_run.out      # exit 0, HOST_SELFTESTS_OK (4392 checks, 0 failed), 25 HOST_SUITE_OK
+
+# 2. Same 25 suites, generated main patched ONLY to print every check name (list_checks_main.cpp = the script's host_selftest_main.cpp with the FAIL-only loop replaced by a CHECK <suite> <PASS|FAIL> <name> line per result)
+g++ -std=c++17 -O1 -g0 -I$CPP -I$CPP/third_party/manifold/include -DMANIFOLD_PAR=-1 -DMANIFOLD_NO_IOSTREAM -DMANIFOLD_NO_FILESYSTEM \
+    $D/list_checks_main.cpp $S/host/obj/*.o $S/host/kernel/libmanifold.a -o $S/list_checks   # build exit 0
+$S/list_checks > $S/list_checks.out                                                      # exit 0; 4392 CHECK lines, 0 FAIL
+#   full listing kept in scratch only (too large); committed: list_checks_summary.out (per-suite PASS counts) and
+#   list_checks_relevant.out (grep -E of the check ids cited in work/positive_claims.md; pattern in this file's history: see step 2b)
+# 2b. grep -E "obj018a_0[34]|s027_0[4-7]|^CHECK GIZMO .*(step|cancel|restor|pointer|record|captur)|FSR1A_07|FSR1A_13|FSR1A_09_a_document|IMP01A_20_a_refused|committed_digest|independent_(corpus|builder)|re_encode|roundtrips_bit_for_bit|refused_semantically|refused_as_unresolvable|CADV6_P09|CADV6_P10|PICK_C2|R2_OR_|CADFC2_PF_03b|eviction_is_deterministic|frfm_corpus|surf_corpus|corpus_documents" $S/list_checks.out > $D/list_checks_relevant.out   # 162 lines
+
+# 3. Decode + re-encode every committed fixture (reencode_corpus.cpp; links the product objects without *_selftest.o)
+g++ <flags above> $D/reencode_corpus.cpp $(ls $S/host/obj/*.o | grep -v _selftest.o) $S/host/kernel/libmanifold.a -o $S/reencode_corpus   # build exit 0
+$S/reencode_corpus $(find testdata/forge -name '*.forge' | sort) > $D/reencode_corpus.out   # exit 1 (by design: 1 DIFFERENT = unknown_optional_v1, whose optional unknown section is skipped on decode)
+#   SUMMARY files=72 ok=44 refused=28 reencode_identical=43 reencode_different=1
+
+# 4. Corpus verdict comparison (closeout's own evidence/local/host_corpus_verdicts.txt vs the recorded artifact capture) -> corpus_verdict_checks.out (diff exit 0)
+# 5. bash $D/digest_literals.sh > $D/digest_literals.out   # exit 0
