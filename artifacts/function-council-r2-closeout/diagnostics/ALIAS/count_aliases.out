@@ -13,7 +13,7 @@ panel de-duplicated by the dossier's own duplicate list: 23 ['A-01', 'A-02', 'A-
 all 38 -> distinct mechanisms 29 ['RC-01a', 'RC-01b', 'RC-01c', 'RC-02', 'RC-03', 'RC-04a', 'RC-04b', 'RC-04c', 'RC-06a', 'RC-06b', 'RC-06c', 'RC-06d', 'RC-08a', 'RC-08b', 'RC-09', 'RC-11', 'RC-12', 'RC-13a', 'RC-13b', 'RC-13e', 'RC-13f', 'RC-14a', 'RC-14c', 'RC-15a', 'RC-15b', 'RC-15c', 'RC-15d', 'RC-20', 'RC-NEW-28']
 all 38 -> distinct parent RCs 14
 23 panel roots -> distinct mechanisms 23
-by category (38) {'BUG': 20, 'DESIGN_HOLD': 4, 'DOC_DIVERGENCE': 2, 'TEST_HARNESS_DEFECT': 8, 'PERFORMANCE_RISK': 4}
+by category (38) {'BUG': 20, 'DESIGN_HOLD': 6, 'DOC_DIVERGENCE': 2, 'TEST_HARNESS_DEFECT': 5, 'PERFORMANCE_RISK': 5}
 
 == 4. unit C: every seat finding
 rows 152 | by status {'current': 92, 'narrowed': 13, 'hypothesis': 40, 'withdrawn': 7}
@@ -23,16 +23,16 @@ P3/INFO/other severities (non-hypothesis, not in the 38): 74
 == 5. mechanism level (seat findings + requirement rows)
 distinct mechanism ids (excluding NONE) 94
 BUG                  live= 33 hypothesis-only= 9  ['RC-01a', 'RC-01b', 'RC-02', 'RC-03', 'RC-04a', 'RC-04b', 'RC-04c', 'RC-05a', 'RC-05b', 'RC-05c', 'RC-06a', 'RC-06e', 'RC-07a', 'RC-07b', 'RC-07d', 'RC-08b', 'RC-09', 'RC-10a', 'RC-10b', 'RC-10c', 'RC-11', 'RC-12', 'RC-16a', 'RC-16b', 'RC-17a', 'RC-18a', 'RC-20', 'RC-NEW-01', 'RC-NEW-02', 'RC-NEW-03', 'RC-NEW-05', 'RC-NEW-08', 'RC-NEW-12']
-DESIGN_HOLD          live= 14 hypothesis-only= 1  ['RC-06b', 'RC-06c', 'RC-06d', 'RC-06f', 'RC-07c', 'RC-08a', 'RC-08c', 'RC-17b', 'RC-17c', 'RC-17d', 'RC-19', 'RC-NEW-13', 'RC-NEW-14', 'RC-NEW-22']
-TEST_HARNESS_DEFECT  live= 16 hypothesis-only= 2  ['RC-13a', 'RC-13b', 'RC-13c', 'RC-13d', 'RC-13e', 'RC-13f', 'RC-13g', 'RC-13h', 'RC-14a', 'RC-14b', 'RC-14c', 'RC-14d', 'RC-NEW-24', 'RC-NEW-29', 'RC-NEW-30', 'RC-NEW-32']
+DESIGN_HOLD          live= 15 hypothesis-only= 1  ['RC-06b', 'RC-06c', 'RC-06d', 'RC-06f', 'RC-07c', 'RC-08a', 'RC-08c', 'RC-14a', 'RC-17b', 'RC-17c', 'RC-17d', 'RC-19', 'RC-NEW-13', 'RC-NEW-14', 'RC-NEW-22']
+TEST_HARNESS_DEFECT  live= 14 hypothesis-only= 2  ['RC-13a', 'RC-13b', 'RC-13c', 'RC-13d', 'RC-13e', 'RC-13g', 'RC-13h', 'RC-14b', 'RC-14c', 'RC-14d', 'RC-NEW-24', 'RC-NEW-29', 'RC-NEW-30', 'RC-NEW-32']
 DOC_DIVERGENCE       live=  6 hypothesis-only= 0  ['RC-01c', 'RC-08c', 'RC-18b', 'RC-21', 'RC-NEW-17', 'RC-NEW-28']
 PERFORMANCE_RISK     live=  6 hypothesis-only= 3  ['RC-13f', 'RC-15a', 'RC-15b', 'RC-15c', 'RC-15d', 'RC-NEW-23']
-FUTURE_OPPORTUNITY   live=  5 hypothesis-only= 1  ['RC-19', 'RC-NEW-15', 'RC-NEW-16', 'RC-NEW-19', 'RC-NEW-20']
+FUTURE_OPPORTUNITY   live=  4 hypothesis-only= 1  ['RC-NEW-15', 'RC-NEW-16', 'RC-NEW-19', 'RC-NEW-20']
 
 == 6. unique CURRENT defect mechanisms (category BUG)
 status current only: 27 ['RC-01a', 'RC-01b', 'RC-02', 'RC-03', 'RC-04a', 'RC-04b', 'RC-04c', 'RC-05a', 'RC-05b', 'RC-05c', 'RC-06a', 'RC-07a', 'RC-07b', 'RC-07d', 'RC-08b', 'RC-09', 'RC-10b', 'RC-11', 'RC-12', 'RC-16a', 'RC-16b', 'RC-18a', 'RC-20', 'RC-NEW-01', 'RC-NEW-03', 'RC-NEW-05', 'RC-NEW-12']
 status current or narrowed (HEADLINE): 33 ['RC-01a', 'RC-01b', 'RC-02', 'RC-03', 'RC-04a', 'RC-04b', 'RC-04c', 'RC-05a', 'RC-05b', 'RC-05c', 'RC-06a', 'RC-06e', 'RC-07a', 'RC-07b', 'RC-07d', 'RC-08b', 'RC-09', 'RC-10a', 'RC-10b', 'RC-10c', 'RC-11', 'RC-12', 'RC-16a', 'RC-16b', 'RC-17a', 'RC-18a', 'RC-20', 'RC-NEW-01', 'RC-NEW-02', 'RC-NEW-03', 'RC-NEW-05', 'RC-NEW-08', 'RC-NEW-12']
 narrowed-only BUG mechanisms: ['RC-06e', 'RC-10a', 'RC-10c', 'RC-17a', 'RC-NEW-02', 'RC-NEW-08']
 parent RCs of the headline set: 22
-of which reproduced in this closeout (some alias at E1): 9 ['RC-01a', 'RC-01b', 'RC-02', 'RC-03', 'RC-04a', 'RC-04c', 'RC-06a', 'RC-09', 'RC-11']
-best confidence per headline mechanism: {'E1': 9, 'E2': 12, 'E3': 12} {'RC-06a': 'E1', 'RC-02': 'E1', 'RC-04a': 'E1', 'RC-04b': 'E2', 'RC-NEW-01': 'E2', 'RC-NEW-02': 'E2', 'RC-06e': 'E2', 'RC-01b': 'E1', 'RC-01a': 'E1', 'RC-17a': 'E3', 'RC-NEW-03': 'E3', 'RC-03': 'E1', 'RC-10b': 'E2', 'RC-NEW-05': 'E3', 'RC-11': 'E1', 'RC-07a': 'E3', 'RC-07d': 'E3', 'RC-10a': 'E3', 'RC-NEW-08': 'E2', 'RC-10c': 'E3', 'RC-04c': 'E1', 'RC-16a': 'E3', 'RC-16b': 'E3', 'RC-07b': 'E2', 'RC-05a': 'E2', 'RC-05b': 'E2', 'RC-20': 'E3', 'RC-08b': 'E2', 'RC-09': 'E1', 'RC-NEW-12': 'E3', 'RC-12': 'E2', 'RC-18a': 'E3', 'RC-05c': 'E2'}
+of which reproduced in this closeout (some alias at E1): 6 ['RC-01a', 'RC-01b', 'RC-02', 'RC-03', 'RC-04c', 'RC-11']
+best confidence per headline mechanism: {'E2': 15, 'E1': 6, 'E3': 12} {'RC-06a': 'E2', 'RC-02': 'E1', 'RC-04a': 'E2', 'RC-04b': 'E2', 'RC-NEW-01': 'E2', 'RC-NEW-02': 'E2', 'RC-06e': 'E2', 'RC-01b': 'E1', 'RC-01a': 'E1', 'RC-17a': 'E3', 'RC-NEW-03': 'E3', 'RC-03': 'E1', 'RC-10b': 'E2', 'RC-NEW-05': 'E3', 'RC-11': 'E1', 'RC-07a': 'E3', 'RC-07d': 'E3', 'RC-10a': 'E3', 'RC-NEW-08': 'E2', 'RC-10c': 'E3', 'RC-04c': 'E1', 'RC-16a': 'E3', 'RC-16b': 'E3', 'RC-07b': 'E2', 'RC-05a': 'E2', 'RC-05b': 'E2', 'RC-20': 'E3', 'RC-08b': 'E2', 'RC-09': 'E2', 'RC-NEW-12': 'E3', 'RC-12': 'E2', 'RC-18a': 'E3', 'RC-05c': 'E2'}

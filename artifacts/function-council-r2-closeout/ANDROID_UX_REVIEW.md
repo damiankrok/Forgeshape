@@ -19,6 +19,8 @@ This is an audit only. Product tree `70a6c14` (`app/src/main` = `f3db953`). Noth
 | B | `40800569636` | 77/77 |
 | C | `40805804385` | 90/90 |
 
+All three runs belong to the previous dossier (`artifacts/function-council-r2/evidence/`). No capture or rect was re-run in this closeout, so every screenshot and recorded rect cited below is **E3** (historic emulator run) however closely it was re-read. E1 is used only for arithmetic or diagnostics actually executed in this closeout (`diagnostics/UX-REVIEW/rect_overlap.py`, and CR-06-S3's `diagnostics/CR-06/cr06_native.out`).
+
 All three ran on API 36 x86_64 with SwiftShader, at 1080x2400 and 420 dpi (2.625 px/dp).
 
 **Source read:** the Java views, `res/values/ids*.xml` and `forgeshape_jni.cpp`.
@@ -88,7 +90,7 @@ The ranking uses three factors:
   4. Type.
   5. Apply (1 tap).
 
-  The value chip `sketch_dimension_value` (rect `[800,583][914,709]`) and the editor field `field_sketch_line_length` (rect `[638,583][890,709]`) lie partly inside the navigator (`[442,336][859,691]`). Measured overlap (`diagnostics/UX-REVIEW/rect_overlap.out`):
+  The dimension label `sketch_dimension_label` (rect `[800,583][914,709]`, recorded by `SketchUxVisualEvidenceTest` as `bounds(..., R.id.sketch_dimension_label)`; its reading chip `sketch_dimension_value` is a child inside it) and the editor field `field_sketch_line_length` (rect `[638,583][890,709]`) lie partly inside the navigator (`[442,336][859,691]`). Measured overlap (`diagnostics/UX-REVIEW/rect_overlap.out`):
 
   | View | Overlap with the navigator | Centre inside the navigator? | Overlap with the rail's x-span |
   | --- | --- | --- | --- |
@@ -116,17 +118,17 @@ The ranking uses three factors:
 
   `SketchUxTest.cadUxR1_17..22` and `SketchUxVisualEvidenceTest` pass because they `performClick()` the view and assert `isShown()`. Neither tests what is on top.
 - **Target size:**
-  - label 43.4x48 dp (below the 48 dp width floor, F-01);
+  - label `sketch_dimension_label` 43.43x48 dp (114x126 px at density 420; below the 48 dp width floor, F-01);
   - field 96x48 dp;
   - editor 172.6x56.4 dp.
 - **JNI act:** `sketchApplyLineLength` (`EditorWorkspaceView.java:4081` → `forgeshape_jni.cpp:6700` → `SketchSession::applyLineLength`).
 - **Orientation / IME / font:** portrait, font scale 1.0 (E4). With the IME up (capture 08), the rail is truncated.
 - **Evidence:**
   - E3: the rects are recorded runtime facts from run A.
-  - E1: the overlap arithmetic, run in this closeout.
-  - E1: the visual occlusion, read in this closeout from screens A 07 and 08.
+  - E1: the overlap arithmetic over those recorded rects, run in this closeout (`rect_overlap.py`, exit 0). This is the only E1 here: it proves the arithmetic, not a fresh layout.
+  - E3: the visual occlusion, observed in the historic emulator captures A 07 and 08 (run `40797031704`, previous dossier). No capture was re-run in this closeout.
   - E2: z-order and touch routing.
-- **Verdict:** **REPRODUCED** for the geometric occlusion, from recorded rects and captures. SOURCE-CONFIRMED-NOT-REPRODUCED for touch misrouting.
+- **Verdict:** SOURCE-CONFIRMED-NOT-REPRODUCED. The geometric and visual occlusion is observed in a historic run (E3) and its z-order is source-derived (E2); nothing was re-captured here. Touch misrouting is SOURCE-CONFIRMED-NOT-REPRODUCED (E2, chip identity E5).
 
 ### UX-3. Back during an in-project Revolve leaves the app on API 33 and later (F-04)
 
@@ -156,7 +158,7 @@ The ranking uses three factors:
 - **Visual:** in capture A `08_length_editor_open.png` the emulator's numeric IME shows a `,` key next to `.` in this very field. Whether a given IME's decimal key sends `,` is not tested.
 - **JNI act:** `sketchApplyLineLength` / `sketchSetExtrudeSide` / `applyBodyDimension`, each with the wrong number.
 - **Orientation / IME / font:** IME-dependent; a hardware keyboard always can type `,`.
-- **Evidence:** E2, plus an E1 visual of the `,` key on screen.
+- **Evidence:** E2, plus an E3 visual of the `,` key in the historic capture A 08 (not re-captured here).
 - **Verdict:** SOURCE-CONFIRMED-NOT-REPRODUCED. The wrong value was not typed in any run.
 
 ### UX-5. A failed staged Surface edit is named, but its verdict and Fix fall outside the visible sheet (new in this review)
@@ -176,8 +178,8 @@ The ranking uses three factors:
   The body is drawn mostly off the window's right edge. Bringing it back takes at least 1 scroll plus a pan.
 - **JNI act:** `surfaceTimeline(... editTarget, editId, value ...)` for the staged evaluation. No commit happens.
 - **Orientation / IME / font:** portrait, 1.0. With the IME up the sheet would be shorter. That case is not captured.
-- **Evidence:** E1 visual (read here) plus E3 facts. `isShown()` in the test is not visibility in the frame.
-- **Verdict:** REPRODUCED (visual, from the recorded capture).
+- **Evidence:** E3: the historic emulator capture B `modeling-surface/04` (run `40800569636`, previous dossier) and its recorded facts; re-reading it here does not make it new evidence. `isShown()` in the test is not visibility in the frame.
+- **Verdict:** Observed in historic run (E3); not reproduced in this closeout. No source derivation places the verdict out of frame, so this is not SOURCE-CONFIRMED either.
 
 ### UX-6. Transform over a locked body gives no feedback (new in this review)
 
@@ -199,10 +201,10 @@ The ranking uses three factors:
 - **Visual:** capture A `ui-3d-state-audit-r1/ui3d06_04_locked.png` shows Transform held, no gizmo, an empty status line, and a capsule reading only "Body #3".
 - **JNI act:** `setGizmoActive(false)`. Nothing else is sent.
 - **Evidence:**
-  - E1 visual.
+  - E3 visual: the historic emulator capture A `ui3d06_04` (run `40797031704`), not re-captured here.
   - E2 source.
   - `ObjectCommandsTest.e2eObj018a01` (C) asserts the gizmo is withdrawn and the write refused. It does not assert any feedback.
-- **Verdict:** REPRODUCED (visual) for the missing cue. Whether a cue is required is **OWNER-SEMANTICS-REQUIRED**, because "chrome reports, it does not instruct" also applies here.
+- **Verdict:** SOURCE-CONFIRMED-NOT-REPRODUCED for the missing cue (E2 source, E3 historic capture). Whether a cue is required is **OWNER-SEMANTICS-REQUIRED**, because "chrome reports, it does not instruct" also applies here.
 
 ### UX-7. The orientation navigator's Flip and ±90° change the label but not the camera (F-02 / C-01)
 
@@ -217,20 +219,20 @@ The ranking uses three factors:
   `SketchUxTest.cadUxR1_08_09_10` and `_11_12_13` (B) assert state bits only.
 - **Target size:** Flip is 36.2x48 dp, below the width floor.
 - **JNI act:** `sketchSetViewFlipped` / `sketchRotateView` (`EditorWorkspaceView.java:4061`, `:4067`).
-- **Evidence:** E2, plus the historic E1 host diagnostic from R2. The screenshots are non-discriminating.
-- **Verdict:** SOURCE-CONFIRMED-NOT-REPRODUCED in this closeout.
+- **Evidence:** E2, plus the R2 host diagnostic, which is a historic recorded run (E3). In this closeout the native leg was re-run as CR-06-S3 (`diagnostics/CR-06/cr06_native.out`: `camera_view_identical_to_B0=1` for Flip, +90 and −90), which is E1 for the native camera only. The screenshots are non-discriminating, and the on-screen tap path was not run.
+- **Verdict:** REPRODUCED at the native layer (CR-06-S3, E1). The Android tap-to-camera path is SOURCE-CONFIRMED-NOT-REPRODUCED (E2).
 
 ### UX-8. Several chips are narrower than the 48 dp floor (F-01)
 
-Measured from recorded rects (`rect_overlap.out`):
+Arithmetic run in this closeout (`rect_overlap.out`, E1) over rects recorded in historic run A `40797031704` (E3), density 420:
 
 | Control | Size (dp) |
 | --- | --- |
-| `sketch_navigator_flip` | 36.2x48 |
-| `view_selection_outline_on` | 37.0x48 |
-| `view_selection_outline_off` | 39.2x48 |
-| `sketch_dimension_value` | 43.4x48 |
-| `finish_sketch` (within the test's tolerance) | 112.4x47.6 |
+| `sketch_navigator_flip` | 36.19x48 |
+| `view_selection_outline_on` | 36.95x48 |
+| `view_selection_outline_off` | 39.24x48 |
+| `sketch_dimension_label` | 43.43x48 |
+| `finish_sketch` (within the test's tolerance) | 112.38x47.62 |
 
 - `view_grid_on/off` is built the same way (`EditorControlStyles.chip`, `:366`) but was not measured.
 - **Taps:** 1 each. Precision risk only.
@@ -239,8 +241,9 @@ Measured from recorded rects (`rect_overlap.out`):
   - A `cad-a3-c2-sketch-ux-r1/04`, `07`;
   - A `sel-out-r1/11_left_handed_view_overlay.png`, where the Grid and Selection Outline On/Off chips are visibly narrower than the Shading chips.
 - **JNI acts:** `sketchSetViewFlipped`, `setSelectionOutlineVisible`, `setGridVisible`.
-- **Evidence:** E3 rects, E1 arithmetic. Physical comfort is not assessed.
-- **Verdict:** REPRODUCED (geometry).
+- **Cause in source:** `EditorControlStyles.chip` (`:366-382`) sets a 48 dp minimum height and 10 dp horizontal padding but no minimum width, so a short label yields a chip under 48 dp wide (E2).
+- **Evidence:** E3 rects (historic run A, not re-run), E1 arithmetic over them, E2 source. Physical comfort is not assessed.
+- **Verdict:** SOURCE-CONFIRMED-NOT-REPRODUCED, as `CRITICAL_REPRO_MATRIX.tsv` CR-06-S6 grades the same F-01 measurement.
 
 ### UX-9. With the IME up in the bootstrap, a ghost "Body #0" capsule appears and the rail is cut short (new in this review)
 
@@ -256,8 +259,8 @@ Measured from recorded rects (`rect_overlap.out`):
   - the precision toggle is not visible.
 - **Taps:** tapping the capsule would open Objects over a non-project. The effect is UNVERIFIED.
 - **JNI act:** none observed.
-- **Evidence:** E1 visual (read here) for what is drawn; E5 for the cause.
-- **Verdict:** REPRODUCED (visual). The cause is SOURCE-CONFIRMED-NOT-REPRODUCED.
+- **Evidence:** E3 for what is drawn (historic emulator capture A 08, run `40797031704`, not re-captured here); E5 for the cause.
+- **Verdict:** Observed in historic run (E3); not reproduced in this closeout. The cause (the `applyPrimarySurfaceChromePolicy` writer) is an E5 inference and is not reproduced.
 
 ### UX-10. The Sculpt status pill sits under the brush column (F-06)
 
@@ -265,8 +268,8 @@ Measured from recorded rects (`rect_overlap.out`):
 - **What is seen:** in capture A `ui-3d-state-audit-r1/ui3d11_01_sculpt.png`, the status text "… the Construction sphere is kept." is covered at its start by the Radius / Strength column `brush_edge_controls`. Its first words cannot be read.
 - **Taps:** 0. It is a reading problem only.
 - **JNI act:** `enterSculptMode` / `freezeToSculpt`, which produce the message.
-- **Evidence:** E1 visual (re-read here).
-- **Verdict:** REPRODUCED (visual).
+- **Evidence:** E3 visual: the historic emulator capture A `ui3d11_01` (run `40797031704`), re-read here but not re-captured.
+- **Verdict:** Observed in historic run (E3); not reproduced in this closeout.
 
 ### Considered and left out of the ten
 
@@ -277,7 +280,7 @@ Measured from recorded rects (`rect_overlap.out`):
 | F-08: Light Charcoal focus ring at 2.48:1 | Recommendation-grade |
 | Ready / dock icons have no captions while Tool Labels is OFF (B `05_compact_hud_extent_palette.png`) | By decision (Tool Labels preference); discoverability only |
 
-## 2. Function chains (36 rows)
+## 2. Function chains (42 rows)
 
 **Reading the table:**
 
@@ -342,7 +345,7 @@ Measured from recorded rects (`rect_overlap.out`):
 
 ## 3. What the screenshots show and what they cannot show
 
-### Shown (layout, clipping, occlusion; E1 visual, read in this closeout)
+### Shown (layout, clipping, occlusion; E3: historic emulator captures from runs A, B and C, re-read in this closeout but not re-captured)
 
 **Start pages.** Home and New Project are opaque full-window pages. New Project lists CAD, Sculpt, Freeform and Surface, each about 90–108 dp tall, with Back below (A `ui3d03_02_new_project.png`). Settings is opaque. Its Back row is 384 dp below the fold (A `ui-pref-r1/02_settings_page.png` plus the recorded rect).
 
@@ -403,16 +406,16 @@ Measured from recorded rects (`rect_overlap.out`):
 
 | Item | Status | Verdict | Evidence grade |
 | --- | --- | --- | --- |
-| UX-2: dimension label and editor occluded | **new** | REPRODUCED (geometry and visual) | E1 / E3 |
-| UX-5: Surface failure verdict out of frame | **new** | REPRODUCED (visual) | E1 |
-| UX-6: Transform over a locked body is silent | **new** | REPRODUCED (visual) for the missing cue; whether a cue is required is OWNER-SEMANTICS-REQUIRED | E1 + E2 |
-| UX-9: ghost "Body #0" capsule and truncated rail with the IME in the bootstrap | **new** | REPRODUCED (visual); cause not reproduced | E1; cause E5 |
+| UX-2: dimension label and editor occluded | **new** | SOURCE-CONFIRMED-NOT-REPRODUCED (occlusion observed in historic run) | E3 captures and rects; E1 arithmetic only; E2 z-order |
+| UX-5: Surface failure verdict out of frame | **new** | Observed in historic run; not reproduced | E3 |
+| UX-6: Transform over a locked body is silent | **new** | SOURCE-CONFIRMED-NOT-REPRODUCED for the missing cue; whether a cue is required is OWNER-SEMANTICS-REQUIRED | E2 + E3 |
+| UX-9: ghost "Body #0" capsule and truncated rail with the IME in the bootstrap | **new** | Observed in historic run; not reproduced; cause not reproduced | E3; cause E5 |
 | UX-1 (F-03) | carried from R2 | SOURCE-CONFIRMED-NOT-REPRODUCED | E2 |
 | UX-3 (F-04) | carried from R2 | SOURCE-CONFIRMED-NOT-REPRODUCED | E2 |
 | UX-4 (F-05) | carried from R2 | SOURCE-CONFIRMED-NOT-REPRODUCED | E2 |
-| UX-7 (F-02) | carried from R2 | SOURCE-CONFIRMED-NOT-REPRODUCED | E2 |
-| UX-8 (F-01) | carried from R2 | REPRODUCED (geometry) | E3 / E1 |
-| UX-10 (F-06) | carried from R2 | REPRODUCED (visual) | E1 |
+| UX-7 (F-02) | carried from R2 | REPRODUCED at the native layer (CR-06-S3); tap path SOURCE-CONFIRMED-NOT-REPRODUCED | E1 native; E2 tap path |
+| UX-8 (F-01) | carried from R2 | SOURCE-CONFIRMED-NOT-REPRODUCED (= CR-06-S6) | E3 rects + E2; E1 arithmetic only |
+| UX-10 (F-06) | carried from R2 | Observed in historic run; not reproduced | E3 |
 
 **Function chains:** 42 rows; 26 are verified end to end, 15 have at least one UNVERIFIED step, and 1 is split. The commonest gaps are:
 

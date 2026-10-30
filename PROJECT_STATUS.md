@@ -1,7 +1,27 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.103.0
-**Updated:** 2026-10-29
+**Status Version:** 0.104.0
+**Updated:** 2026-10-30
+**Latest audit closeout (research, no product change):**
+**`FUNCTION-COUNCIL-R2-CLOSEOUT-R1` — `AUDIT-CLOSEOUT-PARTIAL-SOURCE-GAP`**
+(2026-10-30). NO CURRENT FULL MASTER PLAN COMPLIANCE CLAIM: the OWNER source
+archive (16/16 hashes) holds Master v4.0.58, v4.1.0, a partial v4.1.58 and
+addenda 4.1.62–66, but not the canonical v4.1.61. Branch
+`audit/function-council-r2-closeout-r1` from exactly `2e5d8fc`, adding only
+`artifacts/function-council-r2-closeout/**`; nothing merged, no FullSharded.
+Record: `artifacts/function-council-r2-closeout/SUMMARY.md`. Re-reproduced
+on the host (E1): GLB export of a face-supported CAD body at the origin
+(CR-01), the invisible transform/gizmo edit on such a body (CR-02), Import GLB
+during a sketch (CR-03), Sculpt NotRetained Undo (CR-04), the recovery prompt
+after recreation (CR-05 component), the navigator camera (CR-06), and the
+PROJECT self-test cap and FMA-sensitive oracles (CR-07). Focused `CI DEVICE`
+`40979514270` 63/63 and `40983965648` 72/73 (emulator); the one failure,
+`EditorWorkspaceMobileTest#uir4a04`, is a stale test count (the authorised
+Freeform/Surface tiles), not a product regression. 33 unique current BUG
+mechanisms. Proposed next stage (not authorised):
+`CAD-FACE-SUPPORTED-PLACEMENT-R1`. The C2 status and the OD-27 gate below are
+unchanged.
+
 **Latest audit (research, no product change):** **`FUNCTION-COUNCIL-R2`
 (full capability / UX / Android-desktop portability audit) —
 `PARTIAL-PLAN-SOURCE-GAP`** (2026-10-29). The canonical Master Plan v4.1.61

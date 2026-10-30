@@ -1,0 +1,27 @@
+FUNCTION-COUNCIL-R2-CLOSEOUT-R1 — seat closeout-reconcile (source reconciliation)
+No compilation; Python 3 only, run isolated (-I). No product file is read for
+behaviour; inputs are the read-only previous dossier and the closeout extracts.
+Recorded 2026-10-30.
+
+1) Matrix integrity + totals recompute vs REQUIREMENTS_TRACEABILITY.md
+   cd /home/user/Forgeshape/artifacts/function-council-r2-closeout/diagnostics/RECONCILE
+   python3 -I check_matrix.py /home/user/Forgeshape/artifacts/function-council-r2 > check_matrix.out 2>&1
+   exit 0   (output: check_matrix.out — 681 rows, 24 columns, 0 duplicate IDs, 0 cell mismatches over 39 table lines)
+
+2) Archive hash check
+   cd /home/user/Forgeshape/artifacts/function-council-r2-closeout/sources
+   sha256sum -c SHA256SUMS.txt > ../diagnostics/RECONCILE/sha256_check.out 2>&1
+   exit 0   (17 x OK)
+
+3) Build REQUIREMENT_DELTAS.tsv and the plan-coverage counts
+   cd /home/user/Forgeshape/artifacts/function-council-r2-closeout/diagnostics/RECONCILE
+   python3 -I build_deltas.py /home/user/Forgeshape/artifacts/function-council-r2-closeout /home/user/Forgeshape/artifacts/function-council-r2 > build_deltas.out 2>&1
+   exit 0   (output: build_deltas.out — ends SUM_CHECK_OK; writes ../../REQUIREMENT_DELTAS.tsv)
+
+4) Sum-check the written TSV
+   cd /home/user/Forgeshape/artifacts/function-council-r2-closeout
+   python3 -I diagnostics/RECONCILE/sumcheck_deltas.py REQUIREMENT_DELTAS.tsv > diagnostics/RECONCILE/deltas_sumcheck.out 2>&1
+   exit 0   (832 data rows, 8 columns each, 832 unique ids)
+
+Helper loader used for ad-hoc inspection only (not needed to reproduce the
+outputs): /tmp/claude-0/fc2c-scratch/RECONCILE/load.py (scratch, not committed).

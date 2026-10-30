@@ -19,8 +19,20 @@ here is reconstructed from it.
 
 **Windows evidence: none.** This environment has no MSVC, no `clang-cl` on PATH, no
 Windows SDK or UCRT, no MSVC STL headers and no mingw-w64 sysroot. Running
-`clang++ --target=x86_64-pc-windows-msvc` stops at `fatal error: 'vector' file not found`
-(`CMD.txt` §4). Every Windows statement below is therefore **BLOCKED** or E5. **No sentence
+`echo '#include <vector>' | clang++ --target=x86_64-pc-windows-msvc -fsyntax-only -x c++ -`
+(`diagnostics/desktop/CMD.txt` §4) stops at once. Re-run during the repair of this review,
+the output was:
+
+```
+<stdin>:1:10: fatal error: 'vector' file not found
+    1 | #include <vector>
+      |          ^~~~~~~~
+1 error generated.
+rc=1
+```
+
+That output is quoted here only; no `.out` file under `diagnostics/desktop/` records it,
+because this repair was limited to this one file. Every Windows statement below is therefore **BLOCKED** or E5. **No sentence
 in this review, or anything derived from it, may call a desktop port "easy", "cheap" or
 "mostly done".** All host evidence is Linux x86_64. None of it is Windows evidence, and the
 emulator is not physical-device evidence.
@@ -32,7 +44,7 @@ E4 doc only, E5 inference.
 
 | # | Claim (seat G) | Closeout result | Class | Conf. |
 | --- | --- | --- | --- | --- |
-| P1 | The 98 platform-neutral TUs (the `host-native-selftests.sh` rule: `forgeshape_*.cpp` minus `jni`/`renderer`) compile with `-std=c++17 -Wall -Wextra -Wpedantic` | **g++ 13.3: 98/98, 0 errors, 26 warnings** (24 `missing-field-initializers` on `MeshVertex::mask`, 1 `unused-but-set-variable`, 1 `c++20-compat` for the identifier `requires`). **clang 18 + libstdc++: 98/98, 0 errors, 82 warnings** (44 `unused-variable`, 24 `missing-field-initializers`, 10 `sometimes-uninitialized`, 3 `unused-function`, 1 `unused-but-set-variable`). Seat G ran clang only, so the g++ row is new | REPRODUCED | E1 |
+| P1 | The 98 platform-neutral TUs (the `host-native-selftests.sh` rule: `forgeshape_*.cpp` minus `jni`/`renderer`) compile with `-std=c++17 -Wall -Wextra -Wpedantic` | **g++ 13.3: 98/98, 0 errors, 26 warnings** (`probe.out` `P1a`). `probe.out`'s category tally names 25 of them (24 `missing-field-initializers`, 1 `unused-but-set-variable`): its `grep -o '\[-W[a-z-]*\]'` cannot match a flag containing digits. The 26th is in the uncommitted scratch log `/tmp/claude-0/fc2c-scratch/desktop/logs/gxx_forgeshape_cad_feature_selftest.cpp.log`, read during this repair: `forgeshape_cad_feature_selftest.cpp:3996:20: warning: identifier 'requires' is a keyword in C++20 [-Wc++20-compat]` (source line 3996 is `const auto requires = [](const CadSketch& sketch) {`). No committed `.out` file holds the raw g++ warning lines; `results/p1_gxx.txt` holds per-TU counts only (warnings in `cad_feature_selftest` 1, `demo_mesh` 8, `picking_selftest` 9, `render_mesh_selftest` 7, `scene_selftest` 1). **clang 18 + libstdc++: 98/98, 0 errors, 82 warnings** (44 `unused-variable`, 24 `missing-field-initializers`, 10 `sometimes-uninitialized`, 3 `unused-function`, 1 `unused-but-set-variable`). Seat G ran clang only, so the g++ row is new | REPRODUCED | E1 |
 | P1b | The 10 `-Wsometimes-uninitialized` warnings are in self-tests only | All 10 are in `forgeshape_cad_feature_selftest.cpp` and `forgeshape_sketch_ux_selftest.cpp` (`results/clang_sometimes_uninitialized.txt`) | REPRODUCED | E1 |
 | P2 | The same 98 TUs compile against the NDK's libc++ | clang 18, `-nostdinc++ -isystem $NDK/.../c++/v1`: **98/98, 0 errors, 82 warnings** | REPRODUCED | E1 |
 | P3 | Header self-containment is 100 of 101 | **g++: 100/101. clang: 100/101.** The one failure in both is `forgeshape_renderer.h` (`native_window.h` not found) | REPRODUCED | E1 |
@@ -42,7 +54,7 @@ E4 doc only, E5 inference.
 | P6 | The product CMake configure on Linux fails only on the three Android libraries | `ANDROID_LIB`, `LOG_LIB` and `VULKAN_LIB` are NOTFOUND. With glslc on PATH it was found (`results/p6_cmake_excerpt.txt`) | REPRODUCED | E1 |
 | P7 | Headless shell: load, capture and re-encode is byte-identical in a fresh process; centre pick hits 6 of 7; a 100 px Mouse drag gives −0.5000 rad | One process per fixture: **7/7 `load=Ok`, 7/7 `reencode=identical`, `centre_hit=1` on 6/7 (`cad_rectangle_v1` = 0), all `mouse_100px_yaw_delta_rad=-0.5000`, `truncated_v1` `decode=Truncated`** | REPRODUCED | E1 |
 | P8 | Several loads in one process change the re-encoded bytes (process-scoped `ObjectId` allocator) | One process, 8 fixtures: the last 4 are `reencode=different`, and their **fingerprints also differ** from the fresh-process values (e.g. `freeform_box_v1` `4fe78c11c803d614` fresh vs `252d6b1d7b45476e` sequential). `seq_reencode mixed_cad_v1 → freeform_box_v1`: `final reencode=different`. The byte offset was not re-dumped here; seat G recorded SCNE `nextObjectId` 2→4 at offset 56 (E3). The fingerprint difference is a new observation | REPRODUCED (bytes); offset E3 | E1/E3 |
-| P9/P10 | FMA contraction makes 2 host checks fail and arm64 emits `fmadd` | Not re-run. `CMakeLists.txt` and `app/build.gradle` still contain no `-ffp-contract` or `-mfma` (grep, 0 hits) | SOURCE-CONFIRMED-NOT-REPRODUCED | E2 (flag absence) / E3 (failures) |
+| P9/P10 | FMA contraction makes 2 host checks fail and arm64 emits `fmadd` | Not re-run by this seat, but reproduced in this closeout as `CR-07-S2`..`S4` (`CRITICAL_REPRO_MATRIX.tsv`, `diagnostics/CR-07/`). `host-runs/rcs.txt`: `clang-fma-on rc=1`, `clang-fma-fast rc=1`, `gcc-O2-fma-fast rc=1`, `clang-fma-on-O0 rc=1`; `clang-fma-off`, `gcc-fma-fast`, `clang-nofma` rc=0. Each rc=1 run prints `FAIL CONSTRUCTION_HISTORY: eviction_is_deterministic_oldest_first` and `FAIL CAD_FEATURE: CADFC2_PF_03b_BEFORE_the_lens_taps_to_a_whole_circle_by_anchor_order`. `contract_probe.out`: `probe_aarch64-O0.s:  fmadd d0, d0, d1, d2;` (NDK arm64 fuses even at -O0). `CMakeLists.txt` and `app/build.gradle` still contain no `-ffp-contract` or `-mfma` (grep, 0 hits) | REPRODUCED (host) | E1 host failures and arm64 `fmadd` assembly; arm64 device outcome E2 for `S2` (asm) and E5 for `S3`, as the matrix states; physical device unverified |
 | G-02 | No workflow runs `host-native-selftests.sh` | `grep -rn host-native-selftests .github/` returns 0 hits. All three workflows use `ubuntu-24.04` | SOURCE-CONFIRMED | E2 |
 
 **Correction to the matrix wording.** "275 JNI exports" holds per build variant. The source
@@ -174,7 +186,7 @@ UNVERIFIED (E0).
    `scripts/host-native-selftests.sh` in `CI FAST`, adding P1 (g++ and clang) and P3. The
    neutral-domain property this review reproduced is guarded by no workflow today (G-02,
    E2).
-2. **An FP-contraction policy before any third ABI** (seat G P9/P10, E3; flag absence E2).
+2. **An FP-contraction policy before any third ABI** (seat G P9/P10; reproduced on host as `CR-07-S2`..`S4`, E1; flag absence E2; arm64 device outcome E2/E5).
 3. **A Windows compile spike as the first evidence step**, and only after `PORT-R0` is
    triggered: MSVC + clang-cl on the 63 product TUs + Manifold. Until it exists, every cost
    statement stays E5.
@@ -205,7 +217,7 @@ was copied, and none is proposed.
 | --- | --- |
 | Neutral-domain compile on Linux (g++, clang, libstdc++, libc++), header containment, renderer-with-stubs, shaders, CMake failure points, headless reuse | REPRODUCED (E1) |
 | 275 JNI exports = 275 Java natives (276 source definitions, one preprocessor pair) | REPRODUCED (E1), with the wording corrected |
-| FMA hazard | SOURCE-CONFIRMED-NOT-REPRODUCED (E2/E3) |
+| FMA hazard | REPRODUCED on host (E1, `CR-07-S2`..`S4`); arm64 device outcome E2 (`S2`, asm) / E5 (`S3`), physical unverified |
 | Any Windows / MSVC / clang-cl compile, link or run | **BLOCKED (E0)**: no toolchain, SDK or headers |
 | Choice of V1/V2/V3, a new library, the application-core extraction, multi-document context | OWNER-SEMANTICS-REQUIRED (H2, `PORT-R0` DEFERRED) |
 | Port effort or ease | Not stated. No evidence supports calling any variant easy |
