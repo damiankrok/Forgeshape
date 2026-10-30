@@ -795,6 +795,7 @@
     <string name="reject_shape_other">Rejected: ForgeShape could not build that shape. Object unchanged.</string>
     <string name="reject_transform_scale_not_positive">Rejected: every scale must be greater than 0. Transform unchanged.</string>
     <string name="reject_transform_not_representable">Rejected: a value is too large to place. Transform unchanged.</string>
+    <string name="reject_transform_derived_placement">Rejected: this object sits on another object’s face, so it moves with that object. Transform unchanged.</string>
     <string name="reject_transform_other">Rejected: a value is not a finite number. Transform unchanged.</string>
     <string name="field_empty">%1$s is empty — enter a number.</string>
     <string name="field_not_a_number">%1$s is not a number: \"%2$s\".</string>

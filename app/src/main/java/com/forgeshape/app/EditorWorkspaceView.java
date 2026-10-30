@@ -2801,6 +2801,19 @@ final class EditorWorkspaceView extends FrameLayout
             // surface and the gizmo agree with the rail.
             uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM);
         }
+        // `CAD-FACE-SUPPORTED-PLACEMENT-R1`: a face-supported CAD Body is placed
+        // by its producer's face and is NOT independently transformable, so
+        // Transform has no answer for one and its entry, the gizmo and the
+        // placement editor are withdrawn. A user holding Transform when such a
+        // body becomes active is moved to Shape -- its sketch and extrusion,
+        // which it fully supports -- so the rail, the precision surface and the
+        // handles agree. Asked from native truth on every refresh, never
+        // remembered; the refusals below JNI stay regardless.
+        if (NativeViewport.sceneActiveBodyIsFaceSupportedCad()
+                && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM) {
+            uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+            relativeScaleOpen = false;
+        }
         // The sketch session (CAD-R0-A1A2) and the active body's third
         // representation, both native truth read here and nowhere remembered.
         NativeViewport.sketchState(nativeSketch);
@@ -3029,6 +3042,7 @@ final class EditorWorkspaceView extends FrameLayout
                 && nativeBodyDim[NativeViewport.BODY_DIM_MODE_ACTIVE] == 0.0
                 && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
                 && !NativeViewport.sceneActiveBodyIsLocked()
+                && !NativeViewport.sceneActiveBodyIsFaceSupportedCad()
                 && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
         NativeViewport.setGizmoActive(offered);
         if (offered) {
@@ -3043,9 +3057,11 @@ final class EditorWorkspaceView extends FrameLayout
         NativeViewport.bodyDimensionsState(nativeBodyDim);
         final int sketchState = (int) nativeSketch[NativeViewport.SKETCH_STATE];
         final boolean sketching = sketchState != NativeViewport.SKETCH_INACTIVE;
+        final boolean derivedPlacement = NativeViewport.sceneActiveBodyIsFaceSupportedCad();
         final boolean transformOffered = !sculpting && !sketching
                 && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
                 && !NativeViewport.sceneActiveBodyIsLocked()
+                && !derivedPlacement
                 && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
         if (transformOffered) {
             NativeViewport.gizmoState(nativeGizmo);
@@ -3087,7 +3103,10 @@ final class EditorWorkspaceView extends FrameLayout
                 // rotation and a resume land where native says.
                 nativeBodyDim[NativeViewport.BODY_DIM_SUPPORTED] != 0.0,
                 nativeBodyDim[NativeViewport.BODY_DIM_MODE_ACTIVE] != 0.0,
-                (int) nativeBodyDim[NativeViewport.BODY_DIM_ANCHOR]));
+                (int) nativeBodyDim[NativeViewport.BODY_DIM_ANCHOR],
+                // Transform is not offered for a face-supported CAD Body: its
+                // placement is its producer's face (native truth, above).
+                !derivedPlacement));
         // `CAD-R2`: Keep Sketch exactly when native says it can succeed, and no
         // Back to Sketch over a reuse session (its sketch is shared truth).
         trailingHost.showSketchCommitOptions(sketching && NativeViewport.sketchCanKeepSketch(),

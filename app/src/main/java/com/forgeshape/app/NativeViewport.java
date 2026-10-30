@@ -375,6 +375,18 @@ final class NativeViewport {
      */
     static final int APPLY_REJECTED_UNAVAILABLE = 10;
 
+    /**
+     * Refused: the body is a FACE-SUPPORTED CAD Body
+     * ({@code CAD-FACE-SUPPORTED-PLACEMENT-R1}).
+     *
+     * <p>Its placement is derived from its producer's face, so it cannot be
+     * moved on its own; moving the producer moves it. Its own code for the
+     * reason a lock has one: every number passed may be good. Transform, the
+     * gizmo and the placement editor are withdrawn for such a body; this is
+     * the guard that stays regardless. APPENDED after 10.
+     */
+    static final int APPLY_REJECTED_DERIVED_PLACEMENT = 11;
+
     // ---------------------------------------------------------------------
     // Body Dimensions and Relative Scale (Stage 020M, `UI-OWNER-33B`)
     //

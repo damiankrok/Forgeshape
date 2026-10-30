@@ -293,6 +293,10 @@ final class ConstructionPlacementEditorView extends LinearLayout
                 host.showStatus(getContext().getString(
                         R.string.reject_transform_not_representable), R.attr.fsTextError);
                 break;
+            case NativeViewport.APPLY_REJECTED_DERIVED_PLACEMENT:
+                host.showStatus(getContext().getString(
+                        R.string.reject_transform_derived_placement), R.attr.fsTextError);
+                break;
             default:
                 host.showStatus(getContext().getString(R.string.reject_transform_other),
                         R.attr.fsTextError);

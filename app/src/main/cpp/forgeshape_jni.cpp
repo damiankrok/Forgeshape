@@ -1322,6 +1322,11 @@ constexpr jint kApplyRejectedRelation = 6;
 // statement about a value -- every number the caller passed may be good -- and a
 // status line that blamed a coordinate would be describing the wrong problem.
 constexpr jint kApplyRejectedLocked = 8;
+// `CAD-FACE-SUPPORTED-PLACEMENT-R1`: the body is a FACE-SUPPORTED CAD Body, whose
+// placement is derived from its producer's face. Its own code for the same
+// reason a lock has one: every number may be good, and what cannot be done is
+// moving this body independently. APPENDED after the Stage 020M codes 9 and 10.
+constexpr jint kApplyRejectedDerivedPlacement = 11;
 
 // Applies an authoritative transform through the one Construction transform
 // entry point and reports what happened.
@@ -1332,10 +1337,14 @@ constexpr jint kApplyRejectedLocked = 8;
 // picker read.
 forgeshape::TransformApplyResult applyBoxTransform(const char* label,
                                                    const forgeshape::TransformValues& requested,
-                                                   bool* outRefusedLocked = nullptr) {
+                                                   bool* outRefusedLocked = nullptr,
+                                                   bool* outRefusedDerived = nullptr) {
     forgeshape::TransformApplyResult result;
     if (outRefusedLocked != nullptr) {
         *outRefusedLocked = false;
+    }
+    if (outRefusedDerived != nullptr) {
+        *outRefusedDerived = false;
     }
     {
         // Same lock as the camera and the selection: the render thread reads the
@@ -1355,7 +1364,15 @@ forgeshape::TransformApplyResult applyBoxTransform(const char* label,
             result.values = forgeshape::constructionTransform().values();
             return result;
         }
-        if (forgeshape::constructionScene().activeBody().locked()) {
+        // The ONE guarded write (`applySceneBodyTransform`): its refusals are
+        // asked before any edit is opened, so a refused write leaves no step,
+        // no fingerprint change and no byte behind; an accepted one is one
+        // `ScopedConstructionEdit` around one transform update, as before.
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        forgeshape::BodyPlacementRefusal refusal = forgeshape::BodyPlacementRefusal::None;
+        result = forgeshape::applySceneBodyTransform(scene.activeBodyId(), requested, scene,
+                                                     forgeshape::constructionHistory(), &refusal);
+        if (refusal == forgeshape::BodyPlacementRefusal::Locked) {
             // Stage 018A. The FIRST of lock's two guards, and the one that
             // covers every exact-value route into a placement: the precision
             // surface, the unit chips and anything else that types a number.
@@ -1376,12 +1393,25 @@ forgeshape::TransformApplyResult applyBoxTransform(const char* label,
             if (outRefusedLocked != nullptr) {
                 *outRefusedLocked = true;
             }
-            result.status = forgeshape::TransformUpdateStatus::Rejected;
-            result.values = forgeshape::constructionTransform().values();
             return result;
         }
-        forgeshape::ScopedConstructionEdit edit(forgeshape::constructionHistory());
-        result = forgeshape::applyConstructionTransform(requested);
+        if (refusal == forgeshape::BodyPlacementRefusal::DerivedPlacement) {
+            // `CAD-FACE-SUPPORTED-PLACEMENT-R1`. A face-supported CAD Body is
+            // placed by its producer's face; its stored transform is read by
+            // nothing that draws, picks or exports it. Refused on the lock's
+            // terms -- nothing opened, nothing written -- and reported through
+            // its own out-parameter for the same reason.
+            FS_LOGE("FORGESHAPE_CONSTRUCTION_TRANSFORM_REJECTED:%s:DerivedPlacement", label);
+            if (outRefusedDerived != nullptr) {
+                *outRefusedDerived = true;
+            }
+            return result;
+        }
+        if (refusal != forgeshape::BodyPlacementRefusal::None) {
+            FS_LOGE("FORGESHAPE_CONSTRUCTION_TRANSFORM_REJECTED:%s:%s", label,
+                    forgeshape::bodyPlacementRefusalName(refusal));
+            return result;
+        }
     }
     const forgeshape::TransformValues& v = result.values;
     const forgeshape::ConstructionTransform& transform = forgeshape::constructionTransform();
@@ -2551,8 +2581,13 @@ Java_com_forgeshape_app_NativeViewport_applyBoxTransform(JNIEnv*, jclass, jdoubl
     requested.scaleY = scaleY;
     requested.scaleZ = scaleZ;
     bool refusedLocked = false;
-    const jint status = transformResultToJni(applyBoxTransform("ui", requested, &refusedLocked));
-    return refusedLocked ? kApplyRejectedLocked : status;
+    bool refusedDerived = false;
+    const jint status = transformResultToJni(
+            applyBoxTransform("ui", requested, &refusedLocked, &refusedDerived));
+    if (refusedLocked) {
+        return kApplyRejectedLocked;
+    }
+    return refusedDerived ? kApplyRejectedDerivedPlacement : status;
 }
 
 // ---------------------------------------------------------------------------
@@ -3828,11 +3863,13 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_setGizmoActive(JNI
                                                                             jboolean active) {
     bool refusedInSculpt = false;
     bool refusedLocked = false;
+    bool refusedDerived = false;
     bool nowActive = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
         const bool activeIsLocked = scene.hasProject() && scene.activeBody().locked();
+        const bool activeIsDerived = scene.hasProject() && scene.activeBody().isFaceSupportedCad();
         if (active == JNI_TRUE && forgeshape::sculptSession().inSculptMode()) {
             refusedInSculpt = true;
             // Still turned OFF, so entering Sculpt with a gizmo up cannot leave
@@ -3847,6 +3884,13 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_setGizmoActive(JNI
             // also cancels a captured handle so a finger already on one stops.
             refusedLocked = true;
             forgeshape::gizmoSession().setActive(false);
+        } else if (active == JNI_TRUE && activeIsDerived) {
+            // `CAD-FACE-SUPPORTED-PLACEMENT-R1`. A face-supported CAD Body is
+            // placed by its producer's face, so a handle over it could only
+            // move a stored transform nothing reads. Turned OFF on the lock's
+            // terms; `GizmoSession` refuses to draw or drag one regardless.
+            refusedDerived = true;
+            forgeshape::gizmoSession().setActive(false);
         } else {
             forgeshape::gizmoSession().setActive(active == JNI_TRUE);
         }
@@ -3858,6 +3902,10 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_setGizmoActive(JNI
     }
     if (refusedLocked) {
         FS_LOGI("FORGESHAPE_GIZMO_REFUSED:body_locked");
+        return;
+    }
+    if (refusedDerived) {
+        FS_LOGI("FORGESHAPE_GIZMO_REFUSED:derived_placement");
         return;
     }
     FS_LOGI("FORGESHAPE_GIZMO_ACTIVE:%d", nowActive ? 1 : 0);
@@ -7670,8 +7718,10 @@ Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsCad(JNIEnv*, jclass) {
 }
 
 // Whether the active body is a FACE-SUPPORTED CAD body (`CAD-A3`): its placement
-// is derived from a producer and it cannot be moved independently. A
-// verification seam.
+// is derived from a producer and it cannot be moved independently. The
+// workspace asks it on every refresh to withdraw Transform, the gizmo and the
+// placement editor (`CAD-FACE-SUPPORTED-PLACEMENT-R1`); the guards below JNI
+// stay regardless.
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsFaceSupportedCad(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);

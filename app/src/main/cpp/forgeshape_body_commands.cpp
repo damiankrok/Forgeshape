@@ -394,4 +394,43 @@ BodyCommandStatus mirrorSceneBody(ObjectId id, MirrorPlane plane, ConstructionSc
     return finish(BodyCommandStatus::Ok);
 }
 
+const char* bodyPlacementRefusalName(BodyPlacementRefusal refusal) {
+    switch (refusal) {
+        case BodyPlacementRefusal::None: return "None";
+        case BodyPlacementRefusal::UnknownBody: return "UnknownBody";
+        case BodyPlacementRefusal::Locked: return "BodyLocked";
+        case BodyPlacementRefusal::DerivedPlacement: return "DerivedPlacement";
+    }
+    return "unknown";
+}
+
+TransformApplyResult applySceneBodyTransform(ObjectId id, const TransformValues& requested,
+                                             ConstructionScene& scene,
+                                             ConstructionHistory& history,
+                                             BodyPlacementRefusal* outRefusal) {
+    TransformApplyResult result;
+    BodyPlacementRefusal refusal = BodyPlacementRefusal::None;
+    SceneObject* body = scene.findBody(id);
+    if (body == nullptr) {
+        refusal = BodyPlacementRefusal::UnknownBody;
+    } else if (body->locked()) {
+        refusal = BodyPlacementRefusal::Locked;
+    } else if (body->isFaceSupportedCad()) {
+        refusal = BodyPlacementRefusal::DerivedPlacement;
+    }
+    if (outRefusal != nullptr) {
+        *outRefusal = refusal;
+    }
+    if (refusal != BodyPlacementRefusal::None) {
+        // Rejected with every previous value intact and nothing opened.
+        result.status = TransformUpdateStatus::Rejected;
+        if (body != nullptr) {
+            result.values = body->transform().values();
+        }
+        return result;
+    }
+    ScopedConstructionEdit edit(history);
+    return applyTransformValues(body->transform(), requested);
+}
+
 }  // namespace forgeshape

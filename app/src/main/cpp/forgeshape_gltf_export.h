@@ -116,6 +116,14 @@ enum class GlbExportStatus {
     // every triangle to keep the winding right would be implementing Mirror in
     // the exporter, which is not the exporter's to decide.
     MirroredTransform,
+    // A FACE-SUPPORTED CAD Body whose placement does not resolve: its producer
+    // is gone or is not a CAD body, its lineage is stale, or its face no longer
+    // exists (`ConstructionScene::resolveWorldModel` answered false). Its world
+    // placement is derived and its stored transform is inert, so there is no
+    // honest position to write; the export is refused rather than writing the
+    // body at the origin or at a guessed face. APPENDED, so every earlier value
+    // keeps its meaning (`CAD-FACE-SUPPORTED-PLACEMENT-R1`).
+    UnresolvedPlacement,
 };
 
 const char* glbExportStatusName(GlbExportStatus status);
@@ -173,6 +181,13 @@ struct GlbExportScene {
 //
 // A body whose current representation is not a usable triangle mesh is refused
 // rather than skipped — a file quietly missing a body is worse than no file.
+//
+// Every body is placed by its WORLD model: an independent body's own transform,
+// a face-supported CAD Body's `ConstructionScene::resolveWorldModel` (its
+// producer's world model composed with the face frame), so a file shows each
+// body exactly where the viewport draws it. A face-supported body whose support
+// does not resolve is refused as `UnresolvedPlacement`, never exported at its
+// inert stored transform.
 GlbExportStatus captureGlbExportScene(const ConstructionScene& scene, ProjectKind kind,
                                       GlbExportScene* out);
 
