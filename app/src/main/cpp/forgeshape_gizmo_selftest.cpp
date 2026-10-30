@@ -4,10 +4,14 @@
 #include <cstring>
 #include <limits>
 
+#include "forgeshape_cad_body.h"
+#include "forgeshape_cad_face.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_history.h"
 #include "forgeshape_mesh.h"
+#include "forgeshape_project_document.h"
+#include "forgeshape_project_state.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sketch_overlay.h"
 #include "forgeshape_transform.h"
@@ -228,6 +232,198 @@ const GizmoHandle kAxisHandles[3] = {GizmoHandle::AxisX, GizmoHandle::AxisY, Giz
 const GizmoHandle kPlaneHandles[3] = {GizmoHandle::PlaneXY, GizmoHandle::PlaneXZ,
                                       GizmoHandle::PlaneYZ};
 
+
+// ---------------------------------------------------------------------------
+// CAD-FACE-SUPPORTED-PLACEMENT-R1: the gizmo over a face-supported CAD body
+// ---------------------------------------------------------------------------
+//
+// A face-supported CAD body's world placement is DERIVED from its producer's
+// face (`ConstructionScene::resolveWorldModel`) and its stored transform is
+// read by nothing that draws or picks it. A handle over one would be pivoted
+// on that inert stored transform -- metres away from the drawn body -- and a
+// drag would write a placement nobody sees. So the handles must not exist for
+// one, and nothing a pointer does may record a step, move the fingerprint or
+// change a `.forge` byte.
+
+CadBodyState gizmoRectBody(double w, double h, double d) {
+    CadBodyState state;
+    cadBaseSketch(state).plane = Workplane::XY;
+    SketchRectangle rect;
+    rect.center = SketchPoint{0.0, 0.0};
+    rect.width = w;
+    rect.height = h;
+    addSketchEntity(&cadBaseSketch(state), rect);
+    state.extrude.profileEntityId = 1;
+    state.extrude.depth = d;
+    state.extrude.direction = ExtrudeDirection::AlongNormal;
+    return state;
+}
+
+SceneObject* gizmoAddCad(ConstructionScene& scene, const CadBodyState& state) {
+    CadStatus why = CadStatus::Ok;
+    SceneObject* body = scene.addCadBody(state, &why);
+    if (body != nullptr) publishSceneObject(*body);
+    return body;
+}
+
+SceneObject* gizmoAddDependentOnFarCap(ConstructionScene& scene, const SceneObject* producer) {
+    if (producer == nullptr || producer->cadOrNull() == nullptr) return nullptr;
+    const CadBodyState& ps = producer->cadOrNull()->state();
+    std::vector<CadFace> faces;
+    enumerateCadFaces(ps, &faces);
+    for (const CadFace& face : faces) {
+        if (face.token.kind != CadFaceKind::CapFar || !face.eligible) continue;
+        CadBodyState child = gizmoRectBody(0.5, 0.5, 0.5);
+        cadBaseSketch(child).hasFaceSupport = true;
+        cadBaseSketch(child).faceSupport.producerObjectId = producer->objectId();
+        cadBaseSketch(child).faceSupport.producerLocalFeatureId = kCadFeatureId;
+        cadBaseSketch(child).faceSupport.face = face.token;
+        cadBaseSketch(child).faceSupport.lineageToken = cadTopologySignature(ps);
+        return gizmoAddCad(scene, child);
+    }
+    return nullptr;
+}
+
+struct PlacementWitness {
+    uint64_t fingerprint = 0;
+    std::vector<uint8_t> document;
+    size_t undo = 0;
+    size_t redo = 0;
+    TransformValues stored{};
+};
+
+PlacementWitness witness(const ConstructionScene& scene, const ConstructionHistory& history,
+                         ObjectId id) {
+    PlacementWitness w;
+    w.fingerprint = projectSemanticFingerprint(scene, ProjectKind::Construction);
+    w.document = encodeProjectV1Unchecked(captureProjectDocument(scene, ProjectKind::Construction));
+    w.undo = history.undoDepth();
+    w.redo = history.redoDepth();
+    if (const SceneObject* body = scene.findBody(id)) w.stored = body->transform().values();
+    return w;
+}
+
+bool sameWitness(const PlacementWitness& a, const PlacementWitness& b) {
+    return a.fingerprint == b.fingerprint && a.document == b.document && a.undo == b.undo
+           && a.redo == b.redo && a.stored.positionX == b.stored.positionX
+           && a.stored.positionY == b.stored.positionY && a.stored.positionZ == b.stored.positionZ
+           && a.stored.rotationX == b.stored.rotationX && a.stored.rotationY == b.stored.rotationY
+           && a.stored.rotationZ == b.stored.rotationZ && a.stored.scaleX == b.stored.scaleX
+           && a.stored.scaleY == b.stored.scaleY && a.stored.scaleZ == b.stored.scaleZ;
+}
+
+void runFaceSupportedGizmoChecks(Recorder& r) {
+    constexpr int kWidth = 1080;
+    constexpr int kHeight = 2000;
+    const CameraSnapshot camera =
+            perspectiveCamera(Vec3{4.0f, -6.0f, 7.0f}, Vec3{0.0f, 0.0f, 1.5f}, kWidth, kHeight);
+
+    // T02: no handle over a face-supported body, and no pointer path through.
+    {
+        ConstructionScene scene{NoProjectTag{}};
+        ConstructionHistory history{scene};
+        GizmoSession gizmo{scene, history};
+        SceneObject* producer = gizmoAddCad(scene, gizmoRectBody(2.0, 1.0, 3.0));
+        SceneObject* dependent = gizmoAddDependentOnFarCap(scene, producer);
+        const bool built = dependent != nullptr && dependent->isFaceSupportedCad()
+                && scene.setActiveBody(dependent->objectId());
+        r.check("FSP_T02_the_dependent_scene_builds", built);
+        gizmo.setActive(true);
+        const PlacementWitness before = witness(scene, history, built ? dependent->objectId() : kNoObject);
+        const GizmoSnapshot state = gizmo.snapshot(camera, kWidth, kHeight);
+        r.check("FSP_T02_no_gizmo_is_drawn_over_a_face_supported_body", built && !state.visible);
+
+        // Sweep the pixels around where a handle pivoted on the STORED
+        // transform would stand: none may be hit, none may start a drag.
+        float sx = 0.0f, sy = 0.0f;
+        bool anyHit = false;
+        bool anyDrag = false;
+        if (projectWorldToScreen(camera, Vec3{0.0f, 0.0f, 0.0f}, kWidth, kHeight, &sx, &sy)) {
+            for (int dy = -240; dy <= 240 && !anyDrag; dy += 12) {
+                for (int dx = -240; dx <= 240 && !anyDrag; dx += 12) {
+                    const float x = sx + static_cast<float>(dx);
+                    const float y = sy + static_cast<float>(dy);
+                    if (gizmo.hitTest(camera, x, y, kWidth, kHeight) != GizmoHandle::None) {
+                        anyHit = true;
+                    }
+                    if (gizmo.beginDrag(7, camera, x, y, kWidth, kHeight)) {
+                        anyDrag = true;
+                        for (int step = 1; step <= 8; ++step) {
+                            gizmo.updateDrag(7, camera, x + 10.0f * step, y - 6.0f * step,
+                                             kWidth, kHeight);
+                        }
+                        gizmo.commitDrag();
+                    }
+                }
+            }
+        }
+        r.check("FSP_T02_no_handle_can_be_hit_over_it", built && !anyHit);
+        r.check("FSP_T02_no_pointer_can_start_a_drag_on_it", built && !anyDrag);
+        r.check("FSP_T02_and_nothing_is_recorded_dirtied_or_written",
+                built && sameWitness(before, witness(scene, history, dependent->objectId())));
+    }
+
+    // T03: the PRODUCER still drags, and its dependent follows in the scene.
+    {
+        ConstructionScene scene{NoProjectTag{}};
+        ConstructionHistory history{scene};
+        GizmoSession gizmo{scene, history};
+        SceneObject* producer = gizmoAddCad(scene, gizmoRectBody(2.0, 1.0, 3.0));
+        SceneObject* dependent = gizmoAddDependentOnFarCap(scene, producer);
+        const bool built = dependent != nullptr && scene.setActiveBody(producer->objectId());
+        gizmo.setActive(true);
+        Mat4 dependentBefore;
+        const bool resolvedBefore = built && scene.resolveWorldModel(dependent->objectId(), &dependentBefore);
+        const GizmoSnapshot state = gizmo.snapshot(camera, kWidth, kHeight);
+        Vec3 grabWorld{};
+        float x = 0.0f, y = 0.0f;
+        const bool grabbed = built && state.visible
+                && gizmoHandleGrabPoint(state, GizmoHandle::AxisX, &grabWorld)
+                && projectWorldToScreen(camera, grabWorld, kWidth, kHeight, &x, &y)
+                && gizmo.hitTest(camera, x, y, kWidth, kHeight) == GizmoHandle::AxisX
+                && gizmo.beginDrag(3, camera, x, y, kWidth, kHeight);
+        for (int step = 1; grabbed && step <= 10; ++step) {
+            gizmo.updateDrag(3, camera, x + 12.0f * step, y, kWidth, kHeight);
+        }
+        const bool committed = grabbed && gizmo.commitDrag();
+        Mat4 dependentAfter;
+        const bool resolvedAfter = built && scene.resolveWorldModel(dependent->objectId(), &dependentAfter);
+        const double producerMoved = built ? producer->transform().values().positionX : 0.0;
+        r.check("FSP_T03_the_producer_still_drags_as_one_step",
+                committed && history.undoDepth() == 1 && std::fabs(producerMoved) > 0.05);
+        r.check("FSP_T03_and_its_dependent_follows_in_the_scene",
+                resolvedBefore && resolvedAfter
+                        && std::fabs((dependentAfter.m[12] - dependentBefore.m[12]) - producerMoved) < 1e-4
+                        && dependent->transform().values().positionX == 0.0);
+    }
+
+    // T04: an independent CAD body is still an ordinary transformable body.
+    {
+        ConstructionScene scene{NoProjectTag{}};
+        ConstructionHistory history{scene};
+        GizmoSession gizmo{scene, history};
+        SceneObject* body = gizmoAddCad(scene, gizmoRectBody(1.0, 1.0, 1.0));
+        gizmo.setActive(true);
+        const GizmoSnapshot state = gizmo.snapshot(camera, kWidth, kHeight);
+        Vec3 grabWorld{};
+        float x = 0.0f, y = 0.0f;
+        const bool grabbed = body != nullptr && !body->isFaceSupportedCad() && state.visible
+                && gizmoHandleGrabPoint(state, GizmoHandle::AxisX, &grabWorld)
+                && projectWorldToScreen(camera, grabWorld, kWidth, kHeight, &x, &y)
+                && gizmo.hitTest(camera, x, y, kWidth, kHeight) == GizmoHandle::AxisX
+                && gizmo.beginDrag(4, camera, x, y, kWidth, kHeight);
+        for (int step = 1; grabbed && step <= 10; ++step) {
+            gizmo.updateDrag(4, camera, x + 12.0f * step, y, kWidth, kHeight);
+        }
+        r.check("FSP_T04_an_independent_cad_body_still_drags",
+                grabbed && gizmo.commitDrag() && history.undoDepth() == 1
+                        && std::fabs(body->transform().values().positionX) > 0.05);
+    }
+
+    // The device recorder for this suite holds 256 results
+    // (`kMaxGizmoChecks`, forgeshape_jni.cpp).
+    r.check("FSP_gizmo_suite_fits_its_256_slot_device_recorder", r.n + 1 <= 256);
+}
 }  // namespace
 
 int runGizmoSelfTests(GizmoSelfTestResult* out, int maxOut) {
@@ -2028,6 +2224,8 @@ int runGizmoSelfTests(GizmoSelfTestResult* out, int maxOut) {
         }
         r.check("uipref_stroke_recipes_are_the_documented_bundles", spreads);
     }
+
+    runFaceSupportedGizmoChecks(r);
 
     return r.n;
 }
