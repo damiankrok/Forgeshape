@@ -1,0 +1,7 @@
+# Machine-captured evidence (CI job logs, device facts, diagnostic outputs) and
+# byte-exact copies of OWNER source documents are kept exactly as captured, so
+# `git diff --check` (CI FAST's whitespace gate) does not judge their
+# whitespace. Product code, tests, scripts and authored docs are still checked.
+artifacts/**/evidence/** -whitespace
+artifacts/**/diagnostics/** -whitespace
+artifacts/**/sources/** -whitespace
