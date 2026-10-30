@@ -3,8 +3,8 @@ B1b distinct export names: 275
 B1c JNIEXPORT lines in jni.cpp: 276
 B1d Java_ exports outside NativeViewport in any .cpp: 0
 B2 'static native' declarations in NativeViewport.java: 275
-B2b Java files declaring a native method (regex '^\s*(public |private |protected )?(static )?native '): NativeViewport.java
-B1e names defined twice (preprocessor variants): Java_com_forgeshape_app_NativeViewport_debugInjectDeviceLoss
+B2b Java files declaring a native method (regex '^\s*(public |private |protected )?(static )?native '): NativeViewport.java 
+B1e names defined twice (preprocessor variants): Java_com_forgeshape_app_NativeViewport_debugInjectDeviceLoss 
 B1f export-name set equals Java native-name set: yes
 B3 JNI upcalls in jni.cpp (FindClass|GetMethodID|GetStaticMethodID|Call*Method|RegisterNatives|AttachCurrentThread): 0
 B4 files under cpp/ (forgeshape_*) including an <android/...> header:
@@ -53,7 +53,7 @@ B9 translateAction + touchEvent locations in jni.cpp:
 9510:    if (!translateAction(action, &translated)) {
 B10 Java file counts: total=85; importing android.*=63; not importing android.*=22
 B10b java without android imports:
-AppPreferences.java AppTheme.java CadHud3dPresentation.java CadHudPresentation.java CadHudTouchAttribution.java CadRevolvePresentation.java DiagnosticLog.java EditorUiState.java ExactExpression.java FeatureHistoryPresentation.java FreeformPresentation.java GizmoStrokeWeight.java Handedness.java InspectorHost.java LengthUnit.java ProjectDrawerPolicy.java SketchBrowserPresentation.java SketchChromePolicy.java SketchDraftingPresentation.java SurfacePresentation.java ToolbarRowBudget.java WorkspaceLayoutMode.java
+AppPreferences.java AppTheme.java CadHud3dPresentation.java CadHudPresentation.java CadHudTouchAttribution.java CadRevolvePresentation.java DiagnosticLog.java EditorUiState.java ExactExpression.java FeatureHistoryPresentation.java FreeformPresentation.java GizmoStrokeWeight.java Handedness.java InspectorHost.java LengthUnit.java ProjectDrawerPolicy.java SketchBrowserPresentation.java SketchChromePolicy.java SketchDraftingPresentation.java SurfacePresentation.java ToolbarRowBudget.java WorkspaceLayoutMode.java 
 B11 lines: jni.cpp=10337 renderer=4574 java_total=33208
 B12 MSVC-sensitive grep over neutral sources (product+selftests, excl jni/renderer/third_party):
   __builtin_             0 files
@@ -77,7 +77,7 @@ forgeshape_cad_revolve_selftest.cpp:128:    return static_cast<long>(used.size()
 forgeshape_cad_revolve_selftest.cpp:129:           + static_cast<long>(mesh.indices.size() / 3u);
 forgeshape_gltf_import_selftest.cpp:125:    out.insert(out.end(), original.begin() + static_cast<long>(binHeader) + 8,
 forgeshape_gltf_import_selftest.cpp:126:               original.begin() + static_cast<long>(binHeader) + 8 + binLength);
-B13 manifold include sites: forgeshape_cad_kernel.cpp
+B13 manifold include sites: forgeshape_cad_kernel.cpp 
 B14 manifest:
 4:    <uses-feature
 5:        android:name="android.hardware.vulkan.version"
