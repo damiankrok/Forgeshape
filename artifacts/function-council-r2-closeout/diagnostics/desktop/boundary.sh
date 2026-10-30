@@ -29,6 +29,6 @@ N=$(ls $C/forgeshape_*.{h,cpp} | grep -v -e forgeshape_jni.cpp -e forgeshape_ren
 for p in '__builtin_' '__attribute__' 'M_PI\b' '#pragma GCC' '__int128' 'typeof\(' '\bVLA' 'alloca\(' '__restrict' '\bssize_t\b' '<unistd.h>' '<pthread.h>' '<sys/' 'std::aligned_alloc' ; do
   printf '  %-22s %s\n' "$p" "$(echo "$N" | xargs grep -lE "$p" 2>/dev/null | wc -l) files"; done
 echo "B12b designated initializers '{ .x =' / '{.x=' (C++20 under MSVC /std:c++17 is an error):"; echo "$N" | xargs grep -nE '\{ *\.[a-zA-Z_]+ *=' | head -5 | sed 's|.*/||'
-echo "B12c 'long' as a type in code (not comments/strings/long long):"; echo "$N" | xargs grep -nwE 'long' | grep -vE '//.*\blong\b|\* .*\blong\b' | grep -vE 'long long|"[^"]*long' | sed 's|^app/src/main/cpp/||' 
+echo "B12c 'long' as a type in code (not comments/strings/long long):"; echo "$N" | xargs grep -nwE 'long' | grep -vE '//.*\blong\b|\* .*\blong\b' | grep -vE 'long long|"[^"]*long' | sed 's|^app/src/main/cpp/||'
 echo "B13 manifold include sites: $(grep -l 'manifold/' $C/forgeshape_* | xargs -n1 basename | tr '\n' ' ')"
 echo "B14 manifest:"; grep -nE 'uses-feature|uses-permission|configChanges|vulkan' app/src/main/AndroidManifest.xml

@@ -6,7 +6,7 @@ git HEAD of product tree: 642e47f ; last product commit: b227a0b
    272	    private boolean everPersisted;
 ----- EditorWorkspaceView.java:1019,1030
   1019	        autosave = new AutosaveController(context);
-  1020	
+  1020
   1021	        // The recovery question is asked ONCE PER PROCESS and before Home: this
   1022	        // is the moment the session begins, and it begins once. An Activity
   1023	        // recreation — a theme change, a rotation the config did not absorb —
@@ -24,13 +24,13 @@ git HEAD of product tree: 642e47f ; last product commit: b227a0b
   2600	        }
   2601	        return !everPersisted || NativeViewport.projectFingerprint() != persistedFingerprint;
   2602	    }
-  2603	
+  2603
   2604	    /** Records that the live project now equals what the user has stored. */
   2605	    private void noteProjectPersisted() {
   2606	        persistedFingerprint = NativeViewport.projectFingerprint();
   2607	        everPersisted = true;
   2608	    }
-  2609	
+  2609
   2610	    /** Records that the live project exists nowhere the user chose. */
   2611	    private void noteProjectUnpersisted() {
   2612	        everPersisted = false;
@@ -47,7 +47,7 @@ git HEAD of product tree: 642e47f ; last product commit: b227a0b
   2630	        }
   2631	        proceedToLeave(intent);
   2632	    }
-  2633	
+  2633
   2634	    /** Continues what the unsaved-changes question was guarding. */
   2635	    private void proceedToLeave(int intent) {
   2636	        switch (intent) {
@@ -77,7 +77,7 @@ git HEAD of product tree: 642e47f ; last product commit: b227a0b
   2660	                break;
   2661	        }
   2662	    }
-  2663	
+  2663
   2664	    @Override
   2665	    public void onUnsavedSaveRequested() {
   2666	        final int intent = pendingLeave;
@@ -93,7 +93,7 @@ git HEAD of product tree: 642e47f ; last product commit: b227a0b
   2676	        unsavedPrompt.setVisibility(GONE);
   2677	        proceedToLeave(intent);
   2678	    }
-  2679	
+  2679
   2680	    @Override
   2681	    public void onUnsavedDiscardRequested() {
   2682	        final int intent = pendingLeave;
@@ -180,12 +180,12 @@ git HEAD of product tree: 642e47f ; last product commit: b227a0b
   5601	        recoveryPrompt.setVisibility(VISIBLE);
   5602	        return true;
   5603	    }
-  5604	
+  5604
 ----- EditorWorkspaceView.java:5652,5701
   5652	    public void onRecoverRequested() {
   5653	        uiState.recordRecoveryResolved();
   5654	        recoveryPrompt.setVisibility(GONE);
-  5655	
+  5655
   5656	        final byte[] bytes = ProjectCheckpoint.read(getContext());
   5657	        final int status = bytes == null
   5658	                ? NativeViewport.PROJECT_NO_DATA
@@ -217,7 +217,7 @@ git HEAD of product tree: 642e47f ; last product commit: b227a0b
   5684	        showStatus(getContext().getString(R.string.status_recovery_recovered, projectSummary()),
   5685	                R.attr.fsTextSuccess);
   5686	    }
-  5687	
+  5687
   5688	    @Override
   5689	    public void onDiscardRecoveryRequested() {
   5690	        uiState.recordRecoveryResolved();
@@ -253,12 +253,12 @@ git HEAD of product tree: 642e47f ; last product commit: b227a0b
   5726	    }
 ----- EditorWorkspaceView.java:5778,5800
   5778	    private byte[] pendingGlbBytes;
-  5779	
+  5779
   5780	    /** Stages the bytes an export would write, without opening a picker. */
   5781	    void onExportGlbRequestedForTest(byte[] bytes) {
   5782	        pendingGlbBytes = bytes;
   5783	    }
-  5784	
+  5784
   5785	    /** The user picked somewhere to put the exported model. */
   5786	    void onCreateGlbDocumentChosen(android.net.Uri destination) {
   5787	        final byte[] bytes = pendingGlbBytes;
