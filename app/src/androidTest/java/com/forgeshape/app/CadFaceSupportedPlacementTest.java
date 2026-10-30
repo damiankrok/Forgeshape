@@ -51,9 +51,11 @@ import java.io.InputStream;
  * puts it on its producer's face, in portrait and landscape at font scale 1.0
  * and 1.5.
  *
- * <p>The producer is a 2 x 2 rectangle extruded 2 on XY (world
- * {@code [-1,1] x [-1,1] x [0,2]}); the dependent is a 1 x 1 rectangle on the
- * producer's far cap extruded 0.5 (world {@code [-0.5,0.5]^2 x [2,2.5]}).
+ * <p>The producer is a rectangle dragged to about 2 x 2 on XY and extruded 2
+ * (world z {@code [0,2]}); the dependent is a rectangle dragged to about 1 x 1
+ * on the producer's far cap and extruded 0.5 (world z {@code [2,2.5]}). The
+ * footprints are what the drag snapped to on the view-adaptive grid, so they
+ * are measured; the placement is what is asserted.
  * No control is located by coordinate; every viewport pixel comes from
  * {@code debugProjectWorld}.
  */
@@ -139,11 +141,22 @@ public final class CadFaceSupportedPlacementTest {
 
         // The GLB written through the app's own export write path puts the
         // dependent on the producer's far cap.
+        // Footprints are what the drag snapped to on the adaptive grid, so
+        // they are MEASURED, never assumed; what is asserted is PLACEMENT --
+        // the dependent's base on the producer's far cap (z = its depth 2),
+        // its extrusion 0.5 above it, centred on the cap and inside it.
+        // Before this stage the file put it at z = [0, 0.5] about the origin.
         GlbDocument document = exportThroughApp("on_face.glb");
-        assertBounds("dependent on the far cap", body(document, dependent),
-                -0.5f, -0.5f, 2.0f, 0.5f, 0.5f, 2.5f);
-        assertBounds("producer", body(document, producer), -1f, -1f, 0f, 1f, 1f, 2f);
-        rig.fact("dependent_world_aabb", "[-0.5,-0.5,2]..[0.5,0.5,2.5]");
+        final float[] p0 = worldBounds(body(document, producer));
+        final float[] d0 = worldBounds(body(document, dependent));
+        rig.fact("producer_world_aabb", java.util.Arrays.toString(p0));
+        rig.fact("dependent_world_aabb", java.util.Arrays.toString(d0));
+        assertCentredOnZ("producer", p0, 0f, 2f);
+        assertCentredOnZ("dependent on the far cap", d0, 2f, 2.5f);
+        assertTrue("the dependent stands inside the producer's cap "
+                        + java.util.Arrays.toString(d0),
+                d0[0] >= p0[0] - TOLERANCE && d0[3] <= p0[3] + TOLERANCE
+                        && d0[1] >= p0[1] - TOLERANCE && d0[4] <= p0[4] + TOLERANCE);
 
         // The producer, an independent body, still offers Transform by a real
         // tap, and a typed Apply through the placement editor moves it -- and
@@ -158,9 +171,9 @@ public final class CadFaceSupportedPlacementTest {
         assertEquals("one step for the producer's move", stepsBeforeMove + 1,
                 NativeViewport.constructionUndoDepth());
         document = exportThroughApp("producer_moved.glb");
-        assertBounds("producer moved", body(document, producer), 2f, -1f, 0f, 4f, 1f, 2f);
-        assertBounds("dependent followed", body(document, dependent),
-                2.5f, -0.5f, 2.0f, 3.5f, 0.5f, 2.5f);
+        assertBounds("producer moved", body(document, producer), shifted(p0, 3f));
+        assertBounds("dependent followed by exactly the producer's move",
+                body(document, dependent), shifted(d0, 3f));
 
         // Selecting the dependent while Transform is held moves the rail to
         // Shape and takes the gizmo down.
@@ -179,7 +192,7 @@ public final class CadFaceSupportedPlacementTest {
                         NativeViewport.applyBoxTransform(1.0, 2.0, 3.0, 0.0, 0.0, 0.0,
                                 1.0, 1.0, 1.0)));
         assertBounds("after reopen", body(exportThroughApp("reopened.glb"), dependent),
-                2.5f, -0.5f, 2.0f, 3.5f, 0.5f, 2.5f);
+                shifted(d0, 3f));
     }
 
     // -----------------------------------------------------------------------
@@ -415,12 +428,12 @@ public final class CadFaceSupportedPlacementTest {
         throw new AssertionError("no node named Body_" + id);
     }
 
-    private static void assertBounds(String what, GlbDocument.Body body, float minX, float minY,
-                                     float minZ, float maxX, float maxY, float maxZ) {
+    /** {@code [minX, minY, minZ, maxX, maxY, maxZ]} of the body's world vertices. */
+    private static float[] worldBounds(GlbDocument.Body body) {
         final float[] lo = {Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE};
         final float[] hi = {-Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE};
         final int count = body.positions.length / 3;
-        assertNotEquals(what + ": the body has geometry", 0, count);
+        assertNotEquals(body.name + " has geometry", 0, count);
         for (int i = 0; i < count; i++) {
             final float[] p = body.worldVertex(i);
             for (int axis = 0; axis < 3; axis++) {
@@ -428,8 +441,25 @@ public final class CadFaceSupportedPlacementTest {
                 hi[axis] = Math.max(hi[axis], p[axis]);
             }
         }
-        final float[] want = {minX, minY, minZ, maxX, maxY, maxZ};
-        final float[] got = {lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]};
+        return new float[]{lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]};
+    }
+
+    private static float[] shifted(float[] box, float dx) {
+        return new float[]{box[0] + dx, box[1], box[2], box[3] + dx, box[4], box[5]};
+    }
+
+    /** z spans exactly [z0, z1]; x and y are a real, origin-centred footprint. */
+    private static void assertCentredOnZ(String what, float[] box, float z0, float z1) {
+        final String got = what + " " + java.util.Arrays.toString(box);
+        assertEquals(got + ": bottom", z0, box[2], TOLERANCE);
+        assertEquals(got + ": top", z1, box[5], TOLERANCE);
+        assertTrue(got + ": a real footprint", box[3] - box[0] > 0.1f && box[4] - box[1] > 0.1f);
+        assertEquals(got + ": centred in x", 0f, box[0] + box[3], 2 * TOLERANCE);
+        assertEquals(got + ": centred in y", 0f, box[1] + box[4], 2 * TOLERANCE);
+    }
+
+    private static void assertBounds(String what, GlbDocument.Body body, float[] want) {
+        final float[] got = worldBounds(body);
         for (int i = 0; i < 6; i++) {
             assertEquals(what + ": world AABB[" + i + "] " + java.util.Arrays.toString(got),
                     want[i], got[i], TOLERANCE);
