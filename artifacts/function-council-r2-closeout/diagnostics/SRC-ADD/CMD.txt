@@ -1,0 +1,6 @@
+# SRC-ADD extraction (FUNCTION-COUNCIL-R2-CLOSEOUT-R1)
+# Builds work/extract_SRC-ADD.tsv; verifies every statement_quote is a verbatim
+# substring of its source file and every matches_existing_ids entry exists in
+# artifacts/function-council-r2/requirements_traceability.tsv.
+cd /tmp/claude-0/fc2c-scratch/SRC-ADD && python3 -I /home/user/Forgeshape/artifacts/function-council-r2-closeout/diagnostics/SRC-ADD/build_extract.py /home/user/Forgeshape > /home/user/Forgeshape/artifacts/function-council-r2-closeout/diagnostics/SRC-ADD/build_extract.out 2>&1
+# exit code: 0 (output recorded in build_extract.out)
