@@ -1,7 +1,28 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.104.0
+**Status Version:** 0.105.0
 **Updated:** 2026-10-30
+**Latest stage:** **`CAD-FACE-SUPPORTED-PLACEMENT-R1` —
+`PASS-CAD-FACE-SUPPORTED-PLACEMENT-R1`** (2026-10-30). **TECH PASS (emulator) /
+OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`feature/cad-face-supported-placement-r1` from exactly `7c2fc91`; product
+frozen at `912b861`. Record: `artifacts/cad-face-supported-placement-r1/SUMMARY.md`.
+A CAD body sketched on another body's face now exports where it is drawn (GLB
+placement from `resolveWorldModel`; an unresolved support refused as
+`UnresolvedPlacement`, zero bytes; independent bodies byte-identical) and is
+not independently transformable (typed write refused as `DerivedPlacement`,
+`APPLY_REJECTED_DERIVED_PLACEMENT` = 11; the gizmo neither drawn nor dragged
+over one; Transform withdrawn above JNI). Closes closeout CR-01 and CR-02 and
+the stale `uir4a04`. No `.forge`, `CADB`, fixture or spec change. RED: host 18
+failing checks, the CR-02 reproducer and `uir4a04` on the unchanged product.
+GREEN: host `HOST_SELFTESTS_OK (4434 checks, 0 failed)`, JVM 196/0, corpus
+72, release guard PASS; `CI DEVICE` `41084823234` 50/50 and `41090517111`
+109/109 (after `41078310302` 86/87, a test footprint assumption fixed in the
+test only); final `CI FAST` `41098028076` success, `app-debug.apk` 17714955
+bytes, SHA-256 `8ec4356e30bb42195300214f42d17f91ebb4810bd576a2d0277546565c31edf9`.
+`.gitattributes` exempts raw evidence paths from FAST's whitespace gate (the
+inherited audit evidence failed it; no evidence byte changed). OD-01, OD-05,
+OD-16, OD-27 and OD-29 stay open. No FullSharded.
 **Latest audit closeout (research, no product change):**
 **`FUNCTION-COUNCIL-R2-CLOSEOUT-R1` — `AUDIT-CLOSEOUT-PARTIAL-SOURCE-GAP`**
 (2026-10-30). NO CURRENT FULL MASTER PLAN COMPLIANCE CLAIM: the OWNER source
@@ -4888,9 +4909,12 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: OWNER physical-device review of the `CAD-R2-C2` APK**
-(`ci-fast-evidence` artifact `12860436405` of `CI FAST` `40787465884`, APK
-SHA-256 `262076926e8cc3f90dc70425de4363d3ba3300adfc1998092d581cdffc40be9e`) against the test packs in
+**Exactly one next step: OWNER physical-device review of the
+`CAD-FACE-SUPPORTED-PLACEMENT-R1` APK** (`ci-fast-evidence` artifact
+`12996659575` of `CI FAST` `41098028076`, `app-debug.apk` SHA-256
+`8ec4356e30bb42195300214f42d17f91ebb4810bd576a2d0277546565c31edf9`; it carries the
+`CAD-R2-C2` product plus this stage) against
+`artifacts/cad-face-supported-placement-r1/OWNER_LATER_TEST_PACK.md` and the test packs in
 `artifacts/cad-r2-c2-picking-seam/SUMMARY.md` (the orthographic seam tap) and
 `artifacts/cad-r2-c1-quality-gate/SUMMARY.md` (which includes the CAD-R2
 retained-sketch checklist), together with the still-pending
@@ -4903,8 +4927,8 @@ migration passes the Tier-5 aggregate once.
 
 `FUNCTION-COUNCIL-R2` adds decision support to that review, not a second next
 step: its owner-decision register (`artifacts/function-council-r2/OWNER_DECISIONS_REQUIRED.md`,
-OD-27 is this review) and its recommended stage to schedule AFTER the verdict,
-`CAD-FACE-SUPPORTED-PLACEMENT-R1` (not started; `PRIORITISED_BACKLOG.md`).
+OD-27 is this review). Its recommended stage, `CAD-FACE-SUPPORTED-PLACEMENT-R1`,
+is now technically closed (above) and joins this same review.
 
 `FUNCTION-COUNCIL-R1`'s debt, re-checked by `FUNCTION-COUNCIL-R2` on `70a6c14`
 (`artifacts/function-council-r2/COUNCIL_DEBT_RECHECK.md`): D5 is closed; D2, D3,

@@ -99,7 +99,31 @@ Job logs: `evidence/device-run-*/job.log`.
 
 ## 4. CI FAST (last, on the frozen product)
 
-See SUMMARY §Final CI FAST.
+### Attempt 1: `41097660891` on `ce1a375` — FAILURE
+
+The job stopped at its first gate, `git diff --check <main merge-base> HEAD`,
+and never reached the build.
+- **What it flagged.** Trailing whitespace in raw evidence: what this branch
+  inherited from the two audit branches, plus this stage's two CI job logs.
+- **Not this stage's fault.** The base `7c2fc91` fails the same check, while
+  C2 `70a6c14` passes.
+- **Fix (`7ee9fa0`).** A `.gitattributes` with `-whitespace` on
+  `artifacts/**/{evidence,diagnostics,sources}/**`. No evidence byte was
+  rewritten, and product, tests, scripts and docs stay checked.
+- **Log:** `evidence/fast-run-41097660891/job.log`.
+
+### Attempt 2: `41098028076` on `7ee9fa0` (product = `912b861`) — SUCCESS
+
+| Gate | Result |
+| --- | --- |
+| Whitespace check | clean |
+| Build | `BUILD SUCCESSFUL` |
+| JVM tests | 196 / 0 skipped / 0 failed (from the artifact's XML) |
+| Release self-test guard | `RELEASE_SELFTEST_GUARD=PASS` |
+| Corpus parity | `FORGE_CORPUS_PARITY=PASS (72/72 byte-identical)` |
+| Runtime and device guards | `TESTRUNTIME-01..12` and the device guards PASS |
+
+The artifact and APK digests are in `evidence/fast-run-41098028076/ARTIFACT.txt`.
 
 ## 5. Not executed
 
