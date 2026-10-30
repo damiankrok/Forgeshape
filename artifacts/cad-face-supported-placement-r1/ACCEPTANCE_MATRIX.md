@@ -5,16 +5,16 @@ closeout reproducer showed the defect. "GREEN" means it passes on this
 branch's product.
 
 - Host: `HOST_SELFTESTS_OK (4434 checks, 0 failed)`.
-- Device: see `TESTS.md`.
+- Device: `CI DEVICE` `41084823234` 50/50 and `41090517111` 109/109 (emulator); see `TESTS.md`.
 
 ## Export (T-01)
 
 | ID | Requirement | Evidence | RED | GREEN |
 | --- | --- | --- | --- | --- |
-| E01 | Dependent on a far CAP exports on the cap; node translation = the resolved origin; every vertex and normal = the renderer's | `GLTF_EXPORT FSP_E01_*` (5); device `CadFaceSupportedPlacementTest` (AABB [-0.5,-0.5,2]..[0.5,0.5,2.5]) | 3 of 5 fail | pass |
+| E01 | Dependent on a far CAP exports on the cap; node translation = the resolved origin; every vertex and normal = the renderer's | `GLTF_EXPORT FSP_E01_*` (5); device `CadFaceSupportedPlacementTest` (measured AABB [-0.4,-0.4,2]..[0.4,0.4,2.5] on producer [-1,-1,0]..[1,1,2], `41084823234`) | 3 of 5 fail | pass |
 | E02 | Dependent on a SIDE exports rotated onto the side; cap and side files differ | `FSP_E02_*` (3) | 3 fail (cap and side were byte-identical) | pass |
 | E03 | Chain A→B→C: every level on its producer | `FSP_E03_*` (3) | 3 fail | pass |
-| E04 | Moved + rotated producer carries its dependents into the file, and again after a second move | `FSP_E04_*` (2); device: typed producer move → dependent [2.5,3.5] in x | 2 fail | pass |
+| E04 | Moved + rotated producer carries its dependents into the file, and again after a second move | `FSP_E04_*` (2); device: typed producer move +3 m → dependent box shifted exactly +3 m | 2 fail | pass |
 | E05 | The committed `CADB` v2 fixtures (`cad_face_sketch_cap_v2`, `cad_face_sketch_side_v2`, `cad_face_chain_v2`, `mixed_cad_face_v2`) export where the renderer draws, parsed by an independent Python reader | `evidence/e05-corpus` | closeout: 11 MISMATCH / 12 MATCH | 0 MISMATCH / 23 MATCH (+1 Imported Mesh, translation equal) |
 | E06 | Mixed scene keeps body order and names; every body where the renderer draws it | `FSP_E06_*` (2) | 1 fails | pass |
 | E07 | Stale support → zero bytes, `UnresolvedPlacement` by name, capture refuses, fingerprint and document unchanged | `FSP_E07_*` (4) | 2 fail | pass |
@@ -28,7 +28,7 @@ branch's product.
 | T02 | Gizmo neither drawn, hit nor dragged over a dependent; nothing recorded | `GIZMO FSP_T02_*` (5); device: `setGizmoActive(true)` leaves it inactive and invisible, real drags through the window change nothing | 4 fail; CR-02 C2: gizmo drawn at the origin 3 m from the body, drag recorded | pass |
 | T03 | Producer still transformable (typed and gizmo) as ONE step; the dependent follows | `CAD_A3 FSP_T03_*` (2), `GIZMO FSP_T03_*` (2); device | — | pass |
 | T04 | An independent CAD body still takes typed and gizmo writes | `CAD_A3 FSP_T04`, `GIZMO FSP_T04`; device (producer offers Transform, gizmo active) | — | pass |
-| T05 | UI withdraws Transform, the gizmo and the placement editor while the native refusal still holds on a direct call | device `CadFaceSupportedPlacementTest` (rail without `tool_rail_place`, Transform→Shape on selection, direct `applyBoxTransform`/`setGizmoActive`) | before: rail offered Transform (`WorkspaceTrailingHostView` had no such input) | device run |
+| T05 | UI withdraws Transform, the gizmo and the placement editor while the native refusal still holds on a direct call | device `CadFaceSupportedPlacementTest` (rail without `tool_rail_place`, Transform→Shape on selection, direct `applyBoxTransform`/`setGizmoActive`) | before: rail offered Transform (`WorkspaceTrailingHostView` had no such input) | pass (`41084823234`) |
 | T06 | Legacy non-identity stored dependent transform: encode/decode/encode byte-identical, same stored values and same drawn placement after reload, export by the face (OD-16 untouched) | `CAD_A3 FSP_T06_*` (3) | — | pass |
 
 ## UI / device
