@@ -2604,8 +2604,18 @@ A face-supported body has NO independent placement. `ConstructionScene::
 resolveWorldModel` composes `producerWorldModel · faceFrame` every snapshot,
 bounded and cycle-guarded, so the renderer and picker (which already consume
 arbitrary snapshot matrices) carry the dependent with the producer and nothing
-is stored to go stale. `SceneObject::isFaceSupportedCad` marks such a body so the
-gizmo and the exact-value editors leave it alone; `hasCadDependents` /
+is stored to go stale. `SceneObject::isFaceSupportedCad` marks such a body, and
+every consumer of a placement reads the ONE derived model or refuses
+(`CAD-FACE-SUPPORTED-PLACEMENT-R1`): the GLB exporter splits
+`resolveWorldModel`'s answer (below), the typed write goes through
+`applySceneBodyTransform` (`forgeshape_body_commands`), which refuses
+`DerivedPlacement` before any edit opens (JNI `APPLY_REJECTED_DERIVED_PLACEMENT`,
+11), `GizmoSession` draws, hit-tests and drags nothing over one and
+`setGizmoActive` refuses it (`FORGESHAPE_GIZMO_REFUSED:derived_placement`), and
+Java withdraws Transform, the gizmo and the placement editor from the existing
+`sceneActiveBodyIsFaceSupportedCad` query. The stored transform stays inert and
+is read by nothing that places the body; a legacy file carrying a non-identity
+one decodes and encodes byte-identically (OD-16 untouched); `hasCadDependents` /
 `cadDependentsOf` back Delete's `RefusedHasDependents`. A stale lineage, a
 missing producer, a bad token, a curved circle side or a cycle all fail closed.
 `forgeshape_support_chooser.{h,cpp}` resolves a viewport tap to a world plane or
@@ -4614,6 +4624,17 @@ direction: a body whose representation is Sculpt is never exported from its
 Construction Source, because that would silently ship the shape the user
 abandoned. `captureGlbExportScene` decides this once, from
 `ProjectKind` and `frozen.mesh.frozen()`, and `encodeGlb` never revisits it.
+
+**A face-supported CAD Body exports where it is drawn.** Its placement is not its
+stored transform (inert, normally identity) but the model
+`ConstructionScene::resolveWorldModel` composes for the renderer and the picker,
+so `captureGlbExportScene` takes that model, puts its translation on the node
+and bakes its linear part (rotation of the face frame times the producer's
+`R·S`) into the geometry with `transpose(inverse(L))` for normals — the same
+split as every other body. A support that does not resolve is refused as
+`UnresolvedPlacement` with zero bytes; there is no fallback to the stored
+transform. An independent body takes exactly the earlier path, so its bytes do
+not move (`FSP_E08` pins the digest).
 
 `encodeGlb` also validates what it was handed — every matrix element finite,
 every mesh non-empty, index counts whole triangles, every index in range —

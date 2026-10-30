@@ -251,7 +251,11 @@ on the host, with no device, and is the fast native loop.
   `producerWorldModel · faceFrame` every snapshot), so moving, rotating or
   editing the producer carries the dependent with it and no follow-state is
   stored; such a body is NOT independently transformable
-  (`SceneObject::isFaceSupportedCad`). Deleting a producer with dependents is
+  (`SceneObject::isFaceSupportedCad`): a typed write is refused below JNI
+  (`DerivedPlacement`, `APPLY_REJECTED_DERIVED_PLACEMENT`), the gizmo neither
+  draws nor drags over one, Transform is withdrawn above JNI, and the GLB
+  exporter places it by that same derived model, never by its inert stored
+  transform (`CAD-FACE-SUPPORTED-PLACEMENT-R1`). Deleting a producer with dependents is
   **refused** (`RefusedHasDependents`), never cascaded. The dependency graph is
   acyclic and bounded by the body count. **CADB gains version 2** carrying the
   support: a world-only CAD project stays v1 and byte-identical, an older build

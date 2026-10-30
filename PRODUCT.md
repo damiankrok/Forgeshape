@@ -838,6 +838,13 @@ If another body is sketched on one of this body's faces, an edit that would
 take that face away is refused and says so — the dependent is never quietly
 broken.
 
+**A body sketched on another body's face stands on that face.** It moves when
+the body under it moves or changes size, and it cannot be moved on its own:
+*Transform* is not offered for it and no move handles appear over it — choosing
+it while Transform is open switches the tool to *Shape*, where its sketch and
+extrusion are. Dragging a finger over it moves the view, never the body, and
+nothing is recorded. To move it, move the body it stands on.
+
 **Every feature stays editable.** A CAD body built from several features lists
 them in its *Shape* panel in order — the first extrusion, then each Add and Cut.
 Tap one to reopen it: an Add or a Cut opens on its own extrusion, with its
@@ -2077,6 +2084,8 @@ What lands in the file:
   way they look in ForgeShape.
 - **Metres.** One metre in ForgeShape is one metre in the file, and up is up.
   Nothing needs rotating or rescaling after it opens.
+- **A body sketched on another body's face is exported on that face**, exactly
+  where you see it, following wherever that body has been moved or turned.
 - **Sculpted shapes as you sculpted them.** A body you have been sculpting
   exports its sculpted surface, not the shape it started as. A body you have
   not sculpted exports its Construction shape.
