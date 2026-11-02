@@ -306,17 +306,19 @@ float g_chooserDownY = 0.0f;
 bool g_chooserTravelled = false;
 constexpr float kChooserTapSlopPixels = 24.0f;
 
-// Frames the camera EXACTLY along the active sketch's authoring frame -- no
-// pitch-clamp approximation, and correct for a face frame at any orientation
-// (`CAD-A3` B3). Reads the frame the session already installed, so a world-plane
-// and a face sketch take the same path.
+// Frames the camera EXACTLY normal to the active sketch -- no pitch-clamp
+// approximation, and correct for a face frame at any orientation (`CAD-A3` B3)
+// -- through the session's VIEW frame, so the orientation navigator's flip and
+// roll are what the user actually sees (`SKETCH-NAVIGATOR-OUTCOME-R1`; before
+// it, this read the authoring frame and the navigator moved only its label).
+// A world-plane and a face sketch take the same path. The pre-sketch pose is
+// saved once and restored by endSketchView on cancel and on commit.
 void beginSketchView() {
     if (!g_sketchPoseSaved) {
         g_sketchSavedPose = g_camera.capturePose();
         g_sketchPoseSaved = true;
     }
-    const forgeshape::SketchFrame& f = forgeshape::sketchSession().frame();
-    g_camera.frameSketchView(f.origin, f.u, f.v, f.n);
+    forgeshape::frameCameraOnSketchView(g_camera, forgeshape::sketchSession());
 }
 
 void endSketchView() {
@@ -6662,10 +6664,8 @@ Java_com_forgeshape_app_NativeViewport_sketchSetViewFlipped(JNIEnv*, jclass, jbo
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         forgeshape::SketchSession& s = forgeshape::sketchSession();
-        if (!s.active()) {
-            status = forgeshape::CadStatus::NotSketching;
-        } else {
-            s.setViewFlipped(flipped == JNI_TRUE);
+        status = s.setViewFlipped(flipped == JNI_TRUE);
+        if (status == forgeshape::CadStatus::Ok) {
             beginSketchView();
         }
     }

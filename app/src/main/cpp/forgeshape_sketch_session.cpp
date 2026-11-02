@@ -682,12 +682,21 @@ void SketchSession::rotateView(int quarterTurns) {
     touchOverlay();
 }
 
-void SketchSession::setViewFlipped(bool flipped) {
-    if (!active() || flipped == viewFlipped_) {
-        return;
+CadStatus SketchSession::setViewFlipped(bool flipped) {
+    if (!active()) {
+        return CadStatus::NotSketching;
     }
-    viewFlipped_ = flipped;
-    touchOverlay();
+    if (sketch_.hasFaceSupport) {
+        // The shell already disables Flip on a face; this is the guard behind
+        // it, so a direct call cannot turn the camera to the back of another
+        // body's face either.
+        return CadStatus::InvalidWorkplane;
+    }
+    if (flipped != viewFlipped_) {
+        viewFlipped_ = flipped;
+        touchOverlay();
+    }
+    return CadStatus::Ok;
 }
 
 CadStatus SketchSession::setSupportPlane(Workplane plane) {
@@ -2288,6 +2297,13 @@ void SketchSession::backToEditing() {
     regionTapArmed_ = false;
     regionTapOnHead_ = false;
     cancelRevolveDrag();
+    // Back to the authored sketch is back to the ALIGNED view (`CAD-UX-S1-C1`),
+    // and the navigator must say so: its flip and roll start over here, as they
+    // do for a new sketch and for Edit Sketch. Keeping them across Back to
+    // Sketch is the open OWNER question OD-09; this is the reset-on-re-entry
+    // form that question does not block.
+    viewFlipped_ = false;
+    viewQuarterTurns_ = 0;
     state_ = SketchSessionState::Editing;
     touchCandidate();
 }
@@ -4318,6 +4334,11 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
     overlayDirty_ = false;
     overlayWorldPerUnit_ = worldPerUnit;
     overlayView_ = view;
+}
+
+void frameCameraOnSketchView(CameraController& camera, const SketchSession& session) {
+    const SketchFrame view = session.viewFrame();
+    camera.frameSketchView(view.origin, view.u, view.v, view.n);
 }
 
 SketchSession& sketchSession() {

@@ -1,0 +1,18 @@
+== mutation: camera_on_authoring_frame
+  FAIL SKETCH_UX: NAVCAM_02_plus_90_turns_the_drawing_counter_clockwise_on_screen
+  FAIL SKETCH_UX: NAVCAM_02_minus_90_turns_the_drawing_clockwise_on_screen
+  FAIL SKETCH_UX: NAVCAM_03_flip_puts_the_eye_behind_the_plane_without_a_mirror
+  FAIL SKETCH_UX: NAVCAM_04_every_plane_flip_and_roll_is_the_view_the_navigator_names
+  FAIL SKETCH_UX: NAVCAM_04_the_eye_is_on_the_side_the_flip_names
+  FAIL SKETCH_UX: NAVCAM_05_its_roll_turns_the_real_view_and_keeps_the_topo_ref
+HOST_SUITE_FAIL SKETCH_UX (136 checks, 6 failed, 4 ms)
+HOST_SELFTESTS_FAIL (136 checks, 6 failed)
+== mutation: back_keeps_view
+  FAIL SKETCH_UX: NAVCAM_08_back_to_sketch_is_the_aligned_view_and_the_navigator_says_so
+HOST_SUITE_FAIL SKETCH_UX (136 checks, 1 failed, 3 ms)
+HOST_SELFTESTS_FAIL (136 checks, 1 failed)
+== mutation: face_flip_allowed
+  FAIL SKETCH_UX: NAVCAM_05_a_face_sketch_refuses_flip_and_its_camera_does_not_move
+  FAIL SKETCH_UX: NAVCAM_05_its_roll_turns_the_real_view_and_keeps_the_topo_ref
+HOST_SUITE_FAIL SKETCH_UX (136 checks, 2 failed, 3 ms)
+HOST_SELFTESTS_FAIL (136 checks, 2 failed)

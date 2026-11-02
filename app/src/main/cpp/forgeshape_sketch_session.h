@@ -417,7 +417,12 @@ public:
     // appear to turn 90 degrees counter-clockwise). Never refused, because it
     // cannot fail and cannot change the sketch.
     void rotateView(int quarterTurns);
-    void setViewFlipped(bool flipped);
+    // Looks at the plane's positive (false) or negative (true) normal.
+    // Refused with NotSketching outside a session, and with InvalidWorkplane
+    // for a FACE-supported sketch: its support is another body's face, and
+    // looking at the back of it is not a choice the navigator offers there.
+    // A refusal changes nothing.
+    CadStatus setViewFlipped(bool flipped);
 
     // Changes a WORLD-plane sketch's support plane, re-basing the authoring
     // frame (`SKETCH-UX-R1` C4).
@@ -1193,5 +1198,15 @@ private:
 // sketch can be in progress in the product, and the JNI layer holds no
 // sketch state of its own.
 SketchSession& sketchSession();
+
+// Frames `camera` EXACTLY normal to the session's VIEW frame (`viewFrame()`:
+// the authoring frame with the navigator's flip and roll applied, always
+// right-handed). This is the one statement of what the sketch camera looks
+// at: JNI calls it every time the view must be (re)installed, and the host
+// self-tests call the same function, so the navigator's state and the camera
+// cannot disagree. Presentation only -- it reads the session and writes the
+// camera, and no authored coordinate, support, project byte or history step
+// is involved.
+void frameCameraOnSketchView(CameraController& camera, const SketchSession& session);
 
 }  // namespace forgeshape

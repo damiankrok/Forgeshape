@@ -10,6 +10,8 @@
 
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_face.h"
+#include "forgeshape_camera.h"
+#include "forgeshape_gizmo.h"
 #include "forgeshape_history.h"
 #include "forgeshape_math.h"
 #include "forgeshape_project_document.h"
@@ -2679,6 +2681,288 @@ void measurePerformance() {
 
 }  // namespace
 
+// -------------------------------------------------------------------------
+// SKETCH-NAVIGATOR-OUTCOME-R1: the navigator turns the REAL camera
+// -------------------------------------------------------------------------
+//
+// Every check frames a real CameraController through the ONE production call
+// (`frameCameraOnSketchView`, what JNI's beginSketchView runs) and reads the
+// camera's own snapshot: where asymmetric sketch points land on screen, the
+// eye's side of the plane, the handedness of the view matrix, and that a
+// touch resolves back to the point drawn there.
+
+constexpr int kNavW = 1080;
+constexpr int kNavH = 2400;
+
+struct NavProbe {
+    bool ok = false;
+    float ox = 0, oy = 0, ux = 0, uy = 0, vx = 0, vy = 0;
+};
+
+NavProbe navProbe(const SketchSession& s, const CameraSnapshot& cam) {
+    NavProbe p;
+    p.ok = s.sketchToScreen(cam, SketchPoint{0.0, 0.0}, kNavW, kNavH, &p.ox, &p.oy)
+           && s.sketchToScreen(cam, SketchPoint{1.0, 0.0}, kNavW, kNavH, &p.ux, &p.uy)
+           && s.sketchToScreen(cam, SketchPoint{0.0, 1.0}, kNavW, kNavH, &p.vx, &p.vy);
+    return p;
+}
+
+// The navigator's rule: the view's right and up start as sketch U and V; Flip
+// makes up -V; each quarter turn maps (right, up) to (-up, right). U and V
+// must land on the screen side that rule says, clearly, and on no other axis.
+bool navDirectionsMatch(const NavProbe& p, int turns, bool flipped) {
+    double right[2] = {1, 0};
+    double up[2] = {0, flipped ? -1.0 : 1.0};
+    for (int i = 0; i < turns; ++i) {
+        const double r0 = -up[0], r1 = -up[1];
+        up[0] = right[0];
+        up[1] = right[1];
+        right[0] = r0;
+        right[1] = r1;
+    }
+    if (!p.ok) return false;
+    const float axes[2][2] = {{p.ux - p.ox, p.oy - p.uy}, {p.vx - p.ox, p.oy - p.vy}};
+    for (int a = 0; a < 2; ++a) {
+        const double wantRight = a == 0 ? right[0] : right[1];
+        const double wantUp = a == 0 ? up[0] : up[1];
+        const float dx = axes[a][0];
+        const float dy = axes[a][1];
+        if (wantRight != 0.0) {
+            if (!(dx * wantRight > 10.0f) || std::fabs(dy) > 0.5f) return false;
+        } else {
+            if (!(dy * wantUp > 10.0f) || std::fabs(dx) > 0.5f) return false;
+        }
+    }
+    return true;
+}
+
+// The view matrix's rotation part is a proper rotation (det +1): no view
+// state can mirror the sketch.
+bool viewIsProperRotation(const CameraSnapshot& cam) {
+    const float* m = cam.view.m;
+    const float det = m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2])
+                      + m[8] * (m[1] * m[6] - m[5] * m[2]);
+    return std::fabs(det - 1.0f) < 1e-4f;
+}
+
+bool sameView(const CameraSnapshot& a, const CameraSnapshot& b, float tol = 1e-5f) {
+    for (int i = 0; i < 16; ++i) {
+        if (std::fabs(a.view.m[i] - b.view.m[i]) > tol) return false;
+    }
+    return a.projection == b.projection;
+}
+
+// A touch at the pixel where a point is drawn resolves to that point.
+bool touchResolvesToDrawn(const SketchSession& s, const CameraSnapshot& cam, SketchPoint p) {
+    float x = 0, y = 0;
+    SketchPoint back;
+    return s.sketchToScreen(cam, p, kNavW, kNavH, &x, &y)
+           && s.screenToSketch(cam, x, y, kNavW, kNavH, &back)
+           && near2(back.u, p.u, 1e-3) && near2(back.v, p.v, 1e-3);
+}
+
+// Which side of the authoring plane the eye is on: +1 along frame().n.
+float eyeSide(const SketchSession& s, const CameraSnapshot& cam) {
+    return vec3Dot(vec3Sub(cam.eye, s.frame().origin), s.frame().n);
+}
+
+void testNavigatorCamera(Recorder& r) {
+    CameraController camera;
+    camera.setViewport(kNavW, kNavH);
+
+    // NAVCAM-01: a new XY sketch is seen along +Z, ortho, U right and V up.
+    {
+        SketchSession s;
+        s.begin(Workplane::XY);
+        frameCameraOnSketchView(camera, s);
+        const CameraSnapshot cam = camera.snapshot();
+        r.check("NAVCAM_01_a_new_xy_sketch_is_seen_along_plus_z_in_ortho",
+                cam.projection == ProjectionMode::Orthographic && eyeSide(s, cam) > 0.0f
+                        && navDirectionsMatch(navProbe(s, cam), 0, false)
+                        && viewIsProperRotation(cam));
+    }
+    // NAVCAM-02: +90 and -90 move the real view; inverses and 4 x 90.
+    {
+        SketchSession s;
+        s.begin(Workplane::XY);
+        frameCameraOnSketchView(camera, s);
+        const CameraSnapshot start = camera.snapshot();
+        s.rotateView(1);
+        frameCameraOnSketchView(camera, s);
+        const CameraSnapshot plus = camera.snapshot();
+        r.check("NAVCAM_02_plus_90_turns_the_drawing_counter_clockwise_on_screen",
+                !sameView(plus, start) && navDirectionsMatch(navProbe(s, plus), 1, false)
+                        && viewIsProperRotation(plus));
+        s.rotateView(-1);
+        frameCameraOnSketchView(camera, s);
+        r.check("NAVCAM_02_minus_90_undoes_plus_90_exactly", sameView(camera.snapshot(), start));
+        s.rotateView(-1);
+        frameCameraOnSketchView(camera, s);
+        const CameraSnapshot minus = camera.snapshot();
+        r.check("NAVCAM_02_minus_90_turns_the_drawing_clockwise_on_screen",
+                navDirectionsMatch(navProbe(s, minus), 3, false) && viewIsProperRotation(minus));
+        for (int i = 0; i < 4; ++i) {
+            s.rotateView(1);
+        }
+        frameCameraOnSketchView(camera, s);
+        r.check("NAVCAM_02_four_quarter_turns_are_the_identity",
+                sameView(camera.snapshot(), minus));
+    }
+    // NAVCAM-03: Flip puts the eye on the BACK of the plane, still a proper
+    // rotation (nothing mirrored), and flipping back restores the view.
+    {
+        SketchSession s;
+        s.begin(Workplane::XY);
+        frameCameraOnSketchView(camera, s);
+        const CameraSnapshot start = camera.snapshot();
+        const CadStatus flipped = s.setViewFlipped(true);
+        frameCameraOnSketchView(camera, s);
+        const CameraSnapshot back = camera.snapshot();
+        r.check("NAVCAM_03_flip_puts_the_eye_behind_the_plane_without_a_mirror",
+                flipped == CadStatus::Ok && eyeSide(s, back) < 0.0f
+                        && navDirectionsMatch(navProbe(s, back), 0, true)
+                        && viewIsProperRotation(back));
+        s.setViewFlipped(false);
+        frameCameraOnSketchView(camera, s);
+        r.check("NAVCAM_03_flipping_back_restores_the_view", sameView(camera.snapshot(), start));
+    }
+    // NAVCAM-04 / NAVCAM-06: every plane x flip x roll is the view the rule
+    // names, eye on the right side, proper, ortho -- and a touch lands on the
+    // point drawn under it (asymmetric points).
+    {
+        bool directions = true;
+        bool eyes = true;
+        bool proper = true;
+        bool touches = true;
+        bool ortho = true;
+        const Workplane planes[3] = {Workplane::XY, Workplane::XZ, Workplane::YZ};
+        for (Workplane plane : planes) {
+            SketchSession s;
+            s.begin(Workplane::XY);
+            if (s.setSupportPlane(plane) != CadStatus::Ok && plane != Workplane::XY) {
+                directions = false;
+            }
+            for (int flip = 0; flip < 2; ++flip) {
+                s.setViewFlipped(flip == 1);
+                for (int turn = 0; turn < 4; ++turn) {
+                    frameCameraOnSketchView(camera, s);
+                    const CameraSnapshot cam = camera.snapshot();
+                    directions = directions
+                                 && navDirectionsMatch(navProbe(s, cam), s.viewQuarterTurns(),
+                                                       s.viewFlipped());
+                    eyes = eyes && ((flip == 1) ? eyeSide(s, cam) < 0.0f : eyeSide(s, cam) > 0.0f);
+                    proper = proper && viewIsProperRotation(cam);
+                    ortho = ortho && cam.projection == ProjectionMode::Orthographic;
+                    touches = touches && touchResolvesToDrawn(s, cam, SketchPoint{0.7, -0.3})
+                              && touchResolvesToDrawn(s, cam, SketchPoint{-1.2, 0.45});
+                    s.rotateView(1);
+                }
+            }
+        }
+        r.check("NAVCAM_04_every_plane_flip_and_roll_is_the_view_the_navigator_names",
+                directions);
+        r.check("NAVCAM_04_the_eye_is_on_the_side_the_flip_names", eyes);
+        r.check("NAVCAM_04_no_combination_mirrors_and_every_one_is_ortho", proper && ortho);
+        r.check("NAVCAM_06_a_touch_resolves_to_the_point_drawn_under_it_in_every_view",
+                touches);
+    }
+    // NAVCAM-07: view acts move no authored coordinate and not the frame.
+    {
+        SketchSession s;
+        s.begin(Workplane::XZ);
+        addSketchEntity(const_cast<CadSketch*>(&s.sketch()),
+                        SketchLine{SketchPoint{0.2, 0.9}, SketchPoint{1.7, -0.4}});
+        const CadSketch before = s.sketch();
+        const SketchFrame frame = s.frame();
+        s.setViewFlipped(true);
+        s.rotateView(3);
+        frameCameraOnSketchView(camera, s);
+        s.rotateView(-2);
+        s.setViewFlipped(false);
+        frameCameraOnSketchView(camera, s);
+        r.check("NAVCAM_07_view_acts_move_no_authored_coordinate_and_not_the_frame",
+                sameCadSketch(before, s.sketch()) && nearVec(s.frame().n, frame.n.x, frame.n.y, frame.n.z)
+                        && nearVec(s.frame().u, frame.u.x, frame.u.y, frame.u.z)
+                        && s.plane() == Workplane::XZ);
+    }
+    // NAVCAM-05: a FACE sketch (a rotated, offset face) -- Flip refused below
+    // the shell, the roll turns the real view, the TopoRef untouched.
+    {
+        SketchSession face;
+        TopoRef ref;
+        ref.producerObjectId = 11;
+        ref.face.kind = CadFaceKind::Side;
+        ref.lineageToken = 99;
+        SketchFrame worldFrame;
+        worldFrame.origin = Vec3{1.0f, 2.0f, 3.0f};
+        worldFrame.u = Vec3{0.0f, 1.0f, 0.0f};
+        worldFrame.v = Vec3{0.0f, 0.0f, 1.0f};
+        worldFrame.n = Vec3{1.0f, 0.0f, 0.0f};
+        const bool began = face.beginOnFace(worldFrame, ref) == CadStatus::Ok;
+        frameCameraOnSketchView(camera, face);
+        const CameraSnapshot aligned = camera.snapshot();
+        const CadStatus flip = face.setViewFlipped(true);
+        frameCameraOnSketchView(camera, face);
+        r.check("NAVCAM_05_a_face_sketch_refuses_flip_and_its_camera_does_not_move",
+                began && flip == CadStatus::InvalidWorkplane && !face.viewFlipped()
+                        && sameView(camera.snapshot(), aligned) && eyeSide(face, aligned) > 0.0f
+                        && navDirectionsMatch(navProbe(face, aligned), 0, false));
+        face.rotateView(1);
+        frameCameraOnSketchView(camera, face);
+        const CameraSnapshot rolled = camera.snapshot();
+        r.check("NAVCAM_05_its_roll_turns_the_real_view_and_keeps_the_topo_ref",
+                navDirectionsMatch(navProbe(face, rolled), 1, false) && viewIsProperRotation(rolled)
+                        && face.sketch().hasFaceSupport
+                        && face.sketch().faceSupport.producerObjectId == 11
+                        && face.sketch().faceSupport.lineageToken == 99
+                        && touchResolvesToDrawn(face, rolled, SketchPoint{0.3, -0.8}));
+    }
+    // NAVCAM-08: Back to Sketch starts the view over (OD-09's reset-on-re-entry
+    // form), so the navigator and the aligned camera agree; leaving restores
+    // the pre-sketch pose and projection exactly (what endSketchView does).
+    {
+        CameraController cam2;
+        cam2.setViewport(kNavW, kNavH);
+        cam2.setProjectionMode(ProjectionMode::Perspective);
+        const CameraSnapshot preSketch = cam2.snapshot();
+        const CameraController::Pose saved = cam2.capturePose();
+
+        SketchSession s;
+        s.begin(Workplane::XY);
+        SketchRectangle rect;
+        rect.center = SketchPoint{0.25, -0.5};
+        rect.width = 1.5;
+        rect.height = 0.75;
+        addSketchEntity(const_cast<CadSketch*>(&s.sketch()), rect);
+        s.setViewFlipped(true);
+        s.rotateView(1);
+        frameCameraOnSketchView(cam2, s);
+        const bool ready = s.finish() == CadStatus::Ok && s.state() == SketchSessionState::Ready;
+        s.backToEditing();
+        frameCameraOnSketchView(cam2, s);
+        const CameraSnapshot back = cam2.snapshot();
+        r.check("NAVCAM_08_back_to_sketch_is_the_aligned_view_and_the_navigator_says_so",
+                ready && s.state() == SketchSessionState::Editing && !s.viewFlipped()
+                        && s.viewQuarterTurns() == 0 && eyeSide(s, back) > 0.0f
+                        && navDirectionsMatch(navProbe(s, back), 0, false));
+        s.cancel();
+        cam2.restorePose(saved);
+        r.check("NAVCAM_08_leaving_restores_the_pre_sketch_pose_and_projection",
+                sameView(cam2.snapshot(), preSketch)
+                        && cam2.projectionMode() == ProjectionMode::Perspective
+                        && !s.viewFlipped() && s.viewQuarterTurns() == 0);
+    }
+    // NAVCAM-09: with no sketch, Flip is refused by name and roll does nothing.
+    {
+        SketchSession idle;
+        const CadStatus flip = idle.setViewFlipped(true);
+        idle.rotateView(1);
+        r.check("NAVCAM_09_with_no_sketch_flip_is_refused_and_roll_does_nothing",
+                flip == CadStatus::NotSketching && !idle.viewFlipped()
+                        && idle.viewQuarterTurns() == 0);
+    }
+}
+
 int runSketchUxSelfTests(SketchUxSelfTestResult* out, int maxOut) {
     if (out == nullptr || maxOut <= 0) {
         return 0;
@@ -2689,6 +2973,7 @@ int runSketchUxSelfTests(SketchUxSelfTestResult* out, int maxOut) {
     testCurveProfiles(r);
     testLineDimension(r);
     testOrientationNavigator(r);
+    testNavigatorCamera(r);
     testEditSketch(r);
     // CAD-UX-S1: the canvas extrude manipulator. Widened into this suite rather
     // than opened beside it, because the arrow, the exact depth at it and the
@@ -2710,6 +2995,9 @@ int runSketchUxSelfTests(SketchUxSelfTestResult* out, int maxOut) {
     testFingerprintCoversCurves(r);
     testDataContract(r);
     measurePerformance();
+    // The device recorder for this suite holds 256 (`kMaxSketchUxChecks`): a
+    // check past it would be dropped silently and the suite still report OK.
+    r.check("NAVCAM_sketch_ux_suite_fits_its_256_slot_device_recorder", r.n + 1 <= 256);
     return r.n;
 }
 
