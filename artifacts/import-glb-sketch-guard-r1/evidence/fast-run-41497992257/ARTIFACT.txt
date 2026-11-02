@@ -1,0 +1,9 @@
+CI FAST 41497992257 on 207fa14c132e31384afe063469fae9d891c38e36 (product/test tree = e33a1ee), job 125457874573: success.
+Artifact ci-fast-evidence id 13166858491, size 11718377 bytes.
+GitHub digest      sha256:66de093bb08d94921c918619d45d7dbf907a3b123a3c3517f2df7d1be64fe168
+Downloaded ZIP     66de093bb08d94921c918619d45d7dbf907a3b123a3c3517f2df7d1be64fe168  (MATCH)
+app/build/outputs/apk/debug/app-debug.apk                          17727519 bytes  sha256 841a9ce50431c0085fd9f0e31beb516667dc1faff146f7105412892299ab2ba7
+app/build/outputs/apk/release/app-release-unsigned.apk              6553999 bytes  sha256 73f58700e286076a38974a895a35a3cecafd1de82aa87b98d8a86b41e34914fc
+app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk   2400479 bytes  sha256 5c35969d6f947927fb2dc3ae58afdb5a4ec2dd7edbaa2502aa73e2f194e6d7d7
+Gates in the log: git diff --check (from main merge-base) clean; FORGE_CORPUS_PARITY=PASS (72/72 byte-identical);
+RELEASE_SELFTEST_GUARD=PASS; TESTRUNTIME-01..26 PASS; DEV2 device guards PASS; JVM from the artifact XML 199/0/0/0.

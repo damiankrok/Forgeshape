@@ -1,7 +1,29 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.105.0
-**Updated:** 2026-10-30
+**Status Version:** 0.106.0
+**Updated:** 2026-11-02
+**Latest stage:** **`IMPORT-GLB-SKETCH-GUARD-R1` —
+`PASS-IMPORT-GLB-SKETCH-GUARD-R1`** (2026-11-02). **TECH PASS (emulator) /
+OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`feature/import-glb-sketch-guard-r1` from exactly `8eb94ce` (the
+face-supported-placement head); product and tests frozen at `e33a1ee`. Record:
+`artifacts/import-glb-sketch-guard-r1/SUMMARY.md`. Closes the sketch half of
+Council `CR-03`: Import GLB is refused while a sketch is open (Editing or Ready,
+staged edits and the CAD bootstrap's first sketch included) — natively as
+`ImportCommitStatus::RefusedInSketch` (appended, wire 1006) under
+`g_stateMutex` right before the commit, with Sculpt's 1005 first; above JNI the
+row is absent, both callbacks re-read native, and 1006 has its own sentence.
+No ordinal, format, fixture or dependency moved. RED: CR-03 host re-run and
+`CI DEVICE` `41490895211` 0/5 on the unchanged product. GREEN: host
+`HOST_SELFTESTS_OK (4454 checks, 0 failed)`, JVM 199/0, corpus 72, release
+guard PASS, `CI DEVICE` `41492901369` 65/65, final `CI FAST` `41497992257`
+(`app-debug.apk` 17727519 bytes, SHA-256
+`841a9ce50431c0085fd9f0e31beb516667dc1faff146f7105412892299ab2ba7`). Still
+OWNER questions: import with the support chooser alone (`CR-03` Q2) and with
+no project (Q3); `.gitattributes` scope (OWNER-REVIEW-PENDING). OD-01, OD-03,
+OD-05/06, OD-16, OD-22, OD-27, OD-29 open. No FullSharded.
+
+**Previous stage:** `CAD-FACE-SUPPORTED-PLACEMENT-R1` (record below, unchanged).
 **Latest stage:** **`CAD-FACE-SUPPORTED-PLACEMENT-R1` —
 `PASS-CAD-FACE-SUPPORTED-PLACEMENT-R1`** (2026-10-30). **TECH PASS (emulator) /
 OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
@@ -4910,11 +4932,13 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: OWNER physical-device review of the
-`CAD-FACE-SUPPORTED-PLACEMENT-R1` APK** (`ci-fast-evidence` artifact
-`12996659575` of `CI FAST` `41098028076`, `app-debug.apk` SHA-256
-`8ec4356e30bb42195300214f42d17f91ebb4810bd576a2d0277546565c31edf9`; it carries the
-`CAD-R2-C2` product plus this stage) against
-`artifacts/cad-face-supported-placement-r1/OWNER_LATER_TEST_PACK.md` and the test packs in
+`IMPORT-GLB-SKETCH-GUARD-R1` APK** (`ci-fast-evidence` artifact `13166858491`
+of `CI FAST` `41497992257`, `app-debug.apk` SHA-256
+`841a9ce50431c0085fd9f0e31beb516667dc1faff146f7105412892299ab2ba7`; it carries the
+`CAD-R2-C2` product, `CAD-FACE-SUPPORTED-PLACEMENT-R1` and this stage) against
+`artifacts/cad-face-supported-placement-r1/OWNER_LATER_TEST_PACK.md`, the
+import-during-sketch check (open the drawer while drawing: no *Import a mesh*;
+a file picked before the sketch began is refused with the sketch untouched) and the test packs in
 `artifacts/cad-r2-c2-picking-seam/SUMMARY.md` (the orthographic seam tap) and
 `artifacts/cad-r2-c1-quality-gate/SUMMARY.md` (which includes the CAD-R2
 retained-sketch checklist), together with the still-pending
