@@ -158,6 +158,12 @@ without moving anything you have drawn. The plane can be changed while the
 sketch is still empty — once there is geometry on it the numbers mean that
 plane, and ForgeShape will not quietly reinterpret them somewhere else, so it
 says the plane is fixed instead.
+Flip and the two turns move the actual view: after a turn or a flip you keep
+drawing, snapping and picking exactly where you see the geometry, and nothing
+you have drawn moves. A sketch on a body's face can be turned but not flipped.
+Going back to the sketch from the extrusion, cancelling, or starting a new or
+edited sketch shows the plane from the front again, the right way up, and
+leaving the sketch returns the camera you had before it.
 
 **Sculpt** begins on a sphere already prepared for sculpting, so the first thing
 you can do is make a stroke. Nothing is skipped to get there — the sphere is an
