@@ -4730,6 +4730,37 @@ Sculpt refuse before the file is read, and no Java mode flag exists. There is
 no automatic exit from Sculpt and no repair after the fact: the import does
 not happen.
 
+**An open sketch refuses it too** (`IMPORT-GLB-SKETCH-GUARD-R1`, closing the
+sketch half of `CR-03`). The sketch session is the one authoring act until it is
+finished or cancelled. An import beneath it would record a Construction step
+that Construction Undo, refused while sketching, cannot reach.
+
+The decision is stated once, in the domain. `importModeRefusal` /
+`commitImportedGlbSceneInMode` (`forgeshape_import_commit`) take two facts the
+commit cannot see (`ImportModeFacts`: sculpting, sketch active), ask Sculpt
+FIRST and then a live sketch, and answer `RefusedInSketch` (appended, ordinal 6,
+wire 1006) with nothing touched. JNI reads both facts under `g_stateMutex`
+immediately before the commit, after the parse outside the lock. The host
+self-tests feed it real `SketchSession` and `SculptSession` facts.
+
+"Live" is `sketchSession().active()`: Editing or Ready, and every flavour of
+the one session:
+- staged Edit Sketch and Edit Feature;
+- reuse;
+- Revolve;
+- a Surface-purpose sketch;
+- the CAD bootstrap's first sketch.
+
+Above JNI:
+- The row is absent while sketching (`ProjectDrawerPolicy.importShown`), and
+  is refreshed when the drawer opens.
+- Both callbacks re-read native state at the moment they run.
+- 1006 has its own sentence, never a corrupt-file category.
+
+The support chooser without a sketch, and a scene with no project, are NOT
+inputs: their import semantics are open OWNER questions (`CR-03` Q2/Q3), so
+their behaviour is as before.
+
 ### The transform split
 
 `Model = T · L`. glTF states a node transform this product cannot store: its
