@@ -348,7 +348,11 @@ on the host, with no device, and is the fast native loop.
   checkpoint or the fingerprint, and incapable of moving one authored
   coordinate — `SketchSession::viewFrame` derives the camera's frame from the
   authoring frame and is ALWAYS right-handed, so no view state can mirror a
-  sketch. The support plane may change only while the sketch is EMPTY and
+  sketch, and `frameCameraOnSketchView` is the one place the camera is framed
+  on it, so Flip and ±90 turn the REAL view (`SKETCH-NAVIGATOR-OUTCOME-R1`).
+  Flip and roll start over on a new sketch, Edit Sketch and Back to Sketch
+  (persisting them across re-entry is OWNER question OD-09), and Flip is
+  refused on a face sketch below JNI as well as withdrawn above it. The support plane may change only while the sketch is EMPTY and
   world-supported; afterwards it is refused by name (`SketchNotEmpty`) and the
   authored `(u, v)` are never silently reinterpreted on another plane, and a
   FACE-supported sketch refuses a world plane outright (`InvalidWorkplane`)

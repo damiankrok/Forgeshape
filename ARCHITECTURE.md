@@ -2640,11 +2640,22 @@ gains a per-edge `edgeCurved`, and `forgeshape_cad_face.cpp` reads it so a
 curve's side face is ineligible while a line's in the same profile is not.
 
 **The view is not the plane.** `SketchSession` keeps `viewFlipped_` and
-`viewQuarterTurns_` and derives `viewFrame()` from the authoring `frame_`;
-`beginSketchView` frames the camera on the derived one. Nothing about either
-reaches the sketch, the history, the codec or the fingerprint, and `viewFrame`
-is always right-handed so no view state can mirror a sketch. `setSupportPlane`
-re-bases the authoring frame only while the sketch is empty.
+`viewQuarterTurns_` and derives `viewFrame()` from the authoring `frame_`.
+`frameCameraOnSketchView(camera, session)` (`forgeshape_sketch_session`) is the
+ONE statement of what the sketch camera looks at — the derived view frame —
+and JNI `beginSketchView` calls it whenever a view is (re)installed, so the
+navigator's state and the camera cannot disagree (`SKETCH-NAVIGATOR-OUTCOME-R1`;
+before it, `beginSketchView` read the authoring frame and Flip / ±90 moved only
+the label). Nothing about either reaches the sketch, the history, the codec or
+the fingerprint, and `viewFrame` is always right-handed so no view state can
+mirror a sketch: Flip puts the eye on the back of the plane with a proper
+rotation. Picking needs nothing: `screenToSketch` intersects the AUTHORING
+plane two-sidedly and reads `(u, v)` off the authoring axes. Flip and roll start
+over on `begin`, `cancel` and `backToEditing` (Back to Sketch is the aligned
+view, `CAD-UX-S1-C1`; keeping them across re-entry is OWNER question OD-09).
+`setViewFlipped` refuses `NotSketching` outside a session and `InvalidWorkplane`
+on a face sketch, the guard behind the chip the shell disables there.
+`setSupportPlane` re-bases the authoring frame only while the sketch is empty.
 
 **The dimension is an interaction overlay.** `SketchOverlayStyle::Dimension` is
 its own range in the same line list the grid and the entities use;
