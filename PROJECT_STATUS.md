@@ -1,7 +1,28 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.106.0
+**Status Version:** 0.107.0
 **Updated:** 2026-11-02
+**Latest stage:** **`SKETCH-NAVIGATOR-OUTCOME-R1` —
+`PASS-SKETCH-NAVIGATOR-OUTCOME-R1`** (2026-11-02). **TECH PASS (emulator) /
+OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`feature/sketch-navigator-outcome-r1` from exactly `8a797ff` (the import-guard
+head); product and tests frozen at `28cb315`. Record:
+`artifacts/sketch-navigator-outcome-r1/SUMMARY.md`. Closes CR-06-S3: the sketch
+orientation navigator's Flip and ±90 now turn the REAL camera
+(`frameCameraOnSketchView` frames on `SketchSession::viewFrame()`; JNI
+`beginSketchView` had framed on the authoring frame), picking and drawing land
+where the user sees, a face sketch rolls but refuses Flip below JNI too, and
+Back to Sketch is the aligned view with an honest navigator (OD-09
+reset-on-re-entry form; persistence across re-entry stays OWNER question
+OD-09). No format, fixture, Java or renderer change. RED: CR-06 host re-run and
+`CI DEVICE` `41507903710` 7/9 fail on the unchanged product. GREEN: host
+`HOST_SELFTESTS_OK (4472 checks, 0 failed)`, 17 oracles, JVM 199/0, corpus 72,
+release guard PASS, `CI DEVICE` `41517008402` 69/69, final `CI FAST`
+`41524092732` (`app-debug.apk` 17755951 bytes, SHA-256
+`f8cbb67de8e1b0541ebf4d5cbd79d203eb82689d6456c195fc93022c0aaf4194`). OD-01,
+OD-03, OD-09 (b), OD-27, `.gitattributes`, CR-03 Q2/Q3 stay open. No FullSharded.
+
+**Previous stage:** `IMPORT-GLB-SKETCH-GUARD-R1` (record below, unchanged).
 **Latest stage:** **`IMPORT-GLB-SKETCH-GUARD-R1` —
 `PASS-IMPORT-GLB-SKETCH-GUARD-R1`** (2026-11-02). **TECH PASS (emulator) /
 OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
@@ -4932,10 +4953,12 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: OWNER physical-device review of the
-`IMPORT-GLB-SKETCH-GUARD-R1` APK** (`ci-fast-evidence` artifact `13166858491`
-of `CI FAST` `41497992257`, `app-debug.apk` SHA-256
-`841a9ce50431c0085fd9f0e31beb516667dc1faff146f7105412892299ab2ba7`; it carries the
-`CAD-R2-C2` product, `CAD-FACE-SUPPORTED-PLACEMENT-R1` and this stage) against
+`SKETCH-NAVIGATOR-OUTCOME-R1` APK** (`ci-fast-evidence` artifact `13179561711`
+of `CI FAST` `41524092732`, `app-debug.apk` SHA-256
+`f8cbb67de8e1b0541ebf4d5cbd79d203eb82689d6456c195fc93022c0aaf4194`; it carries the
+`CAD-R2-C2` product, `CAD-FACE-SUPPORTED-PLACEMENT-R1`,
+`IMPORT-GLB-SKETCH-GUARD-R1` and this stage; navigator check: in a sketch, ±90
+and Flip turn the view and drawing still lands under the finger) against
 `artifacts/cad-face-supported-placement-r1/OWNER_LATER_TEST_PACK.md`, the
 import-during-sketch check (open the drawer while drawing: no *Import a mesh*;
 a file picked before the sketch began is refused with the sketch untouched) and the test packs in
