@@ -225,18 +225,21 @@ public final class SketchNavigatorCameraTest {
         assertScreenDirections("turned and flipped", 1, true);
         // The drag goes between the pixels where the RENDERED world points
         // are (XY world sketch: world (u, v, 0)), not through sketchScreenPoint.
+        // Whole-metre points, so the view-adaptive grid snap (0.2 m here, run
+        // 41509947297) leaves them exact; a wrong mapping would land metres
+        // away, far outside the tolerance.
         selectTool(rule.getScenario(), R.id.tool_rail_line);
-        final float[] from = world(0.5, 0.25, 0.0);
-        final float[] to = world(1.5, 1.0, 0.0);
+        final float[] from = world(1.0, 0.0, 0.0);
+        final float[] to = world(2.0, 1.0, 0.0);
         rig.realDrag(from[0], from[1], to[0], to[1], 12);
         assertEquals("one line was drawn", 1, sketchEntityCount());
         final double[] line = onlyEntity();
         rig.fact("drawn_line_after_turn_and_flip", Arrays.toString(line));
         assertEquals(NativeViewport.SKETCH_ENTITY_KIND_LINE,
                 (int) line[NativeViewport.SKETCH_ENTITY_KIND]);
-        assertEquals("start u", 0.5, line[2], DRAWN);
-        assertEquals("start v", 0.25, line[3], DRAWN);
-        assertEquals("end u", 1.5, line[4], DRAWN);
+        assertEquals("start u", 1.0, line[2], DRAWN);
+        assertEquals("start v", 0.0, line[3], DRAWN);
+        assertEquals("end u", 2.0, line[4], DRAWN);
         assertEquals("end v", 1.0, line[5], DRAWN);
 
         // The view acts change nothing true: the line, the project, history.
