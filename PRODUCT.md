@@ -2134,6 +2134,15 @@ when the picker returns: the status line says *Import is not available while
 sculpting. Your project is unchanged.*, and nothing about your sculpt or your
 project moves.
 
+**Importing is not offered while a sketch is open either.** While you draw a
+sketch, after *Finish Sketch*, or while you edit a body's sketch, the Project
+surface has no *Import a mesh* group: a sketch is finished or cancelled before
+anything else is added to the project. If you had already picked a file before
+the sketch began, it is not imported when the picker returns: the status line
+says *Import is not available while a sketch is open. Your project and your
+sketch are unchanged.*, and your drawing is exactly as you left it. You can
+still finish it or cancel it, and the same file imports normally afterwards.
+
 **An imported object is not a shape you can re-dimension.** It came in as a
 mesh, not as a box or a sphere with numbers behind it, so *Shape* is not offered
 while one is selected — there are no dimensions to type. Move, Rotate and Scale
