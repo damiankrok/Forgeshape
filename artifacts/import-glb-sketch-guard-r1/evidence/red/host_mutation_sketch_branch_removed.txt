@@ -1,0 +1,10 @@
+  FAIL GLTF_IMPORT: IMPORT_SK_01_a_valid_glb_is_refused_in_editing_by_name
+  FAIL GLTF_IMPORT: IMPORT_SK_01_bodies_active_ids_history_fingerprint_and_bytes_are_identical
+  FAIL GLTF_IMPORT: IMPORT_SK_01_no_partial_import_is_reported
+  FAIL GLTF_IMPORT: IMPORT_SK_03_a_staged_edit_sketch_refuses_and_keeps_its_draft
+  FAIL GLTF_IMPORT: IMPORT_SK_02_a_valid_glb_is_refused_in_ready_by_name
+  FAIL GLTF_IMPORT: IMPORT_SK_02_and_nothing_in_the_project_moved
+  FAIL GLTF_IMPORT: IMPORT_SK_03_and_cancels_with_the_project_unchanged
+  FAIL GLTF_IMPORT: IMPORT_SK_06_five_refusals_change_nothing_and_mint_no_id
+HOST_SUITE_FAIL GLTF_IMPORT (209 checks, 8 failed, 6 ms)
+HOST_SELFTESTS_FAIL (209 checks, 8 failed)

@@ -8638,16 +8638,18 @@ Java_com_forgeshape_app_NativeViewport_importGlbDurable(JNIEnv* env, jclass, jby
         // change between the question and the act. An import makes its first
         // body active and records a Construction step; in Sculpt that would
         // swap the sculpt target out from under the session and write the
-        // history Sculpt refuses. The control is withdrawn and the picker
-        // result is refused above JNI; this is the guard behind both, for a
-        // late callback or a direct call.
-        if (forgeshape::sculptSession().inSculptMode()) {
-            committed = forgeshape::ImportCommitStatus::RefusedInSculpt;
-        } else {
-            committed = forgeshape::commitImportedGlbScene(
-                    parsed, forgeshape::constructionScene(), forgeshape::constructionHistory(),
-                    &report);
-        }
+        // history Sculpt refuses, and under a live sketch (Editing or Ready,
+        // staged edits included) it would mutate the scene beneath the one
+        // authoring act and record a step the open sketch makes un-undoable
+        // (`CR-03`). The control is withdrawn and the picker result is refused
+        // above JNI; this is the guard behind both, for a late callback or a
+        // direct call. The parse above may be stale by now; these facts are not.
+        forgeshape::ImportModeFacts facts;
+        facts.sculpting = forgeshape::sculptSession().inSculptMode();
+        facts.sketchActive = forgeshape::sketchSession().active();
+        committed = forgeshape::commitImportedGlbSceneInMode(
+                parsed, forgeshape::constructionScene(), forgeshape::constructionHistory(), facts,
+                &report);
     }
     if (committed != forgeshape::ImportCommitStatus::Ok) {
         FS_LOGE("FORGESHAPE_IMPORT_FAIL:%s geometry=%s bytes=%d",
@@ -8669,7 +8671,7 @@ JNIEXPORT jstring JNICALL
 Java_com_forgeshape_app_NativeViewport_glbCommitStatusToken(JNIEnv* env, jclass, jint status) {
     const jint ordinal = status - kImportCommitStatusBase;
     if (ordinal < 0
-        || ordinal > static_cast<jint>(forgeshape::ImportCommitStatus::RefusedInSculpt)) {
+        || ordinal > static_cast<jint>(forgeshape::ImportCommitStatus::RefusedInSketch)) {
         return env->NewStringUTF("unknown");
     }
     return env->NewStringUTF(forgeshape::importCommitStatusName(
@@ -8692,11 +8694,12 @@ Java_com_forgeshape_app_NativeViewport_glbCommitStatusCategory(JNIEnv*, jclass, 
         case forgeshape::ImportCommitStatus::RejectedGeometry:
             return static_cast<jint>(forgeshape::GlbImportCategory::Inconsistent);
         default:
-            // NothingToImport, RefusedEditInProgress, RefusedInSculpt and
-            // anything out of range. None is reachable from the product's own
-            // controls — a menu cannot be opened mid-drag, and Import is
-            // withdrawn in Sculpt, where the workspace states its own sentence
-            // — so they are categorised rather than given a fourth one here.
+            // NothingToImport, RefusedEditInProgress, RefusedInSculpt,
+            // RefusedInSketch and anything out of range. None is reachable
+            // from the product's own controls — a menu cannot be opened
+            // mid-drag, and Import is withdrawn in Sculpt and under a live
+            // sketch, where the workspace states its own sentence for each —
+            // so they are categorised rather than given a fourth one here.
             return static_cast<jint>(forgeshape::GlbImportCategory::Unreadable);
     }
 }

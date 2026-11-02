@@ -1,0 +1,7 @@
+| variant | ABI | packaged bytes | `SelfTests` dynamic symbols | self-test strings | verdict |
+| --- | --- | --- | --- | --- | --- |
+| release | x86_64 | 3258560 | 0 | 0 | PASS |
+| release | arm64-v8a | 2918472 | 0 | 0 | PASS |
+| debug | x86_64 | 8670104 | 35 | 398 | PASS |
+| debug | arm64-v8a | 8615720 | 35 | 398 | PASS |
+RELEASE_SELFTEST_GUARD=PASS

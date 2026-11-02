@@ -2831,9 +2831,10 @@ final class EditorWorkspaceView extends FrameLayout
         // bootstrap is open the project and export controls are withdrawn and
         // Back to Home is drawn.
         toolbar.showBootstrap(bootstrap);
-        // Import creates bodies and makes one active, which Sculpt cannot
-        // allow, so it is ABSENT there rather than drawn and then refused.
-        projectPopover.showImportAvailable(!sculpting);
+        // Import creates bodies and makes one active, which neither Sculpt nor
+        // an open sketch can allow, so it is ABSENT there rather than drawn and
+        // then refused.
+        projectPopover.showImportAvailable(ProjectDrawerPolicy.importShown(sculpting, sketching));
         // New Sketch in the drawer: offered exactly where Add Primitive's New
         // Sketch could succeed, absent while one is open, while the support
         // chooser is up, in Sculpt, and before a project exists.
@@ -5436,6 +5437,12 @@ final class EditorWorkspaceView extends FrameLayout
             // session, or could have been there since before the process
             // started, and Open must never offer to do something it cannot.
             projectPopover.showSlotState(ProjectSlot.exists(getContext()));
+            // And the Import row from native NOW, for the same reason: a sketch
+            // the spatial chooser began is seen by the next refresh, not
+            // necessarily by this one, and the drawer must not offer an import
+            // native would refuse.
+            projectPopover.showImportAvailable(ProjectDrawerPolicy.importShown(isSculpting(),
+                    isSketching()));
             // Hang the surface below the toolbar's ACTUAL height, for the same
             // reason the display popover does: the toolbar grows a second line
             // when the status message cannot share the control row, and a fixed
@@ -5853,7 +5860,7 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onImportGlbRequested() {
         setProjectPanelOpen(false);
-        if (importRefusedWhileSculpting()) {
+        if (importRefusedWhileSculpting() || importRefusedWhileSketching()) {
             return;
         }
         if (transferHost == null || !transferHost.requestOpenGlbDocument()) {
@@ -5870,9 +5877,10 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         // The picker is another app and answers whenever it answers: the user
-        // may have started sculpting since they asked. Refused before the file
-        // is even read, because nothing it holds could be used.
-        if (importRefusedWhileSculpting()) {
+        // may have started sculpting, or opened a sketch, since they asked.
+        // Refused before the file is even read, because nothing it holds could
+        // be used. Both are read from native at THIS moment, never remembered.
+        if (importRefusedWhileSculpting() || importRefusedWhileSketching()) {
             return;
         }
         final byte[] bytes = ProjectTransfer.readFrom(getContext(), source);
@@ -5903,6 +5911,13 @@ final class EditorWorkspaceView extends FrameLayout
             // Native refused from its own mode, under the commit's lock, for a
             // caller that got here without the picker guard above.
             reportImportRefusedInSculpt();
+            return;
+        }
+        if (status == NativeViewport.IMPORT_REFUSED_IN_SKETCH) {
+            // The same, for a sketch that opened after the picker guard ran (or
+            // a caller with no picker guard at all). Never a corrupt-file
+            // message: the file was fine, the moment was not.
+            reportImportRefusedInSketch();
             return;
         }
         if (status != NativeViewport.IMPORT_OK) {
@@ -5947,6 +5962,33 @@ final class EditorWorkspaceView extends FrameLayout
         }
         reportImportRefusedInSculpt();
         return true;
+    }
+
+    /**
+     * Refuses an import while a sketch is open, and says so.
+     *
+     * <p>The sketch is the one authoring act until it is finished or
+     * cancelled; an import would create bodies and record a Construction step
+     * beneath it that Undo cannot reach while it stays open. Asked of native on
+     * every call ({@link #isSketching()}), never remembered here, and native
+     * refuses on its own as well. Refusing touches neither the project nor the
+     * draft: the same sketch can still be finished or cancelled.
+     *
+     * @return true when the import was refused and nothing was done
+     */
+    private boolean importRefusedWhileSketching() {
+        if (!isSketching()) {
+            return false;
+        }
+        reportImportRefusedInSketch();
+        return true;
+    }
+
+    private void reportImportRefusedInSketch() {
+        Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "GLB_IMPORT_REFUSED",
+                NativeViewport.glbCommitStatusToken(NativeViewport.IMPORT_REFUSED_IN_SKETCH));
+        showStatus(getContext().getString(R.string.status_glb_import_refused_in_sketch),
+                R.attr.fsTextError);
     }
 
     private void reportImportRefusedInSculpt() {

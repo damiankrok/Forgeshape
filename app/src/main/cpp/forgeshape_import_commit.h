@@ -64,9 +64,35 @@ enum class ImportCommitStatus {
     // boundary asks it under the same lock as the commit and answers with this
     // name. Appended, so the ordinals above keep their meaning.
     RefusedInSculpt,
+    // A sketch session is live (Editing or Ready, including a staged Edit
+    // Sketch / Edit Feature and the CAD bootstrap's first sketch). The sketch
+    // is the exclusive authoring act until it is finished or cancelled: an
+    // import would create bodies, move the active body and record a
+    // Construction step the user cannot undo while the sketch stays open
+    // (`CR-03`). Like Sculpt, the mode is not visible to the commit, so the
+    // caller states it through `ImportModeFacts`. Appended after
+    // `RefusedInSculpt`, so every earlier ordinal keeps its meaning.
+    RefusedInSketch,
 };
 
 const char* importCommitStatusName(ImportCommitStatus status);
+
+// What the commit cannot see for itself: the product mode that owns the
+// scene right now. The caller reads both facts under the SAME lock it then
+// commits under, so they cannot change between the question and the act.
+// Deliberately two plain facts and not the sessions themselves, so this module
+// stays independent of the sketch and sculpt sessions it is protecting.
+struct ImportModeFacts {
+    bool sculpting = false;
+    bool sketchActive = false;
+};
+
+// The mode refusal for these facts, or Ok. One precedence rule, stated here:
+// Sculpt is asked FIRST (the two modes cannot coexist, and an import in Sculpt
+// keeps the code it has always had), then a live sketch. The support chooser
+// without a sketch and a scene with no project are NOT mode refusals here:
+// their import semantics are open OWNER questions (`CR-03` Q2 / Q3).
+ImportCommitStatus importModeRefusal(const ImportModeFacts& facts);
 
 // What an import actually did, so a caller can log it and a test can assert
 // against it rather than against a bare boolean.
@@ -106,5 +132,17 @@ struct ImportCommitReport {
 ImportCommitStatus commitImportedGlbScene(const ParsedGlbScene& parsed, ConstructionScene& scene,
                                           ConstructionHistory& history,
                                           ImportCommitReport* outReport = nullptr);
+
+// The product's import commit: the mode refusal FIRST, then
+// `commitImportedGlbScene`. A mode refusal leaves `outReport` empty and the
+// scene, the history, the allocator and the fingerprint exactly as they were.
+// JNI calls this under `g_stateMutex` with facts read under that same lock;
+// the host self-tests call it with facts read from real sessions, so both
+// exercise the one decision.
+ImportCommitStatus commitImportedGlbSceneInMode(const ParsedGlbScene& parsed,
+                                                ConstructionScene& scene,
+                                                ConstructionHistory& history,
+                                                const ImportModeFacts& facts,
+                                                ImportCommitReport* outReport = nullptr);
 
 }  // namespace forgeshape

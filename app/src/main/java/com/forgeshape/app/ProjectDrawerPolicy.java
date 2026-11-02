@@ -121,6 +121,19 @@ final class ProjectDrawerPolicy {
         return projectOpen && !sculpting && !sketching && !chooserActive;
     }
 
+    /**
+     * Whether Import GLB is offered. An import creates bodies, makes the first
+     * active and records a Construction step, so it is ABSENT in Sculpt and
+     * while a sketch is open (Editing or Ready) rather than drawn and then
+     * refused; native refuses both regardless. The support chooser alone and a
+     * scene with no project are deliberately NOT inputs here: their import
+     * semantics are open OWNER questions, and this keeps their behaviour as it
+     * was.
+     */
+    static boolean importShown(boolean sculpting, boolean sketching) {
+        return !sculpting && !sketching;
+    }
+
     /** The drawer grows out of the mark, at the window's LEADING edge. */
     static boolean anchoredToLeadingEdge() {
         return true;

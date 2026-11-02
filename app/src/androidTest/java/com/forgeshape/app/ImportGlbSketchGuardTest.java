@@ -349,8 +349,19 @@ public final class ImportGlbSketchGuardTest {
         assertEquals("the bodies that were there are untouched and first",
                 Arrays.toString(idsBefore),
                 Arrays.toString(Arrays.copyOf(idsAfter, idsBefore.length)));
-        assertEquals("the ids continue with no gap a refusal could have left",
-                idsAfter[idsBefore.length - 1] + 1, idsAfter[idsBefore.length]);
+        // That a refusal minted no id is proved by the snapshot: the encoded
+        // project carries the allocator's high-water mark. Here, only that the
+        // new ids are fresh and one contiguous range, the first of them active.
+        for (int i = idsBefore.length + 1; i < idsAfter.length; i++) {
+            assertEquals("the import's own ids are one contiguous range",
+                    idsAfter[i - 1] + 1, idsAfter[i]);
+        }
+        for (long existing : idsBefore) {
+            assertTrue("every new id is fresh", idsAfter[idsBefore.length] > existing);
+        }
+        assertEquals("the first imported body is active", idsAfter[idsBefore.length],
+                (long) onWorkspace(rule.getScenario(),
+                        (activity, workspace) -> NativeViewport.sceneActiveBodyId()));
         assertEquals("the whole import is one Construction step", undoBefore + 1, undoDepth());
         // It survives save / reopen like any imported body.
         final byte[] saved = onWorkspace(rule.getScenario(),

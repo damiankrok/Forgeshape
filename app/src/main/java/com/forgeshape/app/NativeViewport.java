@@ -1253,6 +1253,18 @@ final class NativeViewport {
     static final int IMPORT_REFUSED_IN_SCULPT = IMPORT_COMMIT_BASE + 5;
 
     /**
+     * The project refused an import because a sketch is open
+     * ({@code ImportCommitStatus::RefusedInSketch}, appended as ordinal 6).
+     *
+     * <p>Native decides it under the commit's lock from its own sketch session
+     * -- Editing or Ready, a staged Edit Sketch or Edit Feature included: the
+     * sketch is the one authoring act until it is finished or cancelled, and
+     * an import underneath it would record a Construction step the open sketch
+     * makes un-undoable. Sculpt is asked first. Nothing changes on this answer.
+     */
+    static final int IMPORT_REFUSED_IN_SKETCH = IMPORT_COMMIT_BASE + 6;
+
+    /**
      * Reads GLB bytes and creates durable Imported Mesh bodies from them.
      *
      * <p>Atomic: every object is built and validated before any of them reaches

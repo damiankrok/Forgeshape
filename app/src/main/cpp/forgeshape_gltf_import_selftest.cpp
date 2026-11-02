@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "forgeshape_cad_body.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_glb_import_fixture.h"
 #include "forgeshape_glb_roundtrip.h"
@@ -15,9 +16,13 @@
 #include "forgeshape_import_preview.h"
 #include "forgeshape_json.h"
 #include "forgeshape_math.h"
+#include "forgeshape_project_document.h"
+#include "forgeshape_project_state.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sculpt.h"
+#include "forgeshape_sketch_session.h"
 #include "forgeshape_transform.h"
+#include "forgeshape_workplane.h"
 
 namespace forgeshape {
 namespace {
@@ -344,6 +349,224 @@ MiniGlbSpec twoTriangleSheet() {
     spec.primitives = {{0u, 1u, 2u}, {0u, 2u, 3u}};
     spec.doubleSided = {false, false};
     return spec;
+}
+
+
+// ---------------------------------------------------------------------------
+// IMPORT-GLB-SKETCH-GUARD-R1 helpers
+// ---------------------------------------------------------------------------
+
+// Everything an import would move, read the way the product reads it.
+struct ImportWitness {
+    size_t bodies = 0;
+    ObjectId active = kNoObject;
+    ObjectId nextId = kNoObject;
+    size_t undo = 0;
+    size_t redo = 0;
+    uint64_t fingerprint = 0;
+    std::vector<uint8_t> encoded;
+
+    bool operator==(const ImportWitness& o) const {
+        return bodies == o.bodies && active == o.active && nextId == o.nextId && undo == o.undo
+               && redo == o.redo && fingerprint == o.fingerprint && encoded == o.encoded;
+    }
+};
+
+ImportWitness importWitness(const ConstructionScene& scene, const ConstructionHistory& history) {
+    ImportWitness w;
+    w.bodies = scene.bodyCount();
+    w.active = scene.activeBodyId();
+    w.nextId = scene.nextObjectId();
+    w.undo = history.undoDepth();
+    w.redo = history.redoDepth();
+    w.fingerprint = projectSemanticFingerprint(scene, ProjectKind::Construction);
+    w.encoded = encodeProjectV1(captureProjectDocument(scene, ProjectKind::Construction));
+    return w;
+}
+
+// A committed CAD body (a 1 x 0.5 rectangle extruded 0.25 on XY) so a staged
+// Edit Sketch has a real owner and a real draft.
+CadBodyState importGuardRectangle() {
+    CadBodyState state;
+    cadBaseSketch(state).plane = Workplane::XY;
+    SketchRectangle rect;
+    rect.center = SketchPoint{0.0, 0.0};
+    rect.width = 1.0;
+    rect.height = 0.5;
+    addSketchEntity(&cadBaseSketch(state), rect);
+    state.extrude.profileEntityId = 1;
+    state.extrude.depth = 0.25;
+    state.extrude.direction = ExtrudeDirection::AlongNormal;
+    return state;
+}
+
+SketchFrame worldFrameOf(Workplane plane) {
+    const WorkplaneFrame wf = workplaneFrame(plane);
+    return SketchFrame{Vec3{0, 0, 0}, wf.uAxis, wf.vAxis, wf.normal};
+}
+
+ImportModeFacts factsOf(const SculptSession& sculpt, const SketchSession& sketch) {
+    ImportModeFacts facts;
+    facts.sculpting = sculpt.inSculptMode();
+    facts.sketchActive = sketch.active();
+    return facts;
+}
+
+void runImportSketchGuardChecks(Recorder& r) {
+    const std::vector<uint8_t> glb = buildMiniGlb(twoTriangleSheet());
+    ParsedGlbScene parsed;
+    const bool parsedOk = importGlb(glb.data(), glb.size(), &parsed) == GlbImportStatus::Ok;
+
+    Fixture fixture;
+    CadStatus cadWhy = CadStatus::Ok;
+    SceneObject* cad = fixture.scene.addCadBody(importGuardRectangle(), &cadWhy);
+    if (cad != nullptr) publishSceneObject(*cad);
+    const ObjectId cadId = cad != nullptr ? cad->objectId() : kNoObject;
+    const CadBodyState cadState = cad != nullptr ? cad->cadOrNull()->state() : CadBodyState{};
+    r.check("IMPSK_00_a_project_with_a_cad_body_and_a_valid_glb",
+            parsedOk && cad != nullptr && fixture.scene.hasProject());
+
+    SketchSession sketch;
+    // IMPORT-SK-01: a new sketch in Editing refuses by name and moves nothing.
+    {
+        const bool began = sketch.begin(Workplane::XY) == CadStatus::Ok
+                           && sketch.state() == SketchSessionState::Editing;
+        const ImportWitness before = importWitness(fixture.scene, fixture.history);
+        ImportCommitReport report;
+        report.objects = 99;
+        const ImportCommitStatus status = commitImportedGlbSceneInMode(
+                parsed, fixture.scene, fixture.history, factsOf(fixture.session, sketch), &report);
+        r.check("IMPORT_SK_01_a_valid_glb_is_refused_in_editing_by_name",
+                began && status == ImportCommitStatus::RefusedInSketch
+                        && std::string(importCommitStatusName(status)) == "RefusedInSketch");
+        r.check("IMPORT_SK_01_bodies_active_ids_history_fingerprint_and_bytes_are_identical",
+                importWitness(fixture.scene, fixture.history) == before);
+        r.check("IMPORT_SK_01_no_partial_import_is_reported",
+                report.objects == 0 && report.firstObjectId == kNoObject
+                        && report.activeBodyId == kNoObject);
+        r.check("IMPORT_SK_01_and_the_sketch_is_still_editing",
+                sketch.state() == SketchSessionState::Editing);
+        sketch.cancel();
+    }
+    // IMPORT-SK-02 / 03: a STAGED Edit Sketch over the CAD body, in Editing
+    // and then in Ready; the draft, its selection and the owner body survive.
+    {
+        const bool editing = sketch.beginEdit(cadId, cadState, worldFrameOf(Workplane::XY))
+                                     == CadStatus::Ok
+                             && sketch.state() == SketchSessionState::Editing;
+        const size_t entities = sketch.sketch().entities.size();
+        const ImportWitness before = importWitness(fixture.scene, fixture.history);
+        const ImportCommitStatus inEditing = commitImportedGlbSceneInMode(
+                parsed, fixture.scene, fixture.history, factsOf(fixture.session, sketch));
+        r.check("IMPORT_SK_03_a_staged_edit_sketch_refuses_and_keeps_its_draft",
+                editing && entities == 1u && inEditing == ImportCommitStatus::RefusedInSketch
+                        && sketch.state() == SketchSessionState::Editing
+                        && sketch.sketch().entities.size() == entities
+                        && importWitness(fixture.scene, fixture.history) == before);
+
+        const bool ready = sketch.finish() == CadStatus::Ok
+                           && sketch.state() == SketchSessionState::Ready;
+        const bool chosen = sketch.selectionChosen();
+        const ImportCommitStatus inReady = commitImportedGlbSceneInMode(
+                parsed, fixture.scene, fixture.history, factsOf(fixture.session, sketch));
+        r.check("IMPORT_SK_02_a_valid_glb_is_refused_in_ready_by_name",
+                ready && inReady == ImportCommitStatus::RefusedInSketch);
+        r.check("IMPORT_SK_02_ready_selection_and_draft_are_intact",
+                sketch.state() == SketchSessionState::Ready && sketch.selectionChosen() == chosen
+                        && chosen && sketch.sketch().entities.size() == entities);
+        r.check("IMPORT_SK_02_and_nothing_in_the_project_moved",
+                importWitness(fixture.scene, fixture.history) == before);
+
+        // The same draft still commits normally, as an edit of the SAME body.
+        const size_t bodiesBefore = fixture.scene.bodyCount();
+        const CadStatus committed = sketch.commitEdit(fixture.scene, fixture.history);
+        r.check("IMPORT_SK_03_after_the_refusal_the_staged_edit_still_commits",
+                committed == CadStatus::Ok && sketch.state() == SketchSessionState::Inactive
+                        && fixture.scene.bodyCount() == bodiesBefore
+                        && fixture.scene.findBody(cadId) != nullptr);
+
+        // And a second staged edit still cancels to exactly what it found.
+        const ImportWitness beforeCancel = importWitness(fixture.scene, fixture.history);
+        const bool reopened =
+                sketch.beginEdit(cadId, fixture.scene.findBody(cadId)->cadOrNull()->state(),
+                                 worldFrameOf(Workplane::XY)) == CadStatus::Ok;
+        const ImportCommitStatus again = commitImportedGlbSceneInMode(
+                parsed, fixture.scene, fixture.history, factsOf(fixture.session, sketch));
+        sketch.cancel();
+        r.check("IMPORT_SK_03_and_cancels_with_the_project_unchanged",
+                reopened && again == ImportCommitStatus::RefusedInSketch
+                        && sketch.state() == SketchSessionState::Inactive
+                        && importWitness(fixture.scene, fixture.history) == beforeCancel);
+    }
+    // IMPORT-SK-06: repeated refusals are idempotent and leave no id gap.
+    {
+        const bool began = sketch.begin(Workplane::XZ) == CadStatus::Ok;
+        const ImportWitness before = importWitness(fixture.scene, fixture.history);
+        bool allRefused = began;
+        for (int i = 0; i < 5; ++i) {
+            allRefused = allRefused
+                         && commitImportedGlbSceneInMode(parsed, fixture.scene, fixture.history,
+                                                         factsOf(fixture.session, sketch))
+                                    == ImportCommitStatus::RefusedInSketch;
+        }
+        r.check("IMPORT_SK_06_five_refusals_change_nothing_and_mint_no_id",
+                allRefused && importWitness(fixture.scene, fixture.history) == before);
+        sketch.cancel();
+    }
+    // IMPORT-SK-04: Inactive -- the same GLB imports, one body, one Undo, the
+    // next id with no gap, and the project encodes and decodes.
+    {
+        const ImportWitness before = importWitness(fixture.scene, fixture.history);
+        ImportCommitReport report;
+        const ImportCommitStatus status = commitImportedGlbSceneInMode(
+                parsed, fixture.scene, fixture.history, factsOf(fixture.session, sketch), &report);
+        const SceneObject* body = fixture.scene.findBody(report.firstObjectId);
+        r.check("IMPORT_SK_04_with_no_sketch_the_same_glb_imports",
+                sketch.state() == SketchSessionState::Inactive && status == ImportCommitStatus::Ok
+                        && report.objects == 1 && fixture.scene.bodyCount() == before.bodies + 1
+                        && body != nullptr && body->isImported()
+                        && fixture.scene.activeBodyId() == report.firstObjectId);
+        r.check("IMPORT_SK_04_as_one_construction_undo_with_the_next_id_and_no_gap",
+                fixture.history.undoDepth() == before.undo + 1
+                        && report.firstObjectId == before.nextId);
+        const std::vector<uint8_t> bytes =
+                encodeProjectV1(captureProjectDocument(fixture.scene, ProjectKind::Construction));
+        ProjectDocument decoded;
+        const bool decodes = !bytes.empty()
+                && decodeProject(bytes.data(), bytes.size(), &decoded) == ProjectCodecStatus::Ok
+                && encodeProjectV1(decoded) == bytes;
+        r.check("IMPORT_SK_04_and_the_project_saves_and_reopens_byte_identically", decodes);
+    }
+    // IMPORT-SK-05: Sculpt keeps its refusal and its precedence; a malformed
+    // file is still a FILE refusal in a legal state.
+    {
+        ImportModeFacts sculptOnly;
+        sculptOnly.sculpting = true;
+        ImportModeFacts both;
+        both.sculpting = true;
+        both.sketchActive = true;
+        const ImportWitness before = importWitness(fixture.scene, fixture.history);
+        r.check("IMPORT_SK_05_sculpt_still_refuses_as_refused_in_sculpt",
+                commitImportedGlbSceneInMode(parsed, fixture.scene, fixture.history, sculptOnly)
+                                == ImportCommitStatus::RefusedInSculpt
+                        && importModeRefusal(both) == ImportCommitStatus::RefusedInSculpt
+                        && importWitness(fixture.scene, fixture.history) == before);
+        std::vector<uint8_t> truncated(glb.begin(), glb.begin() + static_cast<long>(glb.size() / 2));
+        ParsedGlbScene bad;
+        r.check("IMPORT_SK_05_a_malformed_glb_is_still_a_parse_refusal_not_a_mode_refusal",
+                importGlb(truncated.data(), truncated.size(), &bad) != GlbImportStatus::Ok);
+    }
+    // IMPORT-SK-07: no ordinal moved; the new one is appended with a name.
+    r.check("IMPORT_SK_07_every_earlier_ordinal_is_unchanged",
+            static_cast<int>(ImportCommitStatus::Ok) == 0
+                    && static_cast<int>(ImportCommitStatus::NothingToImport) == 1
+                    && static_cast<int>(ImportCommitStatus::TooManyObjects) == 2
+                    && static_cast<int>(ImportCommitStatus::RejectedGeometry) == 3
+                    && static_cast<int>(ImportCommitStatus::RefusedEditInProgress) == 4
+                    && static_cast<int>(ImportCommitStatus::RefusedInSculpt) == 5
+                    && static_cast<int>(ImportCommitStatus::RefusedInSketch) == 6);
+    r.check("IMPORT_SK_07_no_mode_means_no_mode_refusal",
+            importModeRefusal(ImportModeFacts{}) == ImportCommitStatus::Ok);
 }
 
 }  // namespace
@@ -1385,7 +1608,10 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
                                 == "RefusedEditInProgress"
                         && std::string(importCommitStatusName(
                                    ImportCommitStatus::RefusedInSculpt))
-                                == "RefusedInSculpt");
+                                == "RefusedInSculpt"
+                        && std::string(importCommitStatusName(
+                                   ImportCommitStatus::RefusedInSketch))
+                                == "RefusedInSketch");
     }
 
     // IMP01A-11/12/13: an imported body takes the ORDINARY transform path, and
@@ -1534,6 +1760,10 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
                                    == std::vector<uint16_t>{0xFFFDu, 0xFFFDu, 0xFFFDu});
     }
 
+    runImportSketchGuardChecks(r);
+    // The device recorder for this suite holds 256 (`kMaxImportChecks`): a
+    // check past it would be dropped silently and the suite still report OK.
+    r.check("IMPSK_gltf_import_suite_fits_its_256_slot_device_recorder", r.n + 1 <= 256);
     return r.n;
 }
 

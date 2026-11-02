@@ -126,6 +126,48 @@ public final class ProjectDrawerPolicyTest {
                 ProjectDrawerPolicy.newSketchShown(true, false, false, true));
     }
 
+    // IMPORT-GLB-SKETCH-GUARD-R1: Import GLB is absent in Sculpt and while a
+    // sketch is open, and offered otherwise. The chooser and "no project" are
+    // not inputs: their import semantics are open OWNER questions.
+    @Test
+    public void importIsOfferedExactlyOutsideSculptAndOutsideAnOpenSketch() {
+        assertTrue("at rest", ProjectDrawerPolicy.importShown(false, false));
+        assertFalse("in Sculpt", ProjectDrawerPolicy.importShown(true, false));
+        assertFalse("a sketch is open (Editing or Ready)", ProjectDrawerPolicy.importShown(false, true));
+        assertFalse("both", ProjectDrawerPolicy.importShown(true, true));
+    }
+
+    // The two mode refusals are PROJECT codes on the commit base, appended in
+    // order; no earlier code moved.
+    @Test
+    public void theModeRefusalsKeepTheirWireCodes() {
+        assertEquals(1000, NativeViewport.IMPORT_COMMIT_BASE);
+        assertEquals("RefusedInSculpt is still ordinal 5", 1005,
+                NativeViewport.IMPORT_REFUSED_IN_SCULPT);
+        assertEquals("RefusedInSketch is appended as ordinal 6", 1006,
+                NativeViewport.IMPORT_REFUSED_IN_SKETCH);
+    }
+
+    // A sketch refusal is said in its own sentence at every door -- the row
+    // tap, the late picker answer and the bytes seam -- never as a corrupt
+    // file, and the sentence names neither Freeze nor a fix the user must make.
+    @Test
+    public void everyImportDoorAsksTheSketchQuestionAndSaysItsOwnSentence() throws IOException {
+        final String workspace = read("src/main/java/com/forgeshape/app/EditorWorkspaceView.java");
+        assertEquals("the row tap and the picker answer both ask native", 2,
+                count(workspace, "importRefusedWhileSculpting() || importRefusedWhileSketching()"));
+        assertTrue("the bytes seam branches on the sketch code",
+                workspace.contains("status == NativeViewport.IMPORT_REFUSED_IN_SKETCH"));
+        assertTrue("the row follows the policy",
+                workspace.contains("ProjectDrawerPolicy.importShown(sculpting, sketching)"));
+        final String strings = read("src/main/res/values/strings.xml");
+        final int at = strings.indexOf("name=\"status_glb_import_refused_in_sketch\"");
+        assertTrue("the sentence exists", at >= 0);
+        final String line = strings.substring(at, strings.indexOf("</string>", at));
+        assertTrue(line.contains("unchanged"));
+        assertFalse(line.contains("Freeze"));
+    }
+
     @Test
     public void theDrawerGrowsFromTheLeadingEdgeWhereTheMarkIs() {
         assertTrue(ProjectDrawerPolicy.anchoredToLeadingEdge());
