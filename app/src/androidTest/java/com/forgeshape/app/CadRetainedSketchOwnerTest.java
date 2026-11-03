@@ -1239,11 +1239,11 @@ public final class CadRetainedSketchOwnerTest {
     }
 
     // =======================================================================
-    // D11: a Revolve's angle from the Features segment; no reuse on it
+    // D11: a Revolve's angle from the Features segment
     // =======================================================================
 
     @Test
-    public void d11_a_revolve_feature_edits_its_exact_angle_and_offers_no_add_or_cut() {
+    public void d11_a_revolve_feature_edits_its_exact_angle() {
         rig.press(R.id.home_new_project);
         rig.press(R.id.new_project_cad);
         selectTool(rule.getScenario(), R.id.tool_rail_rectangle);
@@ -1267,10 +1267,9 @@ public final class CadRetainedSketchOwnerTest {
         openHistory();
         touchTab(R.id.feature_history_tab_sketches);
         touchBrowserRow(0);
-        assertFalse("a revolved body takes no Add", rig.shown(R.id.history_act_reuse_add));
-        assertFalse("nor a Cut", rig.shown(R.id.history_act_reuse_cut));
-        assertTrue(detailText(), detailText().contains(string(R.string.sketch_cannot_reuse, "")
-                .trim().replace(":", "").trim()));
+        // Since `CAD-REVOLVE-FACES-R1` a revolved part takes later features, so
+        // its sketch is no longer refused reuse by the old R1 rule; whatever the
+        // row offers is native's answer (the host's R2_SK_04 states it).
         touchTab(R.id.feature_history_tab_features);
         touchBrowserRow(0);
         rig.touchId(R.id.history_act_edit_feature);
