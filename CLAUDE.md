@@ -997,6 +997,21 @@ on the host, with no device, and is the fast native loop.
   withdrawn off a face. **`CADB` v14** (§7q) is written only then. **Not this
   stage:** a plane through three points, a plane on a world plane or a curved
   face, and a named, reusable construction-plane object.
+- **Measuring is a READ, never truth** (`CAD-INSPECT-R1`, `CAD-MEASURE-R1`).
+  A CAD part's Measure section reads its volume, area, size and centre of mass
+  off the mesh it DRAWS, in world space (`computeMassProperties`), and a mass at
+  a typed density that reaches no file. **Measure distance** is a mode the same
+  section turns on: while it is on, an ordinary Construction tap on a drawn
+  surface picks a measured point (`forgeshape_measure.{h,cpp}`: the hit, or the
+  hit triangle's corner within `kMeasureSnapPixels` of the finger on screen,
+  so a corner is exact) and neither selects, changes the active body nor offers
+  a sketch or a finish; the second point gives the distance and its X / Y / Z
+  components, a third starts again, and the points and line are drawn in the
+  sketch-overlay slot. It is off whenever its panel is not visible, and a load
+  or a close forgets it. None of it is a `.forge` byte, a history step, a
+  checkpoint or the fingerprint. **Not this stage:** an angle, a section view,
+  a measurement kept with the project, and snapping to an edge's midpoint or a
+  circle's centre.
 - **A body's History is a VIEW of its feature chain, and an edit of an earlier
   step is STAGED** (`MODELING-FOUNDATIONS-R1` A). The History control in the
   history capsule is drawn exactly when the active body is a CAD or a Surface
