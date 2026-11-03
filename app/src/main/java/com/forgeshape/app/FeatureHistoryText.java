@@ -24,6 +24,10 @@ final class FeatureHistoryText {
             return context.getString(row.operation == NativeViewport.EDGE_FINISH_CHAMFER
                     ? R.string.history_row_chamfer : R.string.history_row_fillet, row.ordinal);
         }
+        if (row.isPattern()) {
+            return context.getString(R.string.history_row_pattern, row.ordinal,
+                    context.getString(PatternPresentation.kindName(row.operation)));
+        }
         if (row.domain == FeatureHistoryPresentation.DOMAIN_SURFACE) {
             // A Surface feature is named by its kind and its own id, the way
             // the Surface surface's Thicken buttons and the issue text name it.
@@ -61,6 +65,9 @@ final class FeatureHistoryText {
             return context.getString(row.operation == NativeViewport.EDGE_FINISH_CHAMFER
                             ? R.string.history_detail_chamfer : R.string.history_detail_fillet,
                     unit.formatWithUnit(row.positive), row.finishEdges());
+        }
+        if (row.isPattern()) {
+            return context.getString(R.string.history_detail_pattern, row.patternInstances());
         }
         if (row.isSketch()) {
             if (row.onBodyFace || row.onFeatureFace) {

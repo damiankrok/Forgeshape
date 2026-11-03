@@ -60,6 +60,7 @@
 #include "forgeshape_gltf_import_selftest.h"
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_edge_finish.h"
+#include "forgeshape_cad_pattern.h"
 #include "forgeshape_cad_extrude_tool.h"
 #include "forgeshape_cad_feature.h"
 #include "forgeshape_cad_sketch_inventory.h"
@@ -4879,6 +4880,333 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadEdgeFinishDelet
     return cadCode(status);
 }
 
+// ---------------------------------------------------------------------------
+// Feature patterns (`CAD-PATTERN-R1`)
+// ---------------------------------------------------------------------------
+
+namespace {
+// The later Add / Cut feature a live face offer stands on, or 0: what Pattern
+// and Mirror would repeat. Offered only where the act can succeed -- a CAD
+// body that is not a Revolve, below the pattern cap. The caller holds
+// g_stateMutex.
+uint32_t patternOfferFeatureLocked(forgeshape::ChosenSupport* fresh,
+                                   const forgeshape::CadBody** outBody) {
+    if (!faceSketchOfferLiveLocked(fresh)) {
+        return 0;
+    }
+    const forgeshape::SceneObject* object =
+            forgeshape::constructionScene().findBody(fresh->faceRef.producerObjectId);
+    const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    const uint32_t featureId = fresh->faceRef.producerLocalFeatureId;
+    if (body == nullptr || featureId == forgeshape::kCadFeatureId || object->locked()
+        || body->state().patterns.size() >= forgeshape::kMaxCadFeaturePatterns) {
+        return 0;
+    }
+    forgeshape::CadFeatureView view;
+    if (!forgeshape::findCadFeature(body->state(), featureId, &view)
+        || (view.operation != forgeshape::CadFeatureOperation::Add
+            && view.operation != forgeshape::CadFeatureOperation::Cut)) {
+        return 0;
+    }
+    if (outBody != nullptr) *outBody = body;
+    return featureId;
+}
+
+// The seeds a NEW pattern of `featureId` opens with, into v[4..15]:
+// [4] the Linear axis, [5..7] a spacing per axis, [8] the Circular axis,
+// [9..11] the point it passes through, [12..14] the base's centre (a Mirror
+// plane's offset per axis), [15] the Mirror axis, [16..18] per axis the
+// Linear run that fits the part (instance count, negative along -axis).
+void writePatternSeeds(const forgeshape::CadBodyState& state, uint32_t featureId, jdouble* v) {
+    const forgeshape::CadBodyAxis linear = forgeshape::suggestCadPatternLinearAxis(state, featureId);
+    v[4] = forgeshape::cadBodyAxisIndex(linear);
+    for (int a = 0; a < 3; ++a) {
+        forgeshape::CadBodyAxis axis = forgeshape::CadBodyAxis::X;
+        forgeshape::cadBodyAxisFromIndex(a, &axis);
+        v[5 + a] = forgeshape::suggestCadPatternSpacing(state, {featureId}, axis);
+    }
+    forgeshape::CadBodyAxis circularAxis = forgeshape::CadBodyAxis::Z;
+    double center[3] = {0.0, 0.0, 0.0};
+    forgeshape::suggestCadPatternCircularAxis(state, &circularAxis, center);
+    v[8] = forgeshape::cadBodyAxisIndex(circularAxis);
+    v[9] = center[0];
+    v[10] = center[1];
+    v[11] = center[2];
+    double mid[3] = {0.0, 0.0, 0.0};
+    forgeshape::cadBodyLocalCenter(state, mid);
+    v[12] = mid[0];
+    v[13] = mid[1];
+    v[14] = mid[2];
+    v[15] = v[4];
+    // [16..18]: per axis, the Linear run that fits the part -- the instance
+    // count, NEGATIVE when it runs along -axis.
+    for (int a = 0; a < 3; ++a) {
+        forgeshape::CadBodyAxis axis = forgeshape::CadBodyAxis::X;
+        forgeshape::cadBodyAxisFromIndex(a, &axis);
+        uint32_t count = 2;
+        bool reversed = false;
+        forgeshape::suggestCadPatternLinearRun(state, featureId, axis, v[5 + a], 3u, &count,
+                                               &reversed);
+        v[16 + a] = reversed ? -static_cast<double>(count) : static_cast<double>(count);
+    }
+}
+
+// Where a feature's chip stands: its sketch origin on its support, in world.
+bool featureScreenPoint(const forgeshape::SceneObject& object, uint32_t featureId, float* x,
+                        float* y) {
+    forgeshape::CadFeatureGeometry g;
+    forgeshape::Mat4 model;
+    if (object.cadOrNull() == nullptr
+        || forgeshape::buildCadFeatureGeometry(object.cadOrNull()->state(), featureId, &g)
+                   != forgeshape::CadStatus::Ok
+        || !forgeshape::constructionScene().resolveWorldModel(object.objectId(), &model)) {
+        return false;
+    }
+    return forgeshape::projectWorldToScreen(g_camera.snapshot(),
+                                            edgeWorldPoint(model, g.placement.origin),
+                                            g_camera.viewportWidth(), g_camera.viewportHeight(), x, y);
+}
+}  // namespace
+
+// The Pattern / Mirror offer over a tapped face, into out[0..19]: [0] the
+// feature id it repeats (the call answers false when there is none), [1..2]
+// the touched point on screen, [3] 1 for an Add, 2 for a Cut, [4..18] the
+// seeds (see `writePatternSeeds`), [19] the body id.
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_patternOfferState(
+    JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr jsize kSlots = 20;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) {
+        return JNI_FALSE;
+    }
+    jdouble values[kSlots] = {0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ChosenSupport fresh;
+        const forgeshape::CadBody* body = nullptr;
+        const uint32_t featureId = patternOfferFeatureLocked(&fresh, &body);
+        if (featureId == 0 || body == nullptr) {
+            return JNI_FALSE;
+        }
+        const forgeshape::SketchFrame& f = fresh.worldFrame;
+        const forgeshape::Vec3 world = forgeshape::vec3Add(
+                f.origin, forgeshape::vec3Add(forgeshape::vec3Scale(f.u, g_faceSketchOfferU),
+                                              forgeshape::vec3Scale(f.v, g_faceSketchOfferV)));
+        float sx = 0.0f;
+        float sy = 0.0f;
+        if (!forgeshape::projectWorldToScreen(g_camera.snapshot(), world, g_camera.viewportWidth(),
+                                              g_camera.viewportHeight(), &sx, &sy)) {
+            return JNI_FALSE;
+        }
+        forgeshape::CadFeatureView view;
+        forgeshape::findCadFeature(body->state(), featureId, &view);
+        values[0] = featureId;
+        values[1] = sx;
+        values[2] = sy;
+        values[3] = view.operation == forgeshape::CadFeatureOperation::Add ? 1.0 : 2.0;
+        writePatternSeeds(body->state(), featureId, values);
+        values[19] = static_cast<jdouble>(fresh.faceRef.producerObjectId);
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, values);
+    return JNI_TRUE;
+}
+
+// Adds (patternId 0) or edits a pattern as ONE Undo. `kind` 0 Linear,
+// 1 Circular, 2 Mirror; `axis` / `axis2` 0..2 (`axis2` < 0 or `count2` < 2:
+// no second direction); `value` is the Linear spacing (m), the Circular angle
+// (degrees) or the Mirror offset (m); (cx, cy, cz) the Circular axis point.
+// An edit keeps the features the pattern already names. Returns the CadStatus
+// code.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadPatternApply(
+    JNIEnv*, jclass, jlong bodyId, jlong patternId, jlong featureId, jint kind, jint axis,
+    jboolean reversed, jint count, jdouble value, jint axis2, jint count2, jdouble spacing2,
+    jdouble cx, jdouble cy, jdouble cz) {
+    forgeshape::CadStatus status;
+    uint32_t minted = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = retainedSketchActRefusal();
+        forgeshape::CadFeaturePattern p;
+        if (status == forgeshape::CadStatus::Ok
+            && (!forgeshape::cadPatternKindFromIndex(static_cast<int>(kind), &p.kind)
+                || !forgeshape::cadBodyAxisFromIndex(static_cast<int>(axis), &p.axis)
+                || count < 0)) {
+            status = forgeshape::CadStatus::PatternInvalid;
+        }
+        const forgeshape::SceneObject* object =
+                forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(bodyId));
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        if (status == forgeshape::CadStatus::Ok && body == nullptr) {
+            status = forgeshape::CadStatus::NotCadBody;
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            if (patternId > 0) {
+                const forgeshape::CadFeaturePattern* existing = forgeshape::findCadFeaturePattern(
+                        body->state(), static_cast<uint32_t>(patternId));
+                if (existing == nullptr) {
+                    status = forgeshape::CadStatus::PatternFeatureNotFound;
+                } else {
+                    p.featureIds = existing->featureIds;
+                }
+            } else if (featureId > 0 && featureId <= 0xFFFFFFFFll) {
+                p.featureIds = {static_cast<uint32_t>(featureId)};
+            } else {
+                status = forgeshape::CadStatus::PatternFeatureNotFound;
+            }
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            switch (p.kind) {
+                case forgeshape::CadPatternKind::Linear: {
+                    p.reversed = reversed == JNI_TRUE;
+                    p.count = static_cast<uint32_t>(count);
+                    p.spacing = value;
+                    forgeshape::CadBodyAxis second = forgeshape::CadBodyAxis::Y;
+                    if (count2 >= 2 && forgeshape::cadBodyAxisFromIndex(static_cast<int>(axis2), &second)) {
+                        p.axis2 = second;
+                        p.count2 = static_cast<uint32_t>(count2);
+                        p.spacing2 = spacing2;
+                    }
+                    break;
+                }
+                case forgeshape::CadPatternKind::Circular:
+                    p.reversed = reversed == JNI_TRUE;
+                    p.count = static_cast<uint32_t>(count);
+                    p.angleDegrees = value;
+                    p.center[0] = cx;
+                    p.center[1] = cy;
+                    p.center[2] = cz;
+                    break;
+                case forgeshape::CadPatternKind::Mirror:
+                    p.count = 2;
+                    p.offset = value;
+                    break;
+            }
+            status = patternId > 0
+                             ? forgeshape::editCadFeaturePatternOfBody(
+                                       forgeshape::constructionScene(),
+                                       forgeshape::constructionHistory(),
+                                       static_cast<forgeshape::ObjectId>(bodyId),
+                                       static_cast<uint32_t>(patternId), std::move(p))
+                             : forgeshape::addCadFeaturePatternToBody(
+                                       forgeshape::constructionScene(),
+                                       forgeshape::constructionHistory(),
+                                       static_cast<forgeshape::ObjectId>(bodyId), std::move(p),
+                                       &minted);
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            // The offer was the door to this act; it is spent.
+            g_faceSketchOffer = forgeshape::ChosenSupport{};
+            g_edgeFinishOffer = EdgeFinishOffer{};
+        }
+    }
+    FS_LOGI("FORGESHAPE_PATTERN_APPLY pattern=%lld minted=%u kind=%d count=%d %s",
+            (long long)patternId, minted, (int)kind, (int)count, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// A committed pattern, into out[0..19]: [0] kind, [1] axis, [2] reversed,
+// [3] count, [4] spacing, [5] axis2, [6] reversed2, [7] count2, [8] spacing2,
+// [9] angle, [10..12] center, [13] offset, [14] 1 when [15..16] (the screen
+// point of the first feature it repeats) project, [17] that feature's id,
+// [18] 1 Add / 2 Cut, [19] the instance count. False for no such pattern.
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_cadPatternInfo(
+    JNIEnv* env, jclass, jlong bodyId, jlong patternId, jdoubleArray out) {
+    constexpr jsize kSlots = 20;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) {
+        return JNI_FALSE;
+    }
+    jdouble v[kSlots] = {0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SceneObject* object =
+                forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(bodyId));
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        const forgeshape::CadFeaturePattern* p =
+                body != nullptr && patternId > 0
+                        ? forgeshape::findCadFeaturePattern(body->state(),
+                                                            static_cast<uint32_t>(patternId))
+                        : nullptr;
+        if (p == nullptr) {
+            return JNI_FALSE;
+        }
+        v[0] = forgeshape::cadPatternKindIndex(p->kind);
+        v[1] = forgeshape::cadBodyAxisIndex(p->axis);
+        v[2] = p->reversed ? 1.0 : 0.0;
+        v[3] = p->count;
+        v[4] = p->spacing;
+        v[5] = forgeshape::cadBodyAxisIndex(p->axis2);
+        v[6] = p->reversed2 ? 1.0 : 0.0;
+        v[7] = p->count2;
+        v[8] = p->spacing2;
+        v[9] = p->angleDegrees;
+        v[10] = p->center[0];
+        v[11] = p->center[1];
+        v[12] = p->center[2];
+        v[13] = p->offset;
+        float sx = 0.0f;
+        float sy = 0.0f;
+        if (!p->featureIds.empty() && featureScreenPoint(*object, p->featureIds.front(), &sx, &sy)) {
+            v[14] = 1.0;
+            v[15] = sx;
+            v[16] = sy;
+        }
+        v[17] = p->featureIds.empty() ? 0.0 : p->featureIds.front();
+        forgeshape::CadFeatureView view;
+        v[18] = !p->featureIds.empty()
+                                && forgeshape::findCadFeature(body->state(), p->featureIds.front(), &view)
+                                && view.operation == forgeshape::CadFeatureOperation::Add
+                        ? 1.0
+                        : 2.0;
+        v[19] = forgeshape::cadPatternInstanceCount(*p);
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, v);
+    return JNI_TRUE;
+}
+
+// The seeds for an EDIT that changes kind (see `writePatternSeeds`), into
+// out[0..18] for the pattern's first feature. False for no such pattern.
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_cadPatternSeeds(
+    JNIEnv* env, jclass, jlong bodyId, jlong featureId, jdoubleArray out) {
+    constexpr jsize kSlots = 19;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots || featureId <= 0) {
+        return JNI_FALSE;
+    }
+    jdouble v[kSlots] = {0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SceneObject* object =
+                forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(bodyId));
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        if (body == nullptr) {
+            return JNI_FALSE;
+        }
+        writePatternSeeds(body->state(), static_cast<uint32_t>(featureId), v);
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, v);
+    return JNI_TRUE;
+}
+
+// Removes pattern `patternId` as ONE Undo.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadPatternDelete(
+    JNIEnv*, jclass, jlong bodyId, jlong patternId) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = retainedSketchActRefusal();
+        if (status == forgeshape::CadStatus::Ok) {
+            status = patternId <= 0 || patternId > 0xFFFFFFFFll
+                             ? forgeshape::CadStatus::PatternFeatureNotFound
+                             : forgeshape::deleteCadFeaturePatternOfBody(
+                                       forgeshape::constructionScene(),
+                                       forgeshape::constructionHistory(),
+                                       static_cast<forgeshape::ObjectId>(bodyId),
+                                       static_cast<uint32_t>(patternId));
+        }
+    }
+    FS_LOGI("FORGESHAPE_PATTERN_DELETE pattern=%lld %s", (long long)patternId,
+            forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
 // Read-only projection of a world point to screen through the current camera.
 // A verification seam so a test can tap the exact pixel a plane or face target
 // projects to; it mutates nothing.
@@ -5987,7 +6315,8 @@ Java_com_forgeshape_app_NativeViewport_cadTimeline(JNIEnv* env, jclass, jlong bo
         for (jsize i = 0; i < count; ++i) {
             const forgeshape::CadTimelineRow& row = timeline.rows[static_cast<size_t>(i)];
             jdouble* v = &values[static_cast<size_t>(i) * kRowSlots];
-            v[0] = row.kind == forgeshape::CadTimelineRowKind::Finish    ? 2.0
+            v[0] = row.kind == forgeshape::CadTimelineRowKind::Pattern   ? 3.0
+                   : row.kind == forgeshape::CadTimelineRowKind::Finish  ? 2.0
                    : row.kind == forgeshape::CadTimelineRowKind::Feature ? 1.0
                                                                          : 0.0;
             v[1] = row.id;
@@ -6024,6 +6353,15 @@ Java_com_forgeshape_app_NativeViewport_cadTimeline(JNIEnv* env, jclass, jlong bo
                 v[15] = forgeshape::cadEdgeFinishKindIndex(row.finishKind);
                 v[17] = row.finishEdgeCount;
                 v[21] = row.finishDistance;
+            }
+            if (row.kind == forgeshape::CadTimelineRowKind::Pattern) {
+                // A pattern row reuses the same slots: the operation slot is
+                // the pattern kind (0 Linear, 1 Circular, 2 Mirror), the region
+                // count its instance count and the hole count how many
+                // features it repeats.
+                v[15] = forgeshape::cadPatternKindIndex(row.patternKind);
+                v[17] = row.patternInstances;
+                v[18] = row.patternFeatureCount;
             }
         }
         if (count > 0) {

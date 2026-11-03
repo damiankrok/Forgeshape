@@ -3432,6 +3432,16 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         final long bodyId = NativeViewport.sceneActiveBodyId();
+        if (row.isPattern()) {
+            // A pattern has no sketch either: its editor is the canvas one,
+            // over the first feature it repeats, with Delete beside Apply.
+            setFeatureHistoryOpen(false);
+            if (!cadExtrudeCanvas.beginPatternEdit(bodyId, row.id)) {
+                showStatus(CadStatusMessages.describe(context,
+                        NativeViewport.CAD_PATTERN_FEATURE_NOT_FOUND), R.attr.fsTextError);
+            }
+            return;
+        }
         if (row.isFinish()) {
             // A Chamfer or a Fillet has no sketch to reopen: its editor is the
             // canvas one, over its first edge, with Delete beside Apply.
@@ -4304,6 +4314,52 @@ final class EditorWorkspaceView extends FrameLayout
         showStatus(context.getString(R.string.status_edge_finish_deleted, name),
                 R.attr.fsTextSecondary);
         return true;
+    }
+
+    // -----------------------------------------------------------------------
+    // Feature patterns (`CAD-PATTERN-R1`)
+    // -----------------------------------------------------------------------
+
+    @Override
+    public boolean onCanvasPatternApply(long bodyId, long patternId, long featureId,
+            PatternEditorPanel.Request request) {
+        final Context context = getContext();
+        final int status = NativeViewport.cadPatternApply(bodyId, patternId, featureId,
+                request.kind, request.axis, request.reversed, request.count, request.value,
+                request.axis2, request.count2, request.spacing2, request.center[0],
+                request.center[1], request.center[2]);
+        if (status != NativeViewport.CAD_OK) {
+            // The editor stays open with every value the user typed, so the
+            // refusal can be fixed rather than retyped.
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return false;
+        }
+        onNativeStateChanged();
+        final String kind = context.getString(PatternPresentation.kindName(request.kind));
+        final int copies = request.kind == NativeViewport.PATTERN_LINEAR
+                ? request.count * Math.max(1, request.axis2 >= 0 ? request.count2 : 1)
+                : request.kind == NativeViewport.PATTERN_MIRROR ? 2 : request.count;
+        showStatus(context.getString(patternId > 0L ? R.string.status_pattern_edited
+                : R.string.status_pattern_applied, kind, copies), R.attr.fsTextSecondary);
+        return true;
+    }
+
+    @Override
+    public boolean onCanvasPatternDelete(long bodyId, long patternId) {
+        final Context context = getContext();
+        final int status = NativeViewport.cadPatternDelete(bodyId, patternId);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return false;
+        }
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_pattern_deleted), R.attr.fsTextSecondary);
+        return true;
+    }
+
+    @Override
+    public void onCanvasPatternFieldRefused(String message) {
+        showStatus(message, R.attr.fsTextError);
     }
 
     /**

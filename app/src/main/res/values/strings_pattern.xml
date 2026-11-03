@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Feature patterns: Linear, Circular and Mirror (`CAD-PATTERN-R1`). -->
+<resources>
+    <string name="pattern_action">Pattern</string>
+    <string name="mirror_action">Mirror</string>
+    <string name="pattern_action_description">Repeat this feature in a row, a grid or round a circle</string>
+    <string name="mirror_action_description">Mirror this feature across a plane of the part</string>
+    <string name="pattern_linear">Linear</string>
+    <string name="pattern_circular">Circular</string>
+    <string name="pattern_mirror">Mirror</string>
+    <string name="pattern_axis_x">X</string>
+    <string name="pattern_axis_y">Y</string>
+    <string name="pattern_axis_z">Z</string>
+    <string name="pattern_label_axis_direction">Along</string>
+    <string name="pattern_label_axis_rotate">Around</string>
+    <string name="pattern_label_axis_mirror">Across</string>
+    <string name="pattern_axis_description">%1$s the part\'s %2$s axis</string>
+    <string name="pattern_reverse">Reverse</string>
+    <string name="pattern_reverse_description">Run the copies the other way</string>
+    <string name="pattern_label_count">Copies</string>
+    <string name="pattern_label_spacing">Spacing</string>
+    <string name="pattern_label_angle">Angle</string>
+    <string name="pattern_label_offset">Plane at</string>
+    <string name="pattern_label_second">Rows along</string>
+    <string name="pattern_second_off">Off</string>
+    <string name="pattern_label_count2">Rows</string>
+    <string name="pattern_label_spacing2">Row spacing</string>
+    <string name="pattern_degrees">degrees</string>
+    <string name="pattern_field_description">%1$s, in %2$s</string>
+    <string name="pattern_delete">Delete</string>
+    <string name="pattern_cancel">Cancel</string>
+    <string name="status_pattern_applied">%1$s pattern: %2$d copies. Undo takes it back.</string>
+    <string name="status_pattern_edited">%1$s pattern changed: %2$d copies.</string>
+    <string name="status_pattern_deleted">Pattern removed. Undo brings it back.</string>
+    <string name="history_row_pattern">Pattern %1$d · %2$s</string>
+    <string name="history_detail_pattern">%1$d copies</string>
+    <string name="status_pattern_invalid">Those pattern values do not work: use at least 2 copies (at most 64), a positive spacing and an angle up to 360°.</string>
+    <string name="status_pattern_feature_not_found">The feature this pattern repeats is no longer there.</string>
+    <string name="status_pattern_target_unsupported">Only a later Add or Cut can be patterned, not the first shape of a part.</string>
+    <string name="status_pattern_instance_no_effect">One of the copies changes nothing: it misses the part or lands on another copy. Change the spacing, the count or the axis.</string>
+    <string name="status_pattern_too_many">This part already has the most patterns it can hold.</string>
+</resources>

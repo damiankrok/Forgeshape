@@ -57,6 +57,25 @@ double suggestCadPatternSpacing(const CadBodyState& state, const std::vector<uin
 bool suggestCadPatternCircularAxis(const CadBodyState& state, CadBodyAxis* outAxis,
                                    double outCenter[3]);
 
+// The centre of the base feature's own solid, body-local: where a Mirror plane
+// is seeded so a copy lands on the far side of the part. False when it does
+// not derive.
+bool cadBodyLocalCenter(const CadBodyState& state, double out[3]);
+
+// The body-local axis a NEW Linear pattern of `featureId` walks along by
+// default: the first principal axis lying in the plane the feature was
+// sketched on (never its own extrusion direction). X when it does not derive.
+CadBodyAxis suggestCadPatternLinearAxis(const CadBodyState& state, uint32_t featureId);
+
+// How a NEW Linear pattern of `featureId` with `spacing` along `axis` starts
+// so that every copy stays over the part: the direction with more room (false:
+// +axis, true: -axis) and how many instances fit that way, between
+// kMinPatternCount and `maxCount`. A run that cannot fit two still answers
+// kMinPatternCount, so the editor opens on something the user can adjust.
+void suggestCadPatternLinearRun(const CadBodyState& state, uint32_t featureId, CadBodyAxis axis,
+                                double spacing, uint32_t maxCount, uint32_t* outCount,
+                                bool* outReversed);
+
 // --- the three user acts, each ONE `ScopedConstructionEdit` (one Undo) -----
 //
 // Each judges the whole requested state through `CadBody::applyState`, which

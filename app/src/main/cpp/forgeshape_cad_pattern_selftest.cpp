@@ -525,6 +525,23 @@ void runCadPatternSelfTests(std::vector<ArrangementSelfTestCheck>* out, std::str
                         && volumeIs(regen(withPattern(state, linear(2, CadBodyAxis::X, 2, spacing))),
                                     16.0 + 2 * boss));
     }
+    // The seeded run stays on the part: a boss near +X runs toward -X, as far
+    // as the part reaches, and that run regenerates.
+    {
+        const CadBodyState state = bossState(1.0, 1.0);
+        uint32_t count = 0;
+        bool reversed = false;
+        suggestCadPatternLinearRun(state, 2u, CadBodyAxis::X, 0.5, 3u, &count, &reversed);
+        CadFeaturePattern run = linear(2, CadBodyAxis::X, count, 0.5);
+        run.reversed = reversed;
+        uint32_t tight = 0;
+        bool tightReversed = true;
+        suggestCadPatternLinearRun(bossState(0.0, 0.0), 2u, CadBodyAxis::X, 9.0, 3u, &tight,
+                                   &tightReversed);
+        r.check("PT_20_the_seeded_run_turns_toward_the_room_and_fits_the_part",
+                count == 3u && reversed && volumeIs(regen(withPattern(state, run)), 16.0 + 3 * boss)
+                        && tight == 2u);
+    }
     if (performance != nullptr) {
         // One bounded run: a 4 x 4 grid of pockets.
         CadFeaturePattern grid = linear(2, CadBodyAxis::X, 4, 0.8);

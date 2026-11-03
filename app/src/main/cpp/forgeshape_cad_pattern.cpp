@@ -320,6 +320,56 @@ bool suggestCadPatternCircularAxis(const CadBodyState& state, CadBodyAxis* outAx
     return true;
 }
 
+bool cadBodyLocalCenter(const CadBodyState& state, double out[3]) {
+    double lo[3];
+    double hi[3];
+    if (out == nullptr || !featureBounds(state, kCadFeatureId, lo, hi)) return false;
+    for (int k = 0; k < 3; ++k) out[k] = 0.5 * (lo[k] + hi[k]);
+    return true;
+}
+
+CadBodyAxis suggestCadPatternLinearAxis(const CadBodyState& state, uint32_t featureId) {
+    CadFeatureGeometry g;
+    if (buildCadFeatureGeometry(state, featureId, &g) != CadStatus::Ok) {
+        return CadBodyAxis::X;
+    }
+    const double n[3] = {std::fabs(g.placement.n.x), std::fabs(g.placement.n.y),
+                         std::fabs(g.placement.n.z)};
+    int normal = 0;
+    for (int k = 1; k < 3; ++k) {
+        if (n[k] > n[normal]) normal = k;
+    }
+    CadBodyAxis axis = CadBodyAxis::X;
+    cadBodyAxisFromIndex(normal == 0 ? 1 : 0, &axis);
+    return axis;
+}
+
+void suggestCadPatternLinearRun(const CadBodyState& state, uint32_t featureId, CadBodyAxis axis,
+                                double spacing, uint32_t maxCount, uint32_t* outCount,
+                                bool* outReversed) {
+    uint32_t count = kMinPatternCount;
+    bool reversed = false;
+    double baseLo[3];
+    double baseHi[3];
+    double lo[3];
+    double hi[3];
+    const int a = cadBodyAxisIndex(axis);
+    if (spacing > 0.0 && featureBounds(state, kCadFeatureId, baseLo, baseHi)
+        && featureBounds(state, featureId, lo, hi)) {
+        // Copies whose whole footprint stays inside the part's span along the
+        // axis: never a boss hanging off the edge or a pocket in thin air.
+        const double roomPlus = baseHi[a] - hi[a];
+        const double roomMinus = lo[a] - baseLo[a];
+        const double room = std::max(roomPlus, roomMinus);
+        reversed = roomMinus > roomPlus;
+        const double fit = std::floor(room / spacing + 1e-9) + 1.0;
+        count = static_cast<uint32_t>(std::max(static_cast<double>(kMinPatternCount),
+                                               std::min(static_cast<double>(maxCount), fit)));
+    }
+    if (outCount != nullptr) *outCount = count;
+    if (outReversed != nullptr) *outReversed = reversed;
+}
+
 CadStatus addCadFeaturePatternToBody(ConstructionScene& scene, ConstructionHistory& history,
                                      ObjectId bodyId, CadFeaturePattern pattern,
                                      uint32_t* outPatternId) {

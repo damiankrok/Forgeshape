@@ -627,4 +627,25 @@
     <item name="field_sketch_dimension_value" type="id" />
     <item name="apply_sketch_dimension_value" type="id" />
     <item name="sketch_dimension_delete" type="id" />
+    <item name="cad_canvas_pattern" type="id" />
+    <item name="cad_canvas_mirror_feature" type="id" />
+    <item name="cad_canvas_pattern_editor" type="id" />
+    <item name="pattern_kind_linear" type="id" />
+    <item name="pattern_kind_circular" type="id" />
+    <item name="pattern_kind_mirror" type="id" />
+    <item name="pattern_axis_x" type="id" />
+    <item name="pattern_axis_y" type="id" />
+    <item name="pattern_axis_z" type="id" />
+    <item name="pattern_reverse" type="id" />
+    <item name="field_pattern_count" type="id" />
+    <item name="field_pattern_value" type="id" />
+    <item name="pattern_second_off" type="id" />
+    <item name="pattern_second_x" type="id" />
+    <item name="pattern_second_y" type="id" />
+    <item name="pattern_second_z" type="id" />
+    <item name="field_pattern_count2" type="id" />
+    <item name="field_pattern_spacing2" type="id" />
+    <item name="apply_pattern" type="id" />
+    <item name="delete_pattern" type="id" />
+    <item name="cancel_pattern" type="id" />
 </resources>

@@ -103,6 +103,16 @@ final class FeatureHistoryPresentation {
             return kind == NativeViewport.TIMELINE_KIND_FINISH;
         }
 
+        /** A Linear, Circular or Mirror pattern (`CAD-PATTERN-R1`). */
+        boolean isPattern() {
+            return kind == NativeViewport.TIMELINE_KIND_PATTERN;
+        }
+
+        /** A pattern row's instance count (the regions slot carries it). */
+        int patternInstances() {
+            return edges;
+        }
+
         /** A finish row's edge count (the regions slot carries it). */
         int finishEdges() {
             return edges;

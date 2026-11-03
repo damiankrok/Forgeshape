@@ -157,6 +157,16 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_edge_finish_no_effect);
             case NativeViewport.CAD_TOO_MANY_EDGE_FINISHES:
                 return context.getString(R.string.status_edge_finish_too_many);
+            case NativeViewport.CAD_PATTERN_INVALID:
+                return context.getString(R.string.status_pattern_invalid);
+            case NativeViewport.CAD_PATTERN_FEATURE_NOT_FOUND:
+                return context.getString(R.string.status_pattern_feature_not_found);
+            case NativeViewport.CAD_PATTERN_TARGET_UNSUPPORTED:
+                return context.getString(R.string.status_pattern_target_unsupported);
+            case NativeViewport.CAD_PATTERN_INSTANCE_NO_EFFECT:
+                return context.getString(R.string.status_pattern_instance_no_effect);
+            case NativeViewport.CAD_TOO_MANY_PATTERNS:
+                return context.getString(R.string.status_pattern_too_many);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));

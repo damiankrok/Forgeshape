@@ -114,6 +114,20 @@ final class CadExtrudeCanvasView extends FrameLayout {
 
         /** Remove committed finish {@code finishId} of body {@code bodyId}. */
         boolean onCanvasEdgeFinishDelete(long bodyId, long finishId);
+
+        /**
+         * Apply a pattern (`CAD-PATTERN-R1`): a NEW one of {@code featureId}
+         * when {@code patternId} is 0, else an edit of that committed pattern.
+         * Returns whether native accepted it, so the editor closes only then.
+         */
+        boolean onCanvasPatternApply(long bodyId, long patternId, long featureId,
+                PatternEditorPanel.Request request);
+
+        /** Remove committed pattern {@code patternId} of body {@code bodyId}. */
+        boolean onCanvasPatternDelete(long bodyId, long patternId);
+
+        /** A pattern field did not parse: say so as a verdict. */
+        void onCanvasPatternFieldRefused(String message);
     }
 
     /** The extent choices, in {@link CadHudPresentation#EXTENTS} order. */
@@ -244,6 +258,24 @@ final class CadExtrudeCanvasView extends FrameLayout {
     private long edgeEditorBodyId = NativeViewport.NO_OBJECT;
     private float edgeEditorX;
     private float edgeEditorY;
+
+    /**
+     * Pattern and Mirror (`CAD-PATTERN-R1`): two more captioned actions in the
+     * same bar, offered when the tapped face belongs to a later Add or Cut, and
+     * the one editor both open. Presentation only; native owns the pattern.
+     */
+    private final View patternAction;
+    private final View mirrorAction;
+    private final PatternEditorPanel patternPanel;
+    private final double[] patternOffer = new double[NativeViewport.PATTERN_OFFER_SIZE];
+    private final double[] patternInfo = new double[NativeViewport.PATTERN_INFO_SIZE];
+    private final double[] patternSeeds = new double[NativeViewport.PATTERN_SEEDS_SIZE];
+    private long patternBodyId = NativeViewport.NO_OBJECT;
+    /** 0 for a new pattern of {@link #patternFeatureId}, else the pattern edited. */
+    private long patternId;
+    private long patternFeatureId;
+    private float patternX;
+    private float patternY;
 
     /** Whether the action palette is open. Presentation only; never a domain value. */
     private boolean paletteOpen;
@@ -553,6 +585,30 @@ final class CadExtrudeCanvasView extends FrameLayout {
         });
         edgeFinishBar.addView(edgeFillet, EditorControlStyles.wrap(0));
         edgeFinishBar.addView(edgeChamfer, EditorControlStyles.wrap(0));
+        final TextView patternCaption = new TextView(context);
+        final TextView mirrorCaption = new TextView(context);
+        patternAction = captionedAction(context, R.id.cad_canvas_pattern,
+                R.drawable.ic_pattern_linear, patternCaption);
+        mirrorAction = captionedAction(context, R.id.cad_canvas_mirror_feature,
+                R.drawable.ic_pattern_mirror, mirrorCaption);
+        patternCaption.setText(R.string.pattern_action);
+        mirrorCaption.setText(R.string.mirror_action);
+        patternAction.setContentDescription(context.getString(R.string.pattern_action_description));
+        mirrorAction.setContentDescription(context.getString(R.string.mirror_action_description));
+        patternAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openNewPattern(NativeViewport.PATTERN_LINEAR);
+            }
+        });
+        mirrorAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openNewPattern(NativeViewport.PATTERN_MIRROR);
+            }
+        });
+        edgeFinishBar.addView(patternAction, EditorControlStyles.wrap(0));
+        edgeFinishBar.addView(mirrorAction, EditorControlStyles.wrap(0));
         edgeFinishBar.setVisibility(GONE);
         addView(edgeFinishBar, wrapParams());
 
@@ -609,6 +665,38 @@ final class CadExtrudeCanvasView extends FrameLayout {
         });
         edgeFinishEditor.addView(cancelFinish, EditorControlStyles.wrap(editorGap));
         addView(edgeFinishEditor, wrapParams());
+
+        patternPanel = new PatternEditorPanel(context, new PatternEditorPanel.Listener() {
+            @Override
+            public LengthUnit patternUnit() {
+                return host.uiState().displayUnit();
+            }
+
+            @Override
+            public void patternFieldRefused(String message) {
+                CadExtrudeCanvasView.this.actions.onCanvasPatternFieldRefused(message);
+            }
+
+            @Override
+            public boolean patternApply(PatternEditorPanel.Request request) {
+                return CadExtrudeCanvasView.this.actions.onCanvasPatternApply(patternBodyId,
+                        patternId, patternFeatureId, request);
+            }
+
+            @Override
+            public boolean patternDelete() {
+                return patternId > 0L && CadExtrudeCanvasView.this.actions
+                        .onCanvasPatternDelete(patternBodyId, patternId);
+            }
+
+            @Override
+            public void patternCancelled() {
+                hideIme();
+                refreshFromNative();
+            }
+        });
+        patternPanel.setElevation(EditorControlStyles.dimen(context, R.dimen.elevation_floating));
+        addView(patternPanel, wrapParams());
         setAnnotationVisible(false, false);
     }
 
@@ -802,7 +890,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
             if (child == editSketch.view || child == sketchOnFace || child == edgeFinishBar) {
                 return CadHudTouchAttribution.EDIT_SKETCH;
             }
-            if (child == edgeFinishEditor) {
+            if (child == edgeFinishEditor || child == patternPanel) {
                 return CadHudTouchAttribution.EDITOR;
             }
         }
@@ -1012,6 +1100,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         sketchOnFace.setVisibility(GONE);
         edgeFinishBar.setVisibility(GONE);
         closeEdgeFinishEditor();
+        closePatternEditor();
         final Context context = getContext();
         final LengthUnit unit = host.uiState().displayUnit();
         final int extent = extentMode();
@@ -1498,6 +1587,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         sketchOnFace.setVisibility(GONE);
         edgeFinishBar.setVisibility(GONE);
         closeEdgeFinishEditor();
+        closePatternEditor();
         sketchBodyId = NativeViewport.NO_OBJECT;
         setVisibility(GONE);
     }
@@ -1535,9 +1625,44 @@ final class CadExtrudeCanvasView extends FrameLayout {
             placeAt(edgeFinishEditor, edgeEditorX, edgeEditorY + hitPx);
             return true;
         }
-        if (!anchorSpace.ready() || !NativeViewport.edgeFinishOfferState(edgeOffer)) {
+        if (patternPanel.isOpen()) {
+            // The open pattern editor keeps its own anchor: a new pattern
+            // follows the offer it came from, an edit the feature it repeats.
+            if (patternId == 0L) {
+                if (anchorSpace.ready() && NativeViewport.patternOfferState(patternOffer)) {
+                    patternX = (float) patternOffer[NativeViewport.PATTERN_OFFER_X];
+                    patternY = (float) patternOffer[NativeViewport.PATTERN_OFFER_Y];
+                }
+            } else if (NativeViewport.cadPatternInfo(patternBodyId, patternId, patternInfo)
+                    && patternInfo[NativeViewport.PATTERN_INFO_ON_SCREEN] != 0.0) {
+                patternX = (float) patternInfo[NativeViewport.PATTERN_INFO_X];
+                patternY = (float) patternInfo[NativeViewport.PATTERN_INFO_Y];
+            }
+            edgeFinishBar.setVisibility(GONE);
+            setVisibility(VISIBLE);
+            placeAt(patternPanel, patternX, patternY + hitPx);
+            return true;
+        }
+        final boolean patternOffered = anchorSpace.ready()
+                && NativeViewport.patternOfferState(patternOffer);
+        final boolean finishOffered = anchorSpace.ready()
+                && NativeViewport.edgeFinishOfferState(edgeOffer);
+        patternAction.setVisibility(patternOffered ? VISIBLE : GONE);
+        mirrorAction.setVisibility(patternOffered ? VISIBLE : GONE);
+        edgeFillet.setVisibility(finishOffered ? VISIBLE : GONE);
+        edgeChamfer.setVisibility(finishOffered ? VISIBLE : GONE);
+        if (!finishOffered && !patternOffered) {
             edgeFinishBar.setVisibility(GONE);
             return false;
+        }
+        if (!finishOffered) {
+            // A face whose edges cannot be finished (a pocket's wall, say) still
+            // offers Pattern and Mirror, below the finger like a face's bar.
+            edgeFinishBar.setVisibility(VISIBLE);
+            setVisibility(VISIBLE);
+            placeAt(edgeFinishBar, (float) patternOffer[NativeViewport.PATTERN_OFFER_X],
+                    (float) patternOffer[NativeViewport.PATTERN_OFFER_Y] + hitPx);
+            return true;
         }
         final Context context = getContext();
         final boolean face =
@@ -1561,6 +1686,71 @@ final class CadExtrudeCanvasView extends FrameLayout {
         final float y = (float) edgeOffer[NativeViewport.EDGE_OFFER_Y];
         placeAt(edgeFinishBar, x, face ? y + hitPx : y - hitPx);
         return true;
+    }
+
+    // -----------------------------------------------------------------------
+    // Pattern and Mirror (`CAD-PATTERN-R1`)
+    // -----------------------------------------------------------------------
+
+    /** Opens the pattern editor for a NEW pattern of the offered feature. */
+    private void openNewPattern(int kind) {
+        if (!NativeViewport.patternOfferState(patternOffer)) {
+            refreshFromNative();
+            return;
+        }
+        closeEdgeFinishEditor();
+        patternId = 0L;
+        patternFeatureId = (long) patternOffer[NativeViewport.PATTERN_OFFER_FEATURE];
+        patternBodyId = (long) patternOffer[NativeViewport.PATTERN_OFFER_BODY];
+        patternX = (float) patternOffer[NativeViewport.PATTERN_OFFER_X];
+        patternY = (float) patternOffer[NativeViewport.PATTERN_OFFER_Y];
+        patternPanel.openNew(kind, patternOffer);
+        edgeFinishBar.setVisibility(GONE);
+        setVisibility(VISIBLE);
+        placeAt(patternPanel, patternX, patternY + hitPx);
+    }
+
+    /**
+     * Opens the pattern editor over a COMMITTED pattern, from the History: its
+     * values, Apply as an edit, and Delete. Returns false for a pattern native
+     * lacks.
+     */
+    boolean beginPatternEdit(long bodyId, long id) {
+        if (!NativeViewport.cadPatternInfo(bodyId, id, patternInfo)) {
+            return false;
+        }
+        closeEdgeFinishEditor();
+        patternBodyId = bodyId;
+        patternId = id;
+        patternFeatureId = (long) patternInfo[NativeViewport.PATTERN_INFO_FEATURE];
+        NativeViewport.cadPatternSeeds(bodyId, patternFeatureId, patternSeeds);
+        if (patternInfo[NativeViewport.PATTERN_INFO_ON_SCREEN] != 0.0) {
+            patternX = (float) patternInfo[NativeViewport.PATTERN_INFO_X];
+            patternY = (float) patternInfo[NativeViewport.PATTERN_INFO_Y];
+        } else {
+            patternX = getWidth() * 0.5f;
+            patternY = getHeight() * 0.3f;
+        }
+        patternPanel.openExisting(patternInfo, patternSeeds);
+        edgeFinishBar.setVisibility(GONE);
+        setVisibility(VISIBLE);
+        placeAt(patternPanel, patternX, patternY + hitPx);
+        return true;
+    }
+
+    /** Closes the pattern editor without applying anything. */
+    void closePatternEditor() {
+        if (!patternPanel.isOpen()) {
+            return;
+        }
+        patternPanel.close();
+        patternId = 0L;
+        hideIme();
+    }
+
+    /** Whether the pattern editor is open; verification. */
+    boolean patternEditorOpen() {
+        return patternPanel.isOpen();
     }
 
     /** Opens the editor for a NEW finish over the offer, seeded with native's suggestion. */

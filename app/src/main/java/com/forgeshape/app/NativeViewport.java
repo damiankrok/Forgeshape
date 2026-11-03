@@ -2352,6 +2352,16 @@ final class NativeViewport {
     static final int CAD_EDGE_FINISH_TOO_LARGE = 97;
     static final int CAD_EDGE_FINISH_NO_EFFECT = 98;
     static final int CAD_TOO_MANY_EDGE_FINISHES = 99;
+    /** `CAD-PATTERN-R1`: the pattern's own values are out of bounds or not canonical. */
+    static final int CAD_PATTERN_INVALID = 100;
+    /** A pattern names a feature the chain lacks, or one after itself. */
+    static final int CAD_PATTERN_FEATURE_NOT_FOUND = 101;
+    /** A pattern names the base feature, or the body is a Revolve. */
+    static final int CAD_PATTERN_TARGET_UNSUPPORTED = 102;
+    /** One instance changed nothing (missed the body, or stood apart from it). */
+    static final int CAD_PATTERN_INSTANCE_NO_EFFECT = 103;
+    /** The body already carries the most patterns it may. */
+    static final int CAD_TOO_MANY_PATTERNS = 104;
 
     // --- Chamfer and Fillet (`CAD-EDGE-FINISH-R1`) ------------------------
 
@@ -2407,6 +2417,77 @@ final class NativeViewport {
 
     /** Removes a finish as ONE Undo. Returns a CAD status. */
     static native int cadEdgeFinishDelete(long bodyId, long finishId);
+
+    // --- Feature patterns (`CAD-PATTERN-R1`) ------------------------------
+
+    static final int PATTERN_LINEAR = 0;
+    static final int PATTERN_CIRCULAR = 1;
+    static final int PATTERN_MIRROR = 2;
+    static final int AXIS_X = 0;
+    static final int AXIS_Y = 1;
+    static final int AXIS_Z = 2;
+
+    /** Slots of {@link #patternOfferState}; [4..18] are the seeds. */
+    static final int PATTERN_OFFER_SIZE = 20;
+    static final int PATTERN_OFFER_FEATURE = 0;
+    static final int PATTERN_OFFER_X = 1;
+    static final int PATTERN_OFFER_Y = 2;
+    static final int PATTERN_OFFER_OPERATION = 3;
+    static final int PATTERN_OFFER_BODY = 19;
+    /** Seed slots, at the same index in a {@link #patternOfferState} and a
+     * {@link #cadPatternSeeds} array. */
+    static final int PATTERN_SEED_LINEAR_AXIS = 4;
+    static final int PATTERN_SEED_SPACING_X = 5;
+    static final int PATTERN_SEED_CIRCULAR_AXIS = 8;
+    static final int PATTERN_SEED_CENTER_X = 9;
+    static final int PATTERN_SEED_MID_X = 12;
+    static final int PATTERN_SEED_MIRROR_AXIS = 15;
+    /** Per axis, the Linear run that fits the part: the count, negative along -axis. */
+    static final int PATTERN_SEED_RUN_X = 16;
+    static final int PATTERN_SEEDS_SIZE = 19;
+
+    /**
+     * The Pattern / Mirror offer over a tapped face of a later Add or Cut: the
+     * feature, the touched point, the operation and the seeds. False when
+     * there is none — the actions are then absent.
+     */
+    static native boolean patternOfferState(double[] out);
+
+    /** The seeds for a pattern of {@code featureId}, at the same slots. */
+    static native boolean cadPatternSeeds(long bodyId, long featureId, double[] out);
+
+    /**
+     * Adds ({@code patternId} 0, of {@code featureId}) or edits a pattern as ONE
+     * Undo. {@code value} is the Linear spacing (m), the Circular angle
+     * (degrees) or the Mirror offset (m). Returns a CAD status.
+     */
+    static native int cadPatternApply(long bodyId, long patternId, long featureId, int kind,
+            int axis, boolean reversed, int count, double value, int axis2, int count2,
+            double spacing2, double cx, double cy, double cz);
+
+    static final int PATTERN_INFO_SIZE = 20;
+    static final int PATTERN_INFO_KIND = 0;
+    static final int PATTERN_INFO_AXIS = 1;
+    static final int PATTERN_INFO_REVERSED = 2;
+    static final int PATTERN_INFO_COUNT = 3;
+    static final int PATTERN_INFO_SPACING = 4;
+    static final int PATTERN_INFO_AXIS2 = 5;
+    static final int PATTERN_INFO_COUNT2 = 7;
+    static final int PATTERN_INFO_SPACING2 = 8;
+    static final int PATTERN_INFO_ANGLE = 9;
+    static final int PATTERN_INFO_CENTER_X = 10;
+    static final int PATTERN_INFO_OFFSET = 13;
+    static final int PATTERN_INFO_ON_SCREEN = 14;
+    static final int PATTERN_INFO_X = 15;
+    static final int PATTERN_INFO_Y = 16;
+    static final int PATTERN_INFO_FEATURE = 17;
+    static final int PATTERN_INFO_INSTANCES = 19;
+
+    /** A committed pattern's values and screen anchor. */
+    static native boolean cadPatternInfo(long bodyId, long patternId, double[] out);
+
+    /** Removes a pattern as ONE Undo. Returns a CAD status. */
+    static native int cadPatternDelete(long bodyId, long patternId);
 
     /**
      * What an extrusion does to material (`CAD-VERTICAL-SLICE-R1`), in the
@@ -3397,6 +3478,13 @@ final class NativeViewport {
      * distance in metres and {@link #TIMELINE_ROW_REGIONS} its edge count.
      */
     static final int TIMELINE_KIND_FINISH = 2;
+    /**
+     * A Linear, Circular or Mirror pattern (`CAD-PATTERN-R1`): {@link
+     * #TIMELINE_ROW_OPERATION} is the pattern kind ({@link #PATTERN_LINEAR}..),
+     * {@link #TIMELINE_ROW_REGIONS} its instance count and {@link
+     * #TIMELINE_ROW_HOLES} how many features it repeats.
+     */
+    static final int TIMELINE_KIND_PATTERN = 3;
 
     static final int TIMELINE_STATE_OK = 0;
     static final int TIMELINE_STATE_FAILED = 1;
@@ -3405,10 +3493,10 @@ final class NativeViewport {
     static final int TIMELINE_STATE_UNUSED = 4;
 
     /**
-     * The most rows a CAD timeline can have: one per feature, one per sketch
-     * and one per Chamfer or Fillet.
+     * The most rows a CAD timeline can have: one per feature, one per sketch,
+     * one per Chamfer or Fillet and one per pattern.
      */
-    static final int TIMELINE_MAX_ROWS = 48;
+    static final int TIMELINE_MAX_ROWS = 64;
 
     /**
      * A CAD body's feature chain as a TIMELINE of sketch and feature rows in

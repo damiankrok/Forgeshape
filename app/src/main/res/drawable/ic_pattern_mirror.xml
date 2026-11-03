@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Mirror a feature: one hole of a part reflected across the part's own plane
+  (the dashed line) into a lighter copy. Not ic_object_mirror, which reflects a
+  whole body into a new one: one icon names one act.
+
+  Drawn white and tinted at use; see EditorControlStyles.icon().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- The part. -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineJoin="round"
+        android:pathData="M3.5,5.5 h17 a1,1 0 0 1 1,1 v11 a1,1 0 0 1 -1,1 h-17 a1,1 0 0 1 -1,-1 v-11 a1,1 0 0 1 1,-1 Z" />
+    <!-- The mirror plane through the part. -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M12,2 v2 M12,7 v2.5 M12,12.5 v2.5 M12,18 v2.5" />
+    <!-- The feature, and its reflection. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5.5,9 h3.5 v6 h-3.5 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillAlpha="0.4"
+        android:pathData="M15,9 h3.5 v6 h-3.5 Z" />
+</vector>
