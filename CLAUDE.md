@@ -839,6 +839,39 @@ on the host, with no device, and is the fast native loop.
   features, variable or asymmetric chamfers, a rolling-ball corner blend where
   three filleted edges meet (R1 leaves the intersection of the cuts), a drag
   handle, Shell, Draft and a Hole feature.
+- **A Pattern repeats NAMED features by a DERIVED transform**
+  (`CAD-PATTERN-R1`, `forgeshape_cad_pattern.{h,cpp}`). `CadBodyState::patterns`
+  is the authored truth: per pattern an id minted from `nextFeatureId` (the id
+  space features and finishes share), a kind — Linear (one or two directions,
+  copies and spacing), Circular (copies over an angle about a body-local axis
+  through a point) or Mirror (one reflection across a body-local plane) — the
+  1..8 later Add / Cut features it repeats BY ID, and its numbers in ONE
+  canonical form per kind (unused fields exactly their defaults; refused,
+  never masked: `PatternInvalid`). Directions and planes are the body's own
+  local axes, so a pattern moves with the body. Every instance is the named
+  feature's own derived tool solid moved by `cadPatternInstanceTransforms`
+  (a reflection reverses the winding so the tool still winds outward) and
+  applied with the feature's own operation, one kernel boolean per instance;
+  patterns sit in the chain BY ID (after every smaller-id feature, before
+  every larger one), and an instance that changes nothing is refused by name
+  (`PatternInstanceNoEffect`), as is the base feature or a Revolve
+  (`PatternTargetUnsupported`) and a feature the chain lacks or that follows
+  the pattern (`PatternFeatureNotFound`). Instance triangles wear the
+  pattern's own INELIGIBLE face-table entry, so an instance face is never a
+  sketch support. **The offer is presentation**: a Construction tap on a face
+  of a later Add or Cut offers Pattern and Mirror in the face bar beside
+  Sketch here; the editor (`PatternEditorPanel`) opens on native's seeds — a
+  Linear axis in the feature's own plane, a spacing that clears it and the
+  run (count and direction) that keeps every copy on the part, the Circular
+  axis through the base's centre, the Mirror plane through the part's centre
+  — draws only the rows its kind uses, and Apply, an edit and a Delete are
+  each ONE `ScopedConstructionEdit`. The History lists patterns by id and
+  reopens one in the editor. **`CADB` gains version 10** (§7m), written ONLY
+  when a body carries a pattern; every v1..v9 project keeps its bytes and its
+  fingerprint. **Not this stage:** a pattern of a Revolve, of a finish or of
+  the base, a pattern along a sketch edge or a curve, a pattern of a pattern,
+  per-instance suppression, an arbitrary mirror plane, and a body-to-body
+  pattern.
 - **A body's History is a VIEW of its feature chain, and an edit of an earlier
   step is STAGED** (`MODELING-FOUNDATIONS-R1` A). The History control in the
   history capsule is drawn exactly when the active body is a CAD or a Surface
@@ -1729,6 +1762,10 @@ coincident edges / making a closed solid of one),
   "Asymmetric"),
   *Flip* (reversing which side of the sketch the solid grows on; a One Side
   control, a direction and never a negative depth, and never an A/B swap),
+  *Pattern* (repeating a feature of a part in a row, a grid or round a circle;
+  *Linear* / *Circular*), *Mirror* of a feature (one reflected copy of a
+  feature across a plane of the part — never the body Mirror, which creates a
+  new body),
   *Fillet* / *Chamfer* (rounding a body's edge to an arc / cutting it back to
   a flat bevel; never "bevel" alone for the round), *Round edges* / *Bevel
   edges* (the same over every edge of a tapped face),

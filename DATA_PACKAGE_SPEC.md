@@ -1397,6 +1397,69 @@ refuses the whole file, rather than opening the body with its rounds silently
 sharpened. No v9 corpus fixture exists yet: the round trip and the refusals
 are host evidence (`EF_11_*` in the CAD-feature suite).
 
+## 7m. `CADB` v10 — Linear, Circular and Mirror patterns (`CAD-PATTERN-R1`)
+
+Version 10 records one more fact of a BODY: its feature patterns. v10 is v9's
+layout (§7l) with two changes, both at the END of every body record:
+
+1. the finish list keeps its layout but its `finishCount` may be **0** (in v9 a
+   zero was a second encoding of a v8 body; in v10 the patterns that follow are
+   what made the section v10);
+2. after the finish list:
+
+```
+u32  patternCount               0 .. 16 (a whole section in which no body carries
+                                a pattern is a second encoding of v9:
+                                InvalidSemanticValue)
+repeat patternCount times, strictly ascending patternId:
+  u32  patternId                != 0, below nextFeatureId, no feature's or
+                                finish's id
+  u8   kindCode                 1 Linear, 2 Circular, 3 Mirror (else
+                                InvalidSemanticValue)
+  u32  featureCount             1 .. 8 (else ImpossibleCount)
+  u32  featureId x featureCount strictly ascending later features (Add or Cut),
+                                each below patternId
+  u8   axisCode                 1 X, 2 Y, 3 Z of the body's LOCAL frame
+  u8   reversed                 0 / 1 (else InvalidSemanticValue)
+  u32  count                    Linear / Circular instances incl. the original,
+                                2 .. 64; Mirror: 2
+  f64  spacing                  Linear: metres, 1e-5 .. 1000; else 0
+  u8   axis2Code                Linear's second direction; Y when unused
+  u8   reversed2                0 / 1; 0 when unused
+  u32  count2                   1 (none) or 2 .. 64; count x count2 <= 64
+  f64  spacing2                 metres when count2 > 1; else 0
+  f64  angleDegrees             Circular: (0, 360]; else 0
+  f64  centerX, centerY, centerZ Circular: a point on the axis, body-local
+                                metres, |c| <= 1000; else 0
+  f64  offset                   Mirror: the plane's position along the axis,
+                                body-local metres, |o| <= 1000; else 0
+```
+
+A pattern is NAMED, never stored as geometry: every instance is the named
+feature's own derived tool solid moved by the rigid transform the values above
+define (Linear: `i·spacing·d1 + j·spacing2·d2`; Circular: a turn about the axis
+through `center`, `angle/count` apart for a full 360 and `angle/(count-1)`
+otherwise; Mirror: the reflection `x_a' = 2·offset − x_a`), applied with the
+feature's own operation. Each kind has ONE canonical form — the fields it does
+not use hold exactly the values shown — so one pattern has one encoding.
+Patterns are applied in the chain BY ID: after every feature with a smaller id
+and before every feature with a larger one. Load refuses by name, through
+`validateCadBodyState`, values out of bounds or not canonical
+(`PatternInvalid`), a feature the chain lacks or one at or after the pattern
+(`PatternFeatureNotFound`), the base feature or a Revolve body
+(`PatternTargetUnsupported`), and more than 16 patterns (`TooManyPatterns`);
+regeneration refuses an instance that changes nothing (`PatternInstanceNoEffect`).
+
+### When v10 is written, and what an older reader does
+
+v10 is written exactly when some body carries a pattern; every other project
+keeps whichever of v1..v9 it already used, byte for byte, and its fingerprint
+(the pattern block is mixed in only when present). A reader built before v10
+meets a required `CADB` section at an unknown version and refuses the whole
+file rather than opening the part with its copies silently missing. No v10
+corpus fixture exists yet: the round trip and the refusals are host evidence
+(`PT_14_*` in the CAD-feature suite).
+
 ## 7j. `FRFM` v1 — the Freeform bodies (`MODELING-FOUNDATIONS-R1` B)
 
 A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is
