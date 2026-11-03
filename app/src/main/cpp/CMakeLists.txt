@@ -54,6 +54,9 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_cad_body.cpp
     forgeshape_cad_face.cpp
     forgeshape_cad_feature.cpp
+    forgeshape_cad_revolve.cpp
+    forgeshape_cad_timeline.cpp
+    forgeshape_cad_sketch_inventory.cpp
     forgeshape_cad_kernel.cpp
     forgeshape_cad_extrude_tool.cpp
     forgeshape_sketch.cpp
@@ -61,6 +64,9 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_sketch_arrangement.cpp
     forgeshape_sketch_overlay.cpp
     forgeshape_sketch_session.cpp
+    forgeshape_sketch_dimension.cpp
+    forgeshape_sketch_snap.cpp
+    forgeshape_sketch_drafting.cpp
     forgeshape_support_chooser.cpp
     forgeshape_workplane.cpp
     forgeshape_body_dimension_overlay.cpp
@@ -71,6 +77,11 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_construction.cpp
     forgeshape_demo_mesh.cpp
     forgeshape_display.cpp
+    forgeshape_freeform.cpp
+    forgeshape_freeform_subdivision.cpp
+    forgeshape_freeform_session.cpp
+    forgeshape_surface.cpp
+    forgeshape_surface_authoring.cpp
     forgeshape_gizmo.cpp
     forgeshape_glb_import_fixture.cpp
     forgeshape_glb_roundtrip.cpp
@@ -90,6 +101,8 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_project_bootstrap.cpp
     forgeshape_project_bytes.cpp
     forgeshape_project_document.cpp
+    forgeshape_project_freeform.cpp
+    forgeshape_project_surface.cpp
     forgeshape_project_state.cpp
     forgeshape_render_mesh.cpp
     forgeshape_render_recovery.cpp
@@ -113,11 +126,20 @@ set(FORGESHAPE_SELFTEST_SOURCES
     forgeshape_cad_selftest.cpp
     forgeshape_cad_a3_selftest.cpp
     forgeshape_cad_feature_selftest.cpp
+    forgeshape_cad_multiface_selftest.cpp
+    forgeshape_owner_shell_selftest.cpp
+    forgeshape_cad_revolve_selftest.cpp
+    forgeshape_cad_timeline_selftest.cpp
+    forgeshape_cad_r2_selftest.cpp
+    forgeshape_cad_oracle_selftest.cpp
+    forgeshape_sketch_drafting_selftest.cpp
     forgeshape_sketch_arrangement_selftest.cpp
     forgeshape_sketch_fill_selftest.cpp
     forgeshape_cad_v6_selftest.cpp
     forgeshape_sketch_ux_selftest.cpp
     forgeshape_construction_selftest.cpp
+    forgeshape_freeform_selftest.cpp
+    forgeshape_surface_selftest.cpp
     forgeshape_cone_capsule_selftest.cpp
     forgeshape_gltf_export_selftest.cpp
     forgeshape_gltf_import_selftest.cpp

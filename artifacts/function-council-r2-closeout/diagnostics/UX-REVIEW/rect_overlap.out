@@ -1,0 +1,21 @@
+== sizes (px -> dp)
+navigator: 417x355 px = 158.9x135.2 dp  floor48=OK
+navigator_flip: 95x126 px = 36.2x48.0 dp  floor48=BELOW
+dimension_label: 114x126 px = 43.4x48.0 dp  floor48=BELOW
+dimension_editor: 453x148 px = 172.6x56.4 dp  floor48=OK
+dimension_field: 252x126 px = 96.0x48.0 dp  floor48=OK
+tool_rail_column: 147x341 px = 56.0x129.9 dp  floor48=OK
+selection_outline_on: 97x126 px = 37.0x48.0 dp  floor48=BELOW
+selection_outline_off: 103x126 px = 39.2x48.0 dp  floor48=BELOW
+settings_back: 932x126 px = 355.0x48.0 dp  floor48=OK
+finish_sketch: 295x125 px = 112.4x47.6 dp  floor48=BELOW
+home_settings: 932x126 px = 355.0x48.0 dp  floor48=OK
+== overlaps
+dimension_label x navigator: rect (800, 583, 859, 691) = 59x108 px, 44.4% of dimension_label
+dimension_field x navigator: rect (638, 583, 859, 691) = 221x108 px, 75.2% of dimension_field
+dimension_editor x navigator: rect (627, 572, 859, 691) = 232x119 px, 41.2% of dimension_editor
+dimension_label x tool_rail x-span 896..1043: 18 px of 114 px width
+dimension_editor x tool_rail x-span 896..1043: 147 px of 453 px width
+dimension_field centre (764.0,646.0) inside navigator rect: True
+dimension_label centre (857.0,646.0) inside navigator rect: True
+settings_back top y=3409 vs window height 2400: below fold by 1009 px = 384 dp

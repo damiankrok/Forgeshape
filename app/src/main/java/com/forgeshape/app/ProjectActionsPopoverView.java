@@ -4,47 +4,50 @@ import android.content.Context;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.view.View;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 /**
- * The project actions: keep the work, get it back, and move it off the device.
+ * The project DRAWER: what the ForgeShape mark at the top-left grows into
+ * (`MODELING-R1-OWNER-CORRECTION`).
  *
- * <p><b>Every entry works, and there are only as many as there are working
- * things.</b> Three groups, because there are three questions. The first is the
- * app's own storage — New Project…, Save Project and Open Saved Project (one
- * slot). The second is the device's, through the system's own document UI:
- * Save Copy… writes the same canonical `.forge` bytes wherever the user says,
- * Open File… reads one back, and Share Diagnostics… writes the local report.
- * The third is somebody else's mesh — Import GLB…, and nothing beside it.
+ * <p>It hangs from the mark at the window's LEADING edge, under the toolbar,
+ * and unfolds from the mark's own corner -- the anchored-surface growth every
+ * panel in the workspace uses, pivoted where the mark is, so the drawer is
+ * visibly the mark opening rather than a page arriving from nowhere. It stands
+ * on the model and blocks nothing else: the viewport, the Tool Rail and the
+ * utility group stay live beside it, and the mark or System Back closes it.
+ *
+ * <p><b>Every row works, and there are only as many as there are working
+ * things</b>, grouped by the question each answers (`ProjectDrawerPolicy`):
+ * CREATE -- New Sketch in this project, or a New Project; PROJECT -- Save
+ * Project and Open Saved Project (the app's one slot); TRANSFER -- Save Copy…,
+ * Open File… and Share Diagnostics… through the system's own document UI;
+ * IMPORT -- Import GLB…; APPLICATION -- Settings.
  *
  * <p><b>Transfer is not interchange.</b> What Save Copy… writes is a ForgeShape
  * project, readable by another ForgeShape installation; Export is a different
  * act with its own home in the Global Toolbar. No Save As and no recent list.
  *
- * <p><b>Import GLB… creates real objects</b>: one per supported mesh node, each
- * a row in the Objects list with the ordinary gizmo, one Undo step for the
- * whole import, and geometry saved into `.forge` without the source file. An
- * imported object is non-parametric, so <i>Shape</i> is withdrawn for one; it
- * can be sculpted (`IMPORT-01B`). OBJ and FBX remain absent in both
- * directions. This is the ONE user-facing GLB route: the session-only
- * diagnostic preview below JNI is reached only from the verification suites,
- * because two visible ways to open a `.glb` that did different things to the
- * project is exactly the confusion to avoid.
+ * <p><b>Import GLB… creates real objects</b> (`IMPORT-01A`), one Undo step for
+ * the whole import; it is the ONE user-facing GLB route.
  *
- * <p>It is an {@link AnchoredSurfaceView} that hangs UNDER the toolbar, where
- * its anchor is in every window; that is stated here rather than pushed in by
- * the workspace, exactly as the display popover states it.
- *
- * <p><b>Owns no state.</b> Each row reports a request; the workspace performs it
- * and writes the outcome to the one status line. The only things this view is
- * told are whether there is a saved project to open at all, which decides
- * whether Open is a working control or the recessed, inert row it honestly is,
- * and whether an import is possible, which it is not in Sculpt.
+ * <p><b>Owns no state and no act.</b> Each row reports a request through
+ * {@link ProjectDrawerPolicy#perform}, which closes the drawer and calls the
+ * ONE handler the workspace already had -- New Sketch is the very path Add
+ * Primitive's tile takes into the spatial support chooser. This view is told
+ * only whether there is a saved project to open, whether import and New Sketch
+ * can succeed now, and nothing else.
  */
 final class ProjectActionsPopoverView extends AnchoredSurfaceView {
 
     /** Told which project action was asked for; the caller owns what it means. */
     interface OnProjectAction {
+        /** `MODELING-R1-OWNER-CORRECTION`: New Sketch in this project -- the
+         *  spatial support chooser, exactly as Add Primitive's tile enters it. */
+        void onNewSketchRequested();
+
         /** `APP-H1`: leave this project for a new one. Guarded by the
          *  unsaved-changes question when the project is dirty. */
         void onNewProjectRequested();
@@ -66,6 +69,7 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
         void onSettingsRequested();
     }
 
+    private final TextView newSketchRow;
     private final TextView newRow;
     private final TextView saveRow;
     private final TextView openRow;
@@ -75,165 +79,115 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
     private final TextView importSectionLabel;
     private final TextView importRow;
     private final TextView settingsRow;
+    private final View header;
 
-    ProjectActionsPopoverView(Context context, final OnProjectAction listener) {
+    ProjectActionsPopoverView(Context context, final OnProjectAction listener,
+                              final ProjectDrawerPolicy.Closer closer) {
         super(context);
         setId(R.id.project_actions_popover);
         setGrowsUpward(false);
-        // TIER 2, like the display popover: two prose-named actions to be read
+        // TIER 2, like the display popover: prose-named actions to be read
         // rather than a capsule to be glanced at, so it is opaque.
         EditorControlStyles.applyContextSurface(this);
+        setMinimumWidth(EditorControlStyles.dimen(context, R.dimen.project_drawer_min_width));
 
         final int pad = EditorControlStyles.dimen(context, R.dimen.inspector_padding);
         setPadding(pad, pad, pad, pad);
 
-        addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.project)),
-                EditorControlStyles.rowParams(0));
+        // The mark again, at the drawer's head and beside the product's name:
+        // the drawer is what the mark opened into. Decorative to a screen
+        // reader -- the name says it.
+        final LinearLayout head = new LinearLayout(context);
+        head.setId(R.id.project_drawer_header);
+        head.setOrientation(HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        final View mark = EditorControlStyles.icon(context, R.drawable.ic_forgeshape_mark,
+                R.dimen.icon_size);
+        mark.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        head.addView(mark, mark.getLayoutParams());
+        final TextView name = EditorControlStyles.titleText(context, View.NO_ID,
+                context.getString(R.string.app_name));
+        final LinearLayout.LayoutParams nameParams = EditorControlStyles.rowParams(0);
+        nameParams.leftMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        head.addView(name, nameParams);
+        head.setContentDescription(context.getString(R.string.app_name));
+        header = head;
+        addView(head, EditorControlStyles.rowParams(0));
 
-        // New Project (APP-H1): the way from this project to another, through
-        // the New Project chooser and -- when there are unsaved changes -- the
-        // one question that guards them. First, because it is the act that
-        // leaves; Save and Open are acts on the project the user is in.
-        newRow = EditorControlStyles.listRow(context, R.id.project_new,
-                context.getString(R.string.project_new));
-        newRow.setGravity(Gravity.CENTER_VERTICAL);
-        newRow.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                listener.onNewProjectRequested();
-            }
-        });
-        addView(newRow, EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+        // The rows scroll inside the drawer, so a short landscape window can
+        // reach Settings at the bottom: the drawer is bounded by the window it
+        // hangs in, never pushed past its edge.
+        final ScrollView scroll = new ScrollView(context);
+        scroll.setId(R.id.project_drawer_scroll);
+        scroll.setVerticalScrollBarEnabled(true);
+        final LinearLayout rows = new LinearLayout(context);
+        rows.setOrientation(VERTICAL);
+        scroll.addView(rows, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        saveRow = EditorControlStyles.listRow(context, R.id.project_save,
-                context.getString(R.string.project_save));
-        saveRow.setGravity(Gravity.CENTER_VERTICAL);
-        saveRow.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                listener.onSaveProjectRequested();
-            }
-        });
-        addView(saveRow, EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
-
-        openRow = EditorControlStyles.listRow(context, R.id.project_open,
-                context.getString(R.string.project_open));
-        openRow.setGravity(Gravity.CENTER_VERTICAL);
-        openRow.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                listener.onOpenProjectRequested();
-            }
-        });
-        addView(openRow, EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
-
-        // The second group: the same project, moved through the device's own
-        // storage rather than the app's. Under its own label because "where
-        // this file lives" is a different question from "save my work", and a
-        // flat list of four would make Save Copy look like a second Save.
-        addView(EditorControlStyles.sectionLabel(context,
-                context.getString(R.string.project_transfer)),
-                EditorControlStyles.rowParams(
+        final TextView[] built = new TextView[ProjectDrawerPolicy.ROWS.length];
+        TextView importLabel = null;
+        ProjectDrawerPolicy.Group group = null;
+        for (int i = 0; i < ProjectDrawerPolicy.ROWS.length; i++) {
+            final ProjectDrawerPolicy.Row row = ProjectDrawerPolicy.ROWS[i];
+            if (row.group != group) {
+                group = row.group;
+                final TextView label = EditorControlStyles.sectionLabel(context,
+                        context.getString(ProjectDrawerPolicy.groupLabel(group)));
+                if (group == ProjectDrawerPolicy.Group.IMPORT) {
+                    importLabel = label;
+                }
+                rows.addView(label, EditorControlStyles.rowParams(
                         EditorControlStyles.dimen(context, R.dimen.row_gap)));
-
-        saveCopyRow = EditorControlStyles.listRow(context, R.id.project_save_copy,
-                context.getString(R.string.project_save_copy));
-        saveCopyRow.setGravity(Gravity.CENTER_VERTICAL);
-        saveCopyRow.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                listener.onSaveCopyRequested();
             }
-        });
-        addView(saveCopyRow, EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
-
-        openFileRow = EditorControlStyles.listRow(context, R.id.project_open_file,
-                context.getString(R.string.project_open_file));
-        openFileRow.setGravity(Gravity.CENTER_VERTICAL);
-        openFileRow.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                listener.onOpenFileRequested();
-            }
-        });
-        addView(openFileRow, EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
-
-        // The local diagnostic report. It sits here because it is the third
-        // thing that leaves the app through the system's own document UI, and
-        // giving it a surface of its own would be a settings screen this product
-        // does not have. Nothing is sent anywhere: the user picks a file.
-        diagnosticsRow = EditorControlStyles.listRow(context, R.id.project_share_diagnostics,
-                context.getString(R.string.project_share_diagnostics));
-        diagnosticsRow.setGravity(Gravity.CENTER_VERTICAL);
-        diagnosticsRow.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                listener.onShareDiagnosticsRequested();
-            }
-        });
-        addView(diagnosticsRow, EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, R.dimen.row_gap)));
-
-        // A third group, because it answers a third question: not "keep my
-        // work" and not "move my work", but "bring somebody else's mesh in".
-        // Since `IMPORT-01A` that is a real act — it creates objects the user
-        // can select, move, undo and save — so the group is named for the
-        // objects it makes and nothing here says preview any more.
-        importSectionLabel = EditorControlStyles.sectionLabel(context,
-                context.getString(R.string.import_section));
-        addView(importSectionLabel, EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, R.dimen.row_gap)));
-
-        importRow = EditorControlStyles.listRow(context, R.id.import_glb,
-                context.getString(R.string.import_glb));
-        importRow.setGravity(Gravity.CENTER_VERTICAL);
-        importRow.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                listener.onImportGlbRequested();
-            }
-        });
-        addView(importRow, EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
-
-        // A fourth group, for a fourth question: not this project at all, but
-        // the APPLICATION (UI-PREF-R1, UI-OWNER-37). Settings is reached from
-        // here because this surface is the one mode-independent menu an open
-        // project has, and it opens the same page Home opens -- one Settings
-        // implementation, one store, two doors.
-        addView(EditorControlStyles.sectionLabel(context,
-                context.getString(R.string.application_section)),
-                EditorControlStyles.rowParams(
-                        EditorControlStyles.dimen(context, R.dimen.row_gap)));
-        settingsRow = EditorControlStyles.listRow(context, R.id.project_settings,
-                context.getString(R.string.project_settings));
-        settingsRow.setGravity(Gravity.CENTER_VERTICAL);
+            final TextView view = EditorControlStyles.listRow(context, row.id,
+                    context.getString(row.label));
+            view.setGravity(Gravity.CENTER_VERTICAL);
+            // Every row carries the interactive floor as HIT AREA, reached
+            // through the row's own box while the label keeps the size it
+            // reads at -- the glyph is never grown to make a target.
+            view.setMinimumHeight(EditorControlStyles.dimen(context, R.dimen.control_height));
+            view.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    ProjectDrawerPolicy.perform(row.action, closer, listener);
+                }
+            });
+            rows.addView(view, EditorControlStyles.rowParams(
+                    EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+            built[i] = view;
+        }
+        newSketchRow = built[0];
+        newRow = built[1];
+        saveRow = built[2];
+        openRow = built[3];
+        saveCopyRow = built[4];
+        openFileRow = built[5];
+        diagnosticsRow = built[6];
+        importRow = built[7];
+        settingsRow = built[8];
+        importSectionLabel = importLabel;
         settingsRow.setContentDescription(context.getString(R.string.settings));
-        settingsRow.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                listener.onSettingsRequested();
-            }
-        });
-        addView(settingsRow, EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+    }
 
-        // Every row carries the interactive floor as HIT AREA, reached with
-        // padding rather than by growing the drawn row: the text stays the size
-        // it reads at.
-        applyTouchFloor(context, newRow);
-        applyTouchFloor(context, saveRow);
-        applyTouchFloor(context, openRow);
-        applyTouchFloor(context, saveCopyRow);
-        applyTouchFloor(context, openFileRow);
-        applyTouchFloor(context, diagnosticsRow);
-        applyTouchFloor(context, importRow);
-        applyTouchFloor(context, settingsRow);
+    /**
+     * Draws or withdraws New Sketch: offered exactly when it can succeed
+     * ({@link ProjectDrawerPolicy#newSketchShown}), absent otherwise.
+     */
+    void showNewSketchAvailable(boolean available) {
+        newSketchRow.setVisibility(available ? VISIBLE : GONE);
+    }
+
+    /** New Sketch, for verification. */
+    TextView newSketchRow() {
+        return newSketchRow;
+    }
+
+    /** The drawer's head (the mark and the product's name), for verification. */
+    View header() {
+        return header;
     }
 
     /**
@@ -257,26 +211,12 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
     }
 
     /**
-     * It hangs under a control in the toolbar's TRAILING group, so it grows
-     * from its own trailing top corner — the same corner the display popover
-     * grows from, and for the same reason.
-     *
-     * <p>Without this it grew from its leading edge: the panel unfolded away
-     * from the control that opened it, which is precisely the defect the shared
-     * anchored contract exists to prevent, and precisely what `UIR4B-09` asks
-     * of every surface in the workspace.
+     * It hangs from the ForgeShape mark, the toolbar's LEADING control, so it
+     * grows from its own leading top corner -- where the mark is.
      */
     @Override
     boolean anchoredToTrailingEdge() {
-        return true;
-    }
-
-    private static void applyTouchFloor(Context context, TextView row) {
-        // `control_height` IS the 48 dp floor. Applied as a minimum height on a
-        // row that is already MATCH_PARENT wide, so the hit area reaches the
-        // floor through the row's own box while the label keeps the size it
-        // reads at — the glyph is never grown to make a target.
-        row.setMinimumHeight(EditorControlStyles.dimen(context, R.dimen.control_height));
+        return !ProjectDrawerPolicy.anchoredToLeadingEdge();
     }
 
     /**
@@ -336,9 +276,11 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
         final android.widget.FrameLayout.LayoutParams params =
                 new android.widget.FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.gravity = Gravity.TOP | Gravity.END;
+        params.gravity = Gravity.TOP | Gravity.START;
         params.topMargin = topOffsetPx;
-        params.rightMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        // Under the mark: the toolbar's own leading inset, so the drawer's
+        // edge and the mark's capsule line up.
+        params.leftMargin = EditorControlStyles.dimen(context, R.dimen.toolbar_padding_horizontal);
         return params;
     }
 }

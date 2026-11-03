@@ -1,0 +1,72 @@
+=== java -Duser.language=en -Duser.country=US
+default_locale=en_US
+typed='2,5'
+  pure LengthUnit.parse(unfiltered)        = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025
+  CANVAS  filter '0123456789.-' -> '25' -> LengthUnit.parse = 25 -> meters(double)=25.0 | mm unit -> meters=0.025
+  ROW     filter '0123456789.,-' -> '2,5' -> LengthUnit.parse = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025 ; CadRevolvePresentation.parseDegrees = 2.5
+  EXPR    filter '0123456789.,-+*/()' -> '2,5' -> ExactExpression.parse = 2.5
+typed='2.5'
+  pure LengthUnit.parse(unfiltered)        = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025
+  CANVAS  filter '0123456789.-' -> '2.5' -> LengthUnit.parse = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025
+  ROW     filter '0123456789.,-' -> '2.5' -> LengthUnit.parse = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025 ; CadRevolvePresentation.parseDegrees = 2.5
+  EXPR    filter '0123456789.,-+*/()' -> '2.5' -> ExactExpression.parse = 2.5
+typed='1 000,5'
+  pure LengthUnit.parse(unfiltered)        = NumberFormatException(Character   is neither a decimal digit number, decimal point, nor "e" notation exponential mark.)
+  CANVAS  filter '0123456789.-' -> '10005' -> LengthUnit.parse = 10005 -> meters(double)=10005.0 | mm unit -> meters=10.005
+  ROW     filter '0123456789.,-' -> '1000,5' -> LengthUnit.parse = 1000.5 -> meters(double)=1000.5 | mm unit -> meters=1.0005 ; CadRevolvePresentation.parseDegrees = 1000.5
+  EXPR    filter '0123456789.,-+*/()' -> '1000,5' -> ExactExpression.parse = 1000.5
+exit=0
+=== java -Duser.language=de -Duser.country=DE
+default_locale=de_DE
+typed='2,5'
+  pure LengthUnit.parse(unfiltered)        = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025
+  CANVAS  filter '0123456789.-' -> '25' -> LengthUnit.parse = 25 -> meters(double)=25.0 | mm unit -> meters=0.025
+  ROW     filter '0123456789.,-' -> '2,5' -> LengthUnit.parse = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025 ; CadRevolvePresentation.parseDegrees = 2.5
+  EXPR    filter '0123456789.,-+*/()' -> '2,5' -> ExactExpression.parse = 2.5
+typed='2.5'
+  pure LengthUnit.parse(unfiltered)        = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025
+  CANVAS  filter '0123456789.-' -> '2.5' -> LengthUnit.parse = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025
+  ROW     filter '0123456789.,-' -> '2.5' -> LengthUnit.parse = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025 ; CadRevolvePresentation.parseDegrees = 2.5
+  EXPR    filter '0123456789.,-+*/()' -> '2.5' -> ExactExpression.parse = 2.5
+typed='1 000,5'
+  pure LengthUnit.parse(unfiltered)        = NumberFormatException(Character   is neither a decimal digit number, decimal point, nor "e" notation exponential mark.)
+  CANVAS  filter '0123456789.-' -> '10005' -> LengthUnit.parse = 10005 -> meters(double)=10005.0 | mm unit -> meters=10.005
+  ROW     filter '0123456789.,-' -> '1000,5' -> LengthUnit.parse = 1000.5 -> meters(double)=1000.5 | mm unit -> meters=1.0005 ; CadRevolvePresentation.parseDegrees = 1000.5
+  EXPR    filter '0123456789.,-+*/()' -> '1000,5' -> ExactExpression.parse = 1000.5
+exit=0
+=== java -Duser.language=pl -Duser.country=PL
+default_locale=pl_PL
+typed='2,5'
+  pure LengthUnit.parse(unfiltered)        = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025
+  CANVAS  filter '0123456789.-' -> '25' -> LengthUnit.parse = 25 -> meters(double)=25.0 | mm unit -> meters=0.025
+  ROW     filter '0123456789.,-' -> '2,5' -> LengthUnit.parse = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025 ; CadRevolvePresentation.parseDegrees = 2.5
+  EXPR    filter '0123456789.,-+*/()' -> '2,5' -> ExactExpression.parse = 2.5
+typed='2.5'
+  pure LengthUnit.parse(unfiltered)        = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025
+  CANVAS  filter '0123456789.-' -> '2.5' -> LengthUnit.parse = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025
+  ROW     filter '0123456789.,-' -> '2.5' -> LengthUnit.parse = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025 ; CadRevolvePresentation.parseDegrees = 2.5
+  EXPR    filter '0123456789.,-+*/()' -> '2.5' -> ExactExpression.parse = 2.5
+typed='1 000,5'
+  pure LengthUnit.parse(unfiltered)        = NumberFormatException(Character   is neither a decimal digit number, decimal point, nor "e" notation exponential mark.)
+  CANVAS  filter '0123456789.-' -> '10005' -> LengthUnit.parse = 10005 -> meters(double)=10005.0 | mm unit -> meters=10.005
+  ROW     filter '0123456789.,-' -> '1000,5' -> LengthUnit.parse = 1000.5 -> meters(double)=1000.5 | mm unit -> meters=1.0005 ; CadRevolvePresentation.parseDegrees = 1000.5
+  EXPR    filter '0123456789.,-+*/()' -> '1000,5' -> ExactExpression.parse = 1000.5
+exit=0
+=== java -Duser.language=fr -Duser.country=FR
+default_locale=fr_FR
+typed='2,5'
+  pure LengthUnit.parse(unfiltered)        = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025
+  CANVAS  filter '0123456789.-' -> '25' -> LengthUnit.parse = 25 -> meters(double)=25.0 | mm unit -> meters=0.025
+  ROW     filter '0123456789.,-' -> '2,5' -> LengthUnit.parse = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025 ; CadRevolvePresentation.parseDegrees = 2.5
+  EXPR    filter '0123456789.,-+*/()' -> '2,5' -> ExactExpression.parse = 2.5
+typed='2.5'
+  pure LengthUnit.parse(unfiltered)        = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025
+  CANVAS  filter '0123456789.-' -> '2.5' -> LengthUnit.parse = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025
+  ROW     filter '0123456789.,-' -> '2.5' -> LengthUnit.parse = 2.5 -> meters(double)=2.5 | mm unit -> meters=0.0025 ; CadRevolvePresentation.parseDegrees = 2.5
+  EXPR    filter '0123456789.,-+*/()' -> '2.5' -> ExactExpression.parse = 2.5
+typed='1 000,5'
+  pure LengthUnit.parse(unfiltered)        = NumberFormatException(Character   is neither a decimal digit number, decimal point, nor "e" notation exponential mark.)
+  CANVAS  filter '0123456789.-' -> '10005' -> LengthUnit.parse = 10005 -> meters(double)=10005.0 | mm unit -> meters=10.005
+  ROW     filter '0123456789.,-' -> '1000,5' -> LengthUnit.parse = 1000.5 -> meters(double)=1000.5 | mm unit -> meters=1.0005 ; CadRevolvePresentation.parseDegrees = 1000.5
+  EXPR    filter '0123456789.,-+*/()' -> '1000,5' -> ExactExpression.parse = 1000.5
+exit=0

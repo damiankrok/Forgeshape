@@ -1,0 +1,6 @@
+PANEL-H08-1 (independent panel check 1/2 of H-08 / F-07)
+Host: Linux x86_64, 4 cores, g++ 13.3.0; flags = scripts/host-native-selftests.sh COMMON (-std=c++17 -O1 ...), product objects -w.
+Build:  artifacts/function-council-r2-closeout/diagnostics/PANEL-H08-1/build.sh > /tmp/claude-0/fc2c-scratch/PANEL-H08-1/build.log 2>&1   -> exit 0
+Run:    /tmp/claude-0/fc2c-scratch/PANEL-H08-1/h08_diag | tee h08_diag.out   -> exit 0
+Binaries/objects only under /tmp/claude-0/fc2c-scratch/PANEL-H08-1/ (not committed).
+Timings are warm medians of 21 ConstructionScene::snapshot() calls (the call the render loop makes every frame via viewSceneSnapshot under g_stateMutex, forgeshape_jni.cpp:1896). Host x86, not device; emulator/phone numbers NOT measured.

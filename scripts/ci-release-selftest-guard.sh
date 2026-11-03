@@ -11,7 +11,9 @@
 # Two probes per library:
 #   - dynamic symbols containing `SelfTests` (the `run*SelfTests` entry points);
 #   - strings matching the self-test token and check-name families
-#     (`_SELFTEST_`, `FSR1A_`, `CADUXR1_`, `DAR1_`, `CADVS_`).
+#     (`_SELFTEST_`, `FSR1A_`, `CADUXR1_`, `DAR1_`, `CADVS_`), and the debug-only
+#     Ready-tap attribution token (`FORGESHAPE_SKETCH_TAP:`), which a release
+#     build must not log.
 # Release must read 0 and 0. Debug must read MORE than 0 for both, so a probe
 # that silently matches nothing — a renamed tool, a wrong path, an empty
 # extraction — fails here instead of passing vacuously.
@@ -41,7 +43,7 @@ RELEASE_APK="$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk"
 DEBUG_APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
 LIB="libforgeshape_native.so"
 ABIS="x86_64 arm64-v8a"
-STRING_PATTERN='_SELFTEST_|FSR1A_|CADUXR1_|DAR1_|CADVS_'
+STRING_PATTERN='_SELFTEST_|FSR1A_|CADUXR1_|DAR1_|CADVS_|FORGESHAPE_SKETCH_TAP:'
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

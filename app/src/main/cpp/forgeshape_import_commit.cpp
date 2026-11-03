@@ -43,8 +43,34 @@ const char* importCommitStatusName(ImportCommitStatus status) {
         case ImportCommitStatus::RejectedGeometry: return "RejectedGeometry";
         case ImportCommitStatus::RefusedEditInProgress: return "RefusedEditInProgress";
         case ImportCommitStatus::RefusedInSculpt: return "RefusedInSculpt";
+        case ImportCommitStatus::RefusedInSketch: return "RefusedInSketch";
     }
     return "unknown";
+}
+
+ImportCommitStatus importModeRefusal(const ImportModeFacts& facts) {
+    if (facts.sculpting) {
+        return ImportCommitStatus::RefusedInSculpt;
+    }
+    if (facts.sketchActive) {
+        return ImportCommitStatus::RefusedInSketch;
+    }
+    return ImportCommitStatus::Ok;
+}
+
+ImportCommitStatus commitImportedGlbSceneInMode(const ParsedGlbScene& parsed,
+                                                ConstructionScene& scene,
+                                                ConstructionHistory& history,
+                                                const ImportModeFacts& facts,
+                                                ImportCommitReport* outReport) {
+    const ImportCommitStatus refused = importModeRefusal(facts);
+    if (refused != ImportCommitStatus::Ok) {
+        if (outReport != nullptr) {
+            *outReport = ImportCommitReport{};
+        }
+        return refused;
+    }
+    return commitImportedGlbScene(parsed, scene, history, outReport);
 }
 
 ImportCommitStatus commitImportedGlbScene(const ParsedGlbScene& parsed, ConstructionScene& scene,

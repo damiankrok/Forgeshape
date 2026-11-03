@@ -1,0 +1,35 @@
+# CR-07 — exact commands, tree 70a6c14 product (HEAD c51fdb3, app/ unchanged), host x86_64 with FMA (grep fma /proc/cpuinfo -> fma)
+# Toolchains: g++ 13.3.0 (Ubuntu), clang++ 18.1.3 (Ubuntu); NDK 29.0.14206865 clang 21.0.0 (r563880c)
+S=/tmp/claude-0/fc2c-scratch/CR-07 ; D=artifacts/function-council-r2-closeout/diagnostics/CR-07 ; CPP=app/src/main/cpp
+
+# 0. Baseline (unmodified script, g++ -O1):
+HOST_SELFTEST_OUT=$S/base bash scripts/host-native-selftests.sh > $S/base.out        # exit 0, HOST_SELFTESTS_OK (4392 checks, 0 failed)
+
+# 1. Device caps vs host counts + Recorder drop semantics:
+g++ -std=c++17 -O1 -g0 -I$CPP -I$CPP/third_party/manifold/include -DMANIFOLD_PAR=-1 -DMANIFOLD_NO_IOSTREAM -DMANIFOLD_NO_FILESYSTEM \
+    $D/cap_probe.cpp $S/base/obj/*.o $S/base/kernel/libmanifold.a -o $S/cap_probe   # build exit 0
+$S/cap_probe > $D/cap_probe.out                                                      # exit 0
+#   caps copied from forgeshape_jni.cpp:454,475,497,519,544,567,598,624,649,671,693,728,752,776,798,821,881,902,923,945,968,990,1012,1035,1057
+#   static check sites: grep -c 'r\.check(' forgeshape_project_selftest.cpp -> 256 (no loop around any)
+
+# 2. FP contraction matrix (CXX wrappers in $D/cxx-*.sh; script itself unmodified):
+for v in clang-fma-on clang-fma-fast clang-fma-off gcc-fma-fast clang-nofma; do
+  CXX=$D/cxx-$v.sh HOST_SELFTEST_OUT=$S/$v bash scripts/host-native-selftests.sh > $S/$v.out; done
+CXX=$D/cxx-gcc-O2-fma-fast.sh  HOST_SELFTEST_OUT=$S/gcc-O2-fma-fast  bash scripts/host-native-selftests.sh   # appended -O2 overrides script -O1
+CXX=$D/cxx-clang-fma-on-O0.sh  HOST_SELFTEST_OUT=$S/clang-fma-on-O0  bash scripts/host-native-selftests.sh   # arm64-debug-like: product -O0, kernel -O2
+#   exit codes -> host-runs/rcs.txt:
+#   clang-fma-on 1 | clang-fma-fast 1 | clang-fma-off 0 | gcc-fma-fast(-O1) 0 | clang-nofma 0 | gcc-O2-fma-fast 1 | clang-fma-on-O0 1
+
+# 3. Root cause, on the product's own functions:
+g++ <flags above> $D/fp_oracle_diag.cpp $S/base/obj/*.o $S/base/kernel/libmanifold.a -o $S/fp_diag_nofma            # exit 0
+clang++ -mfma -ffp-contract=on <flags above> $D/fp_oracle_diag.cpp $S/clang-fma-on/obj/*.o $S/clang-fma-on/kernel/libmanifold.a -o $S/fp_diag_fma  # exit 0
+($S/fp_diag_nofma; $S/fp_diag_fma) > $D/fp_oracle_diag.out                            # both exit 0
+
+# 4. Does the compiler contract the history loop shape? (contract_probe.cpp)
+NDK=/root/android-sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++
+$NDK --target=aarch64-none-linux-android26 -std=c++17 -O0 -S $D/contract_probe.cpp   # fmadd (fused) even at -O0
+$NDK --target=aarch64-none-linux-android26 -std=c++17 -O2 -S ...                    # fmadd
+$NDK --target=x86_64-none-linux-android26  -std=c++17 -O0/-O2 -S ...                 # mulsd+addsd (no FMA in the Android x86_64 baseline)
+$NDK --target=aarch64-none-linux-android26 -O0 -ffp-contract=off -S ...              # no fmadd
+g++ -O1 -mfma -ffp-contract=fast -S  -> 0 vfmadd ; g++ -O2 ... -> 1 ; clang++ -O1 -mfma -> 1 ; clang++ -O2 -mfma -> 1
+#   outputs -> contract_probe.out

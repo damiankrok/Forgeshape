@@ -6,10 +6,15 @@
 #include <string>
 #include <vector>
 
+#include "forgeshape_cad_body.h"
+#include "forgeshape_cad_face.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_gltf_export.h"
 #include "forgeshape_history.h"
 #include "forgeshape_math.h"
+#include "forgeshape_project_document.h"
+#include "forgeshape_project_state.h"
+#include "forgeshape_render_mesh.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sculpt.h"
 #include "forgeshape_transform.h"
@@ -221,6 +226,511 @@ TransformValues placement(double px, double py, double pz, double rx, double ry,
     return values;
 }
 
+
+// ---------------------------------------------------------------------------
+// CAD-FACE-SUPPORTED-PLACEMENT-R1: face-supported CAD bodies in the file
+// ---------------------------------------------------------------------------
+//
+// What these checks hold the exporter to is the WORLD position and normal of
+// every vertex a reader of the file reconstructs (node translation + baked
+// position), compared with what the renderer draws for the same body -- the
+// source mesh carried by `ConstructionScene::resolveWorldModel`, the one owner
+// of a body's world model. The file is decoded by a small JSON reader written
+// here from scratch, never by the writer's helpers, so the comparison is of
+// bytes against the renderer and not of the writer against itself.
+
+struct JsonValue {
+    enum Kind { Null, Bool, Number, String, Array, Object };
+    Kind kind = Null;
+    double number = 0.0;
+    std::string text;
+    std::vector<JsonValue> items;
+    std::vector<std::pair<std::string, JsonValue>> members;
+
+    const JsonValue* get(const char* key) const {
+        for (const auto& member : members) {
+            if (member.first == key) {
+                return &member.second;
+            }
+        }
+        return nullptr;
+    }
+    const JsonValue* at(size_t index) const {
+        return (kind == Array && index < items.size()) ? &items[index] : nullptr;
+    }
+};
+
+struct JsonReader {
+    const std::string& s;
+    size_t i = 0;
+    bool ok = true;
+
+    void space() {
+        while (i < s.size() && (s[i] == ' ' || s[i] == '\n' || s[i] == '\r' || s[i] == '\t')) ++i;
+    }
+    bool literal(const char* word) {
+        const size_t n = std::strlen(word);
+        if (s.compare(i, n, word) != 0) return ok = false;
+        i += n;
+        return true;
+    }
+    std::string string() {
+        std::string out;
+        if (i >= s.size() || s[i] != '"') { ok = false; return out; }
+        ++i;
+        while (i < s.size() && s[i] != '"') {
+            if (s[i] == '\\' && i + 1 < s.size()) {
+                const char e = s[i + 1];
+                if (e == 'u') { out.push_back('?'); i += 6; continue; }
+                out.push_back(e == 'n' ? '\n' : e == 't' ? '\t' : e);
+                i += 2;
+                continue;
+            }
+            out.push_back(s[i++]);
+        }
+        if (i >= s.size()) { ok = false; return out; }
+        ++i;
+        return out;
+    }
+    JsonValue value(int depth = 0) {
+        JsonValue v;
+        if (depth > 64) { ok = false; return v; }
+        space();
+        if (i >= s.size()) { ok = false; return v; }
+        const char c = s[i];
+        if (c == '{') {
+            v.kind = JsonValue::Object;
+            ++i;
+            space();
+            if (i < s.size() && s[i] == '}') { ++i; return v; }
+            while (ok) {
+                space();
+                std::string key = string();
+                space();
+                if (i >= s.size() || s[i] != ':') { ok = false; break; }
+                ++i;
+                v.members.emplace_back(std::move(key), value(depth + 1));
+                space();
+                if (i < s.size() && s[i] == ',') { ++i; continue; }
+                if (i < s.size() && s[i] == '}') { ++i; break; }
+                ok = false;
+            }
+        } else if (c == '[') {
+            v.kind = JsonValue::Array;
+            ++i;
+            space();
+            if (i < s.size() && s[i] == ']') { ++i; return v; }
+            while (ok) {
+                v.items.push_back(value(depth + 1));
+                space();
+                if (i < s.size() && s[i] == ',') { ++i; continue; }
+                if (i < s.size() && s[i] == ']') { ++i; break; }
+                ok = false;
+            }
+        } else if (c == '"') {
+            v.kind = JsonValue::String;
+            v.text = string();
+        } else if (c == 't') {
+            v.kind = JsonValue::Bool; literal("true"); v.number = 1.0;
+        } else if (c == 'f') {
+            v.kind = JsonValue::Bool; literal("false");
+        } else if (c == 'n') {
+            literal("null");
+        } else {
+            v.kind = JsonValue::Number;
+            char* end = nullptr;
+            v.number = std::strtod(s.c_str() + i, &end);
+            if (end == s.c_str() + i) { ok = false; return v; }
+            i = static_cast<size_t>(end - s.c_str());
+        }
+        return v;
+    }
+};
+
+// One node of an exported file, decoded from its bytes.
+struct DecodedNode {
+    std::string name;
+    double translation[3] = {0.0, 0.0, 0.0};
+    std::vector<Vec3> positions;  // baked LOCAL positions, before the translation
+    std::vector<Vec3> normals;
+};
+
+bool readVec3Accessor(const JsonValue& root, const std::vector<uint8_t>& bytes,
+                      const ParsedGlb& parsed, double accessorIndex, std::vector<Vec3>* out) {
+    const JsonValue* accessors = root.get("accessors");
+    const JsonValue* views = root.get("bufferViews");
+    if (accessors == nullptr || views == nullptr || accessorIndex < 0.0) return false;
+    const JsonValue* accessor = accessors->at(static_cast<size_t>(accessorIndex));
+    if (accessor == nullptr) return false;
+    const JsonValue* viewIndex = accessor->get("bufferView");
+    const JsonValue* count = accessor->get("count");
+    const JsonValue* componentType = accessor->get("componentType");
+    const JsonValue* type = accessor->get("type");
+    if (viewIndex == nullptr || count == nullptr || componentType == nullptr || type == nullptr
+        || componentType->number != 5126.0 || type->text != "VEC3") {
+        return false;
+    }
+    const JsonValue* view = views->at(static_cast<size_t>(viewIndex->number));
+    if (view == nullptr) return false;
+    const JsonValue* viewOffset = view->get("byteOffset");
+    const JsonValue* stride = view->get("byteStride");
+    const JsonValue* accessorOffset = accessor->get("byteOffset");
+    const size_t base = parsed.binStart
+            + static_cast<size_t>(viewOffset != nullptr ? viewOffset->number : 0.0)
+            + static_cast<size_t>(accessorOffset != nullptr ? accessorOffset->number : 0.0);
+    const size_t step = stride != nullptr ? static_cast<size_t>(stride->number) : 12u;
+    const size_t n = static_cast<size_t>(count->number);
+    if (base + (n == 0 ? 0 : (n - 1) * step + 12u) > parsed.binStart + parsed.binLength) {
+        return false;
+    }
+    out->clear();
+    for (size_t k = 0; k < n; ++k) {
+        const size_t at = base + k * step;
+        out->push_back(Vec3{readF32(bytes, at), readF32(bytes, at + 4), readF32(bytes, at + 8)});
+    }
+    return true;
+}
+
+bool decodeExportedNodes(const std::vector<uint8_t>& bytes, std::vector<DecodedNode>* out) {
+    out->clear();
+    const ParsedGlb parsed = parseGlb(bytes);
+    if (!parsed.ok) return false;
+    JsonReader reader{parsed.json};
+    const JsonValue root = reader.value();
+    const JsonValue* nodes = root.get("nodes");
+    const JsonValue* meshes = root.get("meshes");
+    if (!reader.ok || nodes == nullptr || meshes == nullptr) return false;
+    for (const JsonValue& node : nodes->items) {
+        DecodedNode decoded;
+        if (const JsonValue* name = node.get("name")) decoded.name = name->text;
+        if (const JsonValue* t = node.get("translation")) {
+            if (t->items.size() != 3) return false;
+            for (int k = 0; k < 3; ++k) decoded.translation[k] = t->items[k].number;
+        }
+        const JsonValue* meshIndex = node.get("mesh");
+        if (meshIndex == nullptr) return false;
+        const JsonValue* mesh = meshes->at(static_cast<size_t>(meshIndex->number));
+        const JsonValue* primitives = mesh != nullptr ? mesh->get("primitives") : nullptr;
+        const JsonValue* primitive = primitives != nullptr ? primitives->at(0) : nullptr;
+        const JsonValue* attributes = primitive != nullptr ? primitive->get("attributes") : nullptr;
+        const JsonValue* position = attributes != nullptr ? attributes->get("POSITION") : nullptr;
+        const JsonValue* normal = attributes != nullptr ? attributes->get("NORMAL") : nullptr;
+        if (position == nullptr || normal == nullptr
+            || !readVec3Accessor(root, bytes, parsed, position->number, &decoded.positions)
+            || !readVec3Accessor(root, bytes, parsed, normal->number, &decoded.normals)) {
+            return false;
+        }
+        out->push_back(std::move(decoded));
+    }
+    return true;
+}
+
+struct WorldBox {
+    float min[3] = {0.0f, 0.0f, 0.0f};
+    float max[3] = {0.0f, 0.0f, 0.0f};
+};
+
+WorldBox decodedWorldBox(const DecodedNode& node) {
+    WorldBox box;
+    bool first = true;
+    for (const Vec3& p : node.positions) {
+        const float c[3] = {static_cast<float>(p.x + node.translation[0]),
+                            static_cast<float>(p.y + node.translation[1]),
+                            static_cast<float>(p.z + node.translation[2])};
+        for (int k = 0; k < 3; ++k) {
+            if (first || c[k] < box.min[k]) box.min[k] = c[k];
+            if (first || c[k] > box.max[k]) box.max[k] = c[k];
+        }
+        first = false;
+    }
+    return box;
+}
+
+bool boxNear(const WorldBox& box, float x0, float y0, float z0, float x1, float y1, float z1) {
+    const float want[6] = {x0, y0, z0, x1, y1, z1};
+    const float got[6] = {box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2]};
+    for (int k = 0; k < 6; ++k) {
+        if (!(std::fabs(got[k] - want[k]) <= 1e-4f)) return false;
+    }
+    return true;
+}
+
+// Every decoded vertex (translation + baked position) and normal against the
+// renderer's truth for the same body: its source mesh, shaded the way the
+// exporter shades it, carried by `resolveWorldModel` and its normal matrix.
+bool nodeMatchesRenderer(const ConstructionScene& scene, ObjectId id, const DecodedNode& node) {
+    const SceneObject* body = scene.findBody(id);
+    if (body == nullptr) return false;
+    Mat4 world;
+    if (!scene.resolveWorldModel(id, &world)) return false;
+    ConstructionMesh source;
+    if (const CadBody* cad = body->cadOrNull()) {
+        if (cad->generateMesh(&source) != CadStatus::Ok) return false;
+    } else if (body->constructionOrNull() != nullptr) {
+        source = body->construction().generateMesh();
+    } else {
+        return false;
+    }
+    RenderMeshData render;
+    if (!buildRenderMesh(source.vertices.data(), static_cast<uint32_t>(source.vertices.size()),
+                         source.indices.data(), static_cast<uint32_t>(source.indices.size()),
+                         SurfaceShading::Smooth, &render, false)) {
+        return false;
+    }
+    if (render.vertices.size() != node.positions.size()
+        || render.vertices.size() != node.normals.size() || render.vertices.empty()) {
+        return false;
+    }
+    const Mat4 normalMatrix = mat4NormalMatrix(world);
+    for (size_t k = 0; k < render.vertices.size(); ++k) {
+        const RenderVertex& v = render.vertices[k];
+        const Vec3 want = mat4TransformPoint(world, Vec3{v.position[0], v.position[1], v.position[2]});
+        const Vec3& baked = node.positions[k];
+        if (std::fabs(baked.x + node.translation[0] - want.x) > 1e-4
+            || std::fabs(baked.y + node.translation[1] - want.y) > 1e-4
+            || std::fabs(baked.z + node.translation[2] - want.z) > 1e-4) {
+            return false;
+        }
+        const Vec3 n = vec3Normalize(
+                mat4TransformDirection(normalMatrix, Vec3{v.normal[0], v.normal[1], v.normal[2]}));
+        const Vec3& got = node.normals[k];
+        if (std::fabs(got.x - n.x) > 1e-3f || std::fabs(got.y - n.y) > 1e-3f
+            || std::fabs(got.z - n.z) > 1e-3f) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool everyNodeMatchesRenderer(const ConstructionScene& scene, const std::vector<DecodedNode>& nodes) {
+    if (nodes.size() != scene.bodyCount()) return false;
+    for (size_t k = 0; k < nodes.size(); ++k) {
+        if (!nodeMatchesRenderer(scene, scene.bodyAt(k).objectId(), nodes[k])) return false;
+    }
+    return true;
+}
+
+CadBodyState placementRect(double w, double h, double d) {
+    CadBodyState state;
+    cadBaseSketch(state).plane = Workplane::XY;
+    SketchRectangle rect;
+    rect.center = SketchPoint{0.0, 0.0};
+    rect.width = w;
+    rect.height = h;
+    addSketchEntity(&cadBaseSketch(state), rect);
+    state.extrude.profileEntityId = 1;
+    state.extrude.depth = d;
+    state.extrude.direction = ExtrudeDirection::AlongNormal;
+    return state;
+}
+
+SceneObject* addPlacementCad(ConstructionScene& scene, const CadBodyState& state) {
+    CadStatus why = CadStatus::Ok;
+    SceneObject* body = scene.addCadBody(state, &why);
+    if (body != nullptr) publishSceneObject(*body);
+    return body;
+}
+
+// A rectangle body whose sketch stands on the first eligible face of `kind`.
+SceneObject* addPlacementDependent(ConstructionScene& scene, const SceneObject* producer,
+                                   CadFaceKind kind, double w, double h, double d) {
+    if (producer == nullptr || producer->cadOrNull() == nullptr) return nullptr;
+    const CadBodyState& ps = producer->cadOrNull()->state();
+    std::vector<CadFace> faces;
+    enumerateCadFaces(ps, &faces);
+    for (const CadFace& face : faces) {
+        if (face.token.kind != kind || !face.eligible) continue;
+        CadBodyState child = placementRect(w, h, d);
+        cadBaseSketch(child).hasFaceSupport = true;
+        cadBaseSketch(child).faceSupport.producerObjectId = producer->objectId();
+        cadBaseSketch(child).faceSupport.producerLocalFeatureId = kCadFeatureId;
+        cadBaseSketch(child).faceSupport.face = face.token;
+        cadBaseSketch(child).faceSupport.lineageToken = cadTopologySignature(ps);
+        return addPlacementCad(scene, child);
+    }
+    return nullptr;
+}
+
+uint64_t fnv64(const std::vector<uint8_t>& bytes) {
+    uint64_t h = 0xCBF29CE484222325ull;
+    for (uint8_t b : bytes) {
+        h ^= b;
+        h *= 0x100000001B3ull;
+    }
+    return h;
+}
+
+// The FNV-1a 64 digest of the independent-bodies scene below, exported by the
+// exporter as it stood BEFORE this stage (`70a6c14`). A body whose placement is
+// its own must export to the same bytes after the stage as before it.
+constexpr uint64_t kIndependentSceneGlbDigest = 0x7b23f2a918aa3e3full;
+
+void runFaceSupportedExportChecks(Recorder& r) {
+    // E01: a dependent on the producer's FAR cap.
+    std::vector<uint8_t> capBytes;
+    {
+        ConstructionScene scene{NoProjectTag{}};
+        SceneObject* p = addPlacementCad(scene, placementRect(2.0, 1.0, 3.0));
+        SceneObject* d = addPlacementDependent(scene, p, CadFaceKind::CapFar, 0.5, 0.5, 0.5);
+        r.check("FSP_E01_the_cap_scene_builds", p != nullptr && d != nullptr && d->isFaceSupportedCad());
+        GlbExportStatus why = GlbExportStatus::NothingToExport;
+        capBytes = exportSceneAsGlb(scene, ProjectKind::Construction, &why);
+        std::vector<DecodedNode> nodes;
+        const bool decoded = why == GlbExportStatus::Ok && decodeExportedNodes(capBytes, &nodes)
+                && nodes.size() == 2;
+        r.check("FSP_E01_the_cap_scene_exports_and_decodes", decoded);
+        r.check("FSP_E01_the_cap_dependent_stands_on_the_far_cap",
+                decoded && boxNear(decodedWorldBox(nodes[1]), -0.25f, -0.25f, 3.0f, 0.25f, 0.25f, 3.5f));
+        r.check("FSP_E01_its_node_translation_is_the_resolved_origin",
+                decoded && std::fabs(nodes[1].translation[0]) < 1e-6
+                        && std::fabs(nodes[1].translation[1]) < 1e-6
+                        && std::fabs(nodes[1].translation[2] - 3.0) < 1e-6);
+        r.check("FSP_E01_every_vertex_and_normal_is_where_the_renderer_draws_it",
+                decoded && everyNodeMatchesRenderer(scene, nodes));
+    }
+    // E02: a dependent on a SIDE face: rotated into the face and offset onto it.
+    {
+        ConstructionScene scene{NoProjectTag{}};
+        SceneObject* p = addPlacementCad(scene, placementRect(2.0, 1.0, 3.0));
+        SceneObject* d = addPlacementDependent(scene, p, CadFaceKind::Side, 0.5, 0.5, 0.5);
+        GlbExportStatus why = GlbExportStatus::NothingToExport;
+        const std::vector<uint8_t> bytes = exportSceneAsGlb(scene, ProjectKind::Construction, &why);
+        std::vector<DecodedNode> nodes;
+        const bool decoded = d != nullptr && why == GlbExportStatus::Ok
+                && decodeExportedNodes(bytes, &nodes) && nodes.size() == 2;
+        r.check("FSP_E02_the_side_dependent_grows_out_of_the_side_face",
+                decoded && boxNear(decodedWorldBox(nodes[1]), -0.25f, -1.0f, 1.25f, 0.25f, -0.5f, 1.75f));
+        r.check("FSP_E02_every_vertex_and_normal_is_where_the_renderer_draws_it",
+                decoded && everyNodeMatchesRenderer(scene, nodes));
+        r.check("FSP_E02_a_cap_and_a_side_dependent_export_different_files",
+                !bytes.empty() && !capBytes.empty() && bytes != capBytes);
+    }
+    // E03: a chain A -> B (A's far cap) -> C (B's far cap).
+    {
+        ConstructionScene scene{NoProjectTag{}};
+        SceneObject* a = addPlacementCad(scene, placementRect(2.0, 2.0, 1.0));
+        SceneObject* b = addPlacementDependent(scene, a, CadFaceKind::CapFar, 1.0, 1.0, 0.5);
+        SceneObject* c = addPlacementDependent(scene, b, CadFaceKind::CapFar, 0.5, 0.5, 0.25);
+        GlbExportStatus why = GlbExportStatus::NothingToExport;
+        const std::vector<uint8_t> bytes = exportSceneAsGlb(scene, ProjectKind::Construction, &why);
+        std::vector<DecodedNode> nodes;
+        const bool decoded = c != nullptr && why == GlbExportStatus::Ok
+                && decodeExportedNodes(bytes, &nodes) && nodes.size() == 3;
+        r.check("FSP_E03_the_chain_middle_stands_on_its_producer",
+                decoded && boxNear(decodedWorldBox(nodes[1]), -0.5f, -0.5f, 1.0f, 0.5f, 0.5f, 1.5f));
+        r.check("FSP_E03_the_chain_end_stands_on_the_middle",
+                decoded && boxNear(decodedWorldBox(nodes[2]), -0.25f, -0.25f, 1.5f, 0.25f, 0.25f, 1.75f));
+        r.check("FSP_E03_every_level_matches_the_renderer",
+                decoded && everyNodeMatchesRenderer(scene, nodes));
+    }
+    // E04: the producer moved and rotated, then moved again.
+    {
+        ConstructionScene scene{NoProjectTag{}};
+        SceneObject* p = addPlacementCad(scene, placementRect(2.0, 1.0, 3.0));
+        if (p != nullptr) applyTransformValues(p->transform(), placement(1.0, 2.0, 3.0, 0.0, 30.0, 45.0, 1.0, 1.0, 1.0));
+        addPlacementDependent(scene, p, CadFaceKind::CapFar, 0.5, 0.5, 0.5);
+        SceneObject* side = addPlacementDependent(scene, p, CadFaceKind::Side, 0.4, 0.4, 0.2);
+        GlbExportStatus why = GlbExportStatus::NothingToExport;
+        const std::vector<uint8_t> first = exportSceneAsGlb(scene, ProjectKind::Construction, &why);
+        std::vector<DecodedNode> nodes;
+        const bool decoded = side != nullptr && why == GlbExportStatus::Ok
+                && decodeExportedNodes(first, &nodes) && nodes.size() == 3;
+        r.check("FSP_E04_a_moved_rotated_producer_carries_its_dependents_into_the_file",
+                decoded && everyNodeMatchesRenderer(scene, nodes));
+        if (p != nullptr) applyTransformValues(p->transform(), placement(-2.0, 0.5, 1.0, 10.0, 0.0, -20.0, 1.0, 1.0, 1.0));
+        const std::vector<uint8_t> second = exportSceneAsGlb(scene, ProjectKind::Construction, &why);
+        std::vector<DecodedNode> moved;
+        const bool decodedMoved = why == GlbExportStatus::Ok && decodeExportedNodes(second, &moved)
+                && moved.size() == 3;
+        r.check("FSP_E04_moving_the_producer_again_moves_them_in_the_file",
+                decoded && decodedMoved && everyNodeMatchesRenderer(scene, moved)
+                        && std::fabs(moved[1].translation[0] - nodes[1].translation[0]) > 0.5);
+    }
+    // E06: every representation the exporter re-derives, in scene order.
+    {
+        ConstructionScene scene;  // starts with its Construction box
+        applyTransformValues(scene.bodyAt(0).transform(),
+                             placement(0.5, -1.0, 4.0, 15.0, 0.0, 30.0, 1.0, 2.0, 0.5));
+        publishSceneObject(scene.bodyAt(0));
+        SceneObject* world = addPlacementCad(scene, placementRect(1.0, 1.0, 1.0));
+        if (world != nullptr) applyTransformValues(world->transform(), placement(-1.5, 0.75, 2.0, 0.0, 0.0, 90.0, 1.0, 1.0, 1.0));
+        SceneObject* p = addPlacementCad(scene, placementRect(2.0, 1.0, 3.0));
+        SceneObject* d = addPlacementDependent(scene, p, CadFaceKind::CapFar, 0.5, 0.5, 0.5);
+        GlbExportStatus why = GlbExportStatus::NothingToExport;
+        const std::vector<uint8_t> bytes = exportSceneAsGlb(scene, ProjectKind::Construction, &why);
+        std::vector<DecodedNode> nodes;
+        const bool decoded = d != nullptr && why == GlbExportStatus::Ok
+                && decodeExportedNodes(bytes, &nodes) && nodes.size() == scene.bodyCount();
+        bool ordered = decoded;
+        for (size_t k = 0; ordered && k < nodes.size(); ++k) {
+            ordered = nodes[k].name == "Body_" + std::to_string(scene.bodyAt(k).objectId());
+        }
+        r.check("FSP_E06_a_mixed_scene_keeps_its_body_order_and_names", ordered);
+        r.check("FSP_E06_and_every_body_is_where_the_renderer_draws_it",
+                decoded && everyNodeMatchesRenderer(scene, nodes));
+    }
+    // E07: a support that no longer resolves is refused, never exported at a guess.
+    {
+        ConstructionScene scene{NoProjectTag{}};
+        SceneObject* p = addPlacementCad(scene, placementRect(2.0, 1.0, 3.0));
+        SceneObject* d = addPlacementDependent(scene, p, CadFaceKind::CapFar, 0.5, 0.5, 0.5);
+        CadBodyState circle;
+        cadBaseSketch(circle).plane = Workplane::XY;
+        SketchCircle disc;
+        disc.center = SketchPoint{0.0, 0.0};
+        disc.radius = 1.0;
+        addSketchEntity(&cadBaseSketch(circle), disc);
+        circle.extrude.profileEntityId = 1;
+        circle.extrude.depth = 3.0;
+        circle.extrude.direction = ExtrudeDirection::AlongNormal;
+        const bool edited = p != nullptr && p->cadOrNull() != nullptr
+                && p->cadOrNull()->applyState(circle) == CadStatus::Ok;
+        Mat4 unused;
+        const bool stale = d != nullptr && edited && !scene.resolveWorldModel(d->objectId(), &unused);
+        r.check("FSP_E07_the_stale_support_scene_is_built", stale);
+        const uint64_t before = projectSemanticFingerprint(scene, ProjectKind::Construction);
+        const std::vector<uint8_t> docBefore =
+                encodeProjectV1Unchecked(captureProjectDocument(scene, ProjectKind::Construction));
+        GlbExportStatus why = GlbExportStatus::Ok;
+        const std::vector<uint8_t> bytes = exportSceneAsGlb(scene, ProjectKind::Construction, &why);
+        r.check("FSP_E07_an_unresolvable_placement_exports_zero_bytes_with_a_named_refusal",
+                stale && bytes.empty() && why != GlbExportStatus::Ok
+                        && std::strcmp(glbExportStatusName(why), "unknown") != 0);
+        GlbExportScene captured;
+        r.check("FSP_E07_and_the_capture_refuses_too",
+                stale && captureGlbExportScene(scene, ProjectKind::Construction, &captured)
+                        != GlbExportStatus::Ok);
+        r.check("FSP_E07_and_the_refusal_changes_nothing",
+                projectSemanticFingerprint(scene, ProjectKind::Construction) == before
+                        && encodeProjectV1Unchecked(captureProjectDocument(scene, ProjectKind::Construction))
+                                == docBefore);
+    }
+    // E08: determinism, and independent bodies export exactly as before.
+    {
+        ConstructionScene scene{NoProjectTag{}};
+        SceneObject* p = addPlacementCad(scene, placementRect(2.0, 1.0, 3.0));
+        addPlacementDependent(scene, p, CadFaceKind::CapFar, 0.5, 0.5, 0.5);
+        const std::vector<uint8_t> once = exportSceneAsGlb(scene, ProjectKind::Construction);
+        const std::vector<uint8_t> twice = exportSceneAsGlb(scene, ProjectKind::Construction);
+        r.check("FSP_E08_a_dependent_scene_exports_byte_identically_twice",
+                !once.empty() && once == twice);
+    }
+    {
+        ConstructionScene scene;
+        applyTransformValues(scene.bodyAt(0).transform(),
+                             placement(0.5, -1.0, 4.0, 15.0, 0.0, 30.0, 1.0, 2.0, 0.5));
+        publishSceneObject(scene.bodyAt(0));
+        SceneObject* world = addPlacementCad(scene, placementRect(1.0, 2.0, 0.5));
+        if (world != nullptr) applyTransformValues(world->transform(), placement(-1.5, 0.75, 2.0, 20.0, -35.0, 90.0, 1.5, 0.5, 2.0));
+        const std::vector<uint8_t> bytes = exportSceneAsGlb(scene, ProjectKind::Construction);
+        r.check("FSP_E08_independent_bodies_export_the_same_bytes_as_before_the_stage",
+                !bytes.empty() && fnv64(bytes) == kIndependentSceneGlbDigest);
+    }
+    // The device recorder for this suite holds 128 results
+    // (`kMaxGltfChecks`, forgeshape_jni.cpp): a suite at the cap would drop
+    // the next check silently, so the suite says so while it still can.
+    r.check("FSP_gltf_export_suite_fits_its_128_slot_device_recorder", r.n + 1 <= 128);
+}
 }  // namespace
 
 int runGltfExportSelfTests(GltfExportSelfTestResult* out, int maxOut) {
@@ -1119,6 +1629,8 @@ int runGltfExportSelfTests(GltfExportSelfTestResult* out, int maxOut) {
         r.check("FSR1C_C1_11_the_same_baked_snapshot_exports_byte_identically", once == twice);
         r.check("FSR1C_C1_11_and_is_not_empty", !once.empty());
     }
+
+    runFaceSupportedExportChecks(r);
 
     return r.n;
 }

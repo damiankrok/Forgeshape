@@ -1,0 +1,46 @@
+load=Ok bodies=0
+  loaded                             encode=Ok(923 B) reopen=Ok fp=89ca97e67ce6e827 reopenedFp=89ca97e67ce6e827 OK
+producer=3 dependent=4 other=2
+STEP delete producer (refuse)       -> RefusedHasDependents changed=0 undoDepth=0
+STEP duplicate dependent (refuse)   -> RefusedFaceSupportedCad changed=0 undoDepth=0
+STEP rename to empty (refuse)       -> RefusedInvalidName changed=0 undoDepth=0
+STEP mirror CAD (refuse)            -> RefusedNotMirrorable changed=0 undoDepth=0
+STEP rename producer (emoji)        -> Ok changed=1 undoDepth=1
+  rename producer (emoji)            encode=Ok(948 B) reopen=Ok fp=668c3b66179116a5 reopenedFp=668c3b66179116a5 OK
+STEP lock dependent                 -> Ok changed=1 undoDepth=2
+  lock dependent                     encode=Ok(948 B) reopen=Ok fp=3fe4922a5a272c44 reopenedFp=3fe4922a5a272c44 OK
+STEP hide producer                  -> Ok changed=1 undoDepth=3
+  hide producer                      encode=Ok(948 B) reopen=Ok fp=040750277700a0d1 reopenedFp=040750277700a0d1 OK
+STEP duplicate producer             -> Ok changed=1 undoDepth=4
+  duplicate producer                 encode=Ok(1117 B) reopen=Ok fp=4e2bd7249e11bcaa reopenedFp=4e2bd7249e11bcaa OK
+STEP create freeform box            -> Ok changed=1 undoDepth=5
+  create freeform box                encode=Ok(1848 B) reopen=Ok fp=04638a700ced197b reopenedFp=04638a700ced197b OK
+   freeform begin=Ok select=Ok
+STEP freeform extrude face 1        -> Ok changed=1 undoDepth=6
+  freeform extrude face 1            encode=Ok(2200 B) reopen=Ok fp=e387d5be0de00ecf reopenedFp=e387d5be0de00ecf OK
+STEP delete dependent               -> Ok changed=1 undoDepth=7
+  delete dependent                   encode=Ok(2018 B) reopen=Ok fp=297265cbed447a65 reopenedFp=297265cbed447a65 OK
+STEP delete producer (now free)     -> Ok changed=1 undoDepth=8
+  delete producer (now free)         encode=Ok(1855 B) reopen=Ok fp=ebe03014421163b7 reopenedFp=ebe03014421163b7 OK
+UNDO walk (9 states)
+  undo -> state 7 fp=MATCH semantic(ignoring allocator)=MATCH nextObjectId=7
+  after undo                         encode=Ok(2018 B) reopen=Ok fp=297265cbed447a65 reopenedFp=297265cbed447a65 OK
+  undo -> state 6 fp=MATCH semantic(ignoring allocator)=MATCH nextObjectId=7
+  after undo                         encode=Ok(2200 B) reopen=Ok fp=e387d5be0de00ecf reopenedFp=e387d5be0de00ecf OK
+  undo -> state 5 fp=MATCH semantic(ignoring allocator)=MATCH nextObjectId=7
+  after undo                         encode=Ok(1848 B) reopen=Ok fp=04638a700ced197b reopenedFp=04638a700ced197b OK
+  undo -> state 4 fp=DIFF semantic(ignoring allocator)=MATCH nextObjectId=7
+  undo -> state 3 fp=DIFF semantic(ignoring allocator)=MATCH nextObjectId=7
+  undo -> state 2 fp=DIFF semantic(ignoring allocator)=MATCH nextObjectId=7
+  undo -> state 1 fp=DIFF semantic(ignoring allocator)=MATCH nextObjectId=7
+  undo -> state 0 fp=DIFF semantic(ignoring allocator)=MATCH nextObjectId=7
+  extra undo=0 (expected 0)
+  redo -> state 1 fp=DIFF semantic=MATCH
+  redo -> state 2 fp=DIFF semantic=MATCH
+  redo -> state 3 fp=DIFF semantic=MATCH
+  redo -> state 4 fp=DIFF semantic=MATCH
+  redo -> state 5 fp=MATCH semantic=MATCH
+  redo -> state 6 fp=MATCH semantic=MATCH
+  redo -> state 7 fp=MATCH semantic=MATCH
+  redo -> state 8 fp=MATCH semantic=MATCH
+J4_SUMMARY states=9 failures=0 nextObjectId=7

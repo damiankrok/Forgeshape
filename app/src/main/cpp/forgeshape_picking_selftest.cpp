@@ -1227,6 +1227,196 @@ void testPointerSemantics(Recorder& r) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Shared-edge seam at a far orthographic origin (`CAD-R2-C2`)
+// ---------------------------------------------------------------------------
+//
+// The pocket floor of the C1 shop body, exactly as its published mesh holds it:
+// two front-facing (+Z) triangles sharing the diagonal x + y = 0 at z = 0.6.
+// Triangle 0 holds x + y <= 0, triangle 1 holds x + y >= 0 -- the ORACLE for
+// which side a hit belongs to, computed here from the plane, never from the
+// function under test.
+constexpr float kSeamZ = 0.6f;
+const float kSeamPositions[] = {
+    0.2f, -0.8f, kSeamZ,  0.8f, -0.8f, kSeamZ,  0.2f, -0.2f, kSeamZ,  0.8f, -0.2f, kSeamZ,
+};
+const uint32_t kSeamIndices[] = {0, 1, 2, 2, 1, 3};
+const uint32_t kSeamIndicesSwapped[] = {2, 1, 3, 0, 1, 2};
+
+TriangleMeshView seamView(const uint32_t* indices) {
+    TriangleMeshView v;
+    v.positions = kSeamPositions;
+    v.positionStride = sizeof(float) * 3;
+    v.vertexCount = 4;
+    v.indices = indices;
+    v.indexCount = 6;
+    return v;
+}
+
+// The camera New Sketch's chooser uses after `frameSketchView`: orthographic,
+// the eye on the view plane kOrthoViewPlaneDistance (250 m) out along n, and the
+// screen-centre ray through `target`.
+bool farOrthoRayAt(const Vec3& target, const Vec3& nIn, Ray* out) {
+    const Vec3 n = vec3Normalize(nIn);
+    const Vec3 seed{0.0f, 1.0f, 0.0f};
+    const Vec3 u = vec3Normalize(vec3Sub(seed, vec3Scale(n, vec3Dot(seed, n))));
+    const Vec3 v = vec3Cross(n, u);
+    CameraController camera;
+    camera.setViewport(1000, 1000);
+    camera.frameSketchView(target, u, v, n);
+    return buildPickRay(camera.snapshot(), 500.0f, 500.0f, 1000, 1000, out);
+}
+
+// The same ray direction with its origin `distance` metres before `target`.
+Ray nearRayAt(const Vec3& target, const Vec3& direction, float distance) {
+    return Ray{vec3Sub(target, vec3Scale(direction, distance)), direction};
+}
+
+bool hitsAt(const TriangleHit& h, const Vec3& expected, float tolerance) {
+    return h.hit && length(vec3Sub(h.position, expected)) <= tolerance;
+}
+
+void testSharedEdgeSeam(Recorder& r) {
+    const Vec3 tilt{0.2f, 0.0f, 1.0f};
+    const Vec3 centre{0.5f, -0.5f, kSeamZ};
+
+    // 01/02: the C1 reproducer -- the floor centre, ON the diagonal, from the
+    // product's 250 m orthographic eye -- must hit, in either triangle order.
+    Ray far{};
+    const bool farOk = farOrthoRayAt(centre, tilt, &far);
+    const TriangleHit h1 = pickTriangleMesh(far, seamView(kSeamIndices), true);
+    const TriangleHit h2 = pickTriangleMesh(far, seamView(kSeamIndicesSwapped), true);
+    r.check("PICK_C2_01_far_ortho_ray_on_the_shared_diagonal_hits",
+            farOk && hitsAt(h1, centre, 1e-3f) && h1.t > 249.0f && h1.t < 251.0f);
+    r.check("PICK_C2_02_the_seam_hit_does_not_depend_on_triangle_order",
+            hitsAt(h2, centre, 1e-3f));
+
+    // 03: every point along the shared diagonal, from the far eye.
+    bool alongAll = true;
+    for (int k = 1; k < 40; ++k) {
+        const float s = static_cast<float>(k) / 40.0f;
+        const Vec3 p{0.8f - 0.6f * s, -0.8f + 0.6f * s, kSeamZ};
+        Ray ray{};
+        alongAll = alongAll && farOrthoRayAt(p, tilt, &ray)
+                   && hitsAt(pickTriangleMesh(ray, seamView(kSeamIndices), true), p, 1e-3f)
+                   && hitsAt(pickTriangleMesh(ray, seamView(kSeamIndicesSwapped), true), p, 1e-3f);
+    }
+    r.check("PICK_C2_03_every_point_of_the_shared_diagonal_hits_from_the_far_eye", alongAll);
+
+    // 04: the same seam from near origins (2 m orthographic-equivalent, and a
+    // perspective ray from 3 m) -- the control that always passed.
+    const Ray nearOrtho = nearRayAt(centre, far.direction, 2.0f);
+    const Vec3 eye{1.5f, 0.7f, 3.4f};
+    const Ray persp{eye, vec3Normalize(vec3Sub(centre, eye))};
+    r.check("PICK_C2_04_near_and_perspective_rays_on_the_seam_hit",
+            hitsAt(pickTriangleMesh(nearOrtho, seamView(kSeamIndices), true), centre, 1e-4f)
+                    && hitsAt(pickTriangleMesh(persp, seamView(kSeamIndices), true), centre, 1e-4f));
+
+    // 05: 2 mm either side of the diagonal, from the far eye, lands in the
+    // triangle the plane says (x + y < 0 -> 0, x + y > 0 -> 1).
+    const float d = 0.002f * 0.70710678f;
+    const Vec3 below{centre.x - d, centre.y - d, kSeamZ};
+    const Vec3 above{centre.x + d, centre.y + d, kSeamZ};
+    Ray rb{};
+    Ray ra{};
+    farOrthoRayAt(below, tilt, &rb);
+    farOrthoRayAt(above, tilt, &ra);
+    const TriangleHit hb = pickTriangleMesh(rb, seamView(kSeamIndices), true);
+    const TriangleHit ha = pickTriangleMesh(ra, seamView(kSeamIndices), true);
+    r.check("PICK_C2_05_either_side_of_the_seam_lands_in_the_triangle_the_plane_names",
+            hitsAt(hb, below, 1e-3f) && hb.triangleIndex == 0 && hitsAt(ha, above, 1e-3f)
+                    && ha.triangleIndex == 1);
+
+    // 06: 10 um outside the outer edge x = 0.8 still MISSES, far and near: the
+    // fix restores the seam without widening the silhouette.
+    const Vec3 outside{0.8f + 1e-5f, -0.5f, kSeamZ};
+    Ray ro{};
+    farOrthoRayAt(outside, tilt, &ro);
+    const Ray roNear = nearRayAt(outside, ro.direction, 2.0f);
+    const Vec3 inside{0.8f - 1e-4f, -0.5f, kSeamZ};
+    Ray ri{};
+    farOrthoRayAt(inside, tilt, &ri);
+    r.check("PICK_C2_06_just_outside_the_silhouette_misses_just_inside_hits",
+            !pickTriangleMesh(ro, seamView(kSeamIndices), true).hit
+                    && !pickTriangleMesh(roNear, seamView(kSeamIndices), true).hit
+                    && hitsAt(pickTriangleMesh(ri, seamView(kSeamIndices), true), inside, 1e-3f));
+
+    // 07: the same far seam ray against the reversed winding: back-facing, so
+    // culled; accepted only when the caller asks for both sides.
+    const uint32_t reversed[] = {0, 2, 1, 2, 3, 1};
+    r.check("PICK_C2_07_a_back_facing_seam_is_culled_and_hit_only_two_sided",
+            !pickTriangleMesh(far, seamView(reversed), true).hit
+                    && hitsAt(pickTriangleMesh(far, seamView(reversed), false), centre, 1e-3f));
+
+    // 08: fail closed -- a degenerate triangle, a NaN vertex, a zero direction,
+    // an out-of-range index.
+    float t = 0.0f;
+    const Vec3 p0{0.2f, -0.8f, kSeamZ};
+    const Vec3 nan{std::nanf(""), 0.0f, 0.0f};
+    const Ray zeroDir{far.origin, Vec3{0.0f, 0.0f, 0.0f}};
+    const uint32_t badIndex[] = {0, 1, 7};
+    TriangleMeshView bad = seamView(badIndex);
+    bad.indexCount = 3;
+    r.check("PICK_C2_08_degenerate_nan_zero_direction_and_bad_index_fail_closed",
+            !intersectRayTriangle(far, p0, p0, Vec3{0.8f, -0.2f, kSeamZ}, true, &t)
+                    && !intersectRayTriangle(far, p0, nan, Vec3{0.8f, -0.2f, kSeamZ}, true, &t)
+                    && !intersectRayTriangle(zeroDir, p0, Vec3{0.8f, -0.8f, kSeamZ},
+                                             Vec3{0.2f, -0.2f, kSeamZ}, true, &t)
+                    && !pickTriangleMesh(far, bad, true).hit);
+
+    // 09: a rigidly placed body (turned 0.7 rad about Y, moved by (3, -2, 5)):
+    // the world ray through the placed seam point, brought to local space,
+    // hits the seam at the same local point.
+    const Mat4 model = mat4Multiply(mat4Translation(Vec3{3.0f, -2.0f, 5.0f}), mat4RotationY(0.7f));
+    const Mat4 inverse = mat4Multiply(mat4RotationY(-0.7f), mat4Translation(Vec3{-3.0f, 2.0f, -5.0f}));
+    const Vec3 placed = mat4TransformPoint(model, centre);
+    const Vec3 placedTilt = mat4TransformDirection(model, tilt);
+    Ray worldRay{};
+    Ray localRay{};
+    const bool placedOk = farOrthoRayAt(placed, placedTilt, &worldRay)
+                          && transformRayToLocal(worldRay, inverse, &localRay);
+    const TriangleHit hp = pickTriangleMesh(localRay, seamView(kSeamIndices), true);
+    r.check("PICK_C2_09_a_rigidly_placed_seam_hits_from_the_far_eye",
+            placedOk && hitsAt(hp, centre, 2e-3f) && std::fabs(hp.t - 250.0f) < 1.0f);
+
+    // 10: nearest-hit is kept -- a second, nearer copy of the floor 0.05 m above
+    // takes the seam ray, and the farther one never does; and the answer is
+    // the same on every repetition (deterministic).
+    float stacked[24];
+    for (int i = 0; i < 12; ++i) {
+        stacked[i] = kSeamPositions[i];
+        stacked[12 + i] = kSeamPositions[i] + ((i % 3) == 2 ? 0.05f : 0.0f);
+    }
+    const uint32_t stackedIndices[] = {0, 1, 2, 2, 1, 3, 4, 5, 6, 6, 5, 7};
+    TriangleMeshView stack;
+    stack.positions = stacked;
+    stack.positionStride = sizeof(float) * 3;
+    stack.vertexCount = 8;
+    stack.indices = stackedIndices;
+    stack.indexCount = 12;
+    const TriangleHit s1 = pickTriangleMesh(far, stack, true);
+    bool same = s1.hit;
+    for (int k = 0; k < 8; ++k) {
+        const TriangleHit again = pickTriangleMesh(far, stack, true);
+        same = same && again.triangleIndex == s1.triangleIndex && again.t == s1.t;
+    }
+    r.check("PICK_C2_10_the_nearer_of_two_stacked_seams_wins_deterministically",
+            same && s1.triangleIndex >= 2 && std::fabs(s1.position.z - (kSeamZ + 0.05f)) < 1e-3f);
+
+    // 11: the crack scales with the origin's distance: a sweep of origins from
+    // 50 m to 500 m along the same direction, on the diagonal, all hit.
+    bool sweep = true;
+    for (float dist = 50.0f; dist <= 500.0f; dist += 25.0f) {
+        for (int k = 1; k < 10; ++k) {
+            const float s = static_cast<float>(k) / 10.0f;
+            const Vec3 p{0.8f - 0.6f * s, -0.8f + 0.6f * s, kSeamZ};
+            sweep = sweep && pickTriangleMesh(nearRayAt(p, far.direction, dist),
+                                              seamView(kSeamIndices), true).hit;
+        }
+    }
+    r.check("PICK_C2_11_seam_hits_for_every_origin_distance_50_to_500_m", sweep);
+}
+
 }  // namespace
 
 int runPickingSelfTests(PickingSelfTestResult* out, int maxOut) {
@@ -1244,6 +1434,7 @@ int runPickingSelfTests(PickingSelfTestResult* out, int maxOut) {
     testPlaneOutsideRectangleMisses(r);
     testPlaneRotatedPickingBothProjections(r);
     testPointerSemantics(r);
+    testSharedEdgeSeam(r);
     return r.n;
 }
 

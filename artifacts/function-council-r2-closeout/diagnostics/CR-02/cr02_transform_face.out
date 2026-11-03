@@ -1,0 +1,40 @@
+0 process scene hasProject=0 (empty at start, APP-H1)
+1 setup producer=1 dependent=2(faceSupported=1) control_world_cad=3(faceSupported=0) hasProject=1 undoDepth=0
+1 pristine encode status=0 bytes=573 fnv=0x7ebc971c4ebdaac4
+C1 active=2 applyBoxTransform-domain status=applied refusal=none
+C1 before undoDepth=0 fingerprint=0xbac400174411ca29 stored.pos=(0.0000,0.0000,0.0000) stored.rot=(0.0000,0.0000,0.0000) resolved=1 world.t=(0.0000,0.0000,3.0000)
+C1 after  undoDepth=1 fingerprint=0x4cc3bb2b8d3f249f stored.pos=(5.0000,0.0000,0.0000) stored.rot=(0.0000,0.0000,30.0000) resolved=1 world.t=(0.0000,0.0000,3.0000)
+C1 VERDICT undoDelta=1 fingerprintChanged=1 storedMoved=1 worldMoved=0
+C1 save: encode status=0 bytes=573 fnv=0xed440e2232e2d767 equalsPristine=0; decode status=0 dependent stored pos=(5.0000,0.0000,0.0000) rotZ=30.0000
+C1 undo=1
+C1 undone undoDepth=0 fingerprint=0xbac400174411ca29 stored.pos=(0.0000,0.0000,0.0000) stored.rot=(0.0000,0.0000,0.0000) resolved=1 world.t=(0.0000,0.0000,3.0000)
+C1 fingerprint after undo equals pristine=1
+C2 setGizmoActive(true) -> ACTIVE:1
+C2 gizmo visible=1 pivot=(0.0000,0.0000,0.0000) vs drawn world.t=(0.0000,0.0000,3.0000)
+C2 grab px=(822.7,934.7) hit=1 beginDrag=1
+C2 updateDragAny=1 commitDrag(recorded)=1
+C2 before undoDepth=0 fingerprint=0xbac400174411ca29 stored.pos=(0.0000,0.0000,0.0000) stored.rot=(0.0000,0.0000,0.0000) resolved=1 world.t=(0.0000,0.0000,3.0000)
+C2 after  undoDepth=1 fingerprint=0xc0e4609a0979f1d3 stored.pos=(0.9038,0.0000,0.0000) stored.rot=(0.0000,0.0000,0.0000) resolved=1 world.t=(0.0000,0.0000,3.0000)
+C2 gizmo pivot after=(0.9038,0.0000,0.0000)
+C2 VERDICT undoDelta=1 fingerprintChanged=1 storedMoved=1 worldMoved=0
+D1 control world-plane CAD active=3 status=applied refusal=none
+D1 before undoDepth=0 fingerprint=0x4e36ced17b30becc stored.pos=(0.0000,0.0000,0.0000) stored.rot=(0.0000,0.0000,0.0000) resolved=1 world.t=(0.0000,0.0000,0.0000)
+D1 after  undoDepth=1 fingerprint=0xba200748c9536fb2 stored.pos=(5.0000,0.0000,0.0000) stored.rot=(0.0000,0.0000,30.0000) resolved=1 world.t=(5.0000,0.0000,0.0000)
+D1 VERDICT undoDelta=1 fingerprintChanged=1 storedMoved=1 worldMoved=1
+D2 control producer status=applied
+D2 producer before undoDepth=0 fingerprint=0xaf2e559892720276 stored.pos=(0.0000,0.0000,0.0000) stored.rot=(0.0000,0.0000,0.0000) resolved=1 world.t=(0.0000,0.0000,0.0000)
+D2 producer after  undoDepth=1 fingerprint=0xf05b8000deab71ca stored.pos=(5.0000,0.0000,0.0000) stored.rot=(0.0000,0.0000,0.0000) resolved=1 world.t=(5.0000,0.0000,0.0000)
+D2 producer VERDICT undoDelta=1 fingerprintChanged=1 storedMoved=1 worldMoved=1
+D2 dependent before undoDepth=0 fingerprint=0xaf2e559892720276 stored.pos=(0.0000,0.0000,0.0000) stored.rot=(0.0000,0.0000,0.0000) resolved=1 world.t=(0.0000,0.0000,3.0000)
+D2 dependent after  undoDepth=1 fingerprint=0xf05b8000deab71ca stored.pos=(0.0000,0.0000,0.0000) stored.rot=(0.0000,0.0000,0.0000) resolved=1 world.t=(5.0000,0.0000,3.0000)
+D2 dependent VERDICT undoDelta=1 fingerprintChanged=1 storedMoved=0 worldMoved=1
+D3 setGizmoActive(true) -> ACTIVE:1
+D3 gizmo visible=1 pivot=(0.0000,0.0000,0.0000) vs drawn world.t=(0.0000,0.0000,0.0000)
+D3 grab px=(822.7,934.7) hit=1 beginDrag=1
+D3 updateDragAny=1 commitDrag(recorded)=1
+D3 before undoDepth=0 fingerprint=0x4e36ced17b30becc stored.pos=(0.0000,0.0000,0.0000) stored.rot=(0.0000,0.0000,0.0000) resolved=1 world.t=(0.0000,0.0000,0.0000)
+D3 after  undoDepth=1 fingerprint=0x9935a00b2c883c8e stored.pos=(0.9038,0.0000,0.0000) stored.rot=(0.0000,0.0000,0.0000) resolved=1 world.t=(0.9038,0.0000,0.0000)
+D3 gizmo pivot after=(0.9038,0.0000,0.0000)
+D3 VERDICT undoDelta=1 fingerprintChanged=1 storedMoved=1 worldMoved=1
+D4 locked dependent status=rejected refusal=BodyLocked setGizmoActive(true)->REFUSED:body_locked
+D4 VERDICT undoDelta=0 fingerprintChanged=0 storedMoved=0 worldMoved=0

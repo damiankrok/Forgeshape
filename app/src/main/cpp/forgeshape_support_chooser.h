@@ -67,7 +67,9 @@ public:
 
     // Resolves and SELECTS a support: the tap that chooses. Updates the overlay
     // to show the selection and returns it; None when the tap missed every
-    // target.
+    // target, or when the body surface in front of every target under it is
+    // not a support (a curved wall in front of a world plane chooses nothing,
+    // never the plane behind it).
     ChosenSupport select(const CameraSnapshot& camera, float x, float y, int viewportWidth,
                          int viewportHeight, const ConstructionScene& scene);
 

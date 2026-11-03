@@ -1,0 +1,1 @@
+stubvk/ (removed from the repo copy): Vulkan headers copied from the NDK sysroot ($NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/vulkan and vk_video) so the renderer sources could be parsed on the host. Re-create with: mkdir -p stubvk && cp -r $NDK/.../sysroot/usr/include/{vulkan,vk_video} stubvk/. Third-party headers are not committed.

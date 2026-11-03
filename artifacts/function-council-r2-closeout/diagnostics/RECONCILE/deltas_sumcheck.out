@@ -1,0 +1,8 @@
+HEADER ['id', 'existing_row_id', 'old', 'proposed', 'source', 'reason', 'confidence', 'reviewer']
+DATA_ROWS 832 BAD_COLS 0 UNIQUE_IDS 832
+EXISTING_ROW_DELTAS 18 HISTORICAL_NONEXACT_DELTAS 814
+PROPOSED_CLASSES {'existing-row change': 18, 'UNKNOWN_CURRENT_PLAN': 164, 'extend scope': 269, '(new row)': 77, 'SUPERSEDED by': 57, 'HISTORICAL (': 82, 'UNRESOLVED_AUTHORITY (no horizon': 140, 'add owner_decision': 25} SUM 832
+CONFIDENCE {'E4': 317, 'E2': 515}
+REVIEWER {'closeout-reconcile': 832}
+NEW_ROW_PROPOSALS_(new row) 77 PLUS_EXISTING_ROW_DELTAS_PROPOSING_A_NEW_ROW 1
+exit 0

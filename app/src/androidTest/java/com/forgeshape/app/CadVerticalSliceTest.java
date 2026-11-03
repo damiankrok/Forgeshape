@@ -570,29 +570,17 @@ public final class CadVerticalSliceTest {
             final double[] tool = new double[NativeViewport.CAD_EXTRUDE_SIZE];
             NativeViewport.cadExtrudeToolState(tool);
             assertTrue("the leader projects", tool[NativeViewport.CAD_EXTRUDE_LEADER_ON_SCREEN] != 0);
-            // `CAD-FOUNDATION-C2`: ONE action panel -- extent, operation and
-            // Flip on one plate scaled as a unit -- standing just past the
-            // arrow's point, with ONE unscaled >= 48 dp proxy over it.
-            final String panel = CadLeaderHudChecks.panelAtArrow(tool, canvas, viewport, density,
-                    3);
-            final View plate = canvas.findViewById(R.id.cad_extrude_panel_plate);
+            // `CAD-V6-S2-OWNER-CORRECTION-E2E-R1`: ONE action dock -- the
+            // operation badge drawn into native's projected quad past the
+            // arrow's point -- and it is its own one touch target.
+            final String panel = CadLeaderHudChecks.dockAtArrow(tool, canvas, viewport, density);
             final View proxy = canvas.findViewById(R.id.cad_extrude_panel);
-            fact("hud.panel_plate", screenRect(plate).toShortString() + " scale="
-                    + plate.getScaleX());
-            fact("hud.panel_proxy", screenRect(proxy).toShortString());
-            fact("hud.panel_reach_dp",
-                    CadLeaderHudChecks.panelReachDp(tool, canvas, viewport, density));
-            assertNull("the panel: " + panel, panel);
-            assertTrue("the panel is described", proxy.getContentDescription() != null
+            fact("hud.dock_box", screenRect(proxy).toShortString());
+            fact("hud.dock_reach_dp", CadLeaderHudChecks.dockReachDp(tool, density));
+            assertNull("the dock: " + panel, panel);
+            assertTrue("the dock is described", proxy.getContentDescription() != null
                     && proxy.getContentDescription().toString().toLowerCase(Locale.ROOT)
                             .contains("one side"));
-            for (int id : new int[]{R.id.cad_extrude_extent, R.id.cad_extrude_operation,
-                    R.id.cad_extrude_flip_glyph}) {
-                final View glyph = canvas.findViewById(id);
-                assertTrue("glyph shown " + name(activity, id), glyph.isShown());
-                assertFalse("and it takes no touch of its own " + name(activity, id),
-                        glyph.isClickable());
-            }
             // The exact value stands ABOVE the leader, reading along it.
             final TextView value = canvas.findViewById(R.id.cad_extrude_depth_value);
             final String why = CadLeaderHudChecks.valueOnLeader(tool, value, viewport, density,
@@ -655,8 +643,6 @@ public final class CadVerticalSliceTest {
                     canvas.findViewById(R.id.cad_extrude_extent_palette).isShown());
             assertFalse("Flip is absent outside One Side",
                     canvas.findViewById(R.id.cad_extrude_flip).isShown());
-            assertEquals("and so is its glyph on the panel", View.GONE,
-                    canvas.findViewById(R.id.cad_extrude_flip_glyph).getVisibility());
             return null;
         });
         capture("06_compact_hud_symmetric");
@@ -680,11 +666,8 @@ public final class CadVerticalSliceTest {
                 assertTrue("a caption is drawn in the palette",
                         containsShownText(palette, activity.getString(R.string.extent_symmetric))
                                 || containsShownTextIgnoreCase(palette, "symmetric"));
-                for (int id : new int[]{R.id.cad_extrude_extent, R.id.cad_extrude_operation}) {
-                    final View attached = canvas.findViewById(id);
-                    assertFalse("no caption on the attached " + name(activity, id),
-                            containsAnyShownText(attached));
-                }
+                final View attached = canvas.findViewById(R.id.cad_extrude_panel);
+                assertFalse("no caption on the attached dock", containsAnyShownText(attached));
                 return null;
             });
             capture("07_compact_hud_labels_on");
@@ -854,7 +837,7 @@ public final class CadVerticalSliceTest {
                     workspace.findViewById(R.id.extrude_sketch).isShown());
             // The reason is named where the preview is: on the operation badge.
             final CharSequence why = workspace.cadExtrudeCanvas()
-                    .findViewById(R.id.cad_extrude_operation).getContentDescription();
+                    .findViewById(R.id.cad_extrude_panel).getContentDescription();
             fact("refusal.badge_description", why);
             assertTrue("and the badge says why: " + why, why != null && why.toString().contains(
                     CadStatusMessages.describe(activity, NativeViewport.CAD_CUT_NO_INTERSECTION)));
@@ -1124,10 +1107,10 @@ public final class CadVerticalSliceTest {
     private void chooseOperationOnCanvas(int optionId) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View canvas = workspace.cadExtrudeCanvas();
-            final View badge = canvas.findViewById(R.id.cad_extrude_operation);
-            assertTrue("the operation badge is shown", badge.isShown());
-            // The badge is a glyph on the panel; the panel opens the palette.
-            canvas.findViewById(R.id.cad_extrude_panel).performClick();
+            final View badge = canvas.findViewById(R.id.cad_extrude_panel);
+            assertTrue("the operation badge (the dock) is shown", badge.isShown());
+            // The dock is the badge and its own touch target: it opens the palette.
+            badge.performClick();
             return null;
         });
         settleLayout();

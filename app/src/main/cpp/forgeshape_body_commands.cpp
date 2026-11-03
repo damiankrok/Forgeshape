@@ -229,6 +229,17 @@ BodyCommandStatus duplicateSceneBody(ObjectId id, ConstructionScene& scene,
     if (const CadBody* cad = source->cadOrNull()) {
         cadState = cad->captureState();
     }
+    FreeformCage freeformCopy;
+    if (const FreeformBody* freeform = source->freeformOrNull()) {
+        // The cage's own values: the copy gets its own cage, so editing one
+        // never reaches the other.
+        freeformCopy = freeform->cage();
+    }
+    SurfaceBodyState surfaceCopy;
+    if (const SurfaceBody* surface = source->surfaceOrNull()) {
+        // The feature list and its sketches, by value: two bodies, two lists.
+        surfaceCopy = surface->state();
+    }
     ImportedMesh importedCopy;
     if (const ImportedMesh* imported = source->importedOrNull()) {
         // The arrays are COPIED, never shared: an Imported Mesh IS its
@@ -264,6 +275,14 @@ BodyCommandStatus duplicateSceneBody(ObjectId id, ConstructionScene& scene,
                 // mints -- so a state that somehow no longer closes a profile
                 // costs no ObjectId, exactly as a fresh Extrude would not.
                 copy = scene.addCadBody(cadState);
+                break;
+            }
+            case BodyRepresentation::Freeform: {
+                copy = scene.addFreeformBody(std::move(freeformCopy));
+                break;
+            }
+            case BodyRepresentation::Surface: {
+                copy = scene.addSurfaceBody(std::move(surfaceCopy));
                 break;
             }
         }
@@ -373,6 +392,45 @@ BodyCommandStatus mirrorSceneBody(ObjectId id, MirrorPlane plane, ConstructionSc
     report.newIndex = scene.indexOfBody(newId);
     report.bodyCount = scene.bodyCount();
     return finish(BodyCommandStatus::Ok);
+}
+
+const char* bodyPlacementRefusalName(BodyPlacementRefusal refusal) {
+    switch (refusal) {
+        case BodyPlacementRefusal::None: return "None";
+        case BodyPlacementRefusal::UnknownBody: return "UnknownBody";
+        case BodyPlacementRefusal::Locked: return "BodyLocked";
+        case BodyPlacementRefusal::DerivedPlacement: return "DerivedPlacement";
+    }
+    return "unknown";
+}
+
+TransformApplyResult applySceneBodyTransform(ObjectId id, const TransformValues& requested,
+                                             ConstructionScene& scene,
+                                             ConstructionHistory& history,
+                                             BodyPlacementRefusal* outRefusal) {
+    TransformApplyResult result;
+    BodyPlacementRefusal refusal = BodyPlacementRefusal::None;
+    SceneObject* body = scene.findBody(id);
+    if (body == nullptr) {
+        refusal = BodyPlacementRefusal::UnknownBody;
+    } else if (body->locked()) {
+        refusal = BodyPlacementRefusal::Locked;
+    } else if (body->isFaceSupportedCad()) {
+        refusal = BodyPlacementRefusal::DerivedPlacement;
+    }
+    if (outRefusal != nullptr) {
+        *outRefusal = refusal;
+    }
+    if (refusal != BodyPlacementRefusal::None) {
+        // Rejected with every previous value intact and nothing opened.
+        result.status = TransformUpdateStatus::Rejected;
+        if (body != nullptr) {
+            result.values = body->transform().values();
+        }
+        return result;
+    }
+    ScopedConstructionEdit edit(history);
+    return applyTransformValues(body->transform(), requested);
 }
 
 }  // namespace forgeshape

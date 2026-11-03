@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CAD-V6-REVOLVE-NEWBODY-E2E-R1: the user-facing words of Revolve New Body.
+  A Revolve sweeps the chosen area about a straight edge of the sketch. These
+  strings report and name; they never instruct where a control already says it.
+-->
+<resources>
+    <string name="revolve">Revolve</string>
+    <string name="revolve_begin">Revolve…</string>
+    <string name="revolve_begin_description">Revolve the chosen area about a straight sketch edge instead of extruding it</string>
+    <string name="sketch_revolve_section">Revolve</string>
+    <string name="label_angle">Angle (°)</string>
+    <string name="revolve_flip">Flip direction</string>
+    <string name="revolve_change_axis">Change axis</string>
+    <string name="revolve_back_to_extrude">Extrude instead</string>
+    <string name="revolve_axis_none">Axis: none chosen</string>
+    <string name="revolve_axis_summary">Axis: %1$s, edge %2$d</string>
+    <string name="revolve_direction_positive">Direction: forward</string>
+    <string name="revolve_direction_negative">Direction: reversed</string>
+    <string name="revolve_angle_value">%1$s°</string>
+    <string name="revolve_angle_description">Revolve angle %1$s. Tap to type an exact angle.</string>
+    <string name="status_revolve_choose_axis">Choose an axis — tap a straight edge of the sketch.</string>
+    <string name="status_revolve_axis_chosen">Axis set — revolving %1$s.</string>
+    <string name="status_revolve_angle">Revolve angle %1$s.</string>
+    <string name="status_revolve_flipped">Revolve direction reversed — still %1$s.</string>
+    <string name="status_revolve_ended">Back to the extrusion. Nothing was changed.</string>
+    <string name="status_revolve_committed">Revolved %1$s — it is now selected.</string>
+    <string name="status_cad_revolve_needs_axis">Choose an axis — tap a straight edge of the sketch.</string>
+    <string name="status_cad_revolve_axis_not_straight">That edge is curved. An axis must be a straight edge: a line, a polyline segment or a rectangle side.</string>
+    <string name="status_cad_revolve_axis_unresolved">The axis edge is no longer in the sketch. Choose another axis.</string>
+    <string name="status_cad_revolve_angle_invalid">The angle must be more than 0° and at most 360°.</string>
+    <string name="status_cad_revolve_crosses_axis">The area crosses the axis. Revolve an area that lies on one side of it.</string>
+    <string name="status_cad_revolve_zero_radius">The area lies on the axis, so it sweeps no volume.</string>
+    <string name="status_cad_revolve_components_overlap">Areas on both sides of the axis would overlap when revolved. Revolve them separately.</string>
+    <string name="cad_feature_row_revolve">%1$d. Revolve — %2$s</string>
+    <string name="sketch_entity_label">entity %1$d</string>
+    <string name="cad_profile_revolve">Revolved body — %1$s about a sketch edge. Reopen the feature to change it.</string>
+</resources>

@@ -1,0 +1,23 @@
+{
+  "result": "PASS",
+  "detail": "25/25 startup tokens in order, NATIVE_VIEWPORT_OK, 0 failure tokens; com.forgeshape.app.ProjectAutosaveRecoveryTest,com.forgeshape.app.ProjectTransferTest,com.forgeshape.app.ProjectProcessDeathTest,com.forgeshape.app.ImportedMeshDurableTest,com.forgeshape.app.ObjectsDeleteTest,com.forgeshape.app.ObjectCommandsTest,com.forgeshape.app.MirrorSmokeTest,com.forgeshape.app.BodyDimensionsSmokeTest,com.forgeshape.app.EditorWorkspaceLifecycleTest,com.forgeshape.app.JniBoundaryHardeningTest,com.forgeshape.app.DiagnosticsAndRendererLossTest,com.forgeshape.app.SettingsPreferencesTest OK (90 tests)",
+  "phase": "done",
+  "serial": "emulator-5580",
+  "avd": "ForgeShape_CI_API36",
+  "avd_name_confirmed": "ForgeShape_CI_API36",
+  "system_image": "system-images;android-36;google_apis;x86_64",
+  "device_profile": "medium_phone",
+  "gpu_mode": "swiftshader_indirect",
+  "boot_seconds": "50",
+  "startup_seconds": "20",
+  "startup_capture_used": "1",
+  "selftest_tokens_expected": 25,
+  "selftest_tokens_found": 25,
+  "selftest_tokens_in_order": true,
+  "native_viewport_ok": true,
+  "failure_token_lines": 0,
+  "test_class": "com.forgeshape.app.ProjectAutosaveRecoveryTest,com.forgeshape.app.ProjectTransferTest,com.forgeshape.app.ProjectProcessDeathTest,com.forgeshape.app.ImportedMeshDurableTest,com.forgeshape.app.ObjectsDeleteTest,com.forgeshape.app.ObjectCommandsTest,com.forgeshape.app.MirrorSmokeTest,com.forgeshape.app.BodyDimensionsSmokeTest,com.forgeshape.app.EditorWorkspaceLifecycleTest,com.forgeshape.app.JniBoundaryHardeningTest,com.forgeshape.app.DiagnosticsAndRendererLossTest,com.forgeshape.app.SettingsPreferencesTest",
+  "tests_run": 90,
+  "tests_failed": 0,
+  "test_seconds": "1892"
+}

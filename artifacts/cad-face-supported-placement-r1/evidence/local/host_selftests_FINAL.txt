@@ -1,0 +1,32 @@
+HOST_SUITE_OK CAMERA (119 checks, 0 failed, 0 ms)
+HOST_SUITE_OK PICKING (185 checks, 0 failed, 0 ms)
+HOST_SUITE_OK DYNAMIC_MESH (91 checks, 0 failed, 0 ms)
+HOST_SUITE_OK CONSTRUCTION_BOX (100 checks, 0 failed, 0 ms)
+HOST_SUITE_OK CONSTRUCTION_TRANSFORM (121 checks, 0 failed, 0 ms)
+HOST_SUITE_OK CONSTRUCTION_PRIMITIVE (126 checks, 0 failed, 0 ms)
+HOST_SUITE_OK CONSTRUCTION_SPHERE (105 checks, 0 failed, 2 ms)
+HOST_SUITE_OK CONE_CAPSULE (163 checks, 0 failed, 3 ms)
+HOST_SUITE_OK SCULPT_BRUSH_KERNEL (655 checks, 0 failed, 32 ms)
+HOST_SUITE_OK RENDER_SHADING (412 checks, 0 failed, 6 ms)
+HOST_SUITE_OK SCENE (175 checks, 0 failed, 1 ms)
+HOST_SUITE_OK CONSTRUCTION_HISTORY (147 checks, 0 failed, 5 ms)
+HOST_SUITE_OK GIZMO (185 checks, 0 failed, 2 ms)
+HOST_SUITE_OK PROJECT (256 checks, 0 failed, 3 ms)
+HOST_SUITE_OK RENDER_RECOVERY (24 checks, 0 failed, 0 ms)
+HOST_SUITE_OK GLTF_EXPORT (115 checks, 0 failed, 3 ms)
+HOST_SUITE_OK GLTF_IMPORT (189 checks, 0 failed, 4 ms)
+HOST_SUITE_OK CAD (155 checks, 0 failed, 3 ms)
+HOST_SUITE_OK CAD_A3 (77 checks, 0 failed, 2 ms)
+HOST_SUITE_OK SKETCH_UX (118 checks, 0 failed, 2 ms)
+HOST_SUITE_OK BODY_DIMENSIONS (102 checks, 0 failed, 0 ms)
+HOST_SUITE_OK MIRROR (62 checks, 0 failed, 19 ms)
+CAD_R2_ORACLE_PASS=17
+HOST_SUITE_OK CAD_FEATURE (638 checks, 0 failed, 2420 ms)
+FORGESHAPE_CAD_FEATURE_PERFORMANCE region_base_us=101 add_us=923 add_cut_us=2454 codec_roundtrip_us=5249 triangles=288 arrangement_cap_us=20537/22040 runs=20 cells=3969 largest_legal_refusal_us=379 fill_spline_us=5837/8734 runs=3 cells=553 max_splines_us=31790 oss_owner21_eval_us=447 oss_owner_faces=23 multiface_mixed36_eval_us=323 components=21 bytes=5851 multiface_tap32_us=136/221 multiface_toggle128_us=63 multiface_eval128_us=616 multiface_all_faces=3969 finish_us=980309 toggle_all_us=705 eval_all_us=33545 revolve_disk_max_us=3507 revolve_square_max_us=455 revolve_disk_triangles=2048 revolve_index_digest=0c3ff125ec6ce725 drafting_snap100_collect_us=12731 drafting_snap100_query_us=11.5 drafting_snap_cap_collect_us=27920 drafting_snap_cap_query_us=24.9 drafting_snap_cap_intersections=4096 drafting_trim100_us=13353 drafting_trim100_cached_us=38 drafting_extend100_us=306 extend_ok=1 drafting_mirror100_us=10 drafting_offset100_us=82 drafting_dims100_us=40 drafting_dims100_segments=1400 parametric_chain16_regen_us=13045 parametric_upstream_edit_us=20088 parametric_chain16_triangles=254 cad_r2_keep_us=494 cad_r2_reuse_us=1450 cad_r2_delete_us=399 cad_r2_grid36_arrangement_us=109 cad_r2_inventory16_us=1492/1886 CAD_R2_ORACLE_PASS=17
+HOST_SUITE_OK FREEFORM (74 checks, 0 failed, 178 ms)
+FORGESHAPE_FREEFORM_PERFORMANCE closed96_l1_us=301 closed96_l2_us=563 closed96_l3_us=1394 closed96_l4_us=5399 closed96_drag_us=634 open500_l1_us=1415 open500_l2_us=2367 open500_l3_us=11267 open500_l4_us=56143 open500_drag_us=5714
+FORGESHAPE_FREEFORM_GOLDEN_SHA256 freeform_box_v1=2f38b285c5718a5f53cbac8e9dcac9749ae474a3ae2423dd4e7dca97157faf0e freeform_crease_symmetry_v1=b218fda7d3eaea4170827a8fece576e032969681c710b1cf9d17521f199e2029 freeform_bad_topology_v1=e896be40f36453d588ea22d4a0dacc6289222484d5d95db377b521d27f86c562
+HOST_SUITE_OK SURFACE (40 checks, 0 failed, 7 ms)
+FORGESHAPE_SURFACE_PERFORMANCE patch_us=62 loft_us=7 trim_stitch_loft_us=123 trim_thicken_us=328
+FORGESHAPE_SURFACE_GOLDEN_SHA256 surface_patch_extrude_v1=d4cb49a6500718e1e1482a788aa897cf28d9922421ac9e1b73bffb89c3d55e14 surface_loft_trim_stitch_v1=006374495e44da8332cae0fc07533ebface1f59fde8e12eb5ff9981c33736c8e surface_bad_ref_v1=4a0367a4a05f432633a81cd54313db07ab4a88da87d447d85dec8b93df3f640d
+HOST_SELFTESTS_OK (4434 checks, 0 failed)

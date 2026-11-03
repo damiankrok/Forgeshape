@@ -523,24 +523,22 @@ public final class Ui3dStateCorrectionTest {
                     workspace.findViewById(R.id.cad_extrude_depth_value);
             final View viewport = workspace.findViewById(R.id.viewport_surface);
             final CadExtrudeCanvasView canvas = workspace.cadExtrudeCanvas();
-            final View plate = canvas.findViewById(R.id.cad_extrude_panel_plate);
-            // `CAD-FOUNDATION-C2`: the annotation collapses WHOLE at the scale
-            // floor when the value would outgrow its leader -- value and panel
-            // together, never one without the other.
+            final View dock = canvas.findViewById(R.id.cad_extrude_panel);
+            // The value collapses at the scale floor when it would outgrow its
+            // leader; the dock obeys native alone
+            // (`CAD-V6-S2-OWNER-CORRECTION-E2E-R1`).
             if (canvas.lastAnnotationCollapsed()) {
-                return value.isShown() || plate.isShown()
-                        ? "a collapsed annotation still shows part of itself" : null;
+                return value.isShown() ? "a collapsed value is still shown" : null;
             }
-            // The action panel, when it stands, stands WHOLE at the arrow's point.
-            if (canvas.lastPanelLayout().visible) {
-                final String panel = CadLeaderHudChecks.panelAtArrow(tool, canvas, viewport,
-                        density, CadHudPresentation.panelIconCount(
-                                (int) tool[NativeViewport.CAD_EXTRUDE_EXTENT]));
+            // The dock, when native draws it, stands WHOLE past the arrow's point.
+            if (canvas.lastDock().visible) {
+                final String panel = CadLeaderHudChecks.dockAtArrow(tool, canvas, viewport,
+                        density);
                 if (panel != null) {
                     return panel;
                 }
-            } else if (plate.isShown()) {
-                return "the panel's plate is shown while its layout is hidden";
+            } else if (dock.isShown()) {
+                return "the dock is shown while native hides it";
             }
             final float[] l = CadLeaderHudChecks.leader(tool, false);
             if (CadHudPresentation.clipToViewport(l[0], l[1], l[2], l[3], viewport.getWidth(),

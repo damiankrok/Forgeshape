@@ -48,6 +48,9 @@ final class WorkspaceTrailingHostView extends FrameLayout
 
         /** From the profile choice back to editing the sketch. */
         void onBackToSketchRequested();
+
+        /** Keep the sketch on its body without a feature ({@code CAD-R2}). */
+        void onKeepSketchRequested();
     }
 
     /** One derived presentation snapshot; none of these values is product truth. */
@@ -80,6 +83,13 @@ final class WorkspaceTrailingHostView extends FrameLayout
         final boolean dimensionsOpen;
         /** One of the {@code DIMENSION_ANCHOR_*} constants. */
         final int dimensionAnchor;
+        /**
+         * Whether the rail offers Transform. False for a face-supported CAD
+         * Body, whose placement is derived from its producer's face
+         * ({@code CAD-FACE-SUPPORTED-PLACEMENT-R1}) -- native's answer, never a
+         * second rule written here.
+         */
+        final boolean placeOffered;
 
         PresentationState(boolean sculpting, int activeTool,
                           boolean transformOffered, int transformMode,
@@ -111,6 +121,21 @@ final class WorkspaceTrailingHostView extends FrameLayout
                           boolean compactRail, boolean displaySuppressed,
                           boolean shapeOffered, int sketchState,
                           boolean bodySizeOffered, boolean dimensionsOpen, int dimensionAnchor) {
+            this(sculpting, activeTool, transformOffered, transformMode, transformSpaceOffered,
+                    transformSpace, precisionOpen, precisionSurfaceName, compactRail,
+                    displaySuppressed, shapeOffered, sketchState, bodySizeOffered, dimensionsOpen,
+                    dimensionAnchor, true);
+        }
+
+        PresentationState(boolean sculpting, int activeTool,
+                          boolean transformOffered, int transformMode,
+                          boolean transformSpaceOffered, int transformSpace,
+                          boolean precisionOpen, CharSequence precisionSurfaceName,
+                          boolean compactRail, boolean displaySuppressed,
+                          boolean shapeOffered, int sketchState,
+                          boolean bodySizeOffered, boolean dimensionsOpen, int dimensionAnchor,
+                          boolean placeOffered) {
+            this.placeOffered = placeOffered;
             this.sketchState = sketchState;
             this.bodySizeOffered = bodySizeOffered;
             this.dimensionsOpen = dimensionsOpen;
@@ -156,12 +181,14 @@ final class WorkspaceTrailingHostView extends FrameLayout
     private final LinearLayout sketchGroup;
     private final ImageView cancelSketchAction;
     private final ImageView backToSketchAction;
+    private final ImageView keepSketchAction;
 
     private Boolean showingSculptEntries;
     /** Whether the rail last drew the sketch tools. Null until the first render. */
     private Boolean showingSketchEntries;
     /** Whether the rail last drew a Shape entry. Null until the first render. */
     private Boolean showingShapeEntry;
+    private Boolean showingPlaceEntry;
     private int upstreamToolbarExpansionPx;
 
     WorkspaceTrailingHostView(Context context, Callbacks callbacks) {
@@ -292,6 +319,15 @@ final class WorkspaceTrailingHostView extends FrameLayout
                 view -> callbacks.onBackToSketchRequested());
         sketchGroup.addView(backToSketchAction, internalButtonParams(context,
                 EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
+        // Keep Sketch (`CAD-R2`): the sketch's other commit, the one that makes
+        // no feature. It lives with the sketch's own controls rather than in
+        // the toolbar row, which carries ONE transition at a time.
+        keepSketchAction = selectorButton(context, R.id.keep_sketch,
+                R.drawable.ic_sketch_keep, R.string.keep_sketch_description,
+                view -> callbacks.onKeepSketchRequested());
+        keepSketchAction.setVisibility(GONE);
+        sketchGroup.addView(keepSketchAction, internalButtonParams(context,
+                EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
         sketchGroup.setVisibility(GONE);
         contentColumn.addView(sketchGroup, sectionParams(context,
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
@@ -304,6 +340,24 @@ final class WorkspaceTrailingHostView extends FrameLayout
         precisionGroup.addView(precisionToggle, internalButtonParams(context, 0));
         contentColumn.addView(precisionGroup, sectionParams(context,
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+    }
+
+    /**
+     * The retained-sketch answers native gives on every refresh ({@code CAD-R2}):
+     * whether Keep Sketch can succeed, and whether Back to Sketch can (a reuse
+     * session extrudes a shared sketch it may not edit). Called after
+     * {@link #render}; neither is remembered here.
+     */
+    void showSketchCommitOptions(boolean keepOffered, boolean backOffered) {
+        keepSketchAction.setVisibility(keepOffered ? VISIBLE : GONE);
+        if (!backOffered) {
+            backToSketchAction.setVisibility(GONE);
+        }
+    }
+
+    /** For verification. */
+    ImageView keepSketchAction() {
+        return keepSketchAction;
     }
 
     /** The fixed external geometry this host presents to the workspace row. */
@@ -384,7 +438,7 @@ final class WorkspaceTrailingHostView extends FrameLayout
 
     void render(PresentationState state) {
         final boolean sketching = state.sketchState != NativeViewport.SKETCH_INACTIVE;
-        ensureEntries(state.sculpting, state.shapeOffered, sketching);
+        ensureEntries(state.sculpting, state.shapeOffered, state.placeOffered, sketching);
         toolRail.setCompactEntries(state.compactRail);
         toolRail.showActive(state.activeTool);
         // In Ready the drawing is done and the extrusion is what is looked at
@@ -397,6 +451,9 @@ final class WorkspaceTrailingHostView extends FrameLayout
                 ? VISIBLE : GONE);
         backToSketchAction.setVisibility(
                 SketchChromePolicy.backToSketchShown(state.sketchState) ? VISIBLE : GONE);
+        if (!sketching) {
+            keepSketchAction.setVisibility(GONE);
+        }
 
         precisionToggle.setContentDescription(getContext().getString(
                 state.precisionOpen ? R.string.precision_close : R.string.precision_open,
@@ -495,15 +552,18 @@ final class WorkspaceTrailingHostView extends FrameLayout
         button.setActivated(active);
     }
 
-    private void ensureEntries(boolean sculpting, boolean shapeOffered, boolean sketching) {
+    private void ensureEntries(boolean sculpting, boolean shapeOffered, boolean placeOffered,
+                               boolean sketching) {
         if (showingSculptEntries != null && showingSculptEntries == sculpting
                 && showingShapeEntry != null && showingShapeEntry == shapeOffered
+                && showingPlaceEntry != null && showingPlaceEntry == placeOffered
                 && showingSketchEntries != null && showingSketchEntries == sketching
                 && toolRail.getChildCount() > 0) {
             return;
         }
         showingSculptEntries = sculpting;
         showingShapeEntry = shapeOffered;
+        showingPlaceEntry = placeOffered;
         showingSketchEntries = sketching;
         final Context context = getContext();
         if (sketching) {
@@ -571,6 +631,18 @@ final class WorkspaceTrailingHostView extends FrameLayout
         final ToolRailView.Entry place = new ToolRailView.Entry(R.id.tool_rail_place,
                 R.drawable.ic_tool_place, context.getString(R.string.tool_transform),
                 EditorUiState.CONSTRUCTION_TOOL_TRANSFORM);
+        if (!placeOffered && shapeOffered) {
+            // A face-supported CAD Body is placed by its producer's face and is
+            // not independently transformable, so Transform is ABSENT rather
+            // than drawn and then refused (`CAD-FACE-SUPPORTED-PLACEMENT-R1`).
+            // Shape stays: its sketch and extrusion are what it is.
+            toolRail.setEntries(new ToolRailView.Entry[]{
+                    new ToolRailView.Entry(R.id.tool_rail_shape, R.drawable.ic_tool_shape,
+                            context.getString(R.string.tool_shape),
+                            EditorUiState.CONSTRUCTION_TOOL_SHAPE),
+            });
+            return;
+        }
         if (!shapeOffered) {
             // An Imported Mesh has no primitive and no dimensions, so Shape has
             // nothing to edit and the domain refuses a shape Apply for one. The

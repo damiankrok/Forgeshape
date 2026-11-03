@@ -1,0 +1,38 @@
+CR-01 -- GLB export of a face-supported CAD Body (audit-only; FUNCTION-COUNCIL-R2-CLOSEOUT-R1)
+Baseline product tree: 70a6c14 (app/ unchanged at HEAD; product diff 70a6c14..HEAD touches no app/ file).
+Host: Linux container, g++ (system), python3. Binaries under /tmp/claude-0/fc2c-scratch/CR-01 (never committed).
+Flags/sources reuse scripts/host-native-selftests.sh exactly (COMMON flags; every app/src/main/cpp/forgeshape_*.cpp
+except forgeshape_jni.cpp and forgeshape_renderer.cpp; vendored Manifold built -O2 -w into libmanifold.a).
+
+cd /home/user/Forgeshape
+S=/tmp/claude-0/fc2c-scratch/CR-01; CPP=app/src/main/cpp; D=artifacts/function-council-r2-closeout/diagnostics/CR-01
+COMMON="-std=c++17 -O1 -g0 -I$CPP -I$CPP/third_party/manifold/include -DMANIFOLD_PAR=-1 -DMANIFOLD_NO_IOSTREAM -DMANIFOLD_NO_FILESYSTEM"
+mkdir -p $S/obj $S/kernel $S/glb
+
+# 1. kernel (exit 0; libmanifold.a produced)
+for src in $CPP/third_party/manifold/src/*.cpp; do g++ $COMMON -O2 -w -c $src -o $S/kernel/$(basename $src .cpp).o & done; wait
+ar rcs $S/kernel/libmanifold.a $S/kernel/*.o
+
+# 2. product objects (98 objects = 100 forgeshape_*.cpp minus jni and renderer; exit 0)
+for src in $CPP/forgeshape_*.cpp; do case $(basename $src) in forgeshape_jni.cpp|forgeshape_renderer.cpp) continue;; esac
+  g++ $COMMON -c $src -o $S/obj/$(basename $src .cpp).o & done; wait
+
+# 3. diagnostic link                                               -> build_exit=0
+g++ $COMMON $D/cr01_export_face.cpp $S/obj/*.o $S/kernel/libmanifold.a -o $S/cr01
+
+# 4. run (fixtures are READ-ONLY input)                             -> run_exit=0
+$S/cr01 $S/glb testdata/forge/v1/cad_face_sketch_cap_v2.forge testdata/forge/v1/cad_face_sketch_side_v2.forge \
+   testdata/forge/v1/cad_face_chain_v2.forge testdata/forge/v1/mixed_cad_face_v2.forge testdata/forge/v1/cad_rectangle_v1.forge \
+   > $D/cr01_export_face.out 2>&1
+
+# 5. independent parse of the written .glb bytes                    -> py_exit=0
+python3 -I $D/parse_glb.py $S/glb/S1_cap.glb $S/glb/S2_side.glb $S/glb/S3_chain.glb $S/glb/S4_producer_moved_rotated.glb \
+   $S/glb/C1_world_cad_trs.glb $S/glb/C2_construction_trs.glb $S/glb/F_*.glb > $D/parse_glb.out 2>&1
+
+# 6. digests of the produced .glb files
+(cd $S/glb && sha256sum *.glb) > $D/glb_sha256.out
+
+Tallies over cr01_export_face.out: 11 "verdict=MISMATCH" (all and only face-supported CAD bodies),
+12 "verdict=MATCH" (every independent body), 1 "NO_SOURCE_REDERIVED" (the Imported Mesh in
+mixed_cad_face_v2; translation equal=1). S1_cap.glb and S2_side.glb are byte-identical
+(sha256 9934da55...): the file cannot tell a cap-supported from a side-supported dependent.

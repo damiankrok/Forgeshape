@@ -1,0 +1,32 @@
+# one fresh process per fixture
+PROBE /home/user/Forgeshape/testdata/forge/v1/cad_rectangle_v1.forge load=Ok bodies=1 fingerprint=49b4d62ea60c003f reencode=identical bytes=247/247 centre_hit=0 centre_obj=0 mouse_100px_yaw_delta_rad=-0.5000
+exit=0
+PROBE /home/user/Forgeshape/testdata/forge/v1/cad_feature_add_v5.forge load=Ok bodies=1 fingerprint=d52f71909756417a reencode=identical bytes=370/370 centre_hit=1 centre_obj=1 mouse_100px_yaw_delta_rad=-0.5000
+exit=0
+PROBE /home/user/Forgeshape/testdata/forge/v1/mixed_cad_v1.forge load=Ok bodies=3 fingerprint=6e571ea8a052d7b5 reencode=identical bytes=780/780 centre_hit=1 centre_obj=1 mouse_100px_yaw_delta_rad=-0.5000
+exit=0
+PROBE /home/user/Forgeshape/testdata/forge/v1/freeform_box_v1.forge load=Ok bodies=1 fingerprint=4fe78c11c803d614 reencode=identical bytes=800/800 centre_hit=1 centre_obj=1 mouse_100px_yaw_delta_rad=-0.5000
+exit=0
+PROBE /home/user/Forgeshape/testdata/forge/v1/surface_patch_extrude_v1.forge load=Ok bodies=1 fingerprint=8f55d06644394140 reencode=identical bytes=546/546 centre_hit=1 centre_obj=1 mouse_100px_yaw_delta_rad=-0.5000
+exit=0
+PROBE /home/user/Forgeshape/testdata/forge/v1/cad_revolve_full_v7.forge load=Ok bodies=1 fingerprint=2fab9c0c62bfd860 reencode=identical bytes=332/332 centre_hit=1 centre_obj=1 mouse_100px_yaw_delta_rad=-0.5000
+exit=0
+PROBE /home/user/Forgeshape/testdata/forge/v1/cad_construction_v8.forge load=Ok bodies=1 fingerprint=e50a77649960de72 reencode=identical bytes=373/373 centre_hit=1 centre_obj=1 mouse_100px_yaw_delta_rad=-0.5000
+exit=0
+PROBE /home/user/Forgeshape/testdata/forge/v1/truncated_v1.forge decode=Truncated
+exit=0
+# all fixtures in ONE process (seat G probe_out.txt shape)
+PROBE /home/user/Forgeshape/testdata/forge/v1/cad_rectangle_v1.forge load=Ok bodies=1 fingerprint=49b4d62ea60c003f reencode=identical bytes=247/247 centre_hit=0 centre_obj=0 mouse_100px_yaw_delta_rad=-0.5000
+PROBE /home/user/Forgeshape/testdata/forge/v1/cad_feature_add_v5.forge load=Ok bodies=1 fingerprint=d52f71909756417a reencode=identical bytes=370/370 centre_hit=1 centre_obj=1 mouse_100px_yaw_delta_rad=-0.5000
+PROBE /home/user/Forgeshape/testdata/forge/v1/mixed_cad_v1.forge load=Ok bodies=3 fingerprint=6e571ea8a052d7b5 reencode=identical bytes=780/780 centre_hit=1 centre_obj=1 mouse_100px_yaw_delta_rad=-0.5000
+PROBE /home/user/Forgeshape/testdata/forge/v1/freeform_box_v1.forge load=Ok bodies=1 fingerprint=252d6b1d7b45476e reencode=different bytes=800/800 centre_hit=1 centre_obj=1 mouse_100px_yaw_delta_rad=-0.5000
+PROBE /home/user/Forgeshape/testdata/forge/v1/surface_patch_extrude_v1.forge load=Ok bodies=1 fingerprint=55aaf35f3d32d81e reencode=different bytes=546/546 centre_hit=1 centre_obj=1 mouse_100px_yaw_delta_rad=-0.5000
+PROBE /home/user/Forgeshape/testdata/forge/v1/cad_revolve_full_v7.forge load=Ok bodies=1 fingerprint=498097aab9682f46 reencode=different bytes=332/332 centre_hit=1 centre_obj=1 mouse_100px_yaw_delta_rad=-0.5000
+PROBE /home/user/Forgeshape/testdata/forge/v1/cad_construction_v8.forge load=Ok bodies=1 fingerprint=e57812490a1e1574 reencode=different bytes=373/373 centre_hit=1 centre_obj=1 mouse_100px_yaw_delta_rad=-0.5000
+PROBE /home/user/Forgeshape/testdata/forge/v1/truncated_v1.forge decode=Truncated
+exit=0
+# seq_reencode mixed_cad_v1 then freeform_box_v1
+load=Ok kind=1 bodies=3
+load=Ok kind=1 bodies=1
+final reencode=different
+exit=0

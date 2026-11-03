@@ -1,0 +1,33 @@
+=== CR-03 scenario A ===
+glb: bytes=1648 export_ok=1
+sketch_begin=Ok
+[before_import] hasProject=1 bodies=1 active=1 undo=0 redo=0 editInProgress=0 sketch_active=1 sketch_state=Editing sketch_entities=1 sketch_plane=0 chooser_active=0 sculpt=0 fingerprint=22a5519654955ab0
+    body[0] id=1 rep=Construction
+  import: parse=Ok commit=Ok
+importGlbDurable_return=0 objects=1 firstObjectId=2 activeBodyId=2
+[after_import] hasProject=1 bodies=2 active=2 undo=1 redo=0 editInProgress=0 sketch_active=1 sketch_state=Editing sketch_entities=1 sketch_plane=0 chooser_active=0 sculpt=0 fingerprint=937217cfca29dbcc
+    body[0] id=1 rep=Construction
+    body[1] id=2 rep=Imported
+fingerprint_changed=1
+  [after_import] encode=Ok bytes=1159 decode=Ok decoded_bodies=2
+jni_undo_while_sketch=REFUSED:in_sketch
+[after_refused_undo] hasProject=1 bodies=2 active=2 undo=1 redo=0 editInProgress=0 sketch_active=1 sketch_state=Editing sketch_entities=1 sketch_plane=0 chooser_active=0 sculpt=0 fingerprint=937217cfca29dbcc
+    body[0] id=1 rep=Construction
+    body[1] id=2 rep=Imported
+finish=Ok setExtrude=Ok selectionChosen=1
+sketchCommit=Ok created=3 firstProjectPath=0
+[after_commit] hasProject=1 bodies=3 active=3 undo=2 redo=0 editInProgress=0 sketch_active=0 sketch_state=Inactive sketch_entities=0 sketch_plane=0 chooser_active=0 sculpt=0 fingerprint=8ab2fd66b9518571
+    body[0] id=1 rep=Construction
+    body[1] id=2 rep=Imported
+    body[2] id=3 rep=CAD
+  [after_commit] encode=Ok bytes=1334 decode=Ok decoded_bodies=3
+jni_undo_1=MOVED
+[after_undo_1] hasProject=1 bodies=2 active=2 undo=1 redo=1 editInProgress=0 sketch_active=0 sketch_state=Inactive sketch_entities=0 sketch_plane=0 chooser_active=0 sculpt=0 fingerprint=43e3980a25522567
+    body[0] id=1 rep=Construction
+    body[1] id=2 rep=Imported
+jni_undo_2=MOVED
+[after_undo_2] hasProject=1 bodies=1 active=1 undo=0 redo=2 editInProgress=0 sketch_active=0 sketch_state=Inactive sketch_entities=0 sketch_plane=0 chooser_active=0 sculpt=0 fingerprint=74e74b7c329f05d6
+    body[0] id=1 rep=Construction
+jni_undo_3=NOTHING
+[after_undo_3] hasProject=1 bodies=1 active=1 undo=0 redo=2 editInProgress=0 sketch_active=0 sketch_state=Inactive sketch_entities=0 sketch_plane=0 chooser_active=0 sculpt=0 fingerprint=74e74b7c329f05d6
+    body[0] id=1 rep=Construction

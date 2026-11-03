@@ -34,10 +34,14 @@ CadStatus commitFirstCadProject(SketchSession& sketch, ConstructionScene& scene,
     if (history.editInProgress()) {
         return finish(sketch, CadStatus::RefusedEditInProgress);
     }
-    if (sketch.selectedProfileId() == kNoSketchEntity) {
-        return finish(sketch, sketch.profiles().profiles.size() > 1
-                                  ? CadStatus::AmbiguousProfile
-                                  : CadStatus::ProfileNotFound);
+    // Whether anything is chosen is the SESSION's question, answered for both
+    // selection kinds: a PlanarFaces selection never sets the loop-region
+    // anchor, so reading `selectedProfileId()` here refused every fill
+    // selection of a first project as "choose one"
+    // (`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`). Nothing chosen is named
+    // exactly as the ordinary commit names it.
+    if (!sketch.selectionChosen()) {
+        return finish(sketch, sketch.unchosenStatus());
     }
 
     // The candidate is held to the domain's own rule BEFORE a document is

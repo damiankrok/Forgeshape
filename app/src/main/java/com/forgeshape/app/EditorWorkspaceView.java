@@ -71,9 +71,16 @@ final class EditorWorkspaceView extends FrameLayout
         SketchEditorView.OnSketchAction,
         SketchOrientationNavigatorView.OnOrientationAction,
         SketchDimensionLabelView.OnDimensionAction,
+        SketchModifyView.OnModifyAction,
+        SketchDimensionLabelsView.OnDimensionLabelAction,
         CadExtrudeCanvasView.OnCanvasExtrudeAction,
+        CadRevolveAngleLabelView.OnRevolveAngleAction,
         BodyDimensionLabelsView.OnDimensionAction,
         SculptHistoryNavigatorView.OnHistoryStateChosen,
+        FeatureHistoryView.OnHistoryRowChosen,
+        FeatureHistoryView.OnHistoryAct,
+        RegenerationIssueView.OnIssueAction,
+        SurfaceEditorView.Host,
         AnchoredSurfaceView.OnOpenStateChanged {
 
     /** The three body axes by name, for a status line (Stage 020M). */
@@ -196,6 +203,20 @@ final class EditorWorkspaceView extends FrameLayout
      */
     private final ImageView historyNavigatorAction;
     private final SculptHistoryNavigatorView historyNavigator;
+    // The Parametric History (`MODELING-FOUNDATIONS-R1` A): its control in the
+    // history capsule, the surface it opens, and the card a staged edit that
+    // breaks a later feature raises. All three draw a fresh native read; none
+    // remembers a chain.
+    private final ImageView featureHistoryAction;
+    private final FeatureHistoryView featureHistory;
+    private final RegenerationIssueView regenerationIssue;
+    private final double[] timelineHeader = new double[NativeViewport.TIMELINE_HEADER_SIZE];
+    private final double[] timelineRows =
+            new double[NativeViewport.TIMELINE_MAX_ROWS * NativeViewport.TIMELINE_ROW_SIZE];
+    /** The failure Fix collapsed the card for; it stays collapsed while unchanged. */
+    private String dismissedIssueKey = "";
+    /** Whether the open edit came from a SKETCH row, so Fix returns to the sketch. */
+    private boolean historyEditFromSketch;
     /**
      * The model backing the open navigator, re-read on every refresh.
      *
@@ -325,6 +346,17 @@ final class EditorWorkspaceView extends FrameLayout
     /** The sketch's precision surface, and a CAD Body's (CAD-R0-A1A2). */
     private final SketchEditorView sketchEditor;
     private final CadFeatureEditorView cadEditor;
+    /** The Freeform cage context surface (`MODELING-FOUNDATIONS-R1` B). */
+    private final FreeformEditorView freeformEditor;
+    /** The Surface context surface (`MODELING-FOUNDATIONS-R1` C). */
+    private final SurfaceEditorView surfaceEditor;
+    /** What Finish Sketch means for a Surface sketch, grown out of the toolbar. */
+    private final SurfaceFinishView surfaceFinish;
+    private final double[] nativeSurfaceSketch = new double[NativeViewport.SURFACE_SKETCH_STATE_SIZE];
+    /** Reused across reads; native fills the FREEFORM_STATE_* slots. */
+    private final double[] nativeFreeform = new double[NativeViewport.FREEFORM_STATE_SIZE];
+    /** The cage drag count last refreshed for, on the gizmo's own terms. */
+    private long lastKnownFreeformDrags;
     /**
      * The Relative Scale precision-surface body (Stage 020M).
      *
@@ -351,6 +383,13 @@ final class EditorWorkspaceView extends FrameLayout
     private final SketchOrientationNavigatorView sketchNavigator;
     private final SketchDimensionLabelView sketchDimension;
     /**
+     * The sketch actions entry under the navigator and the persistent
+     * dimension labels (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`). Drawing-only,
+     * like the two above, and stateless: both re-read native on every refresh.
+     */
+    private final SketchModifyView sketchModify;
+    private final SketchDimensionLabelsView sketchDimensionLabels;
+    /**
      * The canvas extrude cluster and the retained-sketch chip (`CAD-UX-S1`).
      *
      * <p>Unlike the two surfaces above it is NOT a sketch-only control: it
@@ -359,6 +398,18 @@ final class EditorWorkspaceView extends FrameLayout
      * it decides for itself which of the two it is showing from native truth.
      */
     private final CadExtrudeCanvasView cadExtrudeCanvas;
+    /** The Revolve angle beside its ring (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`). */
+    private final CadRevolveAngleLabelView cadRevolveAngle;
+    /** The Revolve chrome's state, re-read on every use; nothing is kept. */
+    private final double[] nativeRevolve = new double[NativeViewport.REVOLVE_STATE_SIZE];
+    /**
+     * What the last report described of the revolve (axis, angle, direction,
+     * picking, candidate), so a gesture that changed it is reported once and a
+     * gesture that did not is not reported again. Null outside a revolve.
+     */
+    private String lastReportedRevolve;
+    /** Whether the last report was made while a tap picked the axis. */
+    private boolean lastReportedRevolvePicking;
     /**
      * The three overall-dimension labels over the viewport (Stage 020M).
      *
@@ -375,6 +426,10 @@ final class EditorWorkspaceView extends FrameLayout
     /** The last sketch refusal the status line reported, so a gesture that
      *  repeats the same refusal does not repeat the sentence. */
     private int lastReportedSketchStatus = NativeViewport.CAD_OK;
+    /** The drafting state, reused; and what of it was last reported. */
+    private final double[] nativeDraft = new double[NativeViewport.SKETCH_DRAFT_SIZE];
+    private long lastReportedTapAct;
+    private int lastReportedSelectionCount;
 
     /** Reused across reads; native fills it with the authoritative state. */
     private final double[] nativeSculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
@@ -561,6 +616,19 @@ final class EditorWorkspaceView extends FrameLayout
                                 reportUnretainedStrokes();
                             }
 
+                            // A cage tap changes the selection the context
+                            // surface draws its tools for; a committed cage drag
+                            // changed the project and re-reads everything.
+                            NativeViewport.freeformState(nativeFreeform);
+                            if (nativeFreeform[NativeViewport.FREEFORM_STATE_ACTIVE] != 0.0) {
+                                final long drags = (long) nativeFreeform[NativeViewport.FREEFORM_STATE_DRAGS];
+                                if (drags != lastKnownFreeformDrags) {
+                                    lastKnownFreeformDrags = drags;
+                                    onNativeStateChanged();
+                                    return;
+                                }
+                                freeformEditor.refreshFromNative();
+                            }
                             NativeViewport.gizmoState(nativeGizmo);
                             final long commits =
                                     (long) nativeGizmo[NativeViewport.GIZMO_COMMITTED_DRAGS];
@@ -714,6 +782,24 @@ final class EditorWorkspaceView extends FrameLayout
         });
         historyGroup.addView(historyNavigatorAction, EditorControlStyles.iconButtonParams(context,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_gap)));
+        // The Parametric History's trigger: the chain of FEATURES this body was
+        // built from, which a CAD (or Surface) body has and a Construction body
+        // does not. It and the Sculpt navigator are never drawn together -- one
+        // lists features outside Sculpt, the other strokes inside it.
+        featureHistoryAction = EditorControlStyles.iconButton(context,
+                R.id.feature_history_action, R.drawable.ic_feature_history,
+                context.getString(R.string.feature_history));
+        featureHistoryAction.setContentDescription(context.getString(R.string.feature_history)
+                + ". " + context.getString(R.string.feature_history_description));
+        featureHistoryAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setFeatureHistoryOpen(!featureHistory.isOpen());
+            }
+        });
+        featureHistoryAction.setVisibility(GONE);
+        historyGroup.addView(featureHistoryAction, EditorControlStyles.iconButtonParams(context,
+                EditorControlStyles.dimen(context, R.dimen.toolbar_gap)));
         bottomRow.addView(historyGroup, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -752,11 +838,26 @@ final class EditorWorkspaceView extends FrameLayout
         overlayRoot.addView(displayPopover, DisplaySettingsPopoverView.anchoredParams(context,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
 
-        // The project surface is anchored the same way and for the same reason:
-        // its control is in the toolbar, and the overlay is the only place a
-        // panel can hang under a fixed-height row without resizing it.
-        projectPopover = new ProjectActionsPopoverView(context, this);
+        // The project DRAWER hangs from the ForgeShape mark at the toolbar's
+        // leading end (`MODELING-R1-OWNER-CORRECTION`), in the overlay for the
+        // same reason Display's surface is: it is the only place a panel can
+        // hang under a fixed-height row without resizing it. Every row closes
+        // the drawer through the mark's own path before its act runs.
+        projectPopover = new ProjectActionsPopoverView(context, this,
+                new ProjectDrawerPolicy.Closer() {
+                    @Override
+                    public void closeDrawer() {
+                        setProjectPanelOpen(false);
+                    }
+                });
         overlayRoot.addView(projectPopover, ProjectActionsPopoverView.anchoredParams(context,
+                EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
+
+        // A Surface sketch's Finish choices hang from the toolbar too, where
+        // Finish Sketch is: while a sketch is open the bottom sheet is one row
+        // tall, and a choice of six needs a surface that scrolls.
+        surfaceFinish = new SurfaceFinishView(context, this);
+        overlayRoot.addView(surfaceFinish, SurfaceFinishView.anchoredParams(context,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
 
         // The Sculpt History navigator, anchored to the BOTTOM trailing corner
@@ -768,6 +869,21 @@ final class EditorWorkspaceView extends FrameLayout
         overlayRoot.addView(historyNavigator, SculptHistoryNavigatorView.anchoredParams(context,
                 EditorControlStyles.dimen(context, R.dimen.control_height)
                         + EditorControlStyles.dimen(context, R.dimen.row_gap)
+                        + EditorControlStyles.dimen(context, R.dimen.overlay_anchor_gap)));
+        // The Parametric History grows out of the same capsule on the same
+        // terms: bottom trailing, clear of the row it came from.
+        featureHistory = new FeatureHistoryView(context, this);
+        featureHistory.setActListener(this);
+        overlayRoot.addView(featureHistory, FeatureHistoryView.anchoredParams(context,
+                EditorControlStyles.dimen(context, R.dimen.control_height)
+                        + EditorControlStyles.dimen(context, R.dimen.row_gap)
+                        + EditorControlStyles.dimen(context, R.dimen.overlay_anchor_gap)));
+        // The regeneration issue card hangs under the toolbar, centred: in Ready
+        // the Tool Rail and the orientation navigator are withdrawn, so the top
+        // of the model is the one place it covers no live control.
+        regenerationIssue = new RegenerationIssueView(context, this);
+        overlayRoot.addView(regenerationIssue, RegenerationIssueView.anchoredParams(context,
+                EditorControlStyles.dimen(context, R.dimen.toolbar_height)
                         + EditorControlStyles.dimen(context, R.dimen.overlay_anchor_gap)));
 
         // Built before the editors that used to own it, and parented by the
@@ -790,6 +906,8 @@ final class EditorWorkspaceView extends FrameLayout
         sculptContext = new SculptContextView(context, this);
         sketchEditor = new SketchEditorView(context, this, this);
         cadEditor = new CadFeatureEditorView(context, this);
+        freeformEditor = new FreeformEditorView(context, this);
+        surfaceEditor = new SurfaceEditorView(context, this, false);
         relativeScaleEditor = new RelativeScaleEditorView(context, this);
 
         // The two sketch-only surfaces that stand IN the viewport
@@ -804,8 +922,23 @@ final class EditorWorkspaceView extends FrameLayout
                 SketchOrientationNavigatorView.anchoredParams(context));
         sketchDimension = new SketchDimensionLabelView(context, this, anchorSpace, this);
         overlayRoot.addView(sketchDimension, SketchDimensionLabelView.anchoredParams());
+        // The persistent dimension labels fill the overlay (they stand wherever
+        // the annotations land) and are not clickable themselves, so a touch
+        // between labels reaches the sketch. Added BEFORE the Modify column so
+        // the palette is never under a label.
+        sketchDimensionLabels = new SketchDimensionLabelsView(context, this, anchorSpace, this);
+        overlayRoot.addView(sketchDimensionLabels, SketchDimensionLabelsView.anchoredParams());
+        // The sketch actions entry stands directly UNDER the orientation
+        // navigator, in the same trailing column: its top follows the
+        // navigator's bottom whenever the navigator is laid out again.
+        sketchModify = new SketchModifyView(context, this, this);
+        overlayRoot.addView(sketchModify, SketchOrientationNavigatorView.anchoredParams(context));
+        sketchNavigator.addOnLayoutChangeListener(
+                (v, l, t, r, b, ol, ot, or, ob) -> placeSketchModifyUnderNavigator());
         cadExtrudeCanvas = new CadExtrudeCanvasView(context, this, anchorSpace, this);
         overlayRoot.addView(cadExtrudeCanvas, CadExtrudeCanvasView.anchoredParams());
+        cadRevolveAngle = new CadRevolveAngleLabelView(context, this, anchorSpace, this);
+        overlayRoot.addView(cadRevolveAngle, CadRevolveAngleLabelView.anchoredParams());
 
         // Stage 020M's three overall-dimension labels, on exactly those terms
         // and in the same overlay. It fills the chrome area rather than wrapping
@@ -844,6 +977,7 @@ final class EditorWorkspaceView extends FrameLayout
         // Tool Labels (`CAD-VERTICAL-SLICE-R1`) is application state read once
         // here and again on every change; the canvas holds only the flag.
         cadExtrudeCanvas.setToolLabelsVisible(currentPreferences().toolLabels());
+        cadExtrudeCanvas.setRetainedChipWithdrawnWhen(featureHistory::isOpen);
         settingsPage.setVisibility(GONE);
         addView(settingsPage, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
@@ -1031,6 +1165,15 @@ final class EditorWorkspaceView extends FrameLayout
             onNewProjectCancelled();
             return true;
         }
+        // A Revolve in progress is one step inside Ready: Back returns to the
+        // extrusion of the same selection, changing nothing of the project
+        // (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`). An edit of a revolved body has no
+        // extrusion to return to, so there Back falls through to the sketch's.
+        NativeViewport.cadRevolveToolState(nativeRevolve);
+        if (CadRevolvePresentation.extrudeInsteadShown(nativeRevolve)) {
+            onRevolveEndRequested();
+            return true;
+        }
         if (bootstrapVisible()) {
             if (isSketching()) {
                 onCancelSketchRequested();
@@ -1073,6 +1216,10 @@ final class EditorWorkspaceView extends FrameLayout
             toolbar.showProjectActionsOpen(false);
         } else if (surface == historyNavigator) {
             setHistoryNavigatorOpen(false);
+        } else if (surface == featureHistory) {
+            setFeatureHistoryOpen(false);
+        } else if (surface == surfaceFinish) {
+            surfaceFinish.setOpen(false);
         } else {
             surface.setOpen(false);
         }
@@ -1403,6 +1550,27 @@ final class EditorWorkspaceView extends FrameLayout
         }
         addPrimitivePalette.setOpen(open);
         objectsCapsule.showAddOpen(addPrimitivePalette.isOpen());
+    }
+
+    /**
+     * Creates a Freeform body (`MODELING-FOUNDATIONS-R1` B) as ONE native
+     * transaction and opens it on its cage: Shape is what a Freeform body IS.
+     */
+    @Override
+    public void onAddFreeformChosen(int form) {
+        final int created = NativeViewport.freeformCreateBody(form);
+        setAddPrimitiveOpen(false, null);
+        if (created != NativeViewport.FREEFORM_OK) {
+            showStatus(getContext().getString(FreeformPresentation.refusalMessage(created),
+                    NativeViewport.freeformStatusToken(created)), R.attr.fsTextError);
+            return;
+        }
+        // A new Freeform body opens on its cage: Shape is what the body IS.
+        uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+        finishEditing();
+        onNativeStateChanged();
+        showStatus(getContext().getString(R.string.status_freeform_added,
+                BodyLabels.of(getContext(), NativeViewport.sceneActiveBodyId())), R.attr.fsTextSuccess);
     }
 
     /**
@@ -1789,6 +1957,8 @@ final class EditorWorkspaceView extends FrameLayout
             objectsCapsule.showAddOpen(false);
             historyNavigator.closeImmediately();
             EditorControlStyles.setIconButtonActive(historyNavigatorAction, false);
+            featureHistory.closeImmediately();
+            EditorControlStyles.setIconButtonActive(featureHistoryAction, false);
             setPrecisionOpen(false);
         }
     }
@@ -2261,6 +2431,134 @@ final class EditorWorkspaceView extends FrameLayout
                 R.attr.fsTextSuccess);
     }
 
+    /**
+     * New Project → Freeform: a Freeform Box seeded inside the session
+     * initialization bracket, so the project starts with an empty history like
+     * every other; a refusal closes the project again.
+     */
+    @Override
+    public void onNewFreeformProjectChosen() {
+        setNewProjectChooserOpen(false);
+        NativeViewport.beginSessionInitialization();
+        final int created = NativeViewport.freeformCreateBody(NativeViewport.FREEFORM_FORM_BOX);
+        NativeViewport.endSessionInitialization();
+        if (created != NativeViewport.FREEFORM_OK) {
+            NativeViewport.closeProject();
+            syncFromNative();
+            showStatus(getContext().getString(R.string.freeform_refused_other,
+                    NativeViewport.freeformStatusToken(created)), R.attr.fsTextError);
+            return;
+        }
+        uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+        noteProjectUnpersisted();
+        finishEditing();
+        syncFromNative();
+    }
+
+    /**
+     * New Project -> Surface: one volatile sketch on XY, exactly as the CAD
+     * bootstrap opens; its Finish (Patch, Extrude or Revolve) creates the
+     * project through the same all-or-nothing load path, so it starts with an
+     * empty history. Back before that costs nothing.
+     */
+    @Override
+    public void onNewSurfaceProjectChosen() {
+        setNewProjectChooserOpen(false);
+        beginSurfaceSketch(NativeViewport.NO_OBJECT, 0.0);
+    }
+
+    /** Add -> Surface: a sketch whose Finish makes a NEW Surface body (one Undo). */
+    @Override
+    public void onAddSurfaceChosen() {
+        setAddPrimitiveOpen(false, null);
+        beginSurfaceSketch(NativeViewport.NO_OBJECT, 0.0);
+    }
+
+    /** The Surface surface's New Surface Sketch: the next feature of the active body. */
+    @Override
+    public void onSurfaceSketchRequested(double offsetMeters) {
+        beginSurfaceSketch(NativeViewport.sceneActiveBodyId(), offsetMeters);
+    }
+
+    private void beginSurfaceSketch(long body, double offsetMeters) {
+        final Context context = getContext();
+        final int status = NativeViewport.surfaceBeginSketch(body, NativeViewport.WORKPLANE_XY, offsetMeters);
+        if (status != NativeViewport.SURFACE_OK) {
+            showStatus(SurfaceEditorView.refusal(context, status), R.attr.fsTextError);
+            refreshShellPhase();
+            return;
+        }
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_surface_sketch), R.attr.fsTextSecondary);
+    }
+
+    @Override
+    public void onSurfaceSketchCommitted(boolean firstProject) {
+        if (firstProject) {
+            // The project exists nowhere the user chose yet.
+            noteProjectUnpersisted();
+        }
+        uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+        finishEditing();
+        onNativeStateChanged();
+    }
+
+    /** The Surface context surface, for verification. */
+    SurfaceEditorView surfaceEditor() {
+        return surfaceEditor;
+    }
+
+    /** The Surface Finish surface, for verification. */
+    SurfaceFinishView surfaceFinish() {
+        return surfaceFinish;
+    }
+
+    /** Opens the Finish choices under the toolbar, bounded to half the window. */
+    private void setSurfaceFinishOpen(boolean open) {
+        if (open) {
+            dismissPrimarySurfacesExcept(surfaceFinish);
+            placeSurfaceFinish();
+            surfaceFinish.setMaxBodyHeightPx(Math.max(getHeight() / 2,
+                    EditorControlStyles.dimen(getContext(), R.dimen.control_height) * 3));
+            surfaceFinish.body().refreshFromNative();
+        }
+        surfaceFinish.setOpen(open);
+    }
+
+    /**
+     * Seats the Finish choices on the LEADING side under the toolbar, and stops
+     * them short of the trailing sketch chrome -- the Tool Rail's host, the
+     * orientation navigator and the actions palette -- measured as they stand
+     * now: a surface may stand on the model, never on another live control.
+     */
+    private void placeSurfaceFinish() {
+        final Context context = getContext();
+        final boolean left = leftHanded();
+        final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        final int[] me = new int[2];
+        getLocationInWindow(me);
+        int edge = left ? 0 : getWidth();
+        for (View chrome : new View[]{trailingHost, sketchNavigator, sketchModify}) {
+            if (chrome == null || !chrome.isShown() || chrome.getWidth() == 0) {
+                continue;
+            }
+            final int[] at = new int[2];
+            chrome.getLocationInWindow(at);
+            final int x0 = at[0] - me[0];
+            edge = left ? Math.max(edge, x0 + chrome.getWidth()) : Math.min(edge, x0);
+        }
+        final int available = (left ? getWidth() - edge : edge) - 2 * gap;
+        final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) surfaceFinish.getLayoutParams();
+        params.width = Math.min(EditorControlStyles.dimen(context, R.dimen.feature_history_width),
+                Math.max(available, EditorControlStyles.dimen(context, R.dimen.control_height) * 3));
+        params.gravity = Gravity.TOP | (left ? Gravity.END : Gravity.START);
+        params.leftMargin = left ? 0 : gap;
+        params.rightMargin = left ? gap : 0;
+        surfaceFinish.setLayoutParams(params);
+    }
+
     @Override
     public void onNewProjectCancelled() {
         setNewProjectChooserOpen(false);
@@ -2503,12 +2801,29 @@ final class EditorWorkspaceView extends FrameLayout
             // surface and the gizmo agree with the rail.
             uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM);
         }
+        // `CAD-FACE-SUPPORTED-PLACEMENT-R1`: a face-supported CAD Body is placed
+        // by its producer's face and is NOT independently transformable, so
+        // Transform has no answer for one and its entry, the gizmo and the
+        // placement editor are withdrawn. A user holding Transform when such a
+        // body becomes active is moved to Shape -- its sketch and extrusion,
+        // which it fully supports -- so the rail, the precision surface and the
+        // handles agree. Asked from native truth on every refresh, never
+        // remembered; the refusals below JNI stay regardless.
+        if (NativeViewport.sceneActiveBodyIsFaceSupportedCad()
+                && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM) {
+            uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+            relativeScaleOpen = false;
+        }
         // The sketch session (CAD-R0-A1A2) and the active body's third
         // representation, both native truth read here and nowhere remembered.
         NativeViewport.sketchState(nativeSketch);
         final int sketchState = (int) nativeSketch[NativeViewport.SKETCH_STATE];
         final boolean sketching = sketchState != NativeViewport.SKETCH_INACTIVE;
         final boolean cad = NativeViewport.sceneActiveBodyIsCad();
+        // A Freeform body (`MODELING-FOUNDATIONS-R1` B): its context names it,
+        // Start Sculpting is absent over it, and Shape opens its cage.
+        final boolean freeform = projectOpen && NativeViewport.sceneBodyRepresentation(
+                NativeViewport.sceneActiveBodyId()) == NativeViewport.REPRESENTATION_FREEFORM;
         final boolean bootstrap = !projectOpen
                 && (sketching || NativeViewport.supportChooserActive());
 
@@ -2516,15 +2831,25 @@ final class EditorWorkspaceView extends FrameLayout
         // bootstrap is open the project and export controls are withdrawn and
         // Back to Home is drawn.
         toolbar.showBootstrap(bootstrap);
-        // Import creates bodies and makes one active, which Sculpt cannot
-        // allow, so it is ABSENT there rather than drawn and then refused.
-        projectPopover.showImportAvailable(!sculpting);
+        // Import creates bodies and makes one active, which neither Sculpt nor
+        // an open sketch can allow, so it is ABSENT there rather than drawn and
+        // then refused.
+        projectPopover.showImportAvailable(ProjectDrawerPolicy.importShown(sculpting, sketching));
+        // New Sketch in the drawer: offered exactly where Add Primitive's New
+        // Sketch could succeed, absent while one is open, while the support
+        // chooser is up, in Sculpt, and before a project exists.
+        projectPopover.showNewSketchAvailable(ProjectDrawerPolicy.newSketchShown(projectOpen,
+                sculpting, sketching, NativeViewport.supportChooserActive()));
         // Stage027 GUARD-2: whether the ACTIVE body is hidden, read from the
         // durable visibility itself. Start/Resume Sculpt are withdrawn over one.
         final boolean activeHidden = projectOpen
                 && !NativeViewport.sceneBodyVisible(NativeViewport.sceneActiveBodyId());
-        toolbar.showContext(sculpting, hasFrozenMesh, imported, cad, sketchState,
+        toolbar.showSurface(projectOpen && activeBodyIsSurface());
+        toolbar.showContext(sculpting, hasFrozenMesh, imported, cad, freeform, sketchState,
                 (int) nativeSketch[NativeViewport.SKETCH_PLANE], activeHidden);
+        // A sketch-only edit has no extrusion to stage: Keep Sketch is its
+        // commit and Finish Sketch is absent (`CAD-R2`).
+        toolbar.showSketchOnly(sketching && NativeViewport.sketchIsSketchOnly());
         if (sketchState == NativeViewport.SKETCH_READY) {
             refreshExtrudeReadiness();
             if (lastReportedRegionSelection == null) {
@@ -2604,6 +2929,19 @@ final class EditorWorkspaceView extends FrameLayout
             placementEditor.refreshFromNative();
             sketchEditor.refreshFromNative();
             cadEditor.refreshFromNative();
+        }
+        refreshFreeformEdit(projectOpen, sculpting, sketching);
+        if (!sculpting && activeBodyIsSurface()) {
+            surfaceEditor.refreshFromNative();
+        }
+        if (surfaceFinish.isOpen()) {
+            if (surfaceSketchOpen()) {
+                surfaceFinish.body().refreshFromNative();
+            } else {
+                // The sketch ended (a commit, Cancel, Back to Home): nothing is
+                // left to finish.
+                surfaceFinish.setOpen(false);
+            }
         }
         refreshSketchViewportSurfaces(sketching);
         objectsCapsule.refreshFromNative();
@@ -2705,6 +3043,7 @@ final class EditorWorkspaceView extends FrameLayout
                 && nativeBodyDim[NativeViewport.BODY_DIM_MODE_ACTIVE] == 0.0
                 && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
                 && !NativeViewport.sceneActiveBodyIsLocked()
+                && !NativeViewport.sceneActiveBodyIsFaceSupportedCad()
                 && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
         NativeViewport.setGizmoActive(offered);
         if (offered) {
@@ -2719,9 +3058,11 @@ final class EditorWorkspaceView extends FrameLayout
         NativeViewport.bodyDimensionsState(nativeBodyDim);
         final int sketchState = (int) nativeSketch[NativeViewport.SKETCH_STATE];
         final boolean sketching = sketchState != NativeViewport.SKETCH_INACTIVE;
+        final boolean derivedPlacement = NativeViewport.sceneActiveBodyIsFaceSupportedCad();
         final boolean transformOffered = !sculpting && !sketching
                 && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
                 && !NativeViewport.sceneActiveBodyIsLocked()
+                && !derivedPlacement
                 && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
         if (transformOffered) {
             NativeViewport.gizmoState(nativeGizmo);
@@ -2763,7 +3104,14 @@ final class EditorWorkspaceView extends FrameLayout
                 // rotation and a resume land where native says.
                 nativeBodyDim[NativeViewport.BODY_DIM_SUPPORTED] != 0.0,
                 nativeBodyDim[NativeViewport.BODY_DIM_MODE_ACTIVE] != 0.0,
-                (int) nativeBodyDim[NativeViewport.BODY_DIM_ANCHOR]));
+                (int) nativeBodyDim[NativeViewport.BODY_DIM_ANCHOR],
+                // Transform is not offered for a face-supported CAD Body: its
+                // placement is its producer's face (native truth, above).
+                !derivedPlacement));
+        // `CAD-R2`: Keep Sketch exactly when native says it can succeed, and no
+        // Back to Sketch over a reuse session (its sketch is shared truth).
+        trailingHost.showSketchCommitOptions(sketching && NativeViewport.sketchCanKeepSketch(),
+                !sketching || NativeViewport.sketchReuseSketchId() == 0L);
         // The CAD bootstrap's plane chooser has no body and no sketch yet, so
         // the rail's Construction entries and the precision toggle would all
         // be controls that cannot succeed: the whole trailing cluster is
@@ -2829,6 +3177,326 @@ final class EditorWorkspaceView extends FrameLayout
         undoAction.setEnabled(NativeViewport.historyUndoAvailable());
         redoAction.setEnabled(NativeViewport.historyRedoAvailable());
         refreshHistoryNavigator();
+        refreshFeatureHistory();
+        refreshRegenerationIssue();
+    }
+
+    // -----------------------------------------------------------------------
+    // Parametric History (`MODELING-FOUNDATIONS-R1` A)
+    // -----------------------------------------------------------------------
+    //
+    // A body's feature chain IS its history: native derives the timeline from
+    // it on every read and stores none of it, so this layer draws reads and
+    // keeps no copy. A row opens the editor that already exists for it -- the
+    // staged sketch, the extrusion, the revolve -- and the project changes only
+    // on that editor's one-transaction Finish.
+
+    /** Reads the active body's timeline: committed, or what an open edit stages. */
+    private FeatureHistoryPresentation.Model readTimeline(boolean staged) {
+        if (!NativeViewport.projectOpen()) {
+            return FeatureHistoryPresentation.Model.empty();
+        }
+        final long body = NativeViewport.sceneActiveBodyId();
+        if (activeBodyIsSurface()) {
+            final int count = NativeViewport.surfaceTimeline(body, -1, 0L, 0.0, timelineHeader,
+                    timelineRows);
+            return FeatureHistoryPresentation.fromNative(FeatureHistoryPresentation.DOMAIN_SURFACE,
+                    timelineHeader, timelineRows, count);
+        }
+        final int count = NativeViewport.cadTimeline(body, staged, timelineHeader, timelineRows);
+        return FeatureHistoryPresentation.fromNative(FeatureHistoryPresentation.DOMAIN_CAD,
+                timelineHeader, timelineRows, count);
+    }
+
+    /** Whether the active body has a feature chain to list. */
+    private boolean activeBodyHasHistory() {
+        return NativeViewport.projectOpen()
+                && (NativeViewport.sceneActiveBodyIsCad() || activeBodyIsSurface());
+    }
+
+    /** Whether the active body is a Surface body (`MODELING-FOUNDATIONS-R1` C). */
+    private boolean activeBodyIsSurface() {
+        return NativeViewport.projectOpen() && NativeViewport.sceneBodyRepresentation(
+                NativeViewport.sceneActiveBodyId()) == NativeViewport.REPRESENTATION_SURFACE;
+    }
+
+    /** Whether the open sketch is a Surface sketch, read from native. */
+    private boolean surfaceSketchOpen() {
+        NativeViewport.surfaceSketchState(0.5, 360.0, false, nativeSurfaceSketch);
+        return SurfacePresentation.sketchOpen(nativeSurfaceSketch);
+    }
+
+    /**
+     * Draws the History control exactly when it can succeed, and keeps an open
+     * surface showing what native reports now. Absent while sketching or
+     * sculpting (the chain holds still and a row would be refused), and absent
+     * for a body with no feature chain.
+     */
+    private void refreshFeatureHistory() {
+        final boolean shown = FeatureHistoryPresentation.controlShown(NativeViewport.projectOpen(),
+                isSketching(), isSculpting(), activeBodyHasHistory());
+        featureHistoryAction.setVisibility(shown ? View.VISIBLE : View.GONE);
+        if (!shown) {
+            if (featureHistory.isOpen()) {
+                setFeatureHistoryOpen(false);
+            }
+            return;
+        }
+        if (featureHistory.isOpen()) {
+            showHistoryModel();
+        }
+    }
+
+    private void setFeatureHistoryOpen(boolean open) {
+        if (open) {
+            dismissPrimarySurfacesExcept(featureHistory);
+            // Every open starts on Steps with nothing selected: the segment and
+            // the selection are presentation, never carried across opens.
+            featureHistory.resetSegment();
+            showHistoryModel();
+        }
+        featureHistory.setOpen(open);
+        EditorControlStyles.setIconButtonActive(featureHistoryAction, open);
+        // The retained-sketch chip steps aside while History is open, and comes
+        // back when it closes: re-read now rather than at the next gesture.
+        cadExtrudeCanvas.refreshFromNative();
+    }
+
+    /** One timeline read and, for a CAD body, one sketch-inventory read. */
+    private void showHistoryModel() {
+        final boolean cad = NativeViewport.projectOpen() && NativeViewport.sceneActiveBodyIsCad();
+        featureHistory.showModel(readTimeline(false),
+                cad ? readSketchInventory() : SketchBrowserPresentation.Inventory.empty(), cad,
+                uiState.displayUnit());
+    }
+
+    /**
+     * The active CAD body's retained sketches and, per sketch, the features
+     * that extrude it -- native's answer, read fresh and stored nowhere.
+     */
+    private SketchBrowserPresentation.Inventory readSketchInventory() {
+        final long body = NativeViewport.sceneActiveBodyId();
+        final double[] header = new double[NativeViewport.SKETCH_INV_HEADER_SIZE];
+        final double[] rows = new double[NativeViewport.SKETCH_INV_MAX_ROWS
+                * NativeViewport.SKETCH_INV_ROW_SIZE];
+        final int count = NativeViewport.cadSketchInventory(body, header, rows);
+        final java.util.Map<Long, long[]> consumers = new java.util.HashMap<>();
+        for (int i = 0; i < Math.max(0, Math.min(count, NativeViewport.SKETCH_INV_MAX_ROWS)); i++) {
+            final long id = (long) rows[i * NativeViewport.SKETCH_INV_ROW_SIZE
+                    + NativeViewport.SKETCH_INV_ID];
+            final long[] buffer = new long[NativeViewport.TIMELINE_MAX_ROWS];
+            final int n = NativeViewport.cadSketchConsumers(body, id, buffer);
+            if (n > 0) {
+                consumers.put(id, java.util.Arrays.copyOf(buffer, Math.min(n, buffer.length)));
+            }
+        }
+        return SketchBrowserPresentation.fromNative(header, rows, count, consumers);
+    }
+
+    /**
+     * Runs one act chosen on the Sketches or Features segment ({@code CAD-R2}).
+     * Every act is ONE native entry that already decides it; this only reports
+     * what native said. Edit Sketch and Edit Feature open the existing staged
+     * editor by DURABLE id; reuse opens the existing Ready state on an
+     * existing sketch; Delete is one Undo.
+     */
+    @Override
+    public void onHistoryAct(int act, long sketchId, long featureId) {
+        final Context context = getContext();
+        final long bodyId = NativeViewport.sceneActiveBodyId();
+        final int status;
+        switch (act) {
+            case SketchBrowserPresentation.ACT_EDIT_FEATURE:
+                status = NativeViewport.sketchBeginEditFeature(bodyId, featureId, true);
+                break;
+            case SketchBrowserPresentation.ACT_REUSE_ADD:
+                status = NativeViewport.sketchBeginReuseSketch(bodyId, sketchId,
+                        NativeViewport.OPERATION_ADD);
+                break;
+            case SketchBrowserPresentation.ACT_REUSE_CUT:
+                status = NativeViewport.sketchBeginReuseSketch(bodyId, sketchId,
+                        NativeViewport.OPERATION_CUT);
+                break;
+            case SketchBrowserPresentation.ACT_DELETE_SKETCH:
+                status = NativeViewport.cadDeleteSketch(bodyId, sketchId);
+                break;
+            default:
+                status = NativeViewport.sketchBeginEditSketch(bodyId, sketchId);
+                break;
+        }
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            if (featureHistory.isOpen()) {
+                showHistoryModel();
+            }
+            return;
+        }
+        if (act == SketchBrowserPresentation.ACT_DELETE_SKETCH) {
+            // The surface stays open on the Sketches list, re-read from native.
+            onNativeStateChanged();
+            showHistoryModel();
+            showStatus(context.getString(R.string.status_sketch_deleted,
+                    context.getString(R.string.history_row_sketch, sketchOrdinal(sketchId))),
+                    R.attr.fsTextSecondary);
+            return;
+        }
+        historyEditFromSketch = act == SketchBrowserPresentation.ACT_EDIT_SKETCH;
+        dismissedIssueKey = "";
+        setFeatureHistoryOpen(false);
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        if (act != SketchBrowserPresentation.ACT_EDIT_SKETCH) {
+            refreshExtrudeReadiness();
+        }
+        if (act == SketchBrowserPresentation.ACT_REUSE_ADD
+                || act == SketchBrowserPresentation.ACT_REUSE_CUT) {
+            showStatus(context.getString(R.string.status_sketch_reuse_begun,
+                    context.getString(R.string.history_row_sketch, sketchOrdinal(sketchId)),
+                    context.getString(act == SketchBrowserPresentation.ACT_REUSE_ADD
+                            ? R.string.sketch_operation_add : R.string.sketch_operation_cut),
+                    BodyLabels.of(context, bodyId)), R.attr.fsTextSecondary);
+        } else {
+            showStatus(context.getString(R.string.status_history_edit_begun,
+                    act == SketchBrowserPresentation.ACT_EDIT_SKETCH
+                            ? context.getString(R.string.history_row_sketch, sketchOrdinal(sketchId))
+                            : context.getString(R.string.history_act_edit_feature),
+                    BodyLabels.of(context, bodyId)), R.attr.fsTextSecondary);
+        }
+    }
+
+    /** A sketch's History ordinal, read from native; its id when it is gone. */
+    private int sketchOrdinal(long sketchId) {
+        final SketchBrowserPresentation.SketchRow row = readSketchInventory().find(sketchId);
+        return row != null ? row.ordinal : (int) sketchId;
+    }
+
+    /**
+     * Keep Sketch ({@code CAD-R2}): the open sketch becomes a retained sketch of
+     * its body with no feature, as one Undo. Native decides whether it can.
+     */
+    @Override
+    public void onKeepSketchRequested() {
+        final Context context = getContext();
+        final long bodyId = NativeViewport.sketchEditingBodyId() != NativeViewport.NO_OBJECT
+                ? NativeViewport.sketchEditingBodyId() : NativeViewport.sceneActiveBodyId();
+        final int status = NativeViewport.sketchCommitSketch();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_sketch_kept,
+                context.getString(R.string.sketch_kept_name), BodyLabels.of(context, bodyId)),
+                R.attr.fsTextSuccess);
+    }
+
+    /**
+     * Opens the editor a row names. A SKETCH row reopens that sketch staged in
+     * its aligned view; a FEATURE row reopens its extrusion or revolve staged in
+     * Ready. Either way it is the editor that already exists, every number stays
+     * native, and the project keeps its truth until Finish.
+     */
+    @Override
+    public void onFeatureHistoryRowChosen(FeatureHistoryPresentation.Row row) {
+        final Context context = getContext();
+        if (!row.editable()) {
+            return;
+        }
+        if (row.domain == FeatureHistoryPresentation.DOMAIN_SURFACE) {
+            // A Surface row opens a STAGED value edit on the Surface surface:
+            // nothing is written until Apply, which is one Undo.
+            setFeatureHistoryOpen(false);
+            uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+            syncFromNative();
+            setPrecisionOpen(true);
+            surfaceEditor.beginEdit(row);
+            showStatus(context.getString(R.string.surface_edit_title, FeatureHistoryText.name(context, row)),
+                    R.attr.fsTextSecondary);
+            return;
+        }
+        final long bodyId = NativeViewport.sceneActiveBodyId();
+        final boolean sketchRow = row.isSketch();
+        final int status = NativeViewport.sketchBeginEditFeature(bodyId, row.editTarget, !sketchRow);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        historyEditFromSketch = sketchRow;
+        dismissedIssueKey = "";
+        setFeatureHistoryOpen(false);
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        if (!sketchRow) {
+            refreshExtrudeReadiness();
+        }
+        showStatus(context.getString(R.string.status_history_edit_begun,
+                FeatureHistoryText.name(context, row), BodyLabels.of(context, bodyId)),
+                R.attr.fsTextSecondary);
+    }
+
+    /**
+     * Shows the regeneration issue card while a staged edit of an earlier
+     * feature makes a later one impossible, and withdraws it the moment that
+     * stops being true. Read from the staged timeline, so the failing row it
+     * names is the one a Finish would be refused by.
+     */
+    private void refreshRegenerationIssue() {
+        final long editing = NativeViewport.sketchEditingBodyId();
+        if (editing == NativeViewport.NO_OBJECT || !NativeViewport.projectOpen()
+                || editing != NativeViewport.sceneActiveBodyId()) {
+            regenerationIssue.hide();
+            return;
+        }
+        final FeatureHistoryPresentation.Model staged = readTimeline(true);
+        if (FeatureHistoryPresentation.issueShown(staged, true, dismissedIssueKey)) {
+            if (!staged.issueKey().equals(regenerationIssue.shownKey())) {
+                regenerationIssue.showIssue(staged, uiState.displayUnit());
+            }
+        } else {
+            regenerationIssue.hide();
+        }
+    }
+
+    /**
+     * Fix: keep the staged edit and change the value. The card collapses until
+     * the failure changes; an edit that began on a sketch goes back to that
+     * sketch, one that began on a feature opens its exact values.
+     */
+    @Override
+    public void onRegenerationIssueFix() {
+        final FeatureHistoryPresentation.Model staged = readTimeline(true);
+        dismissedIssueKey = staged.issueKey();
+        regenerationIssue.hide();
+        if (historyEditFromSketch) {
+            onBackToSketchRequested();
+        } else if (!inspector.isOpen()) {
+            setPrecisionOpen(true);
+        }
+    }
+
+    /** Cancel edit: the staged copy goes; the body is exactly what it was. */
+    @Override
+    public void onRegenerationIssueCancel() {
+        regenerationIssue.hide();
+        dismissedIssueKey = "";
+        onCancelSketchRequested();
+    }
+
+    /** For verification. */
+    FeatureHistoryView featureHistory() {
+        return featureHistory;
+    }
+
+    ImageView featureHistoryAction() {
+        return featureHistoryAction;
+    }
+
+    RegenerationIssueView regenerationIssue() {
+        return regenerationIssue;
     }
 
     /**
@@ -3069,6 +3737,15 @@ final class EditorWorkspaceView extends FrameLayout
             // Shape, for a CAD Body, is its sketch and its extrusion.
             inspector.setBody(cadEditor,
                     context.getString(R.string.inspector_shape_title_for_body, body));
+        } else if (activeBodyIsSurface()) {
+            // Shape, for a Surface body, is its feature list.
+            inspector.setBody(surfaceEditor,
+                    context.getString(R.string.inspector_surface_title_for_body, body));
+        } else if (NativeViewport.sceneBodyRepresentation(NativeViewport.sceneActiveBodyId())
+                == NativeViewport.REPRESENTATION_FREEFORM) {
+            // Shape, for a Freeform body, is its control cage.
+            inspector.setBody(freeformEditor,
+                    context.getString(R.string.inspector_cage_title_for_body, body));
         } else {
             inspector.setBody(shapeEditor,
                     context.getString(R.string.inspector_shape_title_for_body, body));
@@ -3224,6 +3901,17 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     /**
+     * The project drawer's New Sketch (`MODELING-R1-OWNER-CORRECTION`): the
+     * SAME path as Add Primitive's tile. The drawer is already closed
+     * ({@link ProjectDrawerPolicy#perform}), so the chooser's planes and faces
+     * are not under it.
+     */
+    @Override
+    public void onNewSketchRequested() {
+        onNewSketchSpatial();
+    }
+
+    /**
      * Enters spatial "Choose Sketch Support" (`CAD-A3`): the three world planes
      * become touchable targets and, in a CAD project, the planar faces of CAD
      * bodies too. The user taps a target to highlight it and taps it again to
@@ -3278,6 +3966,9 @@ final class EditorWorkspaceView extends FrameLayout
                     (int) nativeSketch[NativeViewport.SKETCH_STATE]);
         }
         sketchNavigator.setVisibility(drawing ? VISIBLE : GONE);
+        // Both decide for themselves from native (drawn only while Editing).
+        sketchModify.refreshFromNative();
+        sketchDimensionLabels.refreshFromNative();
         if (drawing) {
             sketchNavigator.refreshFromNative();
             // The same state answers the Line dimension (SketchChromePolicy):
@@ -3296,6 +3987,9 @@ final class EditorWorkspaceView extends FrameLayout
         // — or neither — from native truth, so there is no shell predicate here
         // that could disagree with the session.
         cadExtrudeCanvas.refreshFromNative();
+        // The Revolve angle label decides from native truth too: it stands only
+        // while a revolve with an axis is open and its anchor projects.
+        cadRevolveAngle.refreshFromNative();
         // Stage 020M's body-dimension labels follow the same rule from the
         // other side: they belong to Dimensions mode and to nothing else, and
         // a sketch and that mode can never both be open. The view withdraws
@@ -3532,6 +4226,33 @@ final class EditorWorkspaceView extends FrameLayout
         sketchEditor.refreshFromNative();
         NativeViewport.sketchState(nativeSketch);
         final int lastStatus = (int) nativeSketch[NativeViewport.SKETCH_LAST_STATUS];
+        if (nativeSketch[NativeViewport.SKETCH_STATE] == NativeViewport.SKETCH_READY
+                && revolveSignature() != null) {
+            // A Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): a tap may have picked
+            // the axis or changed the selection, a handle drag the angle. The
+            // chrome follows the candidate, and a change is reported once.
+            final String revolve = revolveSignature();
+            final boolean axisJustChosen = lastReportedRevolvePicking
+                    && !CadRevolvePresentation.axisPicking(nativeRevolve)
+                    && nativeRevolve[NativeViewport.REVOLVE_AXIS_ENTITY] != 0.0;
+            lastReportedSketchStatus = lastStatus;
+            refreshExtrudeReadiness();
+            refreshSketchViewportSurfaces(true);
+            if (!revolve.equals(lastReportedRevolve)) {
+                lastReportedRegionSelection = regionSelectionSignature();
+                reportRevolveVerdict(axisJustChosen
+                        ? getContext().getString(R.string.status_revolve_axis_chosen,
+                                CadRevolvePresentation.label(
+                                        nativeRevolve[NativeViewport.REVOLVE_ANGLE]))
+                        : null);
+                return;
+            }
+            if (lastStatus != NativeViewport.CAD_OK) {
+                showStatus(CadStatusMessages.describe(getContext(), lastStatus),
+                        R.attr.fsTextError);
+            }
+            return;
+        }
         if (nativeSketch[NativeViewport.SKETCH_STATE] == NativeViewport.SKETCH_READY) {
             // In Ready a tap chooses REGIONS (`CAD-VERTICAL-SLICE-R1`), and a
             // region choice changes what Extrude would make: the chrome is
@@ -3560,13 +4281,264 @@ final class EditorWorkspaceView extends FrameLayout
         final int last = (int) nativeSketch[NativeViewport.SKETCH_LAST_STATUS];
         if (last != NativeViewport.CAD_OK && last != lastReportedSketchStatus) {
             showStatus(CadStatusMessages.describe(getContext(), last), R.attr.fsTextError);
+        } else if (last == NativeViewport.CAD_OK) {
+            reportDraftingGesture();
         }
         lastReportedSketchStatus = last;
+    }
+
+    /**
+     * Reports a drafting act a sketch GESTURE landed (`CAD-SKETCH-DRAFTING-
+     * TOOLKIT-E2E-R1`): a Trim or an Extend once each, a multi-selection's
+     * count, and the snap a placement landed on (announced for accessibility;
+     * the marker itself is drawn below JNI). Verdicts only — nothing here
+     * repeats what the chrome already shows.
+     */
+    private void reportDraftingGesture() {
+        final Context context = getContext();
+        NativeViewport.sketchDraftingState(nativeDraft);
+        final long serial = (long) nativeDraft[NativeViewport.SKETCH_DRAFT_TAP_ACT_SERIAL];
+        final int selection = (int) nativeDraft[NativeViewport.SKETCH_DRAFT_SELECTION_COUNT];
+        if (serial != lastReportedTapAct) {
+            lastReportedTapAct = serial;
+            lastReportedSelectionCount = selection;
+            final int act = (int) nativeDraft[NativeViewport.SKETCH_DRAFT_TAP_ACT];
+            if (act == NativeViewport.TAP_ACT_TRIM) {
+                showStatus(context.getString(
+                        nativeDraft[NativeViewport.SKETCH_DRAFT_TRIM_CONVERTED_RECTANGLE] != 0.0
+                                ? R.string.status_sketch_trim_rectangle
+                                : R.string.status_sketch_trimmed), R.attr.fsTextSuccess);
+            } else if (act == NativeViewport.TAP_ACT_EXTEND) {
+                showStatus(context.getString(R.string.status_sketch_extended), R.attr.fsTextSuccess);
+            }
+            noteProjectMaybeDirty();
+            return;
+        }
+        if (selection != lastReportedSelectionCount) {
+            lastReportedSelectionCount = selection;
+            if (selection > 1) {
+                showStatus(context.getString(R.string.status_sketch_selection_count, selection),
+                        R.attr.fsTextSecondary);
+            }
+        }
+        final int snap = SketchDraftingPresentation.snapDescription(
+                (int) nativeDraft[NativeViewport.SKETCH_DRAFT_LAST_SNAP]);
+        if (snap != 0 && (int) nativeDraft[NativeViewport.SKETCH_DRAFT_LAST_SNAP]
+                != NativeViewport.SNAP_GRID) {
+            announceForAccessibility(context.getString(snap));
+        }
+    }
+
+    /** Keeps the sketch actions column directly under the orientation navigator. */
+    private void placeSketchModifyUnderNavigator() {
+        final FrameLayout.LayoutParams params =
+                (FrameLayout.LayoutParams) sketchModify.getLayoutParams();
+        if (params == null) {
+            return;
+        }
+        final int top = sketchNavigator.getBottom() - overlayRoot.getPaddingTop()
+                + EditorControlStyles.dimen(getContext(), R.dimen.row_gap);
+        if (sketchNavigator.getVisibility() == VISIBLE && params.topMargin != top) {
+            params.topMargin = top;
+            sketchModify.setLayoutParams(params);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Sketch drafting (CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1)
+    // -----------------------------------------------------------------------
+
+    /** Re-reads everything after a drafting act that changed native state. */
+    private void afterDraftingAct() {
+        syncFromNative();
+        noteProjectMaybeDirty();
+    }
+
+    @Override
+    public void onSketchModifyAction(int action) {
+        final Context context = getContext();
+        switch (action) {
+            case SketchDraftingPresentation.ACTION_DIMENSION:
+                enterModifyMode(NativeViewport.MODIFY_DIMENSION);
+                return;
+            case SketchDraftingPresentation.ACTION_TRIM:
+                enterModifyMode(NativeViewport.MODIFY_TRIM);
+                return;
+            case SketchDraftingPresentation.ACTION_EXTEND:
+                enterModifyMode(NativeViewport.MODIFY_EXTEND);
+                return;
+            case SketchDraftingPresentation.ACTION_OFFSET:
+                enterModifyMode(NativeViewport.MODIFY_OFFSET);
+                return;
+            case SketchDraftingPresentation.ACTION_MIRROR:
+                enterModifyMode(NativeViewport.MODIFY_MIRROR);
+                return;
+            case SketchDraftingPresentation.ACTION_CONSTRUCTION: {
+                NativeViewport.sketchDraftingState(nativeDraft);
+                final boolean toConstruction =
+                        nativeDraft[NativeViewport.SKETCH_DRAFT_CONSTRUCTION_TARGET] != 0.0;
+                final int status = NativeViewport.sketchToggleConstruction();
+                if (status != NativeViewport.CAD_OK) {
+                    showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+                    sketchModify.refreshFromNative();
+                    return;
+                }
+                afterDraftingAct();
+                showStatus(context.getString(toConstruction
+                                ? R.string.status_sketch_construction_on
+                                : R.string.status_sketch_construction_off),
+                        R.attr.fsTextSecondary);
+                return;
+            }
+            case SketchDraftingPresentation.ACTION_DELETE: {
+                final int status = NativeViewport.sketchDeleteSelected();
+                if (status != NativeViewport.CAD_OK) {
+                    showStatus(CadStatusMessages.describeDelete(context, status),
+                            R.attr.fsTextError);
+                    sketchModify.refreshFromNative();
+                    return;
+                }
+                NativeViewport.sketchDraftingState(nativeDraft);
+                afterDraftingAct();
+                showStatus(CadStatusMessages.deleted(context,
+                                (int) nativeDraft[NativeViewport.SKETCH_DRAFT_LAST_DELETED_DIMS]),
+                        R.attr.fsTextSecondary);
+                return;
+            }
+            default:
+                sketchModify.refreshFromNative();
+        }
+    }
+
+    private void enterModifyMode(int mode) {
+        final int status = NativeViewport.sketchSetModifyMode(mode);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+        }
+        syncFromNative();
+    }
+
+    @Override
+    public void onSketchModifyModeEnd(boolean confirm) {
+        final Context context = getContext();
+        NativeViewport.sketchDraftingState(nativeDraft);
+        final int mode = (int) nativeDraft[NativeViewport.SKETCH_DRAFT_MODE];
+        if (confirm && mode == NativeViewport.MODIFY_OFFSET) {
+            final double distance = nativeDraft[NativeViewport.SKETCH_DRAFT_OFFSET_DISTANCE];
+            final int status = NativeViewport.sketchConfirmOffset();
+            if (status != NativeViewport.CAD_OK) {
+                showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+                sketchModify.refreshFromNative();
+                return;
+            }
+            afterDraftingAct();
+            showStatus(context.getString(R.string.status_sketch_offset,
+                    uiState().displayUnit().formatWithUnit(Math.abs(distance))), R.attr.fsTextSuccess);
+            return;
+        }
+        if (confirm && mode == NativeViewport.MODIFY_MIRROR) {
+            final int status = NativeViewport.sketchConfirmMirror();
+            if (status != NativeViewport.CAD_OK) {
+                showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+                sketchModify.refreshFromNative();
+                return;
+            }
+            afterDraftingAct();
+            showStatus(context.getString(R.string.status_sketch_mirrored), R.attr.fsTextSuccess);
+            return;
+        }
+        NativeViewport.sketchSetModifyMode(NativeViewport.MODIFY_NONE);
+        syncFromNative();
+    }
+
+    @Override
+    public void onSketchDimensionKindChosen(int kind, int mode) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchAddDimension(kind, mode);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            sketchModify.refreshFromNative();
+            return;
+        }
+        afterDraftingAct();
+        showStatus(context.getString(R.string.status_sketch_dimension_added), R.attr.fsTextSuccess);
+    }
+
+    @Override
+    public void onSketchDimensionAngleRequested() {
+        final int status = NativeViewport.sketchBeginDimensionAngle();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+        }
+        sketchModify.refreshFromNative();
+    }
+
+    @Override
+    public void onSketchOffsetDistanceEntered(double meters) {
+        final int status = NativeViewport.sketchSetOffsetDistance(meters);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+        }
+        finishEditing();
+        refreshSketchViewportSurfaces(true);
+    }
+
+    @Override
+    public void onSketchDimensionVisibilityChosen(int visibility) {
+        NativeViewport.sketchSetDimensionVisibility(visibility);
+        refreshSketchViewportSurfaces(true);
+    }
+
+    @Override
+    public void onSketchMultiSelectToggled(boolean on) {
+        NativeViewport.sketchSetMultiSelect(on);
+        refreshSketchViewportSurfaces(true);
+    }
+
+    @Override
+    public void onSketchDimensionValueEntered(long dimensionId, int kind, double value) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchApplyDimensionValue(dimensionId, value);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        sketchDimensionLabels.closeEditor();
+        afterDraftingAct();
+        showStatus(context.getString(R.string.status_sketch_dimension_applied),
+                R.attr.fsTextSuccess);
+    }
+
+    @Override
+    public void onSketchDimensionDeleteRequested(long dimensionId) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchRemoveDimension(dimensionId);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        afterDraftingAct();
+        showStatus(context.getString(R.string.status_sketch_dimension_removed),
+                R.attr.fsTextSecondary);
     }
 
     @Override
     public void onFinishSketchRequested() {
         final Context context = getContext();
+        if (surfaceSketchOpen()) {
+            // A Surface sketch's Finish is a CHOICE of feature (Patch, Extrude,
+            // Revolve, Loft, Trim, Section), made on the surface that grows out
+            // of the toolbar; the sketch stays open and drawable until one of
+            // them commits. Pressed again, it closes the choices and gives the
+            // drawing back.
+            finishEditing();
+            setSurfaceFinishOpen(!surfaceFinish.isOpen());
+            if (!surfaceFinish.isOpen()) {
+                return;
+            }
+            showStatus(context.getString(R.string.surface_finish_summary), R.attr.fsTextSecondary);
+            return;
+        }
         final int status = NativeViewport.sketchFinish();
         if (status != NativeViewport.CAD_OK) {
             showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
@@ -3594,16 +4566,145 @@ final class EditorWorkspaceView extends FrameLayout
     /** Draws Extrude only while the preview is a candidate a commit may make. */
     private void refreshExtrudeReadiness() {
         NativeViewport.cadExtrudeToolState(nativeExtrude);
+        NativeViewport.cadRevolveToolState(nativeRevolve);
+        // The same evaluation answers for a Revolve: the toolbar's commit is
+        // then named Revolve, in Extrude's place.
+        toolbar.showRevolveMode(CadRevolvePresentation.active(nativeRevolve));
         toolbar.showExtrudeReadiness(
                 (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS]
                         == NativeViewport.CAD_OK);
+    }
+
+    // -----------------------------------------------------------------------
+    // Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`)
+    // -----------------------------------------------------------------------
+    //
+    // Every act is one native call followed by a re-read. The workspace holds
+    // no axis, no angle and no direction; it reports what native now says.
+
+    /** A signature of what the revolve chrome shows, or null outside one. */
+    private String revolveSignature() {
+        NativeViewport.cadRevolveToolState(nativeRevolve);
+        if (!CadRevolvePresentation.active(nativeRevolve)) {
+            return null;
+        }
+        return (long) nativeRevolve[NativeViewport.REVOLVE_AXIS_ENTITY] + ":"
+                + (int) nativeRevolve[NativeViewport.REVOLVE_AXIS_EDGE] + ":"
+                + nativeRevolve[NativeViewport.REVOLVE_ANGLE] + ":"
+                + (int) nativeRevolve[NativeViewport.REVOLVE_DIRECTION] + ":"
+                + (int) nativeRevolve[NativeViewport.REVOLVE_AXIS_PICKING] + ":"
+                + (int) nativeRevolve[NativeViewport.REVOLVE_CANDIDATE_STATUS] + ":"
+                + (int) nativeRevolve[NativeViewport.REVOLVE_SELECTED_AREAS];
+    }
+
+    /**
+     * Says what the revolve WOULD do: "choose an axis" while one is picked,
+     * the named refusal when the candidate would be refused, otherwise
+     * {@code okMessage} or the angle. A verdict on the current candidate.
+     */
+    private void reportRevolveVerdict(String okMessage) {
+        final Context context = getContext();
+        lastReportedRevolve = revolveSignature();
+        if (lastReportedRevolve == null) {
+            lastReportedRevolvePicking = false;
+            return;
+        }
+        lastReportedRevolvePicking = CadRevolvePresentation.axisPicking(nativeRevolve);
+        if (CadRevolvePresentation.axisPicking(nativeRevolve)) {
+            showStatus(context.getString(R.string.status_revolve_choose_axis),
+                    R.attr.fsTextSecondary);
+            return;
+        }
+        final int candidate = (int) nativeRevolve[NativeViewport.REVOLVE_CANDIDATE_STATUS];
+        if (candidate != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, candidate), R.attr.fsTextError);
+            return;
+        }
+        showStatus(okMessage != null ? okMessage
+                        : context.getString(R.string.status_revolve_angle,
+                                CadRevolvePresentation.label(
+                                        nativeRevolve[NativeViewport.REVOLVE_ANGLE])),
+                R.attr.fsTextSecondary);
+    }
+
+    /** After a revolve act: the whole chrome re-read, then the verdict. */
+    private void afterRevolveAct(String okMessage) {
+        syncFromNative();
+        refreshExtrudeReadiness();
+        refreshWorldAnchoredUi();
+        reportRevolveVerdict(okMessage);
+    }
+
+    @Override
+    public void onRevolveBeginRequested() {
+        final int status = NativeViewport.sketchBeginRevolve();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            syncFromNative();
+            return;
+        }
+        afterRevolveAct(null);
+    }
+
+    @Override
+    public void onRevolveEndRequested() {
+        final int status = NativeViewport.sketchEndRevolve();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            return;
+        }
+        cadRevolveAngle.closeEditor();
+        lastReportedRevolve = null;
+        syncFromNative();
+        refreshExtrudeReadiness();
+        refreshWorldAnchoredUi();
+        showStatus(getContext().getString(R.string.status_revolve_ended), R.attr.fsTextSecondary);
+    }
+
+    @Override
+    public void onRevolveAxisPickRequested() {
+        final int status = NativeViewport.sketchBeginRevolveAxisPick();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            return;
+        }
+        afterRevolveAct(null);
+    }
+
+    @Override
+    public void onRevolveFlipRequested() {
+        final int status = NativeViewport.sketchFlipRevolve();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            return;
+        }
+        NativeViewport.cadRevolveToolState(nativeRevolve);
+        afterRevolveAct(getContext().getString(R.string.status_revolve_flipped,
+                CadRevolvePresentation.label(nativeRevolve[NativeViewport.REVOLVE_ANGLE])));
+    }
+
+    @Override
+    public void onRevolveAngleEntered(double degrees) {
+        final int status = NativeViewport.sketchSetRevolveAngle(degrees);
+        if (status != NativeViewport.CAD_OK) {
+            // Refused, never clamped: the angle stands as it was.
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            return;
+        }
+        cadRevolveAngle.closeEditor();
+        afterRevolveAct(null);
+    }
+
+    /** The Revolve angle label, for verification. */
+    CadRevolveAngleLabelView cadRevolveAngleLabel() {
+        return cadRevolveAngle;
     }
 
     /**
      * WHICH regions the open session's extrusion holds, as their outer anchors
      * in native's ascending order — so a tap that swaps one region for another
      * is a change even though the count is not. Read fresh; bounded by the
-     * sixteen-region cap.
+     * number of areas the finished sketch has.
      */
     private String regionSelectionSignature() {
         final int count = NativeViewport.sketchProfiles(null);
@@ -3666,7 +4767,11 @@ final class EditorWorkspaceView extends FrameLayout
     /**
      * Says what the staged extrusion WOULD do: the named refusal when the
      * preview is not something a commit may make (a disjoint Add, a Cut that
-     * misses), otherwise {@code okMessage}. A verdict, never an instruction.
+     * misses), otherwise {@code okMessage} — or, with none given and areas
+     * chosen, how many are in the extrusion. A verdict, never an instruction,
+     * and always about the CURRENT candidate: a valid selection never leaves an
+     * earlier refusal (a failed Extrude's, say) standing on the status line
+     * (`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`).
      */
     private void reportCandidateVerdict(String okMessage) {
         NativeViewport.cadExtrudeToolState(nativeExtrude);
@@ -3675,6 +4780,9 @@ final class EditorWorkspaceView extends FrameLayout
         if (selected > 0 && candidate != NativeViewport.CAD_OK) {
             showStatus(CadStatusMessages.describe(getContext(), candidate), R.attr.fsTextError);
             return;
+        }
+        if (okMessage == null && selected > 0) {
+            okMessage = getContext().getString(R.string.status_regions_selected, selected);
         }
         if (okMessage != null) {
             showStatus(okMessage, R.attr.fsTextSecondary);
@@ -3704,6 +4812,8 @@ final class EditorWorkspaceView extends FrameLayout
         final boolean firstProject = !NativeViewport.projectOpen();
         NativeViewport.cadExtrudeToolState(nativeExtrude);
         final int operation = (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_OPERATION];
+        NativeViewport.cadRevolveToolState(nativeRevolve);
+        final boolean revolved = CadRevolvePresentation.active(nativeRevolve);
         final long created = NativeViewport.sketchCommit();
         if (created == NativeViewport.NO_OBJECT) {
             showStatus(CadStatusMessages.describe(context, NativeViewport.sketchLastStatus()),
@@ -3730,10 +4840,12 @@ final class EditorWorkspaceView extends FrameLayout
                     R.attr.fsTextSuccess);
             return;
         }
+        lastReportedRevolve = null;
         showStatus(firstProject
                         ? context.getString(R.string.status_first_project_created,
                                 BodyLabels.of(context, created))
-                        : context.getString(R.string.status_sketch_extruded,
+                        : context.getString(revolved ? R.string.status_revolve_committed
+                                        : R.string.status_sketch_extruded,
                                 BodyLabels.of(context, created)),
                 R.attr.fsTextSuccess);
     }
@@ -3780,12 +4892,19 @@ final class EditorWorkspaceView extends FrameLayout
      */
     @Override
     public void onEditCadFeatureRequested(long featureId) {
-        if (featureId <= 1) {
+        final Context context = getContext();
+        final long bodyId = NativeViewport.sceneActiveBodyId();
+        // A revolved body's first feature IS the Revolve
+        // (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): its row reopens the revolve
+        // staged in Ready -- axis, angle and direction in front of the user,
+        // Back to Sketch one step away -- the way a later Add or Cut reopens.
+        final double[] cad = new double[NativeViewport.CAD_STATE_SIZE];
+        final boolean revolveBase = featureId <= 1 && NativeViewport.cadState(cad)
+                && (int) cad[NativeViewport.CAD_STATE_KIND] == NativeViewport.FEATURE_KIND_REVOLVE;
+        if (featureId <= 1 && !revolveBase) {
             onEditCadSketchRequested();
             return;
         }
-        final Context context = getContext();
-        final long bodyId = NativeViewport.sceneActiveBodyId();
         final int status = NativeViewport.sketchBeginEditFeature(bodyId, featureId, true);
         if (status != NativeViewport.CAD_OK) {
             showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
@@ -3794,6 +4913,7 @@ final class EditorWorkspaceView extends FrameLayout
         dismissPrimarySurfacesExcept(null);
         finishEditing();
         onNativeStateChanged();
+        refreshExtrudeReadiness();
         showStatus(context.getString(R.string.status_feature_edit_begun, featureId,
                         BodyLabels.of(context, bodyId)), R.attr.fsTextSecondary);
     }
@@ -3859,6 +4979,16 @@ final class EditorWorkspaceView extends FrameLayout
     /** The selected Line's dimension label, for verification. */
     SketchDimensionLabelView sketchDimensionLabel() {
         return sketchDimension;
+    }
+
+    /** The sketch actions entry and palette, for verification. */
+    SketchModifyView sketchModify() {
+        return sketchModify;
+    }
+
+    /** The persistent dimension labels, for verification. */
+    SketchDimensionLabelsView sketchDimensionLabels() {
+        return sketchDimensionLabels;
     }
 
     // -----------------------------------------------------------------------
@@ -4082,6 +5212,7 @@ final class EditorWorkspaceView extends FrameLayout
             bodyDimensionLabels.closeEditor();
             relativeScaleOpen = false;
         }
+        refreshFreeformEdit(NativeViewport.projectOpen(), false, isSketching());
         showActiveInspectorBody(false);
         // Transform is the entry that owns direct manipulation, so the handles
         // and their Move/Rotate selector arrive with it and leave with it. This
@@ -4125,6 +5256,8 @@ final class EditorWorkspaceView extends FrameLayout
         displayPopover.setMotionAllowed(allowed);
         projectPopover.setMotionAllowed(allowed);
         historyNavigator.setMotionAllowed(allowed);
+        featureHistory.setMotionAllowed(allowed);
+        surfaceFinish.setMotionAllowed(allowed);
     }
 
     // -----------------------------------------------------------------------
@@ -4161,7 +5294,11 @@ final class EditorWorkspaceView extends FrameLayout
                             ? R.string.status_cad_no_sculpt
                             : status == NativeViewport.SCULPT_REFUSED_HIDDEN_BODY
                                     ? R.string.status_sculpt_hidden_body
-                                    : R.string.status_sculpt_prepare_failed),
+                                    : status == NativeViewport.SCULPT_REFUSED_FREEFORM_BODY
+                                            ? R.string.sculpt_refused_freeform_body
+                                            : status == NativeViewport.SCULPT_REFUSED_SURFACE_BODY
+                                                    ? R.string.sculpt_refused_surface_body
+                                                    : R.string.status_sculpt_prepare_failed),
                     R.attr.fsTextError);
             return;
         }
@@ -4300,6 +5437,12 @@ final class EditorWorkspaceView extends FrameLayout
             // session, or could have been there since before the process
             // started, and Open must never offer to do something it cannot.
             projectPopover.showSlotState(ProjectSlot.exists(getContext()));
+            // And the Import row from native NOW, for the same reason: a sketch
+            // the spatial chooser began is seen by the next refresh, not
+            // necessarily by this one, and the drawer must not offer an import
+            // native would refuse.
+            projectPopover.showImportAvailable(ProjectDrawerPolicy.importShown(isSculpting(),
+                    isSketching()));
             // Hang the surface below the toolbar's ACTUAL height, for the same
             // reason the display popover does: the toolbar grows a second line
             // when the status message cannot share the control row, and a fixed
@@ -4717,7 +5860,7 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onImportGlbRequested() {
         setProjectPanelOpen(false);
-        if (importRefusedWhileSculpting()) {
+        if (importRefusedWhileSculpting() || importRefusedWhileSketching()) {
             return;
         }
         if (transferHost == null || !transferHost.requestOpenGlbDocument()) {
@@ -4734,9 +5877,10 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         // The picker is another app and answers whenever it answers: the user
-        // may have started sculpting since they asked. Refused before the file
-        // is even read, because nothing it holds could be used.
-        if (importRefusedWhileSculpting()) {
+        // may have started sculpting, or opened a sketch, since they asked.
+        // Refused before the file is even read, because nothing it holds could
+        // be used. Both are read from native at THIS moment, never remembered.
+        if (importRefusedWhileSculpting() || importRefusedWhileSketching()) {
             return;
         }
         final byte[] bytes = ProjectTransfer.readFrom(getContext(), source);
@@ -4767,6 +5911,13 @@ final class EditorWorkspaceView extends FrameLayout
             // Native refused from its own mode, under the commit's lock, for a
             // caller that got here without the picker guard above.
             reportImportRefusedInSculpt();
+            return;
+        }
+        if (status == NativeViewport.IMPORT_REFUSED_IN_SKETCH) {
+            // The same, for a sketch that opened after the picker guard ran (or
+            // a caller with no picker guard at all). Never a corrupt-file
+            // message: the file was fine, the moment was not.
+            reportImportRefusedInSketch();
             return;
         }
         if (status != NativeViewport.IMPORT_OK) {
@@ -4811,6 +5962,33 @@ final class EditorWorkspaceView extends FrameLayout
         }
         reportImportRefusedInSculpt();
         return true;
+    }
+
+    /**
+     * Refuses an import while a sketch is open, and says so.
+     *
+     * <p>The sketch is the one authoring act until it is finished or
+     * cancelled; an import would create bodies and record a Construction step
+     * beneath it that Undo cannot reach while it stays open. Asked of native on
+     * every call ({@link #isSketching()}), never remembered here, and native
+     * refuses on its own as well. Refusing touches neither the project nor the
+     * draft: the same sketch can still be finished or cancelled.
+     *
+     * @return true when the import was refused and nothing was done
+     */
+    private boolean importRefusedWhileSketching() {
+        if (!isSketching()) {
+            return false;
+        }
+        reportImportRefusedInSketch();
+        return true;
+    }
+
+    private void reportImportRefusedInSketch() {
+        Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "GLB_IMPORT_REFUSED",
+                NativeViewport.glbCommitStatusToken(NativeViewport.IMPORT_REFUSED_IN_SKETCH));
+        showStatus(getContext().getString(R.string.status_glb_import_refused_in_sketch),
+                R.attr.fsTextError);
     }
 
     private void reportImportRefusedInSculpt() {
@@ -5110,6 +6288,12 @@ final class EditorWorkspaceView extends FrameLayout
         if (keeper != historyNavigator && historyNavigator.isOpen()) {
             setHistoryNavigatorOpen(false);
         }
+        if (keeper != featureHistory && featureHistory.isOpen()) {
+            setFeatureHistoryOpen(false);
+        }
+        if (keeper != surfaceFinish && surfaceFinish.isOpen()) {
+            surfaceFinish.setOpen(false);
+        }
     }
 
     @Override
@@ -5220,6 +6404,34 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         toolbar.showStatus(message, colorAttr);
+    }
+
+    /**
+     * Opens or closes native cage editing to match the workspace
+     * (`MODELING-FOUNDATIONS-R1` B): open exactly while Shape is held over a
+     * visible, unlocked Freeform body in Construction, closed otherwise. Native
+     * holds the session; this only asks for it, and reads back what it got.
+     */
+    private void refreshFreeformEdit(boolean projectOpen, boolean sculpting, boolean sketching) {
+        NativeViewport.freeformState(nativeFreeform);
+        final FreeformPresentation.State state = new FreeformPresentation.State(nativeFreeform);
+        final boolean wanted = FreeformPresentation.editWanted(projectOpen, sculpting, sketching,
+                uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_SHAPE, state);
+        if (wanted && !state.active) {
+            NativeViewport.freeformBeginEdit();
+        } else if (!wanted && state.active) {
+            NativeViewport.freeformEndEdit();
+        }
+        NativeViewport.freeformState(nativeFreeform);
+        lastKnownFreeformDrags = (long) nativeFreeform[NativeViewport.FREEFORM_STATE_DRAGS];
+        if (nativeFreeform[NativeViewport.FREEFORM_STATE_ACTIVE_IS_FREEFORM] != 0.0) {
+            freeformEditor.refreshFromNative();
+        }
+    }
+
+    /** The Freeform cage context surface, for verification. */
+    FreeformEditorView freeformEditor() {
+        return freeformEditor;
     }
 
     @Override
@@ -5383,7 +6595,7 @@ final class EditorWorkspaceView extends FrameLayout
     AnchoredSurfaceView[] anchoredSurfaces() {
         return new AnchoredSurfaceView[]{
                 objectsPopover, addPrimitivePalette, inspector, displayPopover, projectPopover,
-                historyNavigator};
+                historyNavigator, featureHistory, surfaceFinish};
     }
 
     /** The direct brush controls, so a test can read the values beside them. */

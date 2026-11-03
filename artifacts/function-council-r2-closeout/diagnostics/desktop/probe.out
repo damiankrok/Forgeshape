@@ -1,0 +1,24 @@
+TUs: 98  headers: 101
+P1a g++ libstdc++: pass=98 fail=0 warnings=26 errors=0
+P1b clang++ libstdc++: pass=98 fail=0 warnings=82 errors=0
+P2 clang++ NDK-libc++: pass=98 fail=0 warnings=82 errors=0
+p1_gxx warning categories:
+     24 [-Wmissing-field-initializers]
+      1 [-Wunused-but-set-variable]
+p1_clang warning categories:
+     44 [-Wunused-variable]
+     24 [-Wmissing-field-initializers]
+     10 [-Wsometimes-uninitialized]
+      3 [-Wunused-function]
+      1 [-Wunused-but-set-variable]
+P3 headers g++: pass=100 fail=1
+forgeshape_renderer.h rc=1 native_window.h: No such file or directory
+P3 headers clang++: pass=100 fail=1
+forgeshape_renderer.h rc=1 native_window.h' file not found
+P5 shaders: 10/10 glslc+spirv-val OK
+P4 renderer g++: rc=0 warnings=0 errors=0
+P4 renderer clang++: rc=0 warnings=0 errors=0
+P4b renderer clang++ without android stubs: rc=1 first-error: native_window.h' file not found
+P4c jni clang++ with the same stubs: rc=1 errors=1 first-error: native_window_jni.h' file not found
+P6 cmake configure rc=1; NOTFOUND lines:
+CMake Error: The following variables are used in this project, but they are set to NOTFOUND.

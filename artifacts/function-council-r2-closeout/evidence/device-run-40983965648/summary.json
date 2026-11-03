@@ -1,0 +1,23 @@
+{
+  "result": "FAIL-CI-CLOUD-DEVICE-PRODUCT",
+  "detail": "1 of 73 test(s) in com.forgeshape.app.EditorWorkspaceGizmoTest,com.forgeshape.app.Ui3dStateCorrectionTest,com.forgeshape.app.EditorWorkspaceMobileTest failed after ForgeShape initialised correctly",
+  "phase": "instrumentation",
+  "serial": "emulator-5580",
+  "avd": "ForgeShape_CI_API36",
+  "avd_name_confirmed": "ForgeShape_CI_API36",
+  "system_image": "system-images;android-36;google_apis;x86_64",
+  "device_profile": "medium_phone",
+  "gpu_mode": "swiftshader_indirect",
+  "boot_seconds": "61",
+  "startup_seconds": "20",
+  "startup_capture_used": "1",
+  "selftest_tokens_expected": 25,
+  "selftest_tokens_found": 25,
+  "selftest_tokens_in_order": true,
+  "native_viewport_ok": true,
+  "failure_token_lines": 0,
+  "test_class": "com.forgeshape.app.EditorWorkspaceGizmoTest,com.forgeshape.app.Ui3dStateCorrectionTest,com.forgeshape.app.EditorWorkspaceMobileTest",
+  "tests_run": 73,
+  "tests_failed": 1,
+  "test_seconds": "1440"
+}

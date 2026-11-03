@@ -64,6 +64,12 @@ public final class EditorWorkspaceMobileTest {
             R.id.add_primitive_capsule, R.id.add_primitive_plane
     };
 
+    /** The Freeform forms and Surface (MODELING-FOUNDATIONS-R1), offered beside them. */
+    private static final int[] FREEFORM_AND_SURFACE_IDS = {
+            R.id.add_freeform_box, R.id.add_freeform_plane, R.id.add_freeform_cylinder,
+            R.id.add_surface
+    };
+
     @Rule
     public ActivityScenarioRule<ForgeShapeActivity> rule =
             new ActivityScenarioRule<>(ForgeShapeActivity.class);
@@ -231,14 +237,20 @@ public final class EditorWorkspaceMobileTest {
     }
 
     /**
-     * UIR4A-04. Exactly the creation actions the product performs — the six
-     * primitives and, since CAD-R0-A1A2, New Sketch — and no fake future one.
+     * UIR4A-04. Exactly the creation actions the product performs and no fake
+     * future one: the six primitives; New Sketch (CAD-R0-A1A2) and its by-name
+     * plane fallback; and, since MODELING-FOUNDATIONS-R1, the three Freeform
+     * forms and Surface.
      *
-     * <p>The count is asserted as well as the ids, because an <i>Add from
-     * file</i> tile drawn disabled would satisfy a per-id check and is precisely
-     * what this stage is not allowed to ship. The plane chooser New Sketch
-     * opens is inside the same palette and is NOT on screen until asked for,
-     * so it contributes nothing to the resting count.
+     * <p>The resting palette is enumerated tile by tile and must equal that
+     * list EXACTLY -- every tile a known id, enabled and tappable, none missing
+     * and none extra -- because an <i>Add from file</i> tile drawn disabled
+     * would satisfy a per-id check and is precisely what must not ship. The
+     * plane chooser New Sketch opens is inside the same palette and is NOT on
+     * screen until asked for, so it contributes nothing to the resting set.
+     * (The literal count this used to assert went stale when the Freeform and
+     * Surface tiles arrived; `CAD-FACE-SUPPORTED-PLACEMENT-R1` replaced it with
+     * the enumeration.)
      */
     @Test
     public void uir4a04_addPrimitiveOffersTheSixRealPrimitivesAndNothingElse() {
@@ -271,9 +283,31 @@ public final class EditorWorkspaceMobileTest {
             final View byName = workspace.findViewById(R.id.sketch_plane_by_name);
             assertNotNull("the by-name plane fallback is offered", byName);
             assertTrue(byName.isEnabled() && byName.isClickable());
-            assertEquals("and the palette holds exactly those seven, the fallback, and no"
-                            + " placeholder",
-                    PALETTE_IDS.length + 2, countTiles(workspace.addPrimitivePalette()));
+            for (int id : FREEFORM_AND_SURFACE_IDS) {
+                final View tile = workspace.findViewById(id);
+                assertNotNull(activity.getResources().getResourceEntryName(id)
+                        + " must be offered", tile);
+                assertTrue(activity.getResources().getResourceEntryName(id)
+                        + " must work and be tappable", tile.isEnabled() && tile.isClickable());
+            }
+            final java.util.List<Integer> resting = new java.util.ArrayList<>();
+            collectTileIds(workspace.addPrimitivePalette(), resting);
+            final java.util.Set<Integer> expected = new java.util.HashSet<>();
+            for (int id : PALETTE_IDS) expected.add(id);
+            for (int id : FREEFORM_AND_SURFACE_IDS) expected.add(id);
+            expected.add(R.id.add_sketch);
+            expected.add(R.id.sketch_plane_by_name);
+            for (int id : resting) {
+                assertTrue("no tile without a stable id and no placeholder, saw "
+                                + (id == View.NO_ID ? "NO_ID"
+                                        : activity.getResources().getResourceEntryName(id)),
+                        id != View.NO_ID && expected.contains(id));
+            }
+            assertEquals("the palette holds exactly the six primitives, New Sketch, the"
+                            + " by-name fallback, the three Freeform forms and Surface",
+                    expected.size(), resting.size());
+            assertEquals("and every one of them exactly once",
+                    expected, new java.util.HashSet<>(resting));
             return null;
         });
     }
@@ -763,20 +797,19 @@ public final class EditorWorkspaceMobileTest {
      * offered and are not counted; a disabled placeholder would still be
      * visible, still clickable, and still caught.
      */
-    private static int countTiles(ViewGroup palette) {
-        int tiles = 0;
+    /** The ids of every visible tappable tile, in layout order, by the count's own rule. */
+    private static void collectTileIds(ViewGroup palette, java.util.List<Integer> out) {
         for (int i = 0; i < palette.getChildCount(); i++) {
             final View child = palette.getChildAt(i);
             if (child.getVisibility() != View.VISIBLE) {
                 continue;
             }
             if (child instanceof ViewGroup && !child.isClickable()) {
-                tiles += countTiles((ViewGroup) child);
+                collectTileIds((ViewGroup) child, out);
             } else if (child.isClickable()) {
-                tiles++;
+                out.add(child.getId());
             }
         }
-        return tiles;
     }
 
     private static int countById(View root, int id) {

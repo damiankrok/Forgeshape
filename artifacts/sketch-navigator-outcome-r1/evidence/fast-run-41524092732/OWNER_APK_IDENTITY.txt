@@ -1,0 +1,7 @@
+OWNER-supplied APK identity check (2026-11-03)
+File received: ForgeShape_SKETCH_NAVIGATOR_OUTCOME_OWNER_3b60086.apk, 17755951 bytes,
+sha256 f8cbb67de8e1b0541ebf4d5cbd79d203eb82689d6456c195fc93022c0aaf4194.
+Compared with app/build/outputs/apk/debug/app-debug.apk extracted from the ORIGINAL ci-fast-evidence artifact
+13179561711 of CI FAST 41524092732 (ZIP sha256 b7fcb051...eee9 = GitHub digest): same size, same SHA-256,
+`cmp` reports byte-identical. The file the OWNER holds IS the stage's final CI FAST debug APK.
+Nothing was installed or executed here; the physical-device review (OD-27) remains the OWNER's.

@@ -1,0 +1,14 @@
+producer add=ok id=1
+dependent add=ok faceSupported=1
+A resolved world model (drawn/picked) translation=(0.0000,0.0000,3.0000)
+A stored transform pos=(0.0000,0.0000,0.0000)
+B export status=Ok
+B export body 1 translation=(0.0000,0.0000,0.0000)
+B export body 2 translation=(0.0000,0.0000,0.0000)
+C gizmo visible=1 pivot=(0.0000,0.0000,0.0000)
+D active=2 applyStatus=0 undoDepth 0->1 fingerprintChanged=1
+D resolved world model after write translation=(0.0000,0.0000,3.0000)
+D snapshot model after write translation=(0.0000,0.0000,3.0000)
+D gizmo pivot after write=(5.0000,0.0000,0.0000)
+D export body 1 translation=(0.0000,0.0000,0.0000)
+D export body 2 translation=(5.0000,0.0000,0.0000)

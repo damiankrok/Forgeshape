@@ -5,10 +5,37 @@
 #include <cmath>
 
 #include "forgeshape_cad_face.h"
+#include "forgeshape_cad_feature.h"
+#include "forgeshape_cad_sketch_inventory.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_picking.h"
 
 namespace forgeshape {
+
+const char* sketchTapOutcomeName(SketchTapOutcome outcome) {
+    switch (outcome) {
+        case SketchTapOutcome::None: return "none";
+        case SketchTapOutcome::Resolved: return "resolved";
+        case SketchTapOutcome::Exterior: return "exterior";
+        case SketchTapOutcome::ArrowHead: return "arrow_head";
+        case SketchTapOutcome::Travel: return "travel";
+        case SketchTapOutcome::RayParallel: return "ray_parallel";
+        case SketchTapOutcome::InvalidFace: return "invalid_face";
+        case SketchTapOutcome::SelectionCap: return "selection_cap";
+    }
+    return "none";
+}
+
+bool sketchEventReachesCamera(SketchSessionState state, bool consumed, int pointerCount,
+                              bool readyTapArmed) {
+    if (consumed) {
+        return false;
+    }
+    if (pointerCount > 1) {
+        return true;  // two fingers pan and pinch in every state
+    }
+    return state == SketchSessionState::Ready && !readyTapArmed;
+}
 
 const char* sketchSessionStateName(SketchSessionState state) {
     switch (state) {
@@ -42,6 +69,18 @@ bool sketchToolFromIndex(int index, SketchTool* out) {
 
 int sketchToolIndex(SketchTool tool) { return static_cast<int>(tool); }
 
+const char* sketchModifyModeName(SketchModifyMode mode) {
+    switch (mode) {
+        case SketchModifyMode::None: return "None";
+        case SketchModifyMode::Dimension: return "Dimension";
+        case SketchModifyMode::Trim: return "Trim";
+        case SketchModifyMode::Extend: return "Extend";
+        case SketchModifyMode::Offset: return "Offset";
+        case SketchModifyMode::Mirror: return "Mirror";
+    }
+    return "unknown";
+}
+
 namespace {
 
 double distance(const SketchPoint& a, const SketchPoint& b) {
@@ -68,38 +107,6 @@ double segmentDistance(const SketchPoint& p, const SketchPoint& a, const SketchP
     return distance(p, q);
 }
 
-// Every point a new point may snap to: line ends, polyline vertices,
-// rectangle corners and centres, circle centres.
-void collectSnapPoints(const CadSketch& sketch, std::vector<SketchPoint>* out) {
-    for (const SketchEntity& entity : sketch.entities) {
-        if (const SketchLine* line = entity.line()) {
-            out->push_back(line->start);
-            out->push_back(line->end);
-        } else if (const SketchPolyline* polyline = entity.polyline()) {
-            for (const SketchPoint& p : polyline->vertices) {
-                out->push_back(p);
-            }
-        } else if (const SketchRectangle* rectangle = entity.rectangle()) {
-            for (const SketchPoint& p : rectangleProfilePolygon(*rectangle)) {
-                out->push_back(p);
-            }
-            out->push_back(rectangle->center);
-        } else if (const SketchCircle* circle = entity.circle()) {
-            out->push_back(circle->center);
-        } else if (const SketchArc* arc = entity.arc()) {
-            // The three AUTHORED points, not a tessellated sample: snapping to
-            // a curve means snapping to something the user placed.
-            out->push_back(arc->start);
-            out->push_back(arc->mid);
-            out->push_back(arc->end);
-        } else if (const SketchSpline* spline = entity.spline()) {
-            for (const SketchPoint& p : spline->points) {
-                out->push_back(p);
-            }
-        }
-    }
-}
-
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -118,6 +125,23 @@ double adaptiveSketchGridStep(double worldPerPixel) {
     if (step < kSketchGridMinStepMeters) step = kSketchGridMinStepMeters;
     if (step > kSketchGridMaxStepMeters) step = kSketchGridMaxStepMeters;
     return step;
+}
+
+CadStatus SketchSession::setPlaneOffset(double meters) {
+    if (state_ == SketchSessionState::Inactive) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (sketch_.hasFaceSupport || editingExistingBody()) {
+        return fail(CadStatus::InvalidWorkplane);
+    }
+    if (!std::isfinite(meters) || std::fabs(meters) > 1.0e5) {
+        return fail(CadStatus::NonFinite);
+    }
+    planeOffset_ = meters;
+    frame_.origin = vec3Scale(frame_.n, static_cast<float>(meters));
+    resetGesture();
+    touchOverlay();
+    return fail(CadStatus::Ok);
 }
 
 CadStatus SketchSession::beginOnFace(const SketchFrame& worldFrame, const TopoRef& support,
@@ -161,21 +185,35 @@ CadStatus SketchSession::begin(Workplane plane) {
     // world-plane sketch behaves exactly as before; a face sketch overrides it.
     const WorkplaneFrame wf = workplaneFrame(plane);
     frame_ = SketchFrame{Vec3{0.0f, 0.0f, 0.0f}, wf.uAxis, wf.vAxis, wf.normal};
+    planeOffset_ = 0.0;
     gridStep_ = kSketchGridSpacingMeters;
-    selectedEntityId_ = kNoSketchEntity;
+    selectedIds_.clear();
+    multiSelect_ = false;
+    lastDeletedDimensions_ = 0;
+    resetModifyState();
+    snapCacheValid_ = false;
+    lastSnap_ = SketchSnapResult{};
     regions_ = SketchRegionExtraction{};
     arrangement_ = SketchArrangement{};
     faceShapes_.clear();
     selectionLost_ = false;
     extrude_ = ExtrudeFeature{};
     oneSideDirection_ = ExtrudeDirection::AlongNormal;
+    featureKind_ = CadFeatureKind::Extrude;
+    revolve_ = RevolveFeature{};
+    axisPicking_ = false;
+    revolveDragPointer_ = -1;
+    revolveDragLive_ = false;
     operation_ = CadFeatureOperation::NewBody;
     targetBodyId_ = kNoObject;
     targetBaseState_ = CadBodyState{};
     hasTargetState_ = false;
     editingFeatureId_ = 0;
+    reuseSketchId_ = kNoCadSketch;
+    editingSketchId_ = kNoCadSketch;
     evaluation_ = CadCandidateEvaluation{};
     regionTapArmed_ = false;
+    regionTapOnHead_ = false;
     tool_ = SketchTool::Rectangle;
     resetGesture();
     polylineInProgress_ = false;
@@ -200,22 +238,34 @@ void SketchSession::cancel() {
     polylineVertices_.clear();
     arcPending_ = false;
     sketch_ = CadSketch{};
-    selectedEntityId_ = kNoSketchEntity;
+    selectedIds_.clear();
+    multiSelect_ = false;
+    resetModifyState();
+    snapCacheValid_ = false;
+    lastSnap_ = SketchSnapResult{};
     regions_ = SketchRegionExtraction{};
     arrangement_ = SketchArrangement{};
     faceShapes_.clear();
     selectionLost_ = false;
     extrude_ = ExtrudeFeature{};
+    featureKind_ = CadFeatureKind::Extrude;
+    revolve_ = RevolveFeature{};
+    axisPicking_ = false;
+    revolveDragPointer_ = -1;
+    revolveDragLive_ = false;
     // An edit session that is cancelled has, by construction, written nothing
     // to the body: the staged copy simply goes away with the session.
     editingBodyId_ = kNoObject;
     editingFeatureId_ = 0;
+    reuseSketchId_ = kNoCadSketch;
+    editingSketchId_ = kNoCadSketch;
     operation_ = CadFeatureOperation::NewBody;
     targetBodyId_ = kNoObject;
     targetBaseState_ = CadBodyState{};
     hasTargetState_ = false;
     evaluation_ = CadCandidateEvaluation{};
     regionTapArmed_ = false;
+    regionTapOnHead_ = false;
     ++candidateRevision_;
     viewFlipped_ = false;
     viewQuarterTurns_ = 0;
@@ -264,6 +314,16 @@ CadStatus SketchSession::beginEditFeature(ObjectId bodyId, const CadBodyState& s
     sketch_ = *view.sketch;
     extrude_ = *view.extrude;
     operation_ = view.operation;
+    if (view.kind == CadFeatureKind::Revolve && view.revolve != nullptr) {
+        // A Revolve stages as one (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): its axis,
+        // angle and direction, and its selection as the session's ONE
+        // selection, so Finish reconciles it by the rules every selection is
+        // reconciled by. The body's kind is its own and the edit keeps it.
+        featureKind_ = CadFeatureKind::Revolve;
+        revolve_ = *view.revolve;
+        extrude_ = revolveSelectionCarrier(*view.revolve);
+        axisPicking_ = false;
+    }
     // The staged extent comes back with the body, and so does the One Side
     // memory a mode round trip needs: for a One Side body it is the side the
     // solid is on, and for a two-sided one the canonical `AlongNormal`.
@@ -316,7 +376,8 @@ CadStatus SketchSession::checkDependentsKeepTheirFaces(const ConstructionScene& 
 }
 
 CadStatus SketchSession::commitEdit(ConstructionScene& scene, ConstructionHistory& history) {
-    if (state_ != SketchSessionState::Ready || editingBodyId_ == kNoObject) {
+    if (state_ != SketchSessionState::Ready || editingBodyId_ == kNoObject
+        || editingSketchId_ != kNoCadSketch) {
         return fail(CadStatus::NotSketching);
     }
     if (history.editInProgress()) {
@@ -366,6 +427,221 @@ CadStatus SketchSession::commitEdit(ConstructionScene& scene, ConstructionHistor
 }
 
 // ---------------------------------------------------------------------------
+// Retained sketches (`CAD-R2`)
+// ---------------------------------------------------------------------------
+
+CadStatus SketchSession::beginReuseSketch(ObjectId bodyId, const CadBodyState& state,
+                                          CadSketchId sketchId, CadFeatureOperation operation,
+                                          const SketchFrame& worldFrame) {
+    if (state_ != SketchSessionState::Inactive) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (bodyId == kNoObject) {
+        return fail(CadStatus::NotCadBody);
+    }
+    if (operation != CadFeatureOperation::Add && operation != CadFeatureOperation::Cut) {
+        // A reuse adds a feature to THIS body; New Body is never a later feature.
+        return fail(CadStatus::InvalidFeatureOperation);
+    }
+    const CadStatus valid = validateCadBodyState(state);
+    if (valid != CadStatus::Ok) {
+        return fail(valid);
+    }
+    const CadStatus refusal = cadSketchReuseRefusal(state, sketchId);
+    if (refusal != CadStatus::Ok) {
+        return fail(refusal);
+    }
+    const CadSketchRecord* record = findCadSketchRecord(state, sketchId);
+    const CadStatus started =
+            begin(record->hasFeatureSupport ? Workplane::XY : record->sketch.plane);
+    if (started != CadStatus::Ok) {
+        return started;
+    }
+    // A copy to SHOW and to pick areas in -- the candidate never writes it back.
+    sketch_ = record->sketch;
+    frame_ = worldFrame;
+    targetBodyId_ = bodyId;
+    targetBaseState_ = state;
+    hasTargetState_ = true;
+    reuseSketchId_ = sketchId;
+    // Which way is INTO the material. Every feature face frame is
+    // material-outward, so a sketch on one cuts against its normal; the root
+    // sketch lies on the base's own plane cap, so a Cut grows the way the base
+    // grew (a two-sided base has material on both sides; the normal's side is
+    // the canonical choice, and Flip is one tap away).
+    if (record->hasFeatureSupport) {
+        reuseCutDirection_ = ExtrudeDirection::AgainstNormal;
+    } else {
+        reuseCutDirection_ = state.extrude.extent == ExtrudeExtentMode::OneSide
+                                     ? state.extrude.direction
+                                     : ExtrudeDirection::AlongNormal;
+    }
+    operation_ = operation;
+    oneSideDirection_ = operation == CadFeatureOperation::Cut
+                                ? reuseCutDirection_
+                                : (reuseCutDirection_ == ExtrudeDirection::AgainstNormal
+                                           ? ExtrudeDirection::AlongNormal
+                                           : ExtrudeDirection::AgainstNormal);
+    extrude_.direction = oneSideDirection_;
+    touchCandidate();
+    const CadStatus finished = finish();
+    if (finished != CadStatus::Ok) {
+        cancel();
+        return fail(finished);
+    }
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::beginEditSketch(ObjectId bodyId, const CadBodyState& state,
+                                         CadSketchId sketchId, const SketchFrame& worldFrame) {
+    if (state_ != SketchSessionState::Inactive) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (bodyId == kNoObject) {
+        return fail(CadStatus::NotCadBody);
+    }
+    const CadStatus valid = validateCadBodyState(state);
+    if (valid != CadStatus::Ok) {
+        return fail(valid);
+    }
+    const CadSketchRecord* record = findCadSketchRecord(state, sketchId);
+    if (record == nullptr) {
+        return fail(CadStatus::SketchNotFound);
+    }
+    // A consumed sketch: through its FIRST consumer, the existing staged edit,
+    // whose one Finish regenerates every feature that extrudes it.
+    CadFeatureView view;
+    for (uint32_t i = 0; cadFeatureAt(state, i, &view); ++i) {
+        if (view.sketchId == sketchId) {
+            return beginEditFeature(bodyId, state, view.featureId, worldFrame,
+                                    /*startReady=*/false);
+        }
+    }
+    // An unused sketch: sketch-only. Its placement must resolve, or there is
+    // nowhere to author it.
+    CadFrame64 placement;
+    const CadStatus placed = cadSketchPlacement(state, sketchId, &placement);
+    if (placed != CadStatus::Ok) {
+        return fail(placed);
+    }
+    const CadStatus started = begin(Workplane::XY);
+    if (started != CadStatus::Ok) {
+        return started;
+    }
+    sketch_ = record->sketch;
+    frame_ = worldFrame;
+    editingBodyId_ = bodyId;
+    editingSketchId_ = sketchId;
+    targetBodyId_ = bodyId;
+    targetBaseState_ = state;
+    hasTargetState_ = true;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+namespace {
+
+// Whether a NEW face sketch stands on one of its producer's own features, so
+// it can be kept as that body's retained sketch.
+bool keepsOnProducer(bool hasTargetState, ObjectId targetBodyId, const CadSketch& sketch,
+                     const CadBodyState& target) {
+    return hasTargetState && sketch.hasFaceSupport
+           && targetBodyId == sketch.faceSupport.producerObjectId
+           && target.baseKind == CadFeatureKind::Extrude
+           && target.sketches.size() < kMaxCadSketches;
+}
+
+}  // namespace
+
+bool SketchSession::canKeepSketch() const {
+    if (!active() || reuseSketchId_ != kNoCadSketch || sketch_.entities.empty()) {
+        return false;
+    }
+    if (editingSketchId_ != kNoCadSketch) {
+        return state_ == SketchSessionState::Editing;
+    }
+    return editingBodyId_ == kNoObject
+           && keepsOnProducer(hasTargetState_, targetBodyId_, sketch_, targetBaseState_);
+}
+
+CadStatus SketchSession::commitSketch(ConstructionScene& scene, ConstructionHistory& history,
+                                      CadSketchId* outSketchId) {
+    if (outSketchId != nullptr) {
+        *outSketchId = kNoCadSketch;
+    }
+    const bool sketchOnlyEdit = editingSketchId_ != kNoCadSketch;
+    const bool newOnFace = !sketchOnlyEdit && reuseSketchId_ == kNoCadSketch
+                           && editingBodyId_ == kNoObject
+                           && keepsOnProducer(hasTargetState_, targetBodyId_, sketch_,
+                                              targetBaseState_);
+    if (!active() || (!sketchOnlyEdit && !newOnFace)
+        || (sketchOnlyEdit && state_ != SketchSessionState::Editing)) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (history.editInProgress()) {
+        return fail(CadStatus::RefusedEditInProgress);
+    }
+    endPolylineInProgress();
+    resetGesture();
+    if (sketch_.entities.empty()) {
+        return fail(CadStatus::NoClosedProfile);  // nothing to keep
+    }
+    const CadStatus sketchWhy = validateCadSketch(sketch_);
+    if (sketchWhy != CadStatus::Ok) {
+        return fail(sketchWhy);
+    }
+    SceneObject* object = scene.findBody(targetBodyId_);
+    CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    if (body == nullptr) {
+        return fail(CadStatus::NotCadBody);
+    }
+    if (!sameCadBodyState(body->state(), targetBaseState_)) {
+        return fail(CadStatus::FeatureSupportInvalid);  // the staged base moved
+    }
+    CadBodyState candidate;
+    CadSketchId kept = kNoCadSketch;
+    if (sketchOnlyEdit) {
+        candidate = candidateState();
+        kept = editingSketchId_;
+    } else {
+        // The TopoRef the session authored against names a face of THIS body,
+        // so it becomes the record's own-feature support -- carried as a
+        // TopoRef it would be a cycle -- exactly as a new Add/Cut's sketch.
+        candidate = targetBaseState_;
+        CadSketch sketch = sketch_;
+        sketch.plane = Workplane::XY;
+        sketch.hasFaceSupport = false;
+        sketch.faceSupport = TopoRef{};
+        CadFeatureSupport support;
+        support.featureId = sketch_.faceSupport.producerLocalFeatureId;
+        support.face = sketch_.faceSupport.face;
+        support.lineageToken = sketch_.faceSupport.lineageToken;
+        kept = addCadSketchRecord(&candidate, std::move(sketch), &support);
+        if (kept == kNoCadSketch) {
+            return fail(CadStatus::TooManySketches);
+        }
+    }
+    CadStatus why = CadStatus::Ok;
+    {
+        // ONE transaction into the SAME body: one Keep is one Undo, and the
+        // whole state is validated and regenerated by `applyState` first.
+        ScopedConstructionEdit edit(history);
+        why = body->applyState(candidate);
+        if (why == CadStatus::Ok) {
+            publishSceneObject(*object);
+        }
+    }
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    if (outSketchId != nullptr) {
+        *outSketchId = kept;
+    }
+    cancel();
+    return fail(CadStatus::Ok);
+}
+
+// ---------------------------------------------------------------------------
 // The orientation navigator (`SKETCH-UX-R1` C)
 // ---------------------------------------------------------------------------
 
@@ -406,12 +682,21 @@ void SketchSession::rotateView(int quarterTurns) {
     touchOverlay();
 }
 
-void SketchSession::setViewFlipped(bool flipped) {
-    if (!active() || flipped == viewFlipped_) {
-        return;
+CadStatus SketchSession::setViewFlipped(bool flipped) {
+    if (!active()) {
+        return CadStatus::NotSketching;
     }
-    viewFlipped_ = flipped;
-    touchOverlay();
+    if (sketch_.hasFaceSupport) {
+        // The shell already disables Flip on a face; this is the guard behind
+        // it, so a direct call cannot turn the camera to the back of another
+        // body's face either.
+        return CadStatus::InvalidWorkplane;
+    }
+    if (flipped != viewFlipped_) {
+        viewFlipped_ = flipped;
+        touchOverlay();
+    }
+    return CadStatus::Ok;
 }
 
 CadStatus SketchSession::setSupportPlane(Workplane plane) {
@@ -435,7 +720,7 @@ CadStatus SketchSession::setSupportPlane(Workplane plane) {
     }
     sketch_.plane = plane;
     const WorkplaneFrame wf = workplaneFrame(plane);
-    frame_ = SketchFrame{Vec3{0.0f, 0.0f, 0.0f}, wf.uAxis, wf.vAxis, wf.normal};
+    frame_ = SketchFrame{vec3Scale(wf.normal, static_cast<float>(planeOffset_)), wf.uAxis, wf.vAxis, wf.normal};
     resetGesture();
     arcPending_ = false;
     touchOverlay();
@@ -447,10 +732,18 @@ CadStatus SketchSession::setSupportPlane(Workplane plane) {
 // ---------------------------------------------------------------------------
 
 bool SketchSession::selectedLineLength(Meters* outLength) const {
-    if (!active() || selectedEntityId_ == kNoSketchEntity) {
+    if (!active() || selectedEntityId() == kNoSketchEntity) {
         return false;
     }
-    const SketchEntity* entity = findSketchEntity(sketch_, selectedEntityId_);
+    const SketchEntity* entity = findSketchEntity(sketch_, selectedEntityId());
+    // A RETAINED Length dimension on the line, shown, already says this: the
+    // transient annotation would be the same number drawn twice.
+    for (const SketchDimension& dimension : sketch_.dimensions) {
+        if (entity != nullptr && dimension.kind == SketchDimensionKind::LineLength
+            && dimension.first.entityId == entity->id() && dimensionVisible(dimension)) {
+            return false;
+        }
+    }
     if (entity == nullptr) {
         return false;
     }
@@ -506,10 +799,10 @@ bool SketchSession::selectedLineDimensionAnchor(double worldPerUnit, SketchPoint
     if (out == nullptr || !std::isfinite(worldPerUnit) || worldPerUnit <= 0.0) {
         return false;
     }
-    if (!active() || selectedEntityId_ == kNoSketchEntity) {
+    if (!selectedLineLength(nullptr)) {
         return false;
     }
-    const SketchEntity* entity = findSketchEntity(sketch_, selectedEntityId_);
+    const SketchEntity* entity = findSketchEntity(sketch_, selectedEntityId());
     const SketchLine* line = entity != nullptr ? entity->line() : nullptr;
     DimensionFrame f;
     if (line == nullptr || !dimensionFrameFor(*line, &f)) {
@@ -565,6 +858,10 @@ bool SketchSession::setTool(SketchTool tool) {
         return false;
     }
     if (tool == tool_) {
+        if (modifyMode_ != SketchModifyMode::None) {
+            resetModifyState();
+            touchOverlay();
+        }
         return true;
     }
     // Changing tool ends a polyline being placed and drops a drag: a gesture
@@ -574,6 +871,9 @@ bool SketchSession::setTool(SketchTool tool) {
     // A pending arc chord belongs to the Arc tool; changing tool drops it, as
     // a drag in progress is dropped.
     arcPending_ = false;
+    // A drawing tool and a modify mode are two meanings for one tap: choosing
+    // the tool ends the mode (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`).
+    resetModifyState();
     tool_ = tool;
     touchOverlay();
     return true;
@@ -592,6 +892,7 @@ void SketchSession::resetGesture() {
     // way -- an uncommitted sketch is volatile -- so this is about what the user
     // sees, not about the project.
     restoreCancelledExtrudeDrag();
+    cancelRevolveDrag();
 }
 
 // ---------------------------------------------------------------------------
@@ -659,36 +960,44 @@ void SketchSession::sketchViewAngles(Workplane plane, float* outYaw, float* outP
     }
 }
 
-SketchSession::SnapResult SketchSession::snap(const SketchPoint& raw, double snapWorld) const {
-    SnapResult result;
-    result.point = raw;
-    result.kind = SketchSnapKind::None;
+const SketchSnapCandidates& SketchSession::snapCandidates() const {
+    // Derived per sketch CONTENT, so a pointer move costs a scan of exact
+    // points and never re-derives the arrangement.
+    if (!snapCacheValid_ || !sameCadSketch(snapSketch_, sketch_)) {
+        snapSketch_ = sketch_;
+        allCurvesCache_ = sketch_.entities.empty()
+                                  ? SketchArrangement{}
+                                  : deriveSketchArrangement(cadSketchAllCurvesView(sketch_));
+        snapCache_ = collectSketchSnapCandidates(sketch_, &allCurvesCache_);
+        snapCacheValid_ = true;
+    }
+    return snapCache_;
+}
 
-    // Endpoints first: an existing point is the more specific intent.
-    std::vector<SketchPoint> candidates;
-    collectSnapPoints(sketch_, &candidates);
-    if (polylineInProgress_) {
-        for (const SketchPoint& p : polylineVertices_) {
-            candidates.push_back(p);
-        }
+SketchSession::SnapResult SketchSession::snap(const SketchPoint& raw, double snapWorld) {
+    // THE one priority (forgeshape_sketch_snap.h). The polyline being placed
+    // offers its own vertices as endpoints, and a gesture's start -- the
+    // drag's anchor or the run's last vertex -- is a guide source, so a line
+    // can be drawn exactly horizontal or vertical from where it began.
+    const std::vector<SketchPoint> extra =
+            polylineInProgress_ ? polylineVertices_ : std::vector<SketchPoint>{};
+    const SketchPoint* guide = nullptr;
+    SketchPoint guideAt;
+    const SketchPoint* dragStart = pointerId_ >= 0 && dragValid_ ? &anchor_ : nullptr;
+    if (polylineInProgress_ && !polylineVertices_.empty()) {
+        guideAt = polylineVertices_.back();
+        guide = &guideAt;
+    } else if (pointerId_ >= 0 && dragValid_ && tool_ != SketchTool::Rectangle) {
+        // Not for a rectangle: its corner aligned with its own start is a
+        // rectangle with no width, never what the drag meant.
+        guideAt = anchor_;
+        guide = &guideAt;
     }
-    double best = snapWorld;
-    for (const SketchPoint& candidate : candidates) {
-        const double d = distance(raw, candidate);
-        if (d <= best) {
-            best = d;
-            result.point = candidate;
-            result.kind = SketchSnapKind::Endpoint;
-        }
-    }
-    if (result.kind == SketchSnapKind::Endpoint) {
-        return result;
-    }
-    // Then the grid: exact multiples of the CURRENT adaptive step.
     const double step = gridStep_ > 0.0 ? gridStep_ : kSketchGridSpacingMeters;
-    result.point.u = std::round(raw.u / step) * step;
-    result.point.v = std::round(raw.v / step) * step;
-    result.kind = SketchSnapKind::Grid;
+    lastSnap_ = snapSketchPoint(snapCandidates(), raw, snapWorld, step, extra, guide, dragStart);
+    SnapResult result;
+    result.point = lastSnap_.point;
+    result.kind = lastSnap_.kind;
     return result;
 }
 
@@ -698,55 +1007,16 @@ bool SketchSession::pointerToSketch(const CameraSnapshot& camera, float x, float
     if (!screenToSketch(camera, x, y, viewportWidth, viewportHeight, &raw)) {
         return false;
     }
+    rawCursor_ = raw;
     *out = snap(raw, kSketchSnapToleranceUnits * worldPerUnit_);
     lastSnapKind_ = out->kind;
     return true;
 }
 
 SketchEntityId SketchSession::hitTest(const SketchPoint& point, double toleranceWorld) const {
-    SketchEntityId best = kNoSketchEntity;
-    double bestDistance = toleranceWorld;
-    for (const SketchEntity& entity : sketch_.entities) {
-        double d = toleranceWorld * 2.0;
-        if (const SketchLine* line = entity.line()) {
-            d = segmentDistance(point, line->start, line->end);
-        } else if (const SketchPolyline* polyline = entity.polyline()) {
-            const size_t n = polyline->vertices.size();
-            for (size_t i = 0; i + 1 < n; ++i) {
-                d = std::fmin(d, segmentDistance(point, polyline->vertices[i],
-                                                 polyline->vertices[i + 1]));
-            }
-            if (polyline->closed && n >= 3) {
-                d = std::fmin(d, segmentDistance(point, polyline->vertices[n - 1],
-                                                 polyline->vertices[0]));
-            }
-        } else if (const SketchRectangle* rectangle = entity.rectangle()) {
-            const std::vector<SketchPoint> corners = rectangleProfilePolygon(*rectangle);
-            for (size_t i = 0; i < 4; ++i) {
-                d = std::fmin(d, segmentDistance(point, corners[i], corners[(i + 1) % 4]));
-            }
-        } else if (const SketchCircle* circle = entity.circle()) {
-            d = std::fabs(distance(point, circle->center) - circle->radius);
-        } else if (sketchEntityIsCurved(entity)) {
-            // A curve is hit-tested against its DERIVED polyline: what the user
-            // is aiming at is the stroke they can see, and the stroke is that
-            // polyline. Bounded by the same tessellation the profile uses, so
-            // hit-testing and extrusion agree about where the curve is.
-            std::vector<SketchPoint> points;
-            if (tessellateSketchCurve(entity, &points) == CadStatus::Ok && points.size() >= 2) {
-                for (size_t i = 1; i < points.size(); ++i) {
-                    d = std::fmin(d, segmentDistance(point, points[i - 1], points[i]));
-                }
-            }
-        }
-        // Ties keep the earlier entity: deterministic, and the same rule
-        // scene picking uses.
-        if (d < bestDistance) {
-            bestDistance = d;
-            best = entity.id();
-        }
-    }
-    return best;
+    // ONE hit rule for every sketch tap (forgeshape_sketch_drafting.h): curves
+    // against the derived polyline they are drawn with, ties to the earlier.
+    return hitSketchEntity(sketch_, point, toleranceWorld);
 }
 
 // ---------------------------------------------------------------------------
@@ -786,6 +1056,7 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                                    int viewportHeight) {
     if (count > 1 || action == TouchAction::PointerDown) {
         regionTapArmed_ = false;
+        regionTapOnHead_ = false;
         restoreCancelledExtrudeDrag();
         return false;  // the gesture belongs to the camera
     }
@@ -802,6 +1073,8 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             regionTapPointer_ = pointers[0].id;
             regionTapX_ = pointers[0].x;
             regionTapY_ = pointers[0].y;
+            regionTapCamera_ = camera;
+            regionTapOnHead_ = false;
             CadExtrudeAnchors anchors;
             if (!extrudeAnchors(&anchors)) {
                 return false;
@@ -814,15 +1087,18 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                                       viewportHeight, &positiveSide)) {
                 return false;  // off the arrow: orbit, pan and tap are untouched
             }
-            // ON the drawn arrow the finger means the arrow, at once. Merely in
-            // its grab corridor the gesture is captured -- a drag still takes
-            // the arrow -- but the tap stays armed, because the corridor
-            // crosses the cells around the chosen area and a still tap there
-            // is a fill-bucket tap on the cell under the finger
-            // (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`).
-            if (extrudeDrag_.onDrawnArrow(anchors, camera, pointers[0].x, pointers[0].y,
-                                          viewportWidth, viewportHeight)) {
+            // ON the drawn arrow HEAD the finger means the arrow, at once.
+            // Anywhere else in the grab corridor -- the shaft included -- the
+            // gesture is captured, so a drag still takes the arrow, but the tap
+            // stays armed: the shaft stands ON the chosen area and, with its
+            // corridor, crosses the cells around it, and a still tap there is a
+            // fill-bucket tap on the cell under the finger
+            // (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`; before it, the whole drawn
+            // shaft claimed the still tap and the tap did nothing).
+            if (extrudeDrag_.onDrawnArrowHead(anchors, camera, pointers[0].x, pointers[0].y,
+                                              viewportWidth, viewportHeight)) {
                 regionTapArmed_ = false;
+                regionTapOnHead_ = true;
             }
             if (!extrudeDrag_.beginDrag(pointers[0].id, anchors, positiveSide, camera,
                                         pointers[0].x, pointers[0].y, viewportWidth,
@@ -837,7 +1113,14 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                 && pointers[0].id == regionTapPointer_
                 && std::hypot(pointers[0].x - regionTapX_, pointers[0].y - regionTapY_)
                            > kSketchTapSlopPixels) {
-                regionTapArmed_ = false;  // it became an orbit
+                regionTapArmed_ = false;  // it became an orbit (or a drag)
+                recordTapOutcome(SketchTapOutcome::Travel);
+            }
+            if (regionTapOnHead_ && count == 1 && pointers != nullptr
+                && pointers[0].id == regionTapPointer_
+                && std::hypot(pointers[0].x - regionTapX_, pointers[0].y - regionTapY_)
+                           > kSketchTapSlopPixels) {
+                regionTapOnHead_ = false;  // a head drag, not a still tap
             }
             if (!extrudeDrag_.capturing() || count != 1 || pointers == nullptr
                 || pointers[0].id != extrudeDrag_.capturedPointerId()) {
@@ -867,35 +1150,48 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                     const float x = count >= 1 && pointers != nullptr ? pointers[0].x : regionTapX_;
                     const float y = count >= 1 && pointers != nullptr ? pointers[0].y : regionTapY_;
                     if (std::hypot(x - regionTapX_, y - regionTapY_) <= kSketchTapSlopPixels) {
-                        toggleRegionAt(camera, regionTapX_, regionTapY_, viewportWidth,
+                        // The DOWN camera and the Down pixel: the cell the
+                        // finger meant when it landed.
+                        toggleRegionAt(regionTapCamera_, regionTapX_, regionTapY_, viewportWidth,
                                        viewportHeight);
+                    } else {
+                        recordTapOutcome(SketchTapOutcome::Travel);
                     }
                 }
                 regionTapArmed_ = false;
+                regionTapOnHead_ = false;
                 // Never consumed: the camera saw the Down and must see the Up.
                 return false;
             }
             if (actionPointerId >= 0 && actionPointerId != extrudeDrag_.capturedPointerId()) {
                 regionTapArmed_ = false;
+                regionTapOnHead_ = false;
                 restoreCancelledExtrudeDrag();
                 return false;
             }
             if (regionTapArmed_ && action == TouchAction::Up) {
-                // A still tap in the corridor, off the drawn arrow: it never
+                // A still tap in the corridor, off the arrow head: it never
                 // moved the depth, so the capture ends with nothing written and
-                // the cell under the finger toggles.
+                // the cell under the finger -- at the Down, through the Down
+                // camera -- toggles.
                 regionTapArmed_ = false;
                 restoreCancelledExtrudeDrag();
-                toggleRegionAt(camera, regionTapX_, regionTapY_, viewportWidth, viewportHeight);
+                toggleRegionAt(regionTapCamera_, regionTapX_, regionTapY_, viewportWidth,
+                               viewportHeight);
                 return true;
             }
+            if (regionTapOnHead_ && action == TouchAction::Up) {
+                recordTapOutcome(SketchTapOutcome::ArrowHead);
+            }
             regionTapArmed_ = false;
+            regionTapOnHead_ = false;
             extrudeDrag_.endDrag();
             touchOverlay();
             return true;
         }
         case TouchAction::Cancel: {
             regionTapArmed_ = false;
+            regionTapOnHead_ = false;
             return restoreCancelledExtrudeDrag();
         }
         default:
@@ -917,11 +1213,21 @@ bool SketchSession::onTouch(TouchAction action, int32_t actionPointerId,
     // which is exactly when the extrusion becomes the thing being adjusted. Two
     // fingers still pan and pinch in both states, unchanged.
     if (state_ == SketchSessionState::Ready) {
+        if (featureKind_ == CadFeatureKind::Revolve) {
+            return onRevolveTouch(action, actionPointerId, pointers, count, camera, viewportWidth,
+                                  viewportHeight);
+        }
         return onExtrudeTouch(action, actionPointerId, pointers, count, camera, viewportWidth,
                               viewportHeight);
     }
     if (state_ != SketchSessionState::Editing) {
         return false;
+    }
+    // A modify mode owns the single finger outright while it is active
+    // (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`): one tap, one meaning.
+    if (modifyMode_ != SketchModifyMode::None) {
+        return onModifyTouch(action, actionPointerId, pointers, count, camera, viewportWidth,
+                             viewportHeight);
     }
 
     // A second pointer, however it arrives, ends the sketch's claim on the
@@ -993,8 +1299,17 @@ bool SketchSession::onTouch(TouchAction action, int32_t actionPointerId,
             switch (tool_) {
                 case SketchTool::Select: {
                     if (tap) {
-                        selectedEntityId_ =
-                                hitTest(cursor_, kSketchHitToleranceUnits * worldPerUnit_);
+                        // Hit-tested at the RAW point: a snap is about where a
+                        // new point lands, never about which stroke was meant.
+                        const SketchEntityId hit =
+                                hitTest(rawCursor_, kSketchHitToleranceUnits * worldPerUnit_);
+                        if (hit == kNoSketchEntity) {
+                            selectedIds_.clear();  // empty space clears, in either mode
+                        } else if (multiSelect_) {
+                            toggleSelect(hit);
+                        } else {
+                            selectedIds_.assign(1, hit);
+                        }
                         lastStatus_ = CadStatus::Ok;
                     }
                     break;
@@ -1085,7 +1400,7 @@ void SketchSession::placeFromDrag() {
     lastStatus_ = why;
     if (why == CadStatus::Ok) {
         ++entitiesPlaced_;
-        selectedEntityId_ = id;
+        selectedIds_.assign(1, id);
     }
 }
 
@@ -1105,7 +1420,7 @@ void SketchSession::placeArcThrough(const SketchPoint& through) {
     lastStatus_ = why;
     if (why == CadStatus::Ok) {
         ++entitiesPlaced_;
-        selectedEntityId_ = id;
+        selectedIds_.assign(1, id);
     }
 }
 
@@ -1140,7 +1455,7 @@ void SketchSession::placePolylineVertex(const SnapResult& at) {
         polylineVertices_.clear();
         if (lastStatus_ == CadStatus::Ok) {
             ++entitiesPlaced_;
-            selectedEntityId_ = id;
+            selectedIds_.assign(1, id);
         }
         return;
     }
@@ -1178,7 +1493,7 @@ void SketchSession::endPolylineInProgress() {
         }
         if (lastStatus_ == CadStatus::Ok) {
             ++entitiesPlaced_;
-            selectedEntityId_ = id;
+            selectedIds_.assign(1, id);
         }
     }
     polylineVertices_.clear();
@@ -1189,17 +1504,43 @@ void SketchSession::endPolylineInProgress() {
 // Editing
 // ---------------------------------------------------------------------------
 
+bool SketchSession::entitySelected(SketchEntityId id) const {
+    return std::find(selectedIds_.begin(), selectedIds_.end(), id) != selectedIds_.end();
+}
+
 bool SketchSession::select(SketchEntityId id) {
     if (!active() || findSketchEntity(sketch_, id) == nullptr) {
         return false;
     }
-    selectedEntityId_ = id;
+    selectedIds_.assign(1, id);
+    touchOverlay();
+    return true;
+}
+
+bool SketchSession::toggleSelect(SketchEntityId id) {
+    if (!active() || findSketchEntity(sketch_, id) == nullptr) {
+        return false;
+    }
+    const auto at = std::find(selectedIds_.begin(), selectedIds_.end(), id);
+    if (at != selectedIds_.end()) {
+        selectedIds_.erase(at);
+    } else {
+        selectedIds_.push_back(id);
+    }
     touchOverlay();
     return true;
 }
 
 void SketchSession::clearSelection() {
-    selectedEntityId_ = kNoSketchEntity;
+    selectedIds_.clear();
+    touchOverlay();
+}
+
+void SketchSession::setMultiSelect(bool on) {
+    if (multiSelect_ == on) {
+        return;
+    }
+    multiSelect_ = on;
     touchOverlay();
 }
 
@@ -1207,12 +1548,15 @@ CadStatus SketchSession::deleteSelected() {
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
     }
-    if (selectedEntityId_ == kNoSketchEntity) {
+    if (selectedIds_.empty()) {
         return fail(CadStatus::UnknownEntity);
     }
-    const CadStatus why = removeSketchEntity(&sketch_, selectedEntityId_);
+    uint32_t removed = 0;
+    const CadStatus why = deleteSketchEntities(&sketch_, selectedIds_, &removed);
     if (why == CadStatus::Ok) {
-        selectedEntityId_ = kNoSketchEntity;
+        lastDeletedDimensions_ = removed;
+        selectedIds_.clear();
+        resetModifyState();
         touchOverlay();
     }
     return fail(why);
@@ -1227,6 +1571,557 @@ CadStatus SketchSession::replaceEntity(SketchEntityId id, SketchEntity::Payload 
         touchOverlay();
     }
     return fail(why);
+}
+
+// ---------------------------------------------------------------------------
+// Drafting (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`)
+// ---------------------------------------------------------------------------
+//
+// Every act here edits the STAGED sketch the session already owns, exactly as
+// placing a line does: nothing is a history step or project truth until the
+// one commit, a Cancel costs the project nothing, and the derived profiles are
+// simply re-read at the next Finish or preview.
+
+void SketchSession::resetModifyState() {
+    modifyMode_ = SketchModifyMode::None;
+    dimensionTargetSet_ = false;
+    dimensionFirst_ = CadSketchEdgeRef{};
+    dimensionAwaitSecond_ = false;
+    offsetSource_ = kNoSketchEntity;
+    offsetDistance_ = 0.0;
+    mirrorAxisSet_ = false;
+    mirrorAxis_ = CadSketchEdgeRef{};
+    modifyPreview_.clear();
+}
+
+SketchEntityRole SketchSession::selectionConstructionTarget() const {
+    if (selectedIds_.empty()) {
+        return SketchEntityRole::Regular;
+    }
+    return sketchRoleToggleTarget(sketch_, selectedIds_);
+}
+
+CadStatus SketchSession::toggleSelectionConstruction(SketchEntityRole* outApplied) {
+    if (state_ != SketchSessionState::Editing) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (selectedIds_.empty()) {
+        return fail(CadStatus::UnknownEntity);
+    }
+    const SketchEntityRole role = sketchRoleToggleTarget(sketch_, selectedIds_);
+    const CadStatus why = setSketchEntitiesRole(&sketch_, selectedIds_, role);
+    if (why == CadStatus::Ok) {
+        if (outApplied != nullptr) *outApplied = role;
+        touchCandidate();
+    }
+    return fail(why);
+}
+
+CadStatus SketchSession::setModifyMode(SketchModifyMode mode) {
+    if (state_ != SketchSessionState::Editing) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (static_cast<unsigned>(mode) >= static_cast<unsigned>(kSketchModifyModeCount)) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (mode == SketchModifyMode::Mirror && selectedIds_.empty()) {
+        return fail(CadStatus::MirrorNothingSelected);
+    }
+    // A run being placed and a pending arc belong to the drawing tool; a mode
+    // change ends them exactly as a tool change does.
+    endPolylineInProgress();
+    arcPending_ = false;
+    resetGesture();
+    resetModifyState();
+    modifyMode_ = mode;
+    const SketchEntityId single = selectedEntityId();
+    const SketchEntity* entity = single != kNoSketchEntity ? findSketchEntity(sketch_, single) : nullptr;
+    if (mode == SketchModifyMode::Offset && entity != nullptr && sketchEntityOffsettable(*entity)) {
+        offsetSource_ = single;
+        offsetDistance_ = 4.0 * (gridStep_ > 0.0 ? gridStep_ : kSketchGridSpacingMeters);
+    }
+    if (mode == SketchModifyMode::Dimension && entity != nullptr) {
+        dimensionFirst_ = CadSketchEdgeRef{single, 0u};
+        dimensionTargetSet_ = true;
+    }
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
+bool SketchSession::dimensionTarget(CadSketchEdgeRef* out) const {
+    if (modifyMode_ != SketchModifyMode::Dimension || !dimensionTargetSet_) {
+        return false;
+    }
+    if (out != nullptr) *out = dimensionFirst_;
+    return true;
+}
+
+std::vector<SketchDimensionKind> SketchSession::dimensionTargetKinds() const {
+    std::vector<SketchDimensionKind> kinds;
+    if (!dimensionTarget(nullptr)) {
+        return kinds;
+    }
+    // Entity-level kinds are asked of the whole entity (edge 0); edge kinds of
+    // the edge the finger chose -- so a tap on a rectangle's right side offers
+    // its width and height AND that side's own length.
+    const CadSketchEdgeRef entityRef{dimensionFirst_.entityId, 0u};
+    for (SketchDimensionKind kind : applicableSketchDimensionKinds(sketch_, entityRef)) {
+        if (!sketchDimensionKindNamesEdge(kind)) kinds.push_back(kind);
+    }
+    for (SketchDimensionKind kind : applicableSketchDimensionKinds(sketch_, dimensionFirst_)) {
+        if (sketchDimensionKindNamesEdge(kind)) kinds.push_back(kind);
+    }
+    std::sort(kinds.begin(), kinds.end());
+    return kinds;
+}
+
+CadStatus SketchSession::setDimensionTarget(const CadSketchEdgeRef& ref) {
+    if (state_ != SketchSessionState::Editing || modifyMode_ != SketchModifyMode::Dimension) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (findSketchEntity(sketch_, ref.entityId) == nullptr) {
+        return fail(CadStatus::UnknownEntity);
+    }
+    dimensionFirst_ = ref;
+    dimensionTargetSet_ = true;
+    dimensionAwaitSecond_ = false;
+    selectedIds_.assign(1, ref.entityId);
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::beginDimensionAngle() {
+    if (!dimensionTarget(nullptr)) {
+        return fail(CadStatus::NotSketching);
+    }
+    const SketchEntity* entity = findSketchEntity(sketch_, dimensionFirst_.entityId);
+    bool straight = false;
+    for (const SketchStraightEdge& edge :
+         entity != nullptr ? sketchEntityStraightEdges(*entity) : std::vector<SketchStraightEdge>{}) {
+        straight = straight || edge.edgeLocalIndex == dimensionFirst_.edgeLocalIndex;
+    }
+    if (!straight) {
+        return fail(CadStatus::SketchDimensionInvalid);
+    }
+    dimensionAwaitSecond_ = true;
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::addDimension(SketchDimensionKind kind, SketchDimensionMode mode,
+                                      SketchDimensionId* outId) {
+    if (state_ != SketchSessionState::Editing) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (!dimensionTarget(nullptr) || kind == SketchDimensionKind::EdgeAngle) {
+        // An angle between two edges is made by its second tap.
+        return fail(CadStatus::SketchDimensionInvalid);
+    }
+    const CadSketchEdgeRef first = sketchDimensionKindNamesEdge(kind)
+                                           ? dimensionFirst_
+                                           : CadSketchEdgeRef{dimensionFirst_.entityId, 0u};
+    SketchDimensionId id = kNoSketchDimension;
+    const CadStatus why = addSketchDimension(&sketch_, kind, mode, first, CadSketchEdgeRef{}, &id);
+    if (why == CadStatus::Ok) {
+        if (outId != nullptr) *outId = id;
+        touchOverlay();
+    }
+    return fail(why);
+}
+
+CadStatus SketchSession::removeDimension(SketchDimensionId id) {
+    if (state_ != SketchSessionState::Editing) {
+        return fail(CadStatus::NotSketching);
+    }
+    const CadStatus why = removeSketchDimension(&sketch_, id);
+    if (why == CadStatus::Ok) {
+        touchOverlay();
+    }
+    return fail(why);
+}
+
+CadStatus SketchSession::applyDimensionValue(SketchDimensionId id, double value) {
+    if (state_ != SketchSessionState::Editing) {
+        return fail(CadStatus::NotSketching);
+    }
+    const CadStatus why = applySketchDimensionValue(&sketch_, id, value);
+    if (why == CadStatus::Ok) {
+        touchCandidate();
+    }
+    return fail(why);
+}
+
+void SketchSession::setDimensionVisibility(SketchDimensionVisibility visibility) {
+    if (static_cast<unsigned>(visibility) >= static_cast<unsigned>(kSketchDimensionVisibilityCount)
+        || visibility == dimensionVisibility_) {
+        return;
+    }
+    dimensionVisibility_ = visibility;
+    touchOverlay();
+}
+
+bool SketchSession::dimensionVisible(const SketchDimension& dimension) const {
+    if (state_ != SketchSessionState::Editing) {
+        return false;  // a drawing annotation; Ready has left the drawing
+    }
+    switch (dimensionVisibility_) {
+        case SketchDimensionVisibility::Off:
+            return false;
+        case SketchDimensionVisibility::All:
+            return true;
+        case SketchDimensionVisibility::Selected:
+            break;
+    }
+    if (entitySelected(dimension.first.entityId)
+        || (dimension.kind == SketchDimensionKind::EdgeAngle
+            && entitySelected(dimension.second.entityId))) {
+        return true;
+    }
+    return dimensionTarget(nullptr) && dimensionFirst_.entityId == dimension.first.entityId;
+}
+
+std::vector<SketchDimensionAnnotation> SketchSession::visibleDimensionAnnotations(
+        double worldPerUnit) const {
+    std::vector<SketchDimensionAnnotation> out;
+    for (const SketchDimension& dimension : sketch_.dimensions) {
+        if (!dimensionVisible(dimension)) continue;
+        SketchDimensionAnnotation annotation;
+        if (buildSketchDimensionAnnotation(sketch_, dimension, worldPerUnit, &annotation)) {
+            out.push_back(std::move(annotation));
+        }
+    }
+    return out;
+}
+
+CadStatus SketchSession::trimAt(const SketchPoint& point, double toleranceMeters,
+                                SketchTrimPlan* outPlan) {
+    if (state_ != SketchSessionState::Editing) {
+        return fail(CadStatus::NotSketching);
+    }
+    SketchTrimPlan plan;
+    snapCandidates();  // brings the shared all-curves arrangement up to date
+    const CadStatus why = planSketchTrim(sketch_, point, toleranceMeters, &plan, &allCurvesCache_);
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    sketch_ = plan.result;
+    lastTrimConvertedRectangle_ = plan.rectangleConverted;
+    lastTapAct_ = TapAct::Trim;
+    ++tapActSerial_;
+    // A piece that kept the id stays selectable as it was; anything the trim
+    // removed or replaced leaves the selection.
+    selectedIds_.erase(std::remove_if(selectedIds_.begin(), selectedIds_.end(),
+                                      [this](SketchEntityId id) {
+                                          return findSketchEntity(sketch_, id) == nullptr;
+                                      }),
+                       selectedIds_.end());
+    if (outPlan != nullptr) *outPlan = std::move(plan);
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::extendAt(const SketchPoint& point, double toleranceMeters,
+                                  SketchExtendPlan* outPlan) {
+    if (state_ != SketchSessionState::Editing) {
+        return fail(CadStatus::NotSketching);
+    }
+    SketchExtendPlan plan;
+    const CadStatus why = planSketchExtend(sketch_, point, toleranceMeters, &plan);
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    sketch_ = plan.result;
+    lastTapAct_ = TapAct::Extend;
+    ++tapActSerial_;
+    if (outPlan != nullptr) *outPlan = std::move(plan);
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::setOffsetSource(SketchEntityId id) {
+    if (state_ != SketchSessionState::Editing || modifyMode_ != SketchModifyMode::Offset) {
+        return fail(CadStatus::NotSketching);
+    }
+    const SketchEntity* entity = findSketchEntity(sketch_, id);
+    if (entity == nullptr) {
+        return fail(CadStatus::UnknownEntity);
+    }
+    if (!sketchEntityOffsettable(*entity)) {
+        return fail(CadStatus::OffsetSplineUnsupported);
+    }
+    offsetSource_ = id;
+    if (offsetDistance_ == 0.0) {
+        offsetDistance_ = 4.0 * (gridStep_ > 0.0 ? gridStep_ : kSketchGridSpacingMeters);
+    }
+    selectedIds_.assign(1, id);
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::setOffsetDistance(double signedMeters) {
+    if (state_ != SketchSessionState::Editing || modifyMode_ != SketchModifyMode::Offset) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (!std::isfinite(signedMeters) || std::fabs(signedMeters) > kMaxSketchCoordinateMeters) {
+        return fail(CadStatus::OffsetInvalid);
+    }
+    offsetDistance_ = signedMeters;
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::offsetPreviewStatus() const {
+    if (modifyMode_ != SketchModifyMode::Offset || offsetSource_ == kNoSketchEntity) {
+        return CadStatus::DraftingNoTarget;
+    }
+    const SketchEntity* entity = findSketchEntity(sketch_, offsetSource_);
+    if (entity == nullptr) {
+        return CadStatus::UnknownEntity;
+    }
+    std::vector<SketchEntity::Payload> pieces;
+    return offsetSketchEntity(*entity, offsetDistance_, &pieces);
+}
+
+CadStatus SketchSession::confirmOffset(std::vector<SketchEntityId>* outIds) {
+    if (state_ != SketchSessionState::Editing || modifyMode_ != SketchModifyMode::Offset) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (offsetSource_ == kNoSketchEntity) {
+        return fail(CadStatus::DraftingNoTarget);
+    }
+    std::vector<SketchEntityId> ids;
+    const CadStatus why = applySketchOffset(&sketch_, offsetSource_, offsetDistance_, &ids);
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    entitiesPlaced_ += static_cast<uint32_t>(ids.size());
+    selectedIds_ = ids;
+    if (outIds != nullptr) *outIds = std::move(ids);
+    resetModifyState();
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::setMirrorAxis(const CadSketchEdgeRef& axis) {
+    if (state_ != SketchSessionState::Editing || modifyMode_ != SketchModifyMode::Mirror) {
+        return fail(CadStatus::NotSketching);
+    }
+    const CadStatus why = resolveSketchMirrorAxis(sketch_, axis, nullptr, nullptr, nullptr);
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    mirrorAxis_ = axis;
+    mirrorAxisSet_ = true;
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
+bool SketchSession::mirrorAxis(CadSketchEdgeRef* out) const {
+    if (modifyMode_ != SketchModifyMode::Mirror || !mirrorAxisSet_) {
+        return false;
+    }
+    if (out != nullptr) *out = mirrorAxis_;
+    return true;
+}
+
+CadStatus SketchSession::confirmMirror(std::vector<SketchEntityId>* outIds) {
+    if (state_ != SketchSessionState::Editing || modifyMode_ != SketchModifyMode::Mirror) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (!mirrorAxisSet_) {
+        return fail(CadStatus::MirrorAxisInvalid);
+    }
+    std::vector<SketchEntityId> ids;
+    const CadStatus why = applySketchMirror(&sketch_, selectedIds_, mirrorAxis_, &ids);
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    entitiesPlaced_ += static_cast<uint32_t>(ids.size());
+    selectedIds_ = ids;
+    if (outIds != nullptr) *outIds = std::move(ids);
+    resetModifyState();
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+void SketchSession::updateModifyPreview(const SketchPoint& raw) {
+    modifyPreview_.clear();
+    const double tolerance = kSketchHitToleranceUnits * worldPerUnit_;
+    if (modifyMode_ == SketchModifyMode::Trim) {
+        SketchTrimPlan plan;
+        snapCandidates();
+        if (planSketchTrim(sketch_, raw, tolerance, &plan, &allCurvesCache_) == CadStatus::Ok) {
+            modifyPreview_ = std::move(plan.removed);
+        }
+    } else if (modifyMode_ == SketchModifyMode::Extend) {
+        SketchExtendPlan plan;
+        if (planSketchExtend(sketch_, raw, tolerance, &plan) == CadStatus::Ok) {
+            modifyPreview_ = std::move(plan.added);
+        }
+    }
+}
+
+void SketchSession::applyModifyTap(const SketchPoint& raw) {
+    const double tolerance = kSketchHitToleranceUnits * worldPerUnit_;
+    switch (modifyMode_) {
+        case SketchModifyMode::None:
+            return;
+        case SketchModifyMode::Trim:
+            trimAt(raw, tolerance);
+            return;
+        case SketchModifyMode::Extend:
+            extendAt(raw, tolerance);
+            return;
+        case SketchModifyMode::Dimension:
+        case SketchModifyMode::Offset:
+        case SketchModifyMode::Mirror:
+            break;
+    }
+    const SketchEntityId hit = hitTest(raw, tolerance);
+    if (hit == kNoSketchEntity) {
+        fail(CadStatus::DraftingNoTarget);
+        return;
+    }
+    CadSketchEdgeRef ref{hit, 0u};
+    const bool straight = nearestSketchStraightEdge(sketch_, hit, raw, &ref);
+    if (modifyMode_ == SketchModifyMode::Dimension) {
+        if (dimensionAwaitSecond_) {
+            if (!straight || sameCadSketchEdgeRef(ref, dimensionFirst_)) {
+                fail(CadStatus::SketchDimensionInvalid);
+                return;
+            }
+            SketchDimensionId id = kNoSketchDimension;
+            const CadStatus why = addSketchDimension(&sketch_, SketchDimensionKind::EdgeAngle,
+                                                     SketchDimensionMode::Reference, dimensionFirst_,
+                                                     ref, &id);
+            dimensionAwaitSecond_ = false;
+            if (why == CadStatus::Ok) {
+                selectedIds_.assign(1, dimensionFirst_.entityId);
+                if (hit != dimensionFirst_.entityId) selectedIds_.push_back(hit);
+                touchOverlay();
+            }
+            fail(why);
+            return;
+        }
+        setDimensionTarget(ref);
+        return;
+    }
+    if (modifyMode_ == SketchModifyMode::Offset) {
+        setOffsetSource(hit);
+        return;
+    }
+    // Mirror: the tap chooses the AXIS, a straight edge (Regular or
+    // Construction); a curve is refused by name and the axis stands.
+    if (!straight) {
+        fail(CadStatus::MirrorAxisInvalid);
+        return;
+    }
+    setMirrorAxis(ref);
+}
+
+bool SketchSession::onModifyTouch(TouchAction action, int32_t actionPointerId,
+                                  const TouchPointer* pointers, int count,
+                                  const CameraSnapshot& camera, int viewportWidth,
+                                  int viewportHeight) {
+    // A second pointer ends the claim exactly as it does for a drawing tool:
+    // nothing is applied, and pan and pinch stay available.
+    if (count > 1 || action == TouchAction::PointerDown) {
+        resetGesture();
+        modifyPreview_.clear();
+        touchOverlay();
+        return false;
+    }
+    switch (action) {
+        case TouchAction::Down: {
+            float perPixel = 0.0f;
+            if (!worldMetersPerPixel(camera, frame_.origin, viewportHeight, &perPixel)) {
+                return false;
+            }
+            worldPerUnit_ = static_cast<double>(perPixel) * gizmoPixelsPerReferenceUnit();
+            gridStep_ = adaptiveSketchGridStep(static_cast<double>(perPixel));
+            SketchPoint raw;
+            if (!screenToSketch(camera, pointers[0].x, pointers[0].y, viewportWidth, viewportHeight,
+                                &raw)) {
+                return false;
+            }
+            pointerId_ = pointers[0].id;
+            downX_ = pointers[0].x;
+            downY_ = pointers[0].y;
+            travelled_ = false;
+            rawCursor_ = raw;
+            cursor_ = raw;
+            anchor_ = raw;
+            updateModifyPreview(raw);
+            touchOverlay();
+            return true;
+        }
+        case TouchAction::Move: {
+            if (pointerId_ < 0 || pointers[0].id != pointerId_) {
+                return pointerId_ >= 0;
+            }
+            const float dx = pointers[0].x - downX_;
+            const float dy = pointers[0].y - downY_;
+            if (dx * dx + dy * dy >= kSketchTapSlopPixels * kSketchTapSlopPixels) {
+                travelled_ = true;
+            }
+            SketchPoint raw;
+            if (!screenToSketch(camera, pointers[0].x, pointers[0].y, viewportWidth, viewportHeight,
+                                &raw)) {
+                return true;
+            }
+            rawCursor_ = raw;
+            cursor_ = raw;
+            if (modifyMode_ == SketchModifyMode::Offset && travelled_
+                && offsetSource_ != kNoSketchEntity) {
+                // The offset FOLLOWS THE FINGER: its signed distance is the
+                // finger's, in exact multiples of the grid step.
+                const SketchEntity* source = findSketchEntity(sketch_, offsetSource_);
+                double d = 0.0;
+                if (source != nullptr && sketchOffsetDistanceAt(*source, raw, &d)) {
+                    const double step = gridStep_ > 0.0 ? gridStep_ : kSketchGridSpacingMeters;
+                    offsetDistance_ = std::round(d / step) * step;
+                }
+            } else {
+                updateModifyPreview(raw);
+            }
+            touchOverlay();
+            return true;
+        }
+        case TouchAction::Up:
+        case TouchAction::PointerUp: {
+            if (pointerId_ < 0) {
+                return false;
+            }
+            if (actionPointerId != pointerId_ && count != 1) {
+                resetGesture();
+                return false;
+            }
+            const bool offsetDrag = modifyMode_ == SketchModifyMode::Offset && travelled_
+                                    && offsetSource_ != kNoSketchEntity;
+            // Trim and Extend apply what the preview showed under the finger;
+            // the choosing modes take only a still tap.
+            if (!offsetDrag
+                && (!travelled_ || modifyMode_ == SketchModifyMode::Trim
+                    || modifyMode_ == SketchModifyMode::Extend)) {
+                applyModifyTap(rawCursor_);
+            }
+            pointerId_ = -1;
+            travelled_ = false;
+            dragValid_ = false;
+            modifyPreview_.clear();
+            touchOverlay();
+            return true;
+        }
+        case TouchAction::Cancel: {
+            const bool owned = pointerId_ >= 0;
+            resetGesture();
+            modifyPreview_.clear();
+            touchOverlay();
+            return owned;
+        }
+        default:
+            return false;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1292,8 +2187,13 @@ CadStatus SketchSession::finish() {
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
     }
+    if (editingSketchId_ != kNoCadSketch) {
+        // A sketch-only edit stages no extrusion: Keep Sketch is its commit.
+        return fail(CadStatus::NotSketching);
+    }
     endPolylineInProgress();
     resetGesture();
+    resetModifyState();
     const CadStatus sketchWhy = validateCadSketch(sketch_);
     if (sketchWhy != CadStatus::Ok) {
         return fail(sketchWhy);
@@ -1385,10 +2285,25 @@ void SketchSession::backToEditing() {
     if (state_ != SketchSessionState::Ready) {
         return;
     }
+    if (reuseSketchId_ != kNoCadSketch) {
+        // A reused sketch is shared truth; it is edited through Edit Sketch,
+        // never from inside a session that only extrudes it.
+        lastStatus_ = CadStatus::SketchInUse;
+        return;
+    }
     regions_ = SketchRegionExtraction{};
     arrangement_ = SketchArrangement{};
     faceShapes_.clear();
     regionTapArmed_ = false;
+    regionTapOnHead_ = false;
+    cancelRevolveDrag();
+    // Back to the authored sketch is back to the ALIGNED view (`CAD-UX-S1-C1`),
+    // and the navigator must say so: its flip and roll start over here, as they
+    // do for a new sketch and for Edit Sketch. Keeping them across Back to
+    // Sketch is the open OWNER question OD-09; this is the reset-on-re-entry
+    // form that question does not block.
+    viewFlipped_ = false;
+    viewQuarterTurns_ = 0;
     state_ = SketchSessionState::Editing;
     touchCandidate();
 }
@@ -1473,12 +2388,23 @@ CadStatus SketchSession::toggleRegion(SketchEntityId outerAnchorId) {
 bool SketchSession::toggleRegionAt(const CameraSnapshot& camera, float x, float y,
                                    int viewportWidth, int viewportHeight) {
     if (state_ != SketchSessionState::Ready) {
+        recordTapOutcome(SketchTapOutcome::InvalidFace);
         return false;
     }
     SketchPoint point;
     if (!screenToSketch(camera, x, y, viewportWidth, viewportHeight, &point)) {
+        // The existing ray-plane math found no point: the ray runs along the
+        // plane. No band around edge-on is added here -- a finite hit at any
+        // grazing angle is a hit.
+        recordTapOutcome(SketchTapOutcome::RayParallel);
         return false;
     }
+    const auto toggled = [this](CadStatus why) {
+        recordTapOutcome(why == CadStatus::Ok             ? SketchTapOutcome::Resolved
+                         : why == CadStatus::TooManyRegions ? SketchTapOutcome::SelectionCap
+                                                            : SketchTapOutcome::InvalidFace);
+        return why == CadStatus::Ok;
+    };
     if (!faceShapes_.empty()) {
         // The atomic face under the finger: strictly inside its outer loop and
         // outside its holes. Faces do not overlap; the smallest wins a tie.
@@ -1493,13 +2419,18 @@ bool SketchSession::toggleRegionAt(const CameraSnapshot& camera, float x, float 
                 hit = i;
             }
         }
-        return hit < faceShapes_.size() && togglePlanarFace(hit) == CadStatus::Ok;
+        if (hit == faceShapes_.size()) {
+            recordTapOutcome(SketchTapOutcome::Exterior);
+            return false;
+        }
+        return toggled(togglePlanarFace(hit));
     }
     SketchEntityId anchor = kNoSketchEntity;
     if (!sketchRegionAt(regions_, point, &anchor)) {
+        recordTapOutcome(SketchTapOutcome::Exterior);
         return false;
     }
-    return toggleRegion(anchor) == CadStatus::Ok;
+    return toggled(toggleRegion(anchor));
 }
 
 // ---------------------------------------------------------------------------
@@ -1556,12 +2487,13 @@ std::vector<size_t> SketchSession::selectedPlanarFaceIndices() const {
 }
 
 void SketchSession::reconcilePlanarSelection() {
-    // A stored face selection that still resolves EXACTLY -- every face, and
-    // its union merges -- survives Back to Sketch and Edit Sketch untouched.
+    // A stored face selection whose every face still resolves EXACTLY
+    // survives Back to Sketch and Edit Sketch untouched. Whether its union
+    // extrudes is the candidate's question (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`):
+    // a selection is never dropped here for what the preview would refuse.
     if (extrude_.selection == CadSelectionKind::PlanarFaces && !extrude_.planarFaces.empty()) {
         const std::vector<size_t> indices = selectedPlanarFaceIndices();
-        if (indices.size() == extrude_.planarFaces.size()
-            && mergePlanarFaceSelection(arrangement_, indices, nullptr) == CadStatus::Ok) {
+        if (indices.size() == extrude_.planarFaces.size()) {
             setPlanarSelection(extrude_.planarFaces);
             return;
         }
@@ -1571,7 +2503,7 @@ void SketchSession::reconcilePlanarSelection() {
                && extrude_.profileEntityId != kNoSketchEntity) {
         // A region selection over a sketch that now needs faces: kept only
         // when EVERY chosen region is exactly an atomic face (its whole loop,
-        // unsplit) and the faces merge -- never re-read as a nearest face.
+        // unsplit) -- never re-read as a nearest face.
         std::vector<PlanarFaceRef> faces;
         bool exact = true;
         for (const ProfileRegionRef& ref : extrudeRegions(extrude_)) {
@@ -1581,12 +2513,7 @@ void SketchSession::reconcilePlanarSelection() {
                     && regionAsPlanarFace(regions_, *region, arrangement_, &index);
             if (exact) faces.push_back(arrangement_.faces[index].ref);
         }
-        std::vector<size_t> indices;
-        for (const PlanarFaceRef& face : faces) {
-            size_t i = 0;
-            if (resolvePlanarFaceRef(arrangement_, face, &i)) indices.push_back(i);
-        }
-        if (exact && mergePlanarFaceSelection(arrangement_, indices, nullptr) == CadStatus::Ok) {
+        if (exact && !faces.empty()) {
             setPlanarSelection(std::move(faces));
             return;
         }
@@ -1603,15 +2530,18 @@ void SketchSession::reconcilePlanarSelection() {
 }
 
 bool SketchSession::planarFaceSelected(size_t index) const {
-    if (index >= arrangement_.faces.size() || faceShapes_.empty()) {
+    if (index >= arrangement_.faces.size() || faceShapes_.empty()
+        || extrude_.selection != CadSelectionKind::PlanarFaces) {
         return false;
     }
-    for (const PlanarFaceRef& ref : extrude_.planarFaces) {
-        if (samePlanarFaceRef(ref, arrangement_.faces[index].ref)) {
-            return true;
-        }
-    }
-    return false;
+    // The selection is canonical (ascending), so membership is one binary
+    // search: the chooser asks this once per face on every refresh.
+    const PlanarFaceRef& ref = arrangement_.faces[index].ref;
+    const auto at = std::lower_bound(extrude_.planarFaces.begin(), extrude_.planarFaces.end(), ref,
+                                     [](const PlanarFaceRef& a, const PlanarFaceRef& b) {
+                                         return comparePlanarFaceRef(a, b) < 0;
+                                     });
+    return at != extrude_.planarFaces.end() && samePlanarFaceRef(*at, ref);
 }
 
 bool SketchSession::planarFaceInfo(size_t index, SketchPoint* outInterior, double* outArea) const {
@@ -1640,35 +2570,89 @@ CadStatus SketchSession::togglePlanarFace(size_t index) {
         return fail(CadStatus::ProfileNotFound);
     }
     const PlanarFaceRef& tapped = arrangement_.faces[index].ref;
-    std::vector<PlanarFaceRef> next;
-    bool removed = false;
-    for (const PlanarFaceRef& ref : extrude_.planarFaces) {
-        if (samePlanarFaceRef(ref, tapped)) {
-            removed = true;
-        } else {
-            next.push_back(ref);
-        }
+    // The stored selection is kept in canonical (ascending) order by
+    // `setPlanarSelection`, so the tapped face is found -- and a new one is
+    // placed -- by one binary search rather than a scan and a re-sort: a tap
+    // costs O(log n) comparisons however many faces are chosen.
+    if (extrude_.selection != CadSelectionKind::PlanarFaces) {
+        setPlanarSelection(std::vector<PlanarFaceRef>(extrude_.planarFaces));
     }
-    if (!removed) {
-        // A PURE toggle: the tapped face joins and no other face changes. An
-        // addition that cannot merge (a pinch) or passes the bound is refused
-        // BY NAME and the selection stands exactly as it was.
-        if (next.size() + 1u > kMaxPlanarFaceSelection) {
+    std::vector<PlanarFaceRef>& faces = extrude_.planarFaces;
+    const auto at = std::lower_bound(faces.begin(), faces.end(), tapped,
+                                     [](const PlanarFaceRef& a, const PlanarFaceRef& b) {
+                                         return comparePlanarFaceRef(a, b) < 0;
+                                     });
+    if (at != faces.end() && samePlanarFaceRef(*at, tapped)) {
+        faces.erase(at);
+    } else {
+        // A PURE set toggle (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): the tapped
+        // face joins and no other face changes. The selection is a SET of
+        // exact face refs, so the only addition refused is the bound -- never
+        // because of which OTHER faces are chosen. Whether the set extrudes
+        // (a pinch, an Add that lands nowhere) is the candidate's question,
+        // named on the preview, and is never answered by trimming the set.
+        // The bound is the arrangement's own face bound
+        // (`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`), so a selection of
+        // distinct faces of a derived arrangement cannot reach it.
+        if (faces.size() + 1u > kMaxPlanarFaceSelection) {
             return fail(CadStatus::TooManyRegions);
         }
-        next.push_back(tapped);
-        std::vector<size_t> indices;
-        for (const PlanarFaceRef& ref : next) {
-            size_t i = 0;
-            if (resolvePlanarFaceRef(arrangement_, ref, &i)) indices.push_back(i);
+        faces.insert(at, tapped);
+    }
+    selectionLost_ = false;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::clearAreaSelection() {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (!faceShapes_.empty()) {
+        setPlanarSelection({});
+    } else {
+        setExtrudeRegions(&extrude_, {});
+    }
+    selectionLost_ = false;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::selectAllAreas() {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (!faceShapes_.empty()) {
+        if (arrangement_.faces.size() > kMaxPlanarFaceSelection) {
+            return fail(CadStatus::TooManyRegions);
         }
-        const CadStatus why = mergePlanarFaceSelection(arrangement_, indices, nullptr);
-        if (why != CadStatus::Ok) {
-            return fail(why);
+        std::vector<PlanarFaceRef> all;
+        all.reserve(arrangement_.faces.size());
+        for (const AtomicPlanarFace& face : arrangement_.faces) {
+            all.push_back(face.ref);
+        }
+        setPlanarSelection(std::move(all));
+        selectionLost_ = false;
+        touchCandidate();
+        return fail(CadStatus::Ok);
+    }
+    std::vector<ProfileRegionRef> next;
+    for (const SketchRegion& region : regions_.regions) {
+        if (region.status == CadStatus::Ok) {
+            next = toggleRegionSelection(next, region);
         }
     }
-    setPlanarSelection(std::move(next));
-    selectionLost_ = false;
+    if (next.empty()) {
+        return fail(CadStatus::NoClosedProfile);
+    }
+    if (next.size() > kMaxProfileRegions) {
+        return fail(CadStatus::TooManyRegions);
+    }
+    const CadStatus why = validateRegionSelection(regions_, next);
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    setExtrudeRegions(&extrude_, std::move(next));
     touchCandidate();
     return fail(CadStatus::Ok);
 }
@@ -1798,7 +2782,10 @@ bool SketchSession::selectionAnchorPoint(SketchPoint* out) const {
 }
 
 bool SketchSession::extrudeAnchors(CadExtrudeAnchors* out) const {
-    if (out == nullptr || state_ != SketchSessionState::Ready) {
+    // A Revolve has no extrude arrow: the extrude HUD is hidden whole, on its
+    // own "no anchor, no control" terms, rather than standing over a revolve.
+    if (out == nullptr || state_ != SketchSessionState::Ready
+        || featureKind_ == CadFeatureKind::Revolve) {
         return false;
     }
     SketchPoint base;
@@ -1827,17 +2814,59 @@ CadStatus SketchSession::flipExtrudeDirection() {
                               : ExtrudeDirection::AlongNormal);
 }
 
+RevolveFeature SketchSession::candidateRevolve() const {
+    RevolveFeature revolve = revolve_;
+    setRevolveSelectionFrom(&revolve, extrude_);
+    return revolve;
+}
+
 CadBodyState SketchSession::candidateState() const {
-    // A new body: the sketch and its extrusion, exactly what R0 built.
+    const bool revolve = featureKind_ == CadFeatureKind::Revolve;
+    // `CAD-R2`: a reuse or a sketch-only edit is ALWAYS the target body's chain
+    // (never a new body), whatever the operation field says.
+    if (reuseSketchId_ != kNoCadSketch) {
+        // A NEW feature extruding an EXISTING sketch by id: no sketch is
+        // copied, written or moved; the feature names the record.
+        CadBodyState state = targetBaseState_;
+        if (appendCadLaterFeature(&state, operation_, reuseSketchId_, extrude_) == 0) {
+            CadFeature refused;
+            refused.featureId = state.nextFeatureId;
+            refused.operation = operation_;
+            refused.sketchId = reuseSketchId_;
+            refused.extrude = extrude_;
+            state.laterFeatures.push_back(std::move(refused));
+        }
+        return state;
+    }
+    if (editingSketchId_ != kNoCadSketch) {
+        CadBodyState state = targetBaseState_;
+        CadSketchRecord* record = findCadSketchRecord(state, editingSketchId_);
+        if (record != nullptr) {
+            record->sketch = sketch_;
+            record->sketch.plane = Workplane::XY;
+            record->sketch.hasFaceSupport = false;
+            record->sketch.faceSupport = TopoRef{};
+        }
+        return state;
+    }
+    // A new body: the sketch and its extrusion, exactly what R0 built -- or,
+    // since `CAD-V6-REVOLVE-NEWBODY-E2E-R1`, its Revolve.
     if (editingFeatureId_ == 0 && operation_ == CadFeatureOperation::NewBody) {
-        return makeCadBodyState(sketch_, extrude_);
+        return revolve ? makeCadRevolveBodyState(sketch_, candidateRevolve())
+                       : makeCadBodyState(sketch_, extrude_);
     }
     // Everything else is the TARGET body's chain with one feature appended or
     // replaced -- the same SceneObject, never a copy of it.
     CadBodyState state = targetBaseState_;
     if (editingFeatureId_ == kCadFeatureId) {
         cadBaseSketch(state) = sketch_;
-        state.extrude = extrude_;
+        if (revolve) {
+            state.baseKind = CadFeatureKind::Revolve;
+            state.extrude = ExtrudeFeature{};
+            state.revolve = candidateRevolve();
+        } else {
+            state.extrude = extrude_;
+        }
         return state;
     }
     if (editingFeatureId_ > kCadFeatureId) {
@@ -1893,8 +2922,18 @@ bool SketchSession::operationAvailable(CadFeatureOperation operation) const {
     if (!active()) {
         return false;
     }
+    // A Revolve is a New Body in R1: Add and Cut are not offered for one.
+    if (featureKind_ == CadFeatureKind::Revolve) {
+        return operation == CadFeatureOperation::NewBody;
+    }
     const bool addOrCut = operation == CadFeatureOperation::Add
                           || operation == CadFeatureOperation::Cut;
+    if (reuseSketchId_ != kNoCadSketch) {
+        return addOrCut;
+    }
+    if (editingSketchId_ != kNoCadSketch) {
+        return false;
+    }
     if (editingFeatureId_ == kCadFeatureId) {
         return operation == CadFeatureOperation::NewBody;
     }
@@ -1933,11 +2972,16 @@ CadStatus SketchSession::setOperation(CadFeatureOperation operation) {
         // feature, because an edit keeps the side the user already chose; and
         // through the one writer, so it is a direction change and never a
         // negative depth. Flip still reverses it afterwards.
-        if (editingFeatureId_ == 0 && sketch_.hasFaceSupport
+        const bool reuse = reuseSketchId_ != kNoCadSketch;
+        if (editingFeatureId_ == 0 && (sketch_.hasFaceSupport || reuse)
             && extrude_.extent == ExtrudeExtentMode::OneSide) {
-            const ExtrudeDirection wanted = operation == CadFeatureOperation::Cut
-                                                    ? ExtrudeDirection::AgainstNormal
-                                                    : ExtrudeDirection::AlongNormal;
+            const ExtrudeDirection cutInto =
+                    reuse ? reuseCutDirection_ : ExtrudeDirection::AgainstNormal;
+            const ExtrudeDirection addOut = cutInto == ExtrudeDirection::AgainstNormal
+                                                    ? ExtrudeDirection::AlongNormal
+                                                    : ExtrudeDirection::AgainstNormal;
+            const ExtrudeDirection wanted =
+                    operation == CadFeatureOperation::Cut ? cutInto : addOut;
             if (extrude_.direction != wanted) {
                 const CadStatus turned = setExtrude(extrude_.depth, wanted);
                 if (turned != CadStatus::Ok) {
@@ -1978,8 +3022,19 @@ const CadCandidateEvaluation& SketchSession::evaluateCandidate() {
     const auto t0 = std::chrono::steady_clock::now();
     auto mesh = std::make_shared<CadBodyMesh>();
     CadRegenerationReport report;
-    next.status = regenerateCadBody(candidateState(), mesh.get(), &report);
+    const CadBodyState candidate = candidateState();
+    next.status = regenerateCadBody(candidate, mesh.get(), &report);
     next.failedFeatureId = report.failedFeatureId;
+    if (next.status == CadStatus::Ok) {
+        // The preview IS the candidate: the commit's `applyState` also judges
+        // the whole state (a retained sketch the edit would strand), so the
+        // preview says so too rather than showing a solid the commit refuses.
+        const CadStatus valid = validateCadStateBeyondRegeneration(candidate);
+        if (valid != CadStatus::Ok) {
+            next.status = valid;
+            next.failedFeatureId = 0;
+        }
+    }
     next.kernelMicros = report.kernelMicros;
     next.micros = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0)
                           .count();
@@ -2102,6 +3157,470 @@ CadStatus SketchSession::commitIntoTarget(ConstructionScene& scene, Construction
 }
 
 // ---------------------------------------------------------------------------
+// Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`)
+// ---------------------------------------------------------------------------
+
+bool SketchSession::revolveAvailable() const {
+    if (state_ != SketchSessionState::Ready) {
+        return false;
+    }
+    if (reuseSketchId_ != kNoCadSketch || editingSketchId_ != kNoCadSketch) {
+        return false;  // Revolve Add/Cut is not R1; a sketch-only edit makes nothing
+    }
+    if (editingFeatureId_ == kCadFeatureId) {
+        // An edit keeps the body's own kind: a Revolve body revolves.
+        return hasTargetState_ && targetBaseState_.baseKind == CadFeatureKind::Revolve;
+    }
+    // A new body only; an edit of a later feature is an Add or a Cut.
+    return editingFeatureId_ == 0;
+}
+
+CadStatus SketchSession::beginRevolve() {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (!revolveAvailable()) {
+        return fail(CadStatus::InvalidFeatureOperation);
+    }
+    if (featureKind_ == CadFeatureKind::Revolve) {
+        return fail(CadStatus::Ok);
+    }
+    restoreCancelledExtrudeDrag();
+    regionTapArmed_ = false;
+    regionTapOnHead_ = false;
+    featureKind_ = CadFeatureKind::Revolve;
+    // A Revolve makes a NEW body in R1, whatever the sketch stands on.
+    operation_ = CadFeatureOperation::NewBody;
+    // The axis is chosen next unless one is already held (Back to Sketch and
+    // Finish again keep it, and so does an edit).
+    axisPicking_ = revolve_.axis.entityId == kNoSketchEntity
+                   || resolveRevolveAxis(sketch_, revolve_.axis, nullptr) != CadStatus::Ok;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::endRevolve() {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (featureKind_ != CadFeatureKind::Revolve) {
+        return fail(CadStatus::Ok);
+    }
+    if (editingFeatureId_ == kCadFeatureId) {
+        return fail(CadStatus::InvalidFeatureKind);
+    }
+    cancelRevolveDrag();
+    regionTapArmed_ = false;
+    featureKind_ = CadFeatureKind::Extrude;
+    axisPicking_ = false;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::beginRevolveAxisPick() {
+    if (state_ != SketchSessionState::Ready || featureKind_ != CadFeatureKind::Revolve) {
+        return fail(CadStatus::NotSketching);
+    }
+    cancelRevolveDrag();
+    axisPicking_ = true;
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::setRevolveAxis(const CadSketchEdgeRef& axis) {
+    if (state_ != SketchSessionState::Ready || featureKind_ != CadFeatureKind::Revolve) {
+        return fail(CadStatus::NotSketching);
+    }
+    // Resolved EXACTLY or refused by name; the held axis stands on a refusal.
+    const CadStatus why = resolveRevolveAxis(sketch_, axis, nullptr);
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    revolve_.axis = axis;
+    axisPicking_ = false;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+bool SketchSession::pickRevolveAxisAt(const CameraSnapshot& camera, float x, float y,
+                                      int viewportWidth, int viewportHeight) {
+    if (!revolveAxisPicking()) {
+        recordTapOutcome(SketchTapOutcome::InvalidFace);
+        return false;
+    }
+    SketchPoint point;
+    if (!screenToSketch(camera, x, y, viewportWidth, viewportHeight, &point)) {
+        recordTapOutcome(SketchTapOutcome::RayParallel);
+        return false;
+    }
+    float perPixel = 0.0f;
+    if (!worldMetersPerPixel(camera, sketchToWorld(point), viewportHeight, &perPixel)) {
+        recordTapOutcome(SketchTapOutcome::RayParallel);
+        return false;
+    }
+    // The SAME hit tolerance the Select tool uses, so what a finger can pick
+    // as an axis is what it can pick as an entity.
+    const double tolerance =
+            kSketchHitToleranceUnits * static_cast<double>(perPixel) * gizmoPixelsPerReferenceUnit();
+    const SketchEntityId id = hitTest(point, tolerance);
+    const SketchEntity* entity = id == kNoSketchEntity ? nullptr : findSketchEntity(sketch_, id);
+    if (entity == nullptr) {
+        recordTapOutcome(SketchTapOutcome::Exterior);
+        return false;
+    }
+    const std::vector<SketchStraightEdge> edges = sketchEntityStraightEdges(*entity);
+    if (edges.empty()) {
+        // A curve is not an axis: said by name, nothing changes.
+        fail(CadStatus::RevolveAxisNotStraight);
+        recordTapOutcome(SketchTapOutcome::InvalidFace);
+        return false;
+    }
+    const SketchStraightEdge* nearest = &edges.front();
+    double best = segmentDistance(point, nearest->start, nearest->end);
+    for (const SketchStraightEdge& edge : edges) {
+        const double d = segmentDistance(point, edge.start, edge.end);
+        if (d < best) {
+            best = d;
+            nearest = &edge;
+        }
+    }
+    const CadStatus why = setRevolveAxis(CadSketchEdgeRef{id, nearest->edgeLocalIndex});
+    recordTapOutcome(why == CadStatus::Ok ? SketchTapOutcome::Resolved
+                                          : SketchTapOutcome::InvalidFace);
+    return why == CadStatus::Ok;
+}
+
+CadStatus SketchSession::setRevolveAngle(double degrees) {
+    if (state_ != SketchSessionState::Ready || featureKind_ != CadFeatureKind::Revolve) {
+        return fail(CadStatus::NotSketching);
+    }
+    RevolveFeature requested = revolve_;
+    requested.angleDegrees = degrees;
+    const CadStatus why = validateRevolveParameters(requested);
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    if (requested.angleDegrees != revolve_.angleDegrees) {
+        revolve_.angleDegrees = requested.angleDegrees;
+        touchCandidate();
+    }
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::flipRevolveDirection() {
+    if (state_ != SketchSessionState::Ready || featureKind_ != CadFeatureKind::Revolve) {
+        return fail(CadStatus::NotSketching);
+    }
+    // A SENSE change: the exact angle is untouched.
+    revolve_.direction = revolve_.direction == RevolveDirection::Positive
+                                 ? RevolveDirection::Negative
+                                 : RevolveDirection::Positive;
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+bool SketchSession::revolveRing(RevolveRing* out) const {
+    if (out == nullptr || state_ != SketchSessionState::Ready
+        || featureKind_ != CadFeatureKind::Revolve) {
+        return false;
+    }
+    RevolveAxis2D axis;
+    if (resolveRevolveAxis(sketch_, revolve_.axis, &axis) != CadStatus::Ok) {
+        return false;
+    }
+    // The selected area's extent along the axis and away from it, from the
+    // SAME union loops the hatch draws; the ring stands at the area's axial
+    // middle, on the side the area is on, a little outside its outermost point.
+    std::vector<std::vector<SketchPoint>> loops;
+    if (extrude_.selection == CadSelectionKind::PlanarFaces) {
+        std::vector<PlanarProfileComponent> planar;
+        if (mergePlanarFaceSelection(arrangement_, selectedPlanarFaceIndices(), &planar)
+            == CadStatus::Ok) {
+            for (const PlanarProfileComponent& component : planar) {
+                loops.push_back(component.outer.polygon);
+            }
+        }
+    } else {
+        for (const SketchRegionComponent& component :
+             mergeSelectedRegions(regions_, extrudeRegions(extrude_))) {
+            const std::vector<std::vector<SketchPoint>> l = sketchComponentLoops(regions_, component);
+            if (!l.empty()) loops.push_back(l.front());
+        }
+    }
+    double tMin = 0.0;
+    double tMax = axis.length;
+    double reach = 0.0;
+    double sideSum = 0.0;
+    bool any = false;
+    for (const std::vector<SketchPoint>& loop : loops) {
+        for (const SketchPoint& p : loop) {
+            const double t = (p.u - axis.start.u) * axis.du + (p.v - axis.start.v) * axis.dv;
+            const double r = (p.u - axis.start.u) * -axis.dv + (p.v - axis.start.v) * axis.du;
+            tMin = any ? std::min(tMin, t) : t;
+            tMax = any ? std::max(tMax, t) : t;
+            reach = std::max(reach, std::fabs(r));
+            sideSum += r;
+            any = true;
+        }
+    }
+    if (!any || !(reach > 0.0)) {
+        reach = std::max(axis.length * 0.5, 0.1);
+    }
+    const double side = sideSum < 0.0 ? -1.0 : 1.0;
+    const double mid = (tMin + tMax) * 0.5;
+    const double radius = reach * 1.18;
+    const SketchPoint centre2{axis.start.u + axis.du * mid, axis.start.v + axis.dv * mid};
+    const Vec3 axisWorld = vec3Normalize(vec3Add(vec3Scale(frame_.u, static_cast<float>(axis.du)),
+                                                 vec3Scale(frame_.v, static_cast<float>(axis.dv))));
+    const Vec3 radialWorld = vec3Normalize(
+            vec3Add(vec3Scale(frame_.u, static_cast<float>(-axis.dv * side)),
+                    vec3Scale(frame_.v, static_cast<float>(axis.du * side))));
+    const float sense = revolve_.direction == RevolveDirection::Negative ? -1.0f : 1.0f;
+    const Vec3 tangentWorld = vec3Scale(vec3Cross(axisWorld, radialWorld), sense);
+    // The axis is drawn across the whole area it sweeps, a little beyond.
+    const double over = std::max(0.15 * (tMax - tMin), 0.1);
+    out->axisStart = sketchToWorld(
+            SketchPoint{axis.start.u + axis.du * (tMin - over), axis.start.v + axis.dv * (tMin - over)});
+    out->axisEnd = sketchToWorld(
+            SketchPoint{axis.start.u + axis.du * (tMax + over), axis.start.v + axis.dv * (tMax + over)});
+    out->centre = sketchToWorld(centre2);
+    out->axis = axisWorld;
+    out->radial = radialWorld;
+    out->tangent = tangentWorld;
+    out->radius = static_cast<float>(radius);
+    const double a = revolve_.angleDegrees * 3.14159265358979323846 / 180.0;
+    const auto onRing = [&](double theta, float scale) {
+        return vec3Add(out->centre,
+                       vec3Add(vec3Scale(radialWorld, out->radius * scale * static_cast<float>(std::cos(theta))),
+                               vec3Scale(tangentWorld, out->radius * scale * static_cast<float>(std::sin(theta)))));
+    };
+    out->handle = onRing(a, 1.0f);
+    out->label = onRing(a * 0.5, 1.22f);
+    return vec3Finite(out->handle) && vec3Finite(out->centre);
+}
+
+bool SketchSession::revolveViewPose(const CameraController::Pose& current,
+                                    CameraController::Pose* out) const {
+    RevolveRing ring;
+    if (out == nullptr || !revolveRing(&ring)) {
+        return false;
+    }
+    const Vec3 n = vec3Normalize(frame_.n);
+    // The ring plane's normal is the axis: a view needs a real component along
+    // it to see the ring as an ellipse, and one along +n to keep the sketch
+    // side towards the eye.
+    constexpr float kAlongNormal = 0.55f;
+    constexpr float kAlongAxis = 0.65f;
+    constexpr float kAlongRadial = 0.52f;
+    constexpr float kMinAxisDot = 0.35f;
+    const float signs[4][2] = {{1.0f, 1.0f}, {-1.0f, 1.0f}, {1.0f, -1.0f}, {-1.0f, -1.0f}};
+    for (const auto& sign : signs) {
+        const Vec3 candidate = vec3Normalize(
+                vec3Add(vec3Scale(n, kAlongNormal),
+                        vec3Add(vec3Scale(ring.axis, kAlongAxis * sign[0]),
+                                vec3Scale(ring.radial, kAlongRadial * sign[1]))));
+        float yaw = 0.0f;
+        float pitch = 0.0f;
+        if (!cadFeatureViewYawPitch(candidate, &yaw, &pitch)) {
+            continue;
+        }
+        pitch = std::min(kPitchLimitRadians, std::max(-kPitchLimitRadians, pitch));
+        const Vec3 installed = cadFeatureViewDirection(yaw, pitch);
+        if (std::fabs(vec3Dot(installed, ring.axis)) < kMinAxisDot || vec3Dot(installed, n) <= 0.1f) {
+            continue;
+        }
+        *out = current;
+        out->target = ring.centre;
+        out->yaw = yaw;
+        out->pitch = pitch;
+        out->orthoHalfHeightMeters = std::max(current.orthoHalfHeightMeters, ring.radius * 1.8f);
+        out->distance = std::max(current.distance, ring.radius * 4.0f);
+        return true;
+    }
+    return false;
+}
+
+bool SketchSession::revolvePointerAngle(const RevolveRing& ring, const CameraSnapshot& camera,
+                                        float x, float y, int viewportWidth, int viewportHeight,
+                                        double* out) const {
+    Ray ray;
+    if (!buildPickRay(camera, x, y, viewportWidth, viewportHeight, &ray)) {
+        return false;
+    }
+    // A ring seen edge-on gives no angle: the last good value holds, exactly
+    // as a degenerate viewpoint holds a gizmo drag.
+    if (std::fabs(vec3Dot(ray.direction, ring.axis)) < 0.02f) {
+        return false;
+    }
+    Vec3 hit;
+    if (!intersectRayPlane(ray, ring.centre, ring.axis, &hit)) {
+        return false;
+    }
+    const Vec3 w = vec3Sub(hit, ring.centre);
+    const double a = std::atan2(static_cast<double>(vec3Dot(w, ring.tangent)),
+                                static_cast<double>(vec3Dot(w, ring.radial)));
+    if (!std::isfinite(a)) {
+        return false;
+    }
+    *out = a;
+    return true;
+}
+
+void SketchSession::cancelRevolveDrag() {
+    if (revolveDragPointer_ < 0) {
+        return;
+    }
+    // Put the angle back to what the finger found; nothing was recorded either
+    // way -- the session is volatile -- so this is about what the user sees.
+    if (revolveDragLive_ && revolve_.angleDegrees != revolveDragStartDegrees_) {
+        revolve_.angleDegrees = revolveDragStartDegrees_;
+        touchCandidate();
+    }
+    revolveDragPointer_ = -1;
+    revolveDragLive_ = false;
+    touchOverlay();
+}
+
+bool SketchSession::onRevolveTouch(TouchAction action, int32_t actionPointerId,
+                                   const TouchPointer* pointers, int count,
+                                   const CameraSnapshot& camera, int viewportWidth,
+                                   int viewportHeight) {
+    if (count > 1 || action == TouchAction::PointerDown) {
+        regionTapArmed_ = false;
+        cancelRevolveDrag();
+        return false;  // two fingers pan and pinch
+    }
+    switch (action) {
+        case TouchAction::Down: {
+            if (count != 1 || pointers == nullptr) {
+                return false;
+            }
+            // Armed as a TAP exactly as an Extrude Ready tap is: resolved on Up
+            // at the Down pixel through the Down camera; while armed the camera
+            // sees nothing, so jitter inside the slop orbits nothing.
+            regionTapArmed_ = true;
+            regionTapPointer_ = pointers[0].id;
+            regionTapX_ = pointers[0].x;
+            regionTapY_ = pointers[0].y;
+            regionTapCamera_ = camera;
+            regionTapOnHead_ = false;
+            RevolveRing ring;
+            if (axisPicking_ || !revolveRing(&ring)) {
+                return false;
+            }
+            float hx = 0.0f;
+            float hy = 0.0f;
+            if (!projectWorldToScreen(camera, ring.handle, viewportWidth, viewportHeight, &hx, &hy)
+                || std::hypot(hx - pointers[0].x, hy - pointers[0].y)
+                           > kRevolveHandleGrabUnits * gizmoPixelsPerReferenceUnit()) {
+                return false;  // off the handle: a tap, or (after the slop) navigation
+            }
+            // ON the handle: the gesture is the handle's from here on, and the
+            // ring is FROZEN so the growing preview cannot move it.
+            revolveDragPointer_ = pointers[0].id;
+            revolveDragLive_ = false;
+            revolveDragRing_ = ring;
+            revolveDragStartDegrees_ = revolve_.angleDegrees;
+            revolveDragDegrees_ = revolve_.angleDegrees;
+            double a = 0.0;
+            revolveDragPointerAngle_ =
+                    revolvePointerAngle(ring, camera, pointers[0].x, pointers[0].y, viewportWidth,
+                                        viewportHeight, &a)
+                            ? a
+                            : revolve_.angleDegrees * 3.14159265358979323846 / 180.0;
+            regionTapOnHead_ = true;
+            touchOverlay();
+            return true;
+        }
+        case TouchAction::Move: {
+            const bool ours = count == 1 && pointers != nullptr && pointers[0].id == regionTapPointer_;
+            if (regionTapArmed_ && ours
+                && std::hypot(pointers[0].x - regionTapX_, pointers[0].y - regionTapY_)
+                           > kSketchTapSlopPixels) {
+                regionTapArmed_ = false;
+                if (revolveDragPointer_ < 0) {
+                    recordTapOutcome(SketchTapOutcome::Travel);
+                }
+            }
+            if (revolveDragPointer_ < 0 || count != 1 || pointers == nullptr
+                || pointers[0].id != revolveDragPointer_) {
+                return revolveDragPointer_ >= 0;
+            }
+            if (regionTapArmed_) {
+                return true;  // still a possible tap: the angle holds
+            }
+            revolveDragLive_ = true;
+            double a = 0.0;
+            if (revolvePointerAngle(revolveDragRing_, camera, pointers[0].x, pointers[0].y,
+                                    viewportWidth, viewportHeight, &a)) {
+                // Unwrapped, so a drag can run the whole way round to 360.
+                const double delta = std::remainder(a - revolveDragPointerAngle_,
+                                                    2.0 * 3.14159265358979323846);
+                revolveDragPointerAngle_ = a;
+                revolveDragDegrees_ = std::min(
+                        kMaxRevolveAngleDegrees,
+                        std::max(kRevolveDragMinDegrees,
+                                 revolveDragDegrees_ + delta * 180.0 / 3.14159265358979323846));
+                // Whole degrees under the finger: a readable value at every
+                // sample, and 360 reachable exactly. A typed value is exact.
+                setRevolveAngle(std::min(kMaxRevolveAngleDegrees,
+                                         std::max(kRevolveDragMinDegrees,
+                                                  std::round(revolveDragDegrees_))));
+            }
+            return true;
+        }
+        case TouchAction::Up:
+        case TouchAction::PointerUp: {
+            if (revolveDragPointer_ < 0) {
+                if (regionTapArmed_ && action == TouchAction::Up
+                    && (actionPointerId < 0 || actionPointerId == regionTapPointer_)) {
+                    const float x = count >= 1 && pointers != nullptr ? pointers[0].x : regionTapX_;
+                    const float y = count >= 1 && pointers != nullptr ? pointers[0].y : regionTapY_;
+                    if (std::hypot(x - regionTapX_, y - regionTapY_) <= kSketchTapSlopPixels) {
+                        if (axisPicking_) {
+                            pickRevolveAxisAt(regionTapCamera_, regionTapX_, regionTapY_,
+                                              viewportWidth, viewportHeight);
+                        } else {
+                            toggleRegionAt(regionTapCamera_, regionTapX_, regionTapY_,
+                                           viewportWidth, viewportHeight);
+                        }
+                    } else {
+                        recordTapOutcome(SketchTapOutcome::Travel);
+                    }
+                }
+                regionTapArmed_ = false;
+                regionTapOnHead_ = false;
+                return false;
+            }
+            if (actionPointerId >= 0 && actionPointerId != revolveDragPointer_) {
+                regionTapArmed_ = false;
+                cancelRevolveDrag();
+                return false;
+            }
+            if (regionTapArmed_ && action == TouchAction::Up) {
+                // A still tap on the handle: the manipulator's, changing nothing.
+                recordTapOutcome(SketchTapOutcome::ArrowHead);
+            }
+            regionTapArmed_ = false;
+            regionTapOnHead_ = false;
+            revolveDragPointer_ = -1;
+            revolveDragLive_ = false;
+            touchOverlay();
+            return true;
+        }
+        case TouchAction::Cancel: {
+            const bool owned = revolveDragPointer_ >= 0;
+            regionTapArmed_ = false;
+            regionTapOnHead_ = false;
+            cancelRevolveDrag();
+            return owned;
+        }
+        default:
+            return revolveDragPointer_ >= 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Overlay
 // ---------------------------------------------------------------------------
 
@@ -2117,6 +3636,132 @@ float hueForWorldAxis(const Vec3& direction) {
     if (std::fabs(direction.x) > 0.5f) return 1.0f;
     if (std::fabs(direction.y) > 0.5f) return 2.0f;
     return 3.0f;
+}
+
+// The strokes an entity is drawn with, in sketch coordinates: one polyline per
+// stroke, closed ones repeating their first point. The SAME derived geometry
+// the hit test and the profile engine read.
+std::vector<std::vector<SketchPoint>> entityStrokes(const SketchEntity& entity) {
+    std::vector<std::vector<SketchPoint>> strokes;
+    if (const SketchLine* line = entity.line()) {
+        strokes.push_back({line->start, line->end});
+    } else if (const SketchPolyline* polyline = entity.polyline()) {
+        std::vector<SketchPoint> points = polyline->vertices;
+        if (polyline->closed && points.size() >= 3) points.push_back(points.front());
+        strokes.push_back(std::move(points));
+    } else if (const SketchRectangle* rectangle = entity.rectangle()) {
+        std::vector<SketchPoint> points = rectangleProfilePolygon(*rectangle);
+        points.push_back(points.front());
+        strokes.push_back(std::move(points));
+    } else if (const SketchCircle* circle = entity.circle()) {
+        std::vector<SketchPoint> points = circleProfilePolygon(*circle);
+        points.push_back(points.front());
+        strokes.push_back(std::move(points));
+    } else {
+        std::vector<SketchPoint> points;
+        if (tessellateSketchCurve(entity, &points) == CadStatus::Ok) {
+            strokes.push_back(std::move(points));
+        }
+    }
+    return strokes;
+}
+
+// A polyline as DASHES (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`): `dash` drawn,
+// `gap` skipped, the rhythm carried across vertices so a dashed circle reads
+// as one dashed stroke. Bounded: a stroke that would need more than
+// `kMaxDashes` dashes at this zoom is drawn with proportionally longer ones.
+constexpr double kSketchDashUnits = 7.0;
+constexpr double kSketchDashGapUnits = 5.0;
+constexpr size_t kMaxDashesPerStroke = 400;
+
+void appendDashed(std::vector<SketchPoint>* out, const std::vector<SketchPoint>& points,
+                  double dash, double gap) {
+    double total = 0.0;
+    for (size_t i = 1; i < points.size(); ++i) total += distance(points[i - 1], points[i]);
+    if (!(total > 0.0) || !(dash > 0.0) || !(gap >= 0.0)) return;
+    const double period = dash + gap;
+    if (total / period > static_cast<double>(kMaxDashesPerStroke)) {
+        const double k = total / (period * static_cast<double>(kMaxDashesPerStroke));
+        dash *= k;
+        gap *= k;
+    }
+    bool drawing = true;
+    double left = dash;
+    for (size_t i = 1; i < points.size(); ++i) {
+        SketchPoint a = points[i - 1];
+        const SketchPoint& b = points[i];
+        double segment = distance(a, b);
+        while (segment > 0.0) {
+            const double step = std::fmin(left, segment);
+            const double t = step / segment;
+            const SketchPoint c{a.u + (b.u - a.u) * t, a.v + (b.v - a.v) * t};
+            if (drawing) {
+                out->push_back(a);
+                out->push_back(c);
+            }
+            segment -= step;
+            left -= step;
+            a = c;
+            if (left <= 0.0) {
+                drawing = !drawing;
+                left = drawing ? dash : gap;
+            }
+        }
+    }
+}
+
+// A snap marker in the shape of its KIND, half-size `h` (sketch metres), as
+// point pairs: endpoint square, intersection X, midpoint triangle, centre
+// circle, origin double square, grid plus. Guides draw a plus at the cursor;
+// their dashed alignment line is drawn with the construction range.
+std::vector<SketchPoint> snapMarker(SketchSnapKind kind, const SketchPoint& c, double h) {
+    std::vector<SketchPoint> out;
+    const auto seg = [&out](double u0, double v0, double u1, double v1) {
+        out.push_back(SketchPoint{u0, v0});
+        out.push_back(SketchPoint{u1, v1});
+    };
+    const auto square = [&](double r) {
+        seg(c.u - r, c.v - r, c.u + r, c.v - r);
+        seg(c.u + r, c.v - r, c.u + r, c.v + r);
+        seg(c.u + r, c.v + r, c.u - r, c.v + r);
+        seg(c.u - r, c.v + r, c.u - r, c.v - r);
+    };
+    switch (kind) {
+        case SketchSnapKind::Endpoint:
+            square(h * 0.8);
+            break;
+        case SketchSnapKind::Intersection:
+            seg(c.u - h, c.v - h, c.u + h, c.v + h);
+            seg(c.u - h, c.v + h, c.u + h, c.v - h);
+            break;
+        case SketchSnapKind::Midpoint:
+            seg(c.u - h, c.v - h * 0.7, c.u + h, c.v - h * 0.7);
+            seg(c.u + h, c.v - h * 0.7, c.u, c.v + h);
+            seg(c.u, c.v + h, c.u - h, c.v - h * 0.7);
+            break;
+        case SketchSnapKind::Center: {
+            const int n = 12;
+            for (int i = 0; i < n; ++i) {
+                const double a0 = 2.0 * 3.14159265358979323846 * i / n;
+                const double a1 = 2.0 * 3.14159265358979323846 * (i + 1) / n;
+                seg(c.u + h * 0.8 * std::cos(a0), c.v + h * 0.8 * std::sin(a0),
+                    c.u + h * 0.8 * std::cos(a1), c.v + h * 0.8 * std::sin(a1));
+            }
+            break;
+        }
+        case SketchSnapKind::Origin:
+            square(h);
+            square(h * 0.45);
+            break;
+        case SketchSnapKind::HorizontalGuide:
+        case SketchSnapKind::VerticalGuide:
+        case SketchSnapKind::Grid:
+        case SketchSnapKind::None:
+            seg(c.u - h, c.v, c.u + h, c.v);
+            seg(c.u, c.v - h, c.u, c.v + h);
+            break;
+    }
+    return out;
 }
 
 }  // namespace
@@ -2172,6 +3817,22 @@ bool SketchSession::extrudeViewFacts(const CameraSnapshot& camera, int viewportW
     built.valid = true;
     *out = built;
     return true;
+}
+
+bool SketchSession::extrudeDock(const CameraSnapshot& camera, int viewportWidth,
+                                int viewportHeight, CadExtrudeDock* out) const {
+    if (out == nullptr) {
+        return false;
+    }
+    *out = CadExtrudeDock{};
+    CadExtrudeAnchors anchors;
+    CadExtrudeControlScale scale;
+    if (!extrudeAnchors(&anchors)
+        || !cadExtrudeManipulatorScale(anchors, camera, viewportHeight, &scale)) {
+        return false;
+    }
+    return cadExtrudeDockFor(anchors, camera, scale, frame_.u, viewportWidth, viewportHeight,
+                             out);
 }
 
 void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& view) {
@@ -2286,7 +3947,10 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
                                                                   : 0.0f;
     const float opHandle = operation_ == CadFeatureOperation::NewBody ? 1.0f : 0.0f;
     for (const SketchEntity& entity : sketch_.entities) {
-        bool emphasised = entity.id() == selectedEntityId_;
+        if (entity.construction()) {
+            continue;  // dashed, in the Construction range below
+        }
+        bool emphasised = entitySelected(entity.id());
         for (SketchEntityId member : emphasisedMembers) {
             if (member == entity.id()) emphasised = true;
         }
@@ -2388,14 +4052,55 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
             default:
                 break;
         }
-        // The snap marker: a small cross at the snapped cursor, sized in
-        // reference units so it reads the same at any zoom.
+        // The snap marker: a shape that NAMES the snap's kind (square,
+        // X, triangle, circle, double square, plus), sized in reference
+        // units so it reads the same at any zoom. No text.
         const double half = kSketchSnapMarkerUnits * static_cast<double>(worldPerUnit);
         if (half > 0.0 && std::isfinite(half)) {
-            pushLine(&v, local(SketchPoint{cursor_.u - half, cursor_.v}),
-                     local(SketchPoint{cursor_.u + half, cursor_.v}), 0.0f, 1.0f);
-            pushLine(&v, local(SketchPoint{cursor_.u, cursor_.v - half}),
-                     local(SketchPoint{cursor_.u, cursor_.v + half}), 0.0f, 1.0f);
+            const std::vector<SketchPoint> marker = snapMarker(lastSnapKind_, cursor_, half);
+            for (size_t i = 0; i + 1 < marker.size(); i += 2) {
+                pushLine(&v, local(marker[i]), local(marker[i + 1]), 0.0f, 1.0f);
+            }
+        }
+    }
+    // The modify previews (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`), in the
+    // entity weight and emphasised: what Trim would REMOVE in the destructive
+    // hue, what Extend would ADD in the positive one; the Offset and Mirror
+    // results in the highlight, with the mirror axis in the third hue.
+    if (state_ == SketchSessionState::Editing && modifyMode_ != SketchModifyMode::None) {
+        const float previewHue = modifyMode_ == SketchModifyMode::Trim ? 1.0f : 2.0f;
+        for (size_t i = 1; i < modifyPreview_.size(); ++i) {
+            pushLine(&v, local(modifyPreview_[i - 1]), local(modifyPreview_[i]), previewHue, 1.0f);
+        }
+        std::vector<SketchEntity> previews;
+        if (modifyMode_ == SketchModifyMode::Offset && offsetSource_ != kNoSketchEntity) {
+            const SketchEntity* source = findSketchEntity(sketch_, offsetSource_);
+            std::vector<SketchEntity::Payload> pieces;
+            if (source != nullptr
+                && offsetSketchEntity(*source, offsetDistance_, &pieces) == CadStatus::Ok) {
+                for (SketchEntity::Payload& piece : pieces) previews.emplace_back(1u, piece);
+            }
+        }
+        if (modifyMode_ == SketchModifyMode::Mirror && mirrorAxisSet_) {
+            std::vector<SketchMirrorPiece> pieces;
+            if (mirrorSketchEntities(sketch_, selectedIds_, mirrorAxis_, &pieces) == CadStatus::Ok) {
+                for (SketchMirrorPiece& piece : pieces) previews.emplace_back(1u, piece.payload);
+            }
+            SketchPoint a;
+            double du = 0.0;
+            double dv = 0.0;
+            if (resolveSketchMirrorAxis(sketch_, mirrorAxis_, &a, &du, &dv) == CadStatus::Ok) {
+                const double reach = 4000.0 * static_cast<double>(worldPerUnit);
+                pushLine(&v, local(SketchPoint{a.u - du * reach, a.v - dv * reach}),
+                         local(SketchPoint{a.u + du * reach, a.v + dv * reach}), 3.0f, 1.0f);
+            }
+        }
+        for (const SketchEntity& preview : previews) {
+            for (const std::vector<SketchPoint>& stroke : entityStrokes(preview)) {
+                for (size_t i = 1; i < stroke.size(); ++i) {
+                    pushLine(&v, local(stroke[i - 1]), local(stroke[i]), 0.0f, 1.0f);
+                }
+            }
         }
     }
     // The union's hatch: lines clipped to each component by the even-odd
@@ -2411,9 +4116,54 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
             }
         }
     }
+    // The Revolve manipulator (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): the axis drawn
+    // across the area it sweeps, the ring arc from the profile to the current
+    // angle in the plane square to the axis, its two spokes and the handle --
+    // world geometry like the extrude arrow, in the same range, so the renderer
+    // needs no new style. In axis-pick mode every straight edge that could be
+    // an axis is drawn in the axis colour, so the choice is visible.
+    if (state_ == SketchSessionState::Ready && featureKind_ == CadFeatureKind::Revolve) {
+        if (axisPicking_) {
+            for (const SketchEntity& entity : sketch_.entities) {
+                for (const SketchStraightEdge& edge : sketchEntityStraightEdges(entity)) {
+                    pushLine(&v, local(edge.start), local(edge.end), 3.0f, 0.0f);
+                }
+            }
+        }
+        RevolveRing ring;
+        if (revolveRing(&ring)) {
+            pushLine(&v, ring.axisStart, ring.axisEnd, 3.0f, 1.0f);
+            const double angle = revolve_.angleDegrees * 3.14159265358979323846 / 180.0;
+            const uint32_t steps = std::max<uint32_t>(
+                    8u, static_cast<uint32_t>(std::ceil(64.0 * revolve_.angleDegrees / 360.0)));
+            const auto onRing = [&ring](double theta) {
+                return vec3Add(ring.centre,
+                               vec3Add(vec3Scale(ring.radial, ring.radius * static_cast<float>(std::cos(theta))),
+                                       vec3Scale(ring.tangent, ring.radius * static_cast<float>(std::sin(theta)))));
+            };
+            for (uint32_t k = 0; k < steps; ++k) {
+                pushLine(&v, onRing(angle * k / steps), onRing(angle * (k + 1) / steps), 0.0f, 1.0f);
+            }
+            pushLine(&v, ring.centre, onRing(0.0), 0.0f, 1.0f);
+            pushLine(&v, ring.centre, ring.handle, 0.0f, 1.0f);
+            // The handle: a diamond a fixed number of reference units across,
+            // in the ring's own plane, so it reads the same at every zoom.
+            const float h = 9.0f * (worldPerUnit > 0.0f ? worldPerUnit : 0.01f)
+                            * (revolveDragging() ? 1.4f : 1.0f);
+            const Vec3 radial = vec3Normalize(vec3Sub(ring.handle, ring.centre));
+            const Vec3 along = vec3Cross(ring.axis, radial);
+            const Vec3 corners[4] = {vec3Add(ring.handle, vec3Scale(radial, h)),
+                                     vec3Add(ring.handle, vec3Scale(along, h)),
+                                     vec3Sub(ring.handle, vec3Scale(radial, h)),
+                                     vec3Sub(ring.handle, vec3Scale(along, h))};
+            for (int c = 0; c < 4; ++c) {
+                pushLine(&v, corners[c], corners[(c + 1) % 4], 0.0f, 1.0f);
+            }
+        }
+    }
     // The extrude preview: every union loop's far cap, near cap and edges --
     // holes included, so the preview of a ring shows its bore.
-    if (!chosenLoops.empty()) {
+    if (!chosenLoops.empty() && featureKind_ != CadFeatureKind::Revolve) {
         // The SAME two offsets `generateCadMesh` extrudes between, so the
         // preview and the solid it previews cannot disagree about where the
         // caps are in any extent mode.
@@ -2457,9 +4207,9 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
     {
         SketchOverlayRange dimension;
         dimension.firstVertex = static_cast<uint32_t>(v.size());
-        const SketchEntity* selected = selectedEntityId_ == kNoSketchEntity
+        const SketchEntity* selected = !selectedLineLength(nullptr)
                                            ? nullptr
-                                           : findSketchEntity(sketch_, selectedEntityId_);
+                                           : findSketchEntity(sketch_, selectedEntityId());
         const SketchLine* line = selected != nullptr ? selected->line() : nullptr;
         DimensionFrame f;
         const double unit = static_cast<double>(worldPerUnit);
@@ -2497,9 +4247,81 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
             && cadExtrudeLeaderFor(leaderAnchors, view.leaderSide, view.scale.world, &leader)) {
             appendCadExtrudeLeader(&v, leaderAnchors, leader, view.scale.world);
         }
+        // The retained DRIVING dimensions (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`)
+        // in this same annotation range; the reference ones get their own.
+        if (worldPerUnit > 0.0f) {
+            for (const SketchDimensionAnnotation& annotation :
+                 visibleDimensionAnnotations(static_cast<double>(worldPerUnit))) {
+                if (annotation.mode != SketchDimensionMode::Driving) continue;
+                for (size_t i = 0; i + 1 < annotation.segments.size(); i += 2) {
+                    pushLine(&v, local(annotation.segments[i]), local(annotation.segments[i + 1]),
+                             0.0f, 1.0f);
+                }
+            }
+        }
         dimension.vertexCount = static_cast<uint32_t>(v.size()) - dimension.firstVertex;
         dimension.style = SketchOverlayStyle::Dimension;
         built->ranges.push_back(dimension);
+    }
+
+    // Construction geometry, DASHED, and the transient inference guides
+    // (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`). Appended after every older range.
+    {
+        SketchOverlayRange construction;
+        construction.firstVertex = static_cast<uint32_t>(v.size());
+        const double unit = static_cast<double>(worldPerUnit);
+        if (unit > 0.0 && std::isfinite(unit)) {
+            const double dash = kSketchDashUnits * unit;
+            const double gap = kSketchDashGapUnits * unit;
+            for (const SketchEntity& entity : sketch_.entities) {
+                if (!entity.construction()) continue;
+                const float handle = entitySelected(entity.id()) ? 1.0f : 0.0f;
+                for (const std::vector<SketchPoint>& stroke : entityStrokes(entity)) {
+                    std::vector<SketchPoint> dashes;
+                    appendDashed(&dashes, stroke, dash, gap);
+                    for (size_t i = 0; i + 1 < dashes.size(); i += 2) {
+                        pushLine(&v, local(dashes[i]), local(dashes[i + 1]), 0.0f, handle);
+                    }
+                }
+            }
+            // A guide: from the point it aligns with to the cursor, dashed,
+            // while a drawing gesture holds it. It records nothing.
+            if (pointerId_ >= 0 && state_ == SketchSessionState::Editing
+                && modifyMode_ == SketchModifyMode::None) {
+                for (int g = 0; g < 2; ++g) {
+                    const bool on = g == 0 ? lastSnap_.horizontalGuide : lastSnap_.verticalGuide;
+                    if (!on) continue;
+                    const SketchPoint& from = g == 0 ? lastSnap_.horizontalSource
+                                                     : lastSnap_.verticalSource;
+                    std::vector<SketchPoint> dashes;
+                    appendDashed(&dashes, {from, cursor_}, dash, gap);
+                    for (size_t i = 0; i + 1 < dashes.size(); i += 2) {
+                        pushLine(&v, local(dashes[i]), local(dashes[i + 1]), 3.0f, 1.0f);
+                    }
+                }
+            }
+        }
+        construction.vertexCount = static_cast<uint32_t>(v.size()) - construction.firstVertex;
+        construction.style = SketchOverlayStyle::Construction;
+        built->ranges.push_back(construction);
+    }
+    // The retained REFERENCE dimensions, lighter than the driving ones.
+    {
+        SketchOverlayRange reference;
+        reference.firstVertex = static_cast<uint32_t>(v.size());
+        if (worldPerUnit > 0.0f) {
+            for (const SketchDimensionAnnotation& annotation :
+                 visibleDimensionAnnotations(static_cast<double>(worldPerUnit))) {
+                if (annotation.mode != SketchDimensionMode::Reference) continue;
+                for (size_t i = 0; i + 1 < annotation.segments.size(); i += 2) {
+                    pushLine(&v, local(annotation.segments[i]), local(annotation.segments[i + 1]),
+                             0.0f, 1.0f);
+                }
+            }
+        }
+        reference.vertexCount = static_cast<uint32_t>(v.size()) - reference.firstVertex;
+        reference.style = SketchOverlayStyle::DimensionReference;
+        built->ranges.push_back(reference);
     }
 
     if (v.size() > kMaxSketchOverlayVertices) {
@@ -2512,6 +4334,11 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
     overlayDirty_ = false;
     overlayWorldPerUnit_ = worldPerUnit;
     overlayView_ = view;
+}
+
+void frameCameraOnSketchView(CameraController& camera, const SketchSession& session) {
+    const SketchFrame view = session.viewFrame();
+    camera.frameSketchView(view.origin, view.u, view.v, view.n);
 }
 
 SketchSession& sketchSession() {

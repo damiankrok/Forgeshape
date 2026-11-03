@@ -1757,6 +1757,304 @@ function New-CadOverlapFaceFile {
         -Features @($base))
 }
 
+# ---------------------------------------------------------------------------
+# CADB v7 (CAD-V6-REVOLVE-NEWBODY-E2E-R1): an explicit feature KIND
+# ---------------------------------------------------------------------------
+#
+# v7 is v6's layout (7g) with a KIND after every feature id and a payload of
+# that kind's own -- DATA_PACKAGE_SPEC.md 7h:
+#
+#   FEATURE    featureId u32 | kind u8 (1 Extrude, 2 Revolve) | KIND PAYLOAD
+#   EXTRUDE    exactly the v6 bytes after featureId (operation .. selection)
+#   REVOLVE    operation u8 (1 New Body, the only one in R1) | sketchId u32 |
+#              axisEntityId u32 | axisEdgeLocalIndex u32 | angleDegrees f64 |
+#              direction u8 (1 Positive, 2 Negative) |
+#              selectionKind u8 and its block, exactly as 7g
+#
+# A Revolve stores no extent, no depth and no second distance: nothing of it is
+# an Extrude field. These writers validate nothing, so the two corrupt
+# fixtures are CONSTRUCTED with their bad value in place.
+
+function Add-CadSelectionV7 {
+    param($Buffer, $Feature)
+    Add-U8  $Buffer $Feature.SelectionKind
+    if ($Feature.SelectionKind -eq 1) {
+        Add-U32 $Buffer ([uint32] $Feature.ProfileEntityId)
+        Add-CadRegions $Buffer $Feature.Regions
+    } else {
+        $faces = @(if ($null -ne $Feature.Faces) { $Feature.Faces })
+        Add-U32 $Buffer ([uint32] $faces.Count)
+        foreach ($face in $faces) {
+            Add-CadFragmentCycle $Buffer $face.Outer
+            $holes = @(if ($null -ne $face.Holes) { $face.Holes })
+            Add-U32 $Buffer ([uint32] $holes.Count)
+            foreach ($hole in $holes) { Add-CadFragmentCycle $Buffer $hole }
+        }
+    }
+}
+
+function Add-CadFeatureV7 {
+    param($Buffer, $Feature)
+    Add-U32 $Buffer ([uint32] $Feature.FeatureId)
+    Add-U8  $Buffer $Feature.KindCode
+    # The payload follows the SHAPE of the feature object, never its kind
+    # byte: a feature built as a Revolve writes the Revolve payload whatever
+    # kind it carries, so KindCode 9 constructs an unknown kind standing in
+    # front of an otherwise well-formed payload.
+    if ($null -ne $Feature.PSObject.Properties['AxisEntityId']) {
+        Add-U8  $Buffer $Feature.OperationCode
+        Add-U32 $Buffer ([uint32] $Feature.SketchId)
+        Add-U32 $Buffer ([uint32] $Feature.AxisEntityId)
+        Add-U32 $Buffer ([uint32] $Feature.AxisEdgeLocalIndex)
+        Add-F64 $Buffer $Feature.AngleDegrees
+        Add-U8  $Buffer $Feature.RevolveDirectionCode
+    } else {
+        Add-U8  $Buffer $Feature.OperationCode
+        Add-U32 $Buffer ([uint32] $Feature.SketchId)
+        Add-U8  $Buffer $Feature.ExtentCode
+        Add-U8  $Buffer $Feature.DirectionCode
+        Add-F64 $Buffer $Feature.Depth
+        Add-F64 $Buffer $Feature.Second
+    }
+    Add-CadSelectionV7 $Buffer $Feature
+}
+
+function New-CadPayloadV7 {
+    param($Bodies)
+    $p = New-ByteBuffer
+    $bodyList = @($Bodies)
+    Add-U32 $p ([uint32] $bodyList.Count)
+    foreach ($body in $bodyList) {
+        Add-U64 $p ([uint64] $body.ObjectId)
+        Add-U32 $p ([uint32] $body.NextSketchId)
+        Add-U32 $p ([uint32] $body.NextFeatureId)
+        $sketches = @($body.Sketches)
+        Add-U32 $p ([uint32] $sketches.Count)
+        foreach ($sketch in $sketches) { Add-CadSketchV6 $p $sketch }
+        $features = @($body.Features)
+        Add-U32 $p ([uint32] $features.Count)
+        foreach ($feature in $features) { Add-CadFeatureV7 $p $feature }
+    }
+    return $p.ToArray()
+}
+
+# A Revolve New Body base on a world-XY root sketch, selecting one region.
+function New-CadRevolveBase {
+    param([uint32] $ProfileEntityId, [uint32] $AxisEntityId, [uint32] $AxisEdgeLocalIndex,
+          [double] $AngleDegrees, [int] $RevolveDirectionCode, [int] $KindCode = 2)
+    return [pscustomobject]@{
+        FeatureId = 1; KindCode = $KindCode; OperationCode = 1; SketchId = 1
+        AxisEntityId = $AxisEntityId; AxisEdgeLocalIndex = $AxisEdgeLocalIndex
+        AngleDegrees = $AngleDegrees; RevolveDirectionCode = $RevolveDirectionCode
+        SelectionKind = 1; ProfileEntityId = $ProfileEntityId; Regions = (New-CadRegionSelection)
+        Faces = @()
+    }
+}
+
+# CAD REVOLVE: a 1 x 1 m square (entity 1) from u 1..2, v 0..1 on XY, and a
+# separate Line (entity 2) on u = 0 from v -1 to v 2 as the axis. The square is
+# revolved about the line, edge 0 -- a tube. `$KindCode` 9 constructs the
+# unknown-kind refusal from this very fixture.
+function New-CadRevolveFile {
+    param([double] $AngleDegrees = 360.0, [int] $RevolveDirectionCode = 1,
+          [uint32] $AxisEntityId = 2, [int] $KindCode = 2)
+    $sketch = New-CadSketchV6 -SketchId 1 -PlacementCode 1 -PlaneCode 1 -NextEntityId 3 `
+        -Entities @((New-CadRectangleEntity 1 1.5 0.5 1.0 1.0), (New-CadLineEntity 2 0.0 -1.0 0.0 2.0))
+    $base = New-CadRevolveBase -ProfileEntityId 1 -AxisEntityId $AxisEntityId `
+        -AxisEdgeLocalIndex 0 -AngleDegrees $AngleDegrees `
+        -RevolveDirectionCode $RevolveDirectionCode -KindCode $KindCode
+    $body = [pscustomobject]@{ ObjectId = 1; NextSketchId = 2; NextFeatureId = 2
+                               Sketches = @($sketch); Features = @($base) }
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 7 $true (New-CadPayloadV7 @($body))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# ---------------------------------------------------------------------------
+# CADB v8 (CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1): drafting truth in the sketch
+# ---------------------------------------------------------------------------
+#
+# v8 is v7's layout (7h) with two additions inside EVERY sketch record --
+# DATA_PACKAGE_SPEC.md 7i:
+#
+#   ENTITY     id u32 | kind u8 | ROLE u8 (1 Regular, 2 Construction) | payload
+#   SKETCH     ... | nextEntityId u32 | entities | nextDimensionId u32 |
+#              dimensionCount u32 | DIMENSION x count (ascending id)
+#   DIMENSION  id u32 | kind u8 (1..12) | mode u8 (1 Driving, 2 Reference) |
+#              firstEntityId u32 | firstEdgeLocalIndex u32 |
+#              secondEntityId u32 | secondEdgeLocalIndex u32     (22 bytes)
+#
+# Dimension kinds: 1 LineLength, 2 LineAngle, 3 LineHorizontal, 4 LineVertical,
+# 5 RectangleWidth, 6 RectangleHeight, 7 CircleRadius, 8 CircleDiameter,
+# 9 EdgeLength, 10 ArcRadius, 11 ArcSweep, 12 EdgeAngle. No value is stored:
+# a dimension's number is derived from the entity it names. These writers
+# validate nothing, so the two corrupt fixtures are CONSTRUCTED with their bad
+# record in place.
+
+function Add-CadEntityListV8 {
+    param($Buffer, $Entities)
+    $list = @(if ($null -ne $Entities) { $Entities })
+    Add-U32 $Buffer ([uint32] $list.Count)
+    foreach ($entity in $list) {
+        Add-U32 $Buffer ([uint32] $entity.Id)
+        Add-U8  $Buffer $entity.KindCode
+        $role = if ($null -ne $entity.PSObject.Properties['RoleCode']) { $entity.RoleCode } else { 1 }
+        Add-U8  $Buffer $role
+        switch ($entity.KindCode) {
+            1 { foreach ($value in $entity.Values) { Add-F64 $Buffer $value } }
+            2 {
+                Add-U8  $Buffer $(if ($entity.Closed) { 1 } else { 0 })
+                Add-U32 $Buffer ([uint32] ($entity.Values.Count / 2))
+                foreach ($value in $entity.Values) { Add-F64 $Buffer $value }
+            }
+            3 { foreach ($value in $entity.Values) { Add-F64 $Buffer $value } }
+            4 { foreach ($value in $entity.Values) { Add-F64 $Buffer $value } }
+            5 { foreach ($value in $entity.Values) { Add-F64 $Buffer $value } }
+            6 {
+                Add-U32 $Buffer ([uint32] ($entity.Values.Count / 2))
+                foreach ($value in $entity.Values) { Add-F64 $Buffer $value }
+            }
+        }
+    }
+}
+
+function Add-CadSketchV8 {
+    param($Buffer, $Sketch)
+    Add-U32 $Buffer ([uint32] $Sketch.SketchId)
+    Add-U8  $Buffer $Sketch.PlacementCode
+    # Every v8 fixture stands on a world plane; the face placements are v6's.
+    Add-U8  $Buffer $Sketch.PlaneCode
+    Add-U32 $Buffer ([uint32] $Sketch.NextEntityId)
+    Add-CadEntityListV8 $Buffer $Sketch.Entities
+    Add-U32 $Buffer ([uint32] $Sketch.NextDimensionId)
+    $dimensions = @(if ($null -ne $Sketch.Dimensions) { $Sketch.Dimensions })
+    Add-U32 $Buffer ([uint32] $dimensions.Count)
+    foreach ($d in $dimensions) {
+        Add-U32 $Buffer ([uint32] $d.Id)
+        Add-U8  $Buffer $d.KindCode
+        Add-U8  $Buffer $d.ModeCode
+        Add-U32 $Buffer ([uint32] $d.FirstEntityId)
+        Add-U32 $Buffer ([uint32] $d.FirstEdge)
+        Add-U32 $Buffer ([uint32] $d.SecondEntityId)
+        Add-U32 $Buffer ([uint32] $d.SecondEdge)
+    }
+}
+
+function New-CadDimension {
+    param([uint32] $Id, [int] $KindCode, [int] $ModeCode, [uint32] $FirstEntityId,
+          [uint32] $FirstEdge = 0, [uint32] $SecondEntityId = 0, [uint32] $SecondEdge = 0)
+    return [pscustomobject]@{ Id = $Id; KindCode = $KindCode; ModeCode = $ModeCode
+                              FirstEntityId = $FirstEntityId; FirstEdge = $FirstEdge
+                              SecondEntityId = $SecondEntityId; SecondEdge = $SecondEdge }
+}
+
+function With-Role {
+    param($Entity, [int] $RoleCode)
+    $Entity | Add-Member -NotePropertyName RoleCode -NotePropertyValue $RoleCode -Force
+    return $Entity
+}
+
+function New-CadArcEntity {
+    param([uint32] $Id, [double] $U0, [double] $V0, [double] $U1, [double] $V1, [double] $U2,
+          [double] $V2)
+    return [pscustomobject]@{ Id = $Id; KindCode = 5; Values = @($U0, $V0, $U1, $V1, $U2, $V2) }
+}
+
+function New-CadOpenPolylineEntity {
+    param([uint32] $Id, [double[]] $Values)
+    return [pscustomobject]@{ Id = $Id; KindCode = 2; Closed = $false; Values = @($Values) }
+}
+
+# One world-XY Extrude body of ONE region (profile 1, no holes), 1 m along +Z,
+# whose single sketch carries the given drafting truth.
+function New-CadDraftingFile {
+    param($Entities, [uint32] $NextEntityId, [uint32] $NextDimensionId, $Dimensions)
+    $sketch = [pscustomobject]@{ SketchId = 1; PlacementCode = 1; PlaneCode = 1
+                                 NextEntityId = $NextEntityId; Entities = @($Entities)
+                                 NextDimensionId = $NextDimensionId
+                                 Dimensions = @(if ($null -ne $Dimensions) { $Dimensions }) }
+    $base = New-CadV6Base -SelectionKind 1 -ProfileEntityId 1 -Regions (New-CadRegionSelection)
+    $base | Add-Member -NotePropertyName KindCode -NotePropertyValue 1 -Force
+    $p = New-ByteBuffer
+    Add-U32 $p 1
+    Add-U64 $p 1
+    Add-U32 $p 2
+    Add-U32 $p 2
+    Add-U32 $p 1
+    Add-CadSketchV8 $p $sketch
+    Add-U32 $p 1
+    Add-CadFeatureV7 $p $base
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 8 $true ($p.ToArray())
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD CONSTRUCTION: a 2 x 1 m rectangle (entity 1, Regular) crossed by a
+# CONSTRUCTION centre line (entity 2) and a CONSTRUCTION circle (entity 3)
+# around it. Material topology ignores both, so the rectangle is ONE region and
+# the base extrudes it alone; read as material they would split it.
+function New-CadConstructionFile {
+    $entities = @(
+        (New-CadRectangleEntity 1 0.0 0.0 2.0 1.0),
+        (With-Role (New-CadLineEntity 2 -2.0 0.0 2.0 0.0) 2),
+        (With-Role (New-CadCircleEntity 3 0.0 0.0 1.5) 2))
+    return New-CadDraftingFile -Entities $entities -NextEntityId 4 -NextDimensionId 1
+}
+
+# CAD DIMENSION DRIVING: the 2 x 1 m rectangle (1), a separate circle (2) at
+# (3, 0) of radius 0.5 and a separate Line (3) from (-1, -2) to (1, -2), each
+# carrying DRIVING dimensions -- width, height, diameter, length and angle.
+# `$Conflict` adds a Radius DRIVING the same circle the Diameter drives: the
+# refusal the decoder must make (`SketchDimensionConflict`). `$BadRef` points
+# the diameter at entity 9, which the sketch does not carry.
+function New-CadDrivingDimensionFile {
+    param([switch] $Conflict, [switch] $BadRef)
+    $entities = @(
+        (New-CadRectangleEntity 1 0.0 0.0 2.0 1.0),
+        (New-CadCircleEntity 2 3.0 0.0 0.5),
+        (New-CadLineEntity 3 -1.0 -2.0 1.0 -2.0))
+    $circle = if ($BadRef) { 9 } else { 2 }
+    $dimensions = @(
+        (New-CadDimension 1 5 1 1),
+        (New-CadDimension 2 6 1 1),
+        (New-CadDimension 3 8 1 $circle),
+        (New-CadDimension 4 1 1 3),
+        (New-CadDimension 5 2 1 3))
+    $next = 6
+    if ($Conflict) {
+        $dimensions += (New-CadDimension 6 7 1 2)
+        $next = 7
+    }
+    return New-CadDraftingFile -Entities $entities -NextEntityId 4 -NextDimensionId $next `
+        -Dimensions $dimensions
+}
+
+# CAD DIMENSION REFERENCE: the rectangle (1), a three-point Arc (2), an open
+# Polyline (3) and a Line (4), measured by REFERENCE dimensions only -- the arc's
+# radius and sweep, a polyline segment's and a rectangle edge's length, the
+# line's horizontal and vertical components, and the angle between the two
+# polyline segments. The high-water mark 9 is above every id: dimension 8 was
+# made and deleted, and its id is never minted again.
+function New-CadReferenceDimensionFile {
+    $entities = @(
+        (New-CadRectangleEntity 1 0.0 0.0 2.0 1.0),
+        (New-CadArcEntity 2 3.0 0.0 4.0 1.0 5.0 0.0),
+        (New-CadOpenPolylineEntity 3 @(0.0, -2.0, 2.0, -2.0, 2.0, -3.0)),
+        (New-CadLineEntity 4 0.0 2.0 2.0 3.0))
+    $dimensions = @(
+        (New-CadDimension 1 10 2 2),
+        (New-CadDimension 2 11 2 2),
+        (New-CadDimension 3 9 2 3 1),
+        (New-CadDimension 4 9 2 1 2),
+        (New-CadDimension 5 3 2 4),
+        (New-CadDimension 6 4 2 4),
+        (New-CadDimension 7 12 2 3 0 3 1))
+    return New-CadDraftingFile -Entities $entities -NextEntityId 5 -NextDimensionId 9 `
+        -Dimensions $dimensions
+}
+
 # The one Imported Mesh every imported fixture carries.
 #
 # Four vertices, two submeshes with DIFFERENT doubleSided answers, and every
@@ -2290,6 +2588,304 @@ function New-ObjectStateBadFlagsFile {
     return New-ForgeFile 1 @($scne, $cons) 1
 }
 
+# ---------------------------------------------------------------------------
+# FRFM v1: Freeform control cages (MODELING-FOUNDATIONS-R1 B, DATA_PACKAGE_SPEC.md 7j)
+# ---------------------------------------------------------------------------
+#
+# u32 bodyCount, then per body: u64 ObjectId, u8 subdivision level, u8 symmetry
+# planes (bit0 x = 0, bit1 y = 0, bit2 z = 0), u16 reserved (zero), u32 next
+# vertex / edge / face id, u32 vertex / edge / face count; then every vertex
+# (u32 id, three binary64), every edge (u32 id, u32 v0, u32 v1 with v0 < v1,
+# binary64 crease in [0, 1]) and every face (u32 id, four u32 vertex ids,
+# counter-clockwise from outside and rotated so the smallest id is first). The
+# cage is the whole truth; no derived vertex or triangle is ever written.
+#
+# The cages are spelled out as literal tables: this script implements the
+# LAYOUT, not the modelling tools, so it never reproduces an extrusion -- it
+# writes what the tools are specified to leave behind.
+
+function New-FreeformPayload {
+    param($Bodies)
+    $p = New-ByteBuffer
+    Add-U32 $p ([uint32] $Bodies.Count)
+    foreach ($body in $Bodies) {
+        Add-U64 $p ([uint64] $body.ObjectId)
+        Add-U8  $p $body.Level
+        Add-U8  $p $body.Symmetry
+        Add-U16 $p 0
+        Add-U32 $p ([uint32] $body.NextVertexId)
+        Add-U32 $p ([uint32] $body.NextEdgeId)
+        Add-U32 $p ([uint32] $body.NextFaceId)
+        Add-U32 $p ([uint32] $body.Vertices.Count)
+        Add-U32 $p ([uint32] $body.Edges.Count)
+        Add-U32 $p ([uint32] $body.Faces.Count)
+        foreach ($v in $body.Vertices) {
+            Add-U32 $p ([uint32] $v[0])
+            Add-F64 $p ([double] $v[1])
+            Add-F64 $p ([double] $v[2])
+            Add-F64 $p ([double] $v[3])
+        }
+        foreach ($e in $body.Edges) {
+            Add-U32 $p ([uint32] $e[0])
+            Add-U32 $p ([uint32] $e[1])
+            Add-U32 $p ([uint32] $e[2])
+            Add-F64 $p ([double] $e[3])
+        }
+        foreach ($f in $body.Faces) {
+            foreach ($id in $f) { Add-U32 $p ([uint32] $id) }
+        }
+    }
+    return $p.ToArray()
+}
+
+# The Freeform Box: a 1 m cube, vertices 1..8 at (-,-,-) (+,-,-) (+,+,-)
+# (-,+,-) (-,-,+) (+,-,+) (+,+,+) (-,+,+); edges in first-use order over the
+# faces -Z +Z -Y +Y -X +X; faces 1..6 in that order.
+$script:FreeformBoxVertices = @(
+    @(1, -0.5, -0.5, -0.5), @(2, 0.5, -0.5, -0.5), @(3, 0.5, 0.5, -0.5), @(4, -0.5, 0.5, -0.5),
+    @(5, -0.5, -0.5, 0.5),  @(6, 0.5, -0.5, 0.5),  @(7, 0.5, 0.5, 0.5),  @(8, -0.5, 0.5, 0.5)
+)
+$script:FreeformBoxEdges = @(
+    @(1, 1, 4, 0.0), @(2, 3, 4, 0.0), @(3, 2, 3, 0.0), @(4, 1, 2, 0.0),
+    @(5, 5, 6, 0.0), @(6, 6, 7, 0.0), @(7, 7, 8, 0.0), @(8, 5, 8, 0.0),
+    @(9, 2, 6, 0.0), @(10, 1, 5, 0.0), @(11, 4, 8, 0.0), @(12, 3, 7, 0.0)
+)
+$script:FreeformBoxFaces = @(
+    @(1, 1, 4, 3, 2), @(2, 5, 6, 7, 8), @(3, 1, 2, 6, 5),
+    @(4, 3, 4, 8, 7), @(5, 1, 5, 8, 4), @(6, 2, 3, 7, 6)
+)
+
+function New-FreeformFile {
+    param($Body)
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $frfm = New-Section 'FRFM' 1 $true (New-FreeformPayload @($Body))
+    return New-ForgeFile 1 @($scne, $frfm) 0x10
+}
+
+function New-FreeformBoxBody {
+    param($Faces = $script:FreeformBoxFaces)
+    return [pscustomobject]@{
+        ObjectId = 1; Level = 2; Symmetry = 0
+        NextVertexId = 9; NextEdgeId = 13; NextFaceId = 7
+        Vertices = $script:FreeformBoxVertices; Edges = $script:FreeformBoxEdges; Faces = $Faces
+    }
+}
+
+function New-FreeformBoxFile { return New-FreeformFile (New-FreeformBoxBody) }
+
+# The box with face 1 wound the wrong way round, (1, 2, 3, 4) for (1, 4, 3, 2):
+# each of its four edges is then walked the same way by two faces, which the
+# decoder must refuse as an invalid cage.
+function New-FreeformBadTopologyFile {
+    # The leading comma keeps the one face an array ELEMENT; @(@(...)) alone
+    # would unroll it into five loose integers.
+    $faces = @(, @(1, 1, 2, 3, 4)) + $script:FreeformBoxFaces[1..5]
+    return New-FreeformFile (New-FreeformBoxBody -Faces $faces)
+}
+
+# The box, symmetric about x = 0, its +X face extruded 0.25 m -- and so its -X
+# face too, the region's mirror -- with the four edges of its +Y face creased
+# 0.75, at level 3. The extrusion keeps both end faces' ids (5 and 6) on new
+# vertices 9..16 (one per region vertex, in ascending id order), adds the
+# vertical edges 13..20 by vertex id and the tops 21..28 by old edge id, and
+# one wall per boundary edge as faces 7..14.
+function New-FreeformCreaseSymmetryFile {
+    $vertices = $script:FreeformBoxVertices + @(
+        @(9, -0.75, -0.5, -0.5), @(10, 0.75, -0.5, -0.5), @(11, 0.75, 0.5, -0.5), @(12, -0.75, 0.5, -0.5),
+        @(13, -0.75, -0.5, 0.5), @(14, 0.75, -0.5, 0.5),  @(15, 0.75, 0.5, 0.5),  @(16, -0.75, 0.5, 0.5)
+    )
+    $edges = @(
+        @(1, 1, 4, 0.0), @(2, 3, 4, 0.75), @(3, 2, 3, 0.0), @(4, 1, 2, 0.0),
+        @(5, 5, 6, 0.0), @(6, 6, 7, 0.0), @(7, 7, 8, 0.75), @(8, 5, 8, 0.0),
+        @(9, 2, 6, 0.0), @(10, 1, 5, 0.0), @(11, 4, 8, 0.75), @(12, 3, 7, 0.75),
+        @(13, 1, 9, 0.0), @(14, 2, 10, 0.0), @(15, 3, 11, 0.0), @(16, 4, 12, 0.0),
+        @(17, 5, 13, 0.0), @(18, 6, 14, 0.0), @(19, 7, 15, 0.0), @(20, 8, 16, 0.0),
+        @(21, 9, 12, 0.0), @(22, 10, 11, 0.0), @(23, 14, 15, 0.0), @(24, 13, 16, 0.0),
+        @(25, 10, 14, 0.0), @(26, 9, 13, 0.0), @(27, 12, 16, 0.0), @(28, 11, 15, 0.0)
+    )
+    $faces = @(
+        @(1, 1, 4, 3, 2), @(2, 5, 6, 7, 8), @(3, 1, 2, 6, 5), @(4, 3, 4, 8, 7),
+        @(5, 9, 13, 16, 12), @(6, 10, 11, 15, 14), @(7, 1, 9, 12, 4), @(8, 2, 3, 11, 10),
+        @(9, 6, 14, 15, 7), @(10, 5, 8, 16, 13), @(11, 2, 10, 14, 6), @(12, 1, 5, 13, 9),
+        @(13, 4, 12, 16, 8), @(14, 3, 7, 15, 11)
+    )
+    $body = [pscustomobject]@{
+        ObjectId = 1; Level = 3; Symmetry = 0x01
+        NextVertexId = 17; NextEdgeId = 29; NextFaceId = 15
+        Vertices = $vertices; Edges = $edges; Faces = $faces
+    }
+    return New-FreeformFile $body
+}
+
+# SURF v1 (MODELING-FOUNDATIONS-R1 C): a Surface body's feature list
+# ---------------------------------------------------------------------------
+#
+# DATA_PACKAGE_SPEC.md 7k. A Surface body stores its retained sketches (each
+# with the CADB v8 entity and dimension grammar, a workplane and an offset
+# along its normal) and its ordered features in ONE fixed record layout, every
+# field present for every kind and canonical (the default) where the kind does
+# not use it. No patch, edge, stitch or solid is ever written.
+#
+#   BODY     objectId u64 | nextSketchId u32 | nextFeatureId u32 |
+#            sketchCount u32 | featureCount u32 | SKETCH x n | FEATURE x m
+#   SKETCH   id u32 | offset f64 | plane u8 | nextEntityId u32 | entities (v8) |
+#            nextDimensionId u32 | dimensionCount u32 | dimensions
+#   FEATURE  id u32 | kind u8 | SECTION | regionCount u32 | (outer u32 |
+#            holeCount u32 | hole u32 x k) x r | distance f64 | direction u8 |
+#            axisEntity u32 | axisEdge u32 | angle f64 | revolveDirection u8 |
+#            SECTION B | reverseB u8 | startOffsetB u32 | target u32 |
+#            keepInside u8 | stitchCount u32 | stitch u32 x s | source u32 |
+#            thickness f64
+#   SECTION  sketchId u32 | curveCount u32 | curve u32 x c
+
+function Add-SurfaceSection {
+    param($Buffer, $Section)
+    $curves = @(if ($null -ne $Section -and $null -ne $Section.Curves) { $Section.Curves })
+    Add-U32 $Buffer ([uint32] $(if ($null -ne $Section) { $Section.SketchId } else { 0 }))
+    Add-U32 $Buffer ([uint32] $curves.Count)
+    foreach ($c in $curves) { Add-U32 $Buffer ([uint32] $c) }
+}
+
+# Every field a kind does not use keeps the C++ default: direction 1 (along the
+# normal), revolve direction 1 (positive), keepInside 1, and zeros elsewhere.
+function New-SurfaceFeature {
+    param([uint32] $Id, [int] $KindCode, $Overrides = @{})
+    $feature = [ordered]@{
+        Id = $Id; KindCode = $KindCode; Section = $null; Regions = @()
+        Distance = 0.0; DirectionCode = 1; AxisEntity = 0; AxisEdge = 0; Angle = 0.0; RevolveCode = 1
+        SectionB = $null; ReverseB = 0; StartOffsetB = 0; Target = 0; KeepInside = 1
+        Stitch = @(); Source = 0; Thickness = 0.0
+    }
+    foreach ($key in $Overrides.Keys) { $feature[$key] = $Overrides[$key] }
+    return [pscustomobject]$feature
+}
+
+function New-SurfacePayload {
+    param($Bodies)
+    $p = New-ByteBuffer
+    Add-U32 $p ([uint32] $Bodies.Count)
+    foreach ($body in $Bodies) {
+        Add-U64 $p ([uint64] $body.ObjectId)
+        Add-U32 $p ([uint32] $body.NextSketchId)
+        Add-U32 $p ([uint32] $body.NextFeatureId)
+        Add-U32 $p ([uint32] $body.Sketches.Count)
+        Add-U32 $p ([uint32] $body.Features.Count)
+        foreach ($sketch in $body.Sketches) {
+            Add-U32 $p ([uint32] $sketch.Id)
+            Add-F64 $p ([double] $sketch.Offset)
+            Add-U8  $p $sketch.PlaneCode
+            Add-U32 $p ([uint32] $sketch.NextEntityId)
+            Add-CadEntityListV8 $p $sketch.Entities
+            Add-U32 $p 1
+            Add-U32 $p 0
+        }
+        foreach ($f in $body.Features) {
+            Add-U32 $p ([uint32] $f.Id)
+            Add-U8  $p $f.KindCode
+            Add-SurfaceSection $p $f.Section
+            $regions = @(if ($null -ne $f.Regions) { $f.Regions })
+            Add-U32 $p ([uint32] $regions.Count)
+            foreach ($r in $regions) {
+                $holes = @(if ($null -ne $r.Holes) { $r.Holes })
+                Add-U32 $p ([uint32] $r.Outer)
+                Add-U32 $p ([uint32] $holes.Count)
+                foreach ($h in $holes) { Add-U32 $p ([uint32] $h) }
+            }
+            Add-F64 $p ([double] $f.Distance)
+            Add-U8  $p $f.DirectionCode
+            Add-U32 $p ([uint32] $f.AxisEntity)
+            Add-U32 $p ([uint32] $f.AxisEdge)
+            Add-F64 $p ([double] $f.Angle)
+            Add-U8  $p $f.RevolveCode
+            Add-SurfaceSection $p $f.SectionB
+            Add-U8  $p $f.ReverseB
+            Add-U32 $p ([uint32] $f.StartOffsetB)
+            Add-U32 $p ([uint32] $f.Target)
+            Add-U8  $p $f.KeepInside
+            $stitch = @(if ($null -ne $f.Stitch) { $f.Stitch })
+            Add-U32 $p ([uint32] $stitch.Count)
+            foreach ($id in $stitch) { Add-U32 $p ([uint32] $id) }
+            Add-U32 $p ([uint32] $f.Source)
+            Add-F64 $p ([double] $f.Thickness)
+        }
+    }
+    return $p.ToArray()
+}
+
+function New-SurfaceFile {
+    param($Body)
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $surf = New-Section 'SURF' 1 $true (New-SurfacePayload @($Body))
+    return New-ForgeFile 1 @($scne, $surf) 0x20
+}
+
+function New-SurfaceSketch {
+    param([uint32] $Id, [double] $Offset, $Entities)
+    $list = @($Entities)
+    return [pscustomobject]@{ Id = $Id; Offset = $Offset; PlaneCode = 1; NextEntityId = $list.Count + 1; Entities = $list }
+}
+
+function New-SurfaceSection {
+    param([uint32] $SketchId, $Curves = @())
+    return [pscustomobject]@{ SketchId = $SketchId; Curves = @($Curves) }
+}
+
+function New-SurfaceRegion { param([uint32] $Outer) return [pscustomobject]@{ Outer = $Outer; Holes = @() } }
+
+# A 2 x 2 patch on XY, and an open two-line chain (0,0)-(1,0)-(1,1) extruded
+# 0.5 m into an uncapped ruled surface.
+function New-SurfacePatchExtrudeBody {
+    param($Extra = @(), $ExtraSketches = @())
+    $sketches = @(
+        (New-SurfaceSketch 1 0.0 @(New-CadRectangleEntity 1 0.0 0.0 2.0 2.0)),
+        (New-SurfaceSketch 2 0.0 @((New-CadLineEntity 1 0.0 0.0 1.0 0.0), (New-CadLineEntity 2 1.0 0.0 1.0 1.0)))
+    ) + @($ExtraSketches)
+    $features = @(
+        (New-SurfaceFeature 1 1 @{ Section = (New-SurfaceSection 1); Regions = @(New-SurfaceRegion 1) }),
+        (New-SurfaceFeature 2 2 @{ Section = (New-SurfaceSection 2 @(1, 2)); Distance = 0.5 })
+    ) + @($Extra)
+    return [pscustomobject]@{
+        ObjectId = 1; NextSketchId = $sketches.Count + 1; NextFeatureId = $features.Count + 1
+        Sketches = $sketches; Features = $features
+    }
+}
+
+function New-SurfacePatchExtrudeFile { return New-SurfaceFile (New-SurfacePatchExtrudeBody) }
+
+# A 4 x 4 patch with a radius-1 hole trimmed out of it, a 4 x 4 rectangular
+# tube 1 m tall stitched to the trimmed patch along the outer square, and a
+# loft from a radius-1 circle at 1 m to a radius-0.5 circle at 2 m.
+function New-SurfaceLoftTrimStitchFile {
+    $sketches = @(
+        (New-SurfaceSketch 1 0.0 @(New-CadRectangleEntity 1 0.0 0.0 4.0 4.0)),
+        (New-SurfaceSketch 2 0.0 @(New-CadCircleEntity 1 0.0 0.0 1.0)),
+        (New-SurfaceSketch 3 0.0 @(New-CadRectangleEntity 1 0.0 0.0 4.0 4.0)),
+        (New-SurfaceSketch 4 2.0 @(New-CadCircleEntity 1 0.0 0.0 0.5)),
+        (New-SurfaceSketch 5 1.0 @(New-CadCircleEntity 1 0.0 0.0 1.0))
+    )
+    $features = @(
+        (New-SurfaceFeature 1 1 @{ Section = (New-SurfaceSection 1); Regions = @(New-SurfaceRegion 1) }),
+        (New-SurfaceFeature 2 5 @{ Section = (New-SurfaceSection 2); Regions = @(New-SurfaceRegion 1); Target = 1; KeepInside = 0 }),
+        (New-SurfaceFeature 3 2 @{ Section = (New-SurfaceSection 3 @(1)); Distance = 1.0 }),
+        (New-SurfaceFeature 4 6 @{ Stitch = @(2, 3) }),
+        (New-SurfaceFeature 5 4 @{ Section = (New-SurfaceSection 5 @(1)); SectionB = (New-SurfaceSection 4 @(1)) })
+    )
+    $body = [pscustomobject]@{
+        ObjectId = 1; NextSketchId = 6; NextFeatureId = 6; Sketches = $sketches; Features = $features
+    }
+    return New-SurfaceFile $body
+}
+
+# The patch-and-extrude body with a trim naming feature 7, which does not
+# exist: the decoder must refuse the reference rather than skip the trim.
+function New-SurfaceBadRefFile {
+    $sketch = New-SurfaceSketch 3 0.0 @(New-CadCircleEntity 1 0.0 0.0 0.5)
+    $trim = New-SurfaceFeature 3 5 @{ Section = (New-SurfaceSection 3); Regions = @(New-SurfaceRegion 1); Target = 7; KeepInside = 0 }
+    return New-SurfaceFile (New-SurfacePatchExtrudeBody -Extra @($trim) -ExtraSketches @($sketch))
+}
+
 # DATA_PACKAGE_SPEC.md 7f promises that the generalized signature IS the 7c one
 # for a feature selecting one region without holes, so no stored token of an
 # earlier fixture moves. Hold the two implementations here to that before a
@@ -2358,6 +2954,21 @@ $fixtures = [ordered]@{
     'cad_spline_face_v6.forge'        = (New-CadSplineFaceFile)
     'cad_overlap_face_v6.forge'       = (New-CadOverlapFaceFile)
     'cad_fragment_support_v6.forge'   = (New-CadFragmentSupportFile)
+    'cad_revolve_full_v7.forge'       = (New-CadRevolveFile)
+    'cad_revolve_partial_v7.forge'    = (New-CadRevolveFile -AngleDegrees 90.0 -RevolveDirectionCode 2)
+    'cad_revolve_bad_axis_v7.forge'   = (New-CadRevolveFile -AxisEntityId 7)
+    'cad_bad_feature_kind_v7.forge'   = (New-CadRevolveFile -KindCode 9)
+    'cad_construction_v8.forge'          = (New-CadConstructionFile)
+    'cad_dimension_driving_v8.forge'     = (New-CadDrivingDimensionFile)
+    'cad_dimension_reference_v8.forge'   = (New-CadReferenceDimensionFile)
+    'cad_bad_dimension_ref_v8.forge'     = (New-CadDrivingDimensionFile -BadRef)
+    'cad_dimension_conflict_v8.forge'    = (New-CadDrivingDimensionFile -Conflict)
+    'freeform_box_v1.forge'              = (New-FreeformBoxFile)
+    'freeform_crease_symmetry_v1.forge'  = (New-FreeformCreaseSymmetryFile)
+    'freeform_bad_topology_v1.forge'     = (New-FreeformBadTopologyFile)
+    'surface_patch_extrude_v1.forge'     = (New-SurfacePatchExtrudeFile)
+    'surface_loft_trim_stitch_v1.forge'  = (New-SurfaceLoftTrimStitchFile)
+    'surface_bad_ref_v1.forge'           = (New-SurfaceBadRefFile)
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -2430,6 +3041,24 @@ foreach ($name in @('cad_sketch_shared_v6', 'cad_face_lens_v6', 'cad_face_protru
                     'cad_duplicate_sketch_id_v6', 'cad_bad_selection_kind_v6',
                     'cad_noncanonical_face_v6', 'cad_unresolved_face_v6', 'cad_spline_face_v6',
                     'cad_overlap_face_v6', 'cad_fragment_support_v6')) {
+    Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
+}
+Write-Host 'Digests of the CADB v7 fixtures (CAD-V6-REVOLVE-NEWBODY-E2E-R1):'
+foreach ($name in @('cad_revolve_full_v7', 'cad_revolve_partial_v7', 'cad_revolve_bad_axis_v7',
+                    'cad_bad_feature_kind_v7')) {
+    Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
+}
+Write-Host 'Digests of the CADB v8 fixtures (CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1):'
+foreach ($name in @('cad_construction_v8', 'cad_dimension_driving_v8', 'cad_dimension_reference_v8',
+                    'cad_bad_dimension_ref_v8', 'cad_dimension_conflict_v8')) {
+    Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
+}
+Write-Host 'Digests of the FRFM v1 fixtures (MODELING-FOUNDATIONS-R1 B):'
+foreach ($name in @('freeform_box_v1', 'freeform_crease_symmetry_v1', 'freeform_bad_topology_v1')) {
+    Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
+}
+Write-Host 'Digests of the SURF v1 fixtures (MODELING-FOUNDATIONS-R1 C):'
+foreach ($name in @('surface_patch_extrude_v1', 'surface_loft_trim_stitch_v1', 'surface_bad_ref_v1')) {
     Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
 }
 Write-Host 'Lineage tokens the v5 fixtures carry (7c / 7f signature):'

@@ -1,11 +1,13 @@
 #include "forgeshape_gltf_export.h"
 
+
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <vector>
 
 #include "forgeshape_construction.h"
+#include "forgeshape_freeform_subdivision.h"
 #include "forgeshape_sculpt.h"
 
 namespace forgeshape {
@@ -147,6 +149,7 @@ const char* glbExportStatusName(GlbExportStatus status) {
         case GlbExportStatus::TooLarge: return "TooLarge";
         case GlbExportStatus::SingularTransform: return "SingularTransform";
         case GlbExportStatus::MirroredTransform: return "MirroredTransform";
+        case GlbExportStatus::UnresolvedPlacement: return "UnresolvedPlacement";
     }
     return "unknown";
 }
@@ -173,9 +176,29 @@ GlbExportStatus captureGlbExportScene(const ConstructionScene& scene, ProjectKin
         // read out of the model matrix rather than re-narrowed from the
         // authored doubles, so the exported position is bit-for-bit the
         // position the renderer draws at.
-        const Mat4 model = body.transform().modelMatrix();
+        Mat4 model = body.transform().modelMatrix();
         exported.local = body.transform().localMatrix();
-        const Mat4 normalMatrix = body.transform().normalMatrix();
+        Mat4 normalMatrix = body.transform().normalMatrix();
+        if (body.isFaceSupportedCad()) {
+            // A face-supported CAD Body's stored transform is inert: its world
+            // model is DERIVED from the producer's face frame, and
+            // `resolveWorldModel` is the one owner of that answer -- the same
+            // model the renderer draws and CPU picking casts against. So the
+            // split is taken from it: the translation is its last column and L
+            // its linear part. There is no fallback to the stored transform
+            // and no nearest face: a support that does not resolve is refused
+            // by name, exactly as the snapshot leaves such a body undrawn
+            // rather than drawing it at a guess. An independent body keeps the
+            // path above unchanged, so its bytes do not move.
+            if (!scene.resolveWorldModel(body.objectId(), &model)) {
+                return GlbExportStatus::UnresolvedPlacement;
+            }
+            exported.local = model;
+            exported.local.m[12] = 0.0f;
+            exported.local.m[13] = 0.0f;
+            exported.local.m[14] = 0.0f;
+            normalMatrix = mat4NormalMatrix(exported.local);
+        }
         if (!matrixFinite(model) || !matrixFinite(exported.local) ||
             !matrixFinite(normalMatrix)) {
             return GlbExportStatus::NonFiniteValue;
@@ -248,6 +271,33 @@ GlbExportStatus captureGlbExportScene(const ConstructionScene& scene, ProjectKin
                                         SurfaceShading::Smooth, &exported.render,
                                         /*renderBothSides=*/false);
             }
+        } else if (const FreeformBody* freeform = body.freeformOrNull()) {
+            // The smooth surface derived NOW from the cage at its stored level
+            // (`MODELING-FOUNDATIONS-R1` B) -- the surface the user sees, never
+            // the cage itself and never a GPU buffer. An open cage is a sheet,
+            // so its material is double-sided.
+            std::shared_ptr<const FreeformMesh> mesh;
+            if (freeform->derived(&mesh) == FreeformStatus::Ok && mesh != nullptr) {
+                exported.doubleSided = mesh->render.renderBothSides;
+                built = buildRenderMesh(mesh->render.vertices.data(),
+                                        static_cast<uint32_t>(mesh->render.vertices.size()),
+                                        mesh->render.indices.data(),
+                                        static_cast<uint32_t>(mesh->render.indices.size()),
+                                        SurfaceShading::Smooth, &exported.render,
+                                        /*renderBothSides=*/false);
+            }
+        } else if (const SurfaceBody* surface = body.surfaceOrNull()) {
+            // The patches and any thickened solid, regenerated from the
+            // feature list (`MODELING-FOUNDATIONS-R1` C). Open patches are
+            // sheets, so their material is double-sided.
+            const SurfaceBodyMesh& mesh = surface->mesh();
+            exported.doubleSided = mesh.render.renderBothSides;
+            built = buildRenderMesh(mesh.render.vertices.data(),
+                                    static_cast<uint32_t>(mesh.render.vertices.size()),
+                                    mesh.render.indices.data(),
+                                    static_cast<uint32_t>(mesh.render.indices.size()),
+                                    SurfaceShading::Smooth, &exported.render,
+                                    /*renderBothSides=*/false);
         } else if (body.constructionOrNull() == nullptr) {
             // A representation this exporter does not know. Refused rather
             // than skipped, for the reason stated below.

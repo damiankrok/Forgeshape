@@ -149,12 +149,25 @@ constexpr int kCadSelectionKindCount = 2;
 const char* cadSelectionKindName(CadSelectionKind kind);
 
 // How many planar faces one feature may select, how many holes one face may
-// carry, and how many fragments one boundary cycle may have. The first two are
-// the region caps, for the same reason; the third is the largest polygon a
-// profile may become (`kMaxProfileVertices`): every fragment contributes at
-// least one polygon vertex when a face is extruded, so a longer cycle could
-// never be regenerated, and bounding it here bounds a history step and a file.
-constexpr uint32_t kMaxPlanarFaceSelection = kMaxProfileRegions;
+// carry, and how many fragments one boundary cycle may have.
+//
+// The selection bound is the ARRANGEMENT's own face bound
+// (`kMaxArrangementFaces`, derived from its source-edge and contact caps in
+// forgeshape_sketch_arrangement.h), deliberately NOT the loop-region cap
+// (`kMaxProfileRegions`, 16) it was until
+// `CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1`: a selection names DISTINCT faces
+// of one derived arrangement, so any arrangement that derived at all can have
+// every one of its faces chosen and this bound is never the reason a tap is
+// refused. It stays a bound because the decoder reads a count before it has an
+// arrangement to resolve against. The loop-region cap is untouched and still
+// governs `LoopRegions` selections.
+//
+// The holes cap is the region cap, for the same reason as before; the third
+// is the largest polygon a profile may become (`kMaxProfileVertices`): every
+// fragment contributes at least one polygon vertex when a face is extruded, so
+// a longer cycle could never be regenerated, and bounding it here bounds a
+// history step and a file.
+constexpr uint32_t kMaxPlanarFaceSelection = kMaxArrangementFaces;
 constexpr uint32_t kMaxPlanarFaceHoles = kMaxRegionHoles;
 constexpr uint32_t kMaxPlanarFaceCycleFragments = kMaxProfileVertices;
 
@@ -258,6 +271,126 @@ ExtrudeFeature extrudeFeatureWithSide(const ExtrudeFeature& from, bool positiveS
 // Symmetric body stays symmetric.
 ExtrudeFeature extrudeFeatureWithPrimary(const ExtrudeFeature& from, Meters distance,
                                          ExtrudeDirection direction);
+
+// ---------------------------------------------------------------------------
+// The Revolve feature (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`)
+// ---------------------------------------------------------------------------
+//
+// A feature has a KIND, stated explicitly and never inferred from which payload
+// happens to hold values. An Extrude sweeps its area along the sketch normal; a
+// Revolve sweeps it about a straight edge of its own sketch. The two are two
+// typed payloads (`ExtrudeFeature`, `RevolveFeature`): a Revolve never borrows an
+// Extrude field -- no angle hides in a depth, no rotation sense in a direction.
+//
+// R1 is Revolve NEW BODY alone: a Revolve is a body's FIRST feature, and a
+// revolved body carries no later feature. Revolve Add/Cut, a sketch on a
+// revolved face and arbitrary 3D axes are not this stage.
+
+enum class CadFeatureKind : uint8_t {
+    Extrude,
+    Revolve,
+};
+
+constexpr int kCadFeatureKindCount = 2;
+
+const char* cadFeatureKindName(CadFeatureKind kind);
+bool cadFeatureKindFromIndex(int index, CadFeatureKind* out);
+int cadFeatureKindIndex(CadFeatureKind kind);
+
+// Which way the area is swept about the axis. `Positive` is the right-hand
+// rotation about the axis DIRECTION -- the axis edge's own start -> end in its
+// entity's canonical order (a Line's start to end, a Polyline's vertex i to
+// i+1, a Rectangle's counter-clockwise corner k to k+1). Exactly two-valued,
+// and a SENSE, never a sign on the angle: the angle beside it is always
+// positive.
+enum class RevolveDirection : uint8_t {
+    Positive,
+    Negative,
+};
+
+constexpr int kRevolveDirectionCount = 2;
+
+const char* revolveDirectionName(RevolveDirection direction);
+bool revolveDirectionFromIndex(int index, RevolveDirection* out);
+int revolveDirectionIndex(RevolveDirection direction);
+
+// `CadSketchEdgeRef` -- a straight edge by semantic identity -- is declared in
+// forgeshape_sketch.h, beside the sketch dimensions that also name edges.
+
+// An axis edge resolved against its sketch: the edge's two AUTHORED ends, in the
+// entity's canonical order, and the unit direction start -> end. Derived on
+// every use; never stored.
+struct RevolveAxis2D {
+    SketchPoint start{};
+    SketchPoint end{};
+    double du = 1.0;
+    double dv = 0.0;
+    double length = 0.0;
+};
+
+// Resolves an axis ref EXACTLY against the sketch, or refuses by name:
+// `RevolveNeedsAxis` for no entity, `RevolveAxisUnresolved` for an entity the
+// sketch does not carry or an edge index past its edges, `RevolveAxisNotStraight`
+// for a Circle, an Arc or a Spline, `RevolveAxisDegenerate` for an edge with no
+// direction. There is no nearest edge.
+CadStatus resolveRevolveAxis(const CadSketch& sketch, const CadSketchEdgeRef& ref,
+                             RevolveAxis2D* out);
+
+// The straight edges one entity offers as an axis are `sketchEntityStraightEdges`
+// (forgeshape_sketch.h): what the session's axis pick tests a tap against, and
+// what `resolveRevolveAxis` resolves through, so a picked edge and a stored one
+// are read by one rule.
+
+// The sweep angle, in DEGREES, binary64. Degrees and not radians because
+// degrees is the product's authored-angle unit already (a transform's rotation
+// is stored as Euler degrees), and because it makes the values a user types --
+// 360, 180, 90, 37.5 -- exact in memory, in the file and on screen.
+constexpr double kDefaultRevolveAngleDegrees = 360.0;
+constexpr double kMaxRevolveAngleDegrees = 360.0;
+// Below this a sweep has no usable thickness at any radius a sketch can draw.
+constexpr double kMinRevolveAngleDegrees = 0.001;
+
+struct RevolveFeature {
+    // WHAT is swept: the same selection an Extrude makes, in fields of the
+    // Revolve's own -- LoopRegions as the first region's anchor and holes plus
+    // further regions, or PlanarFaces as the canonical face refs. Validated by
+    // the very rules an Extrude's selection is.
+    SketchEntityId profileEntityId = kNoSketchEntity;
+    std::vector<SketchEntityId> profileHoleIds;
+    std::vector<ProfileRegionRef> additionalRegions;
+    CadSelectionKind selection = CadSelectionKind::LoopRegions;
+    std::vector<PlanarFaceRef> planarFaces;
+    // ABOUT what: a straight edge of the same sketch.
+    CadSketchEdgeRef axis{};
+    // HOW FAR: kMinRevolveAngleDegrees .. 360, 360 a full turn.
+    double angleDegrees = kDefaultRevolveAngleDegrees;
+    // WHICH WAY.
+    RevolveDirection direction = RevolveDirection::Positive;
+};
+
+bool sameRevolveFeature(const RevolveFeature& a, const RevolveFeature& b);
+
+// Whether the sweep is a full turn: exactly 360, bit for bit. A full turn has
+// no caps and closes its seam.
+inline bool revolveIsFullTurn(const RevolveFeature& revolve) {
+    return revolve.angleDegrees == kMaxRevolveAngleDegrees;
+}
+
+// The angle's and the direction's own rule: finite, within
+// [kMinRevolveAngleDegrees, 360], one of the two senses.
+CadStatus validateRevolveParameters(const RevolveFeature& revolve);
+
+// The Revolve's selection as an ExtrudeFeature CARRIER: the selection fields
+// copied over a default extrusion, so the selection rules Extrude already has
+// (region validation, exact planar-face resolution, union merge) judge a
+// Revolve's selection too. Transient -- built, read and thrown away; never
+// stored, never encoded.
+ExtrudeFeature revolveSelectionCarrier(const RevolveFeature& revolve);
+
+// Writes a carrier's selection into a Revolve, leaving the axis, the angle and
+// the direction alone. The session keeps its ONE selection in an extrusion and
+// hands it to the Revolve it builds through here.
+void setRevolveSelectionFrom(RevolveFeature* revolve, const ExtrudeFeature& selection);
 
 // ---------------------------------------------------------------------------
 // The feature chain (`CAD-VERTICAL-SLICE-R1`)
@@ -411,9 +544,18 @@ struct CadBodyState {
     // The id the next retained sketch takes: above every id in the table, and
     // never lowered by a committed edit (lifetime: see `CadSketchId`).
     CadSketchId nextSketchId = kBaseCadSketchId + 1u;
-    // Feature 1: the base New Body extrusion of the root sketch.
+    // Feature 1: the base New Body feature of the root sketch -- an Extrude or
+    // (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`) a Revolve, stated by `baseKind`.
     CadSketchId baseSketchId = kBaseCadSketchId;
+    CadFeatureKind baseKind = CadFeatureKind::Extrude;
+    // The base Extrude. For a Revolve base it is exactly `ExtrudeFeature{}` and
+    // means nothing: never encoded, never displayed, never read for geometry,
+    // and validation refuses any other value (`RevolvePayloadMismatch`), so one
+    // body has one encoding.
     ExtrudeFeature extrude;
+    // The base Revolve. For an Extrude base it is exactly `RevolveFeature{}`,
+    // on the same terms.
+    RevolveFeature revolve;
     // Features 2..n, in application order. Empty for every body any earlier
     // version created.
     std::vector<CadFeature> laterFeatures;
@@ -444,6 +586,11 @@ CadSketchRecord* cadFeatureSketchRecord(CadBodyState& state, uint32_t featureId)
 // `extrude` as the base feature. What every body starts as.
 CadBodyState makeCadBodyState(CadSketch sketch, ExtrudeFeature extrude);
 
+// A one-feature REVOLVE state (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): `sketch` as the
+// root sketch and `revolve` as the base New Body feature; the base extrusion is
+// the canonical empty one.
+CadBodyState makeCadRevolveBodyState(CadSketch sketch, RevolveFeature revolve);
+
 // Adds a retained sketch to the table, minting its id from `nextSketchId`.
 // `support` null makes it a root sketch; otherwise it stands on that face of
 // one of the body's features. Returns kNoCadSketch, adding nothing, when the
@@ -463,7 +610,8 @@ uint32_t appendCadLaterFeatureWithSketch(CadBodyState* state, CadFeatureOperatio
                                          const CadFeatureSupport& support, CadSketch sketch,
                                          ExtrudeFeature extrude);
 
-// Whether the state says nothing a `CADB` v1..v5 record cannot: one sketch per
+// Whether the state says nothing a `CADB` v1..v5 record cannot: an Extrude base
+// (a Revolve is v7 alone), no drafting truth (v8 alone), one sketch per
 // feature with the ids a legacy read synthesizes (base 1, later features 2..n
 // in chain order), the root sketch the base's and every later sketch on a
 // feature face, the two high-water marks exactly what a legacy read derives,
@@ -475,6 +623,16 @@ bool cadBodyStateLegacyRepresentable(const CadBodyState& state);
 // regenerated like any other since `CAD-V6-S2`, and round-trips only through
 // `CADB` v6.
 bool cadBodyStateUsesPlanarFaces(const CadBodyState& state);
+
+// Whether any retained sketch carries drafting truth -- a Construction entity,
+// a dimension, or a dimension high-water mark above 1
+// (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`). Such a state round-trips only through
+// `CADB` v8, and is never legacy-representable.
+bool cadBodyStateUsesDrafting(const CadBodyState& state);
+
+// Whether any feature is a Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`). Such a
+// state round-trips only through `CADB` v7, and is never legacy-representable.
+bool cadBodyStateUsesRevolve(const CadBodyState& state);
 
 // The number of features in the chain, the base included.
 inline uint32_t cadFeatureCount(const CadBodyState& state) {
@@ -491,6 +649,14 @@ struct CadFeatureView {
     CadFeatureOperation operation = CadFeatureOperation::NewBody;
     CadSketchId sketchId = kNoCadSketch;
     const CadSketch* sketch = nullptr;
+    // The feature's kind and its payload: `extrude` for an Extrude, `revolve`
+    // for a Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`). `extrude` is never null,
+    // so a caller that only knows Extrude cannot dereference null -- for a
+    // Revolve it points at the base's canonical-empty extrusion, which carries
+    // no geometry -- and every caller that shows or edits an extrusion asks
+    // `kind` first.
+    CadFeatureKind kind = CadFeatureKind::Extrude;
+    const RevolveFeature* revolve = nullptr;
     const ExtrudeFeature* extrude = nullptr;
     // The sketch's placement on one of the body's own features. Null for the
     // root sketch, whose support is its own plane or TopoRef -- the base's, and
@@ -519,6 +685,11 @@ bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b);
 CadStatus validateCadBodyState(const CadBodyState& state,
                                ProfileExtraction* outProfiles = nullptr);
 
+// The sketch TABLE's own rules alone -- ids, order, marks, the one root, every
+// feature naming a sketch the table carries -- without deriving any geometry.
+// Cheap; part of `validateCadBodyState`.
+CadStatus validateCadSketchTableRules(const CadBodyState& state);
+
 // One feature's own rule, without the chain: sketch, extent, regions.
 // `outRegions` receives the region extraction on success (empty for a
 // PlanarFaces selection, which is resolved and merged here instead).
@@ -528,6 +699,14 @@ CadStatus validateCadFeatureGeometry(const CadSketch& sketch, const ExtrudeFeatu
 // The extrusion's own rule -- extent code, canonical form, distances -- which a
 // feature satisfies whatever it selects.
 CadStatus validateExtrudeExtent(const ExtrudeFeature& extrude);
+
+// One Revolve's own rule, without the chain (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`):
+// the sketch, the angle and the direction, the axis resolving exactly to a
+// straight edge, and the selection by the very rules an Extrude's is judged by.
+// Whether the area stays on one side of the axis is the geometry's question
+// (`forgeshape_cad_revolve.h`), answered when the feature is derived.
+CadStatus validateRevolveFeatureGeometry(const CadSketch& sketch, const RevolveFeature& revolve,
+                                         SketchRegionExtraction* outRegions = nullptr);
 
 // The canonical STRUCTURE of one PlanarFaceRef, without any geometry: non-empty
 // cycles within the caps, cut kinds in their positions, endpoint cuts carrying

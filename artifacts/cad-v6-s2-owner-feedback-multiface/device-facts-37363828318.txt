@@ -1,0 +1,14 @@
+CI DEVICE 37363828318 on e9960fb -- com.forgeshape.app.CadMultiFaceOwnerTest OK (6 tests), 179 s
+Startup: capture 1 of 3 -- 23/23 tokens in order, NATIVE_VIEWPORT_OK, 0 failure lines
+(TEST_FACT lines as printed in the job log)
+rectangle.dragged=[1.0, 2.0, 0.0, 0.0, 2.4000000000000004, 1.6]   (then typed exact 2.4 x 1.6)
+grid=cell=0.4 handles=[1, 2, 3, 4, 5, 6, 15, 17, 19, 21, 23, 7, 16, 18, 20, 22, 24, 8, 10, 11, 12, 13, 14, 9]
+mf01.tap1..tap18: every tap tokens=[FORGESHAPE_SKETCH_TAP:resolved], count=k, status="Regions in the extrusion: k."
+  mf01.tap16=count=16 tokens=[FORGESHAPE_SKETCH_TAP:resolved] status=Regions in the extrusion: 16.
+  mf01.tap17=count=17 tokens=[FORGESHAPE_SKETCH_TAP:resolved] status=Regions in the extrusion: 17.
+  mf01.tap18=count=18 tokens=[FORGESHAPE_SKETCH_TAP:resolved] status=Regions in the extrusion: 18.
+mf02.preview=volume=3.840000000000002 components=1.0 depth=1.0 area=3.8400000000000016   (24 cells x 0.16 m2)
+mf04.after_extrude=state=0 status=Project created — Body #7 is its first body. last=0
+mf04.body=volume=3.2000000000000024 components=1.0   (20 cells x 0.16 m2 x 1 m, first project, toolbar Extrude)
+mf05.refused_commit=last=61 status=Those areas meet only at a point — add the area between them, or extrude them separately.
+mf06.tap=[539.99994, 987.2902] tokens=[FORGESHAPE_SKETCH_TAP:resolved]   (from below the plane, no orbit, 19th cell)

@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,7 @@
 #include "forgeshape_sketch.h"
 #include "forgeshape_support_chooser.h"
 #include "forgeshape_gizmo.h"
+#include "forgeshape_gltf_export.h"
 
 namespace forgeshape {
 namespace {
@@ -904,6 +906,148 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
                         && scene.cadDependentsOf(producerCopy.newBodyId).empty());
         }
     }
+
+    // -----------------------------------------------------------------------
+    // CAD-FACE-SUPPORTED-PLACEMENT-R1: the typed placement door
+    // -----------------------------------------------------------------------
+    // `applySceneBodyTransform` is the one guarded write JNI `applyBoxTransform`
+    // calls. A face-supported dependent is refused BY NAME with nothing opened
+    // or written; its producer and an independent body stay ordinary.
+    {
+        ConstructionScene scene{NoProjectTag{}};
+        ConstructionHistory history(scene);
+        SceneObject* a = scene.addCadBody(rectBody(Workplane::XY, 2.0, 1.0, 3.0));
+        if (a != nullptr) publishSceneObject(*a);
+        CadStatus why = CadStatus::Ok;
+        SceneObject* b = a == nullptr ? nullptr : scene.addCadBody(
+                childOn(a->cadOrNull()->state(), a->objectId(),
+                        tokenFor(a->cadOrNull()->state(), CadFaceKind::CapFar), 0.5, 0.5, 0.5), &why);
+        if (b != nullptr) publishSceneObject(*b);
+        SceneObject* world = scene.addCadBody(rectBody(Workplane::XY, 1.0, 1.0, 1.0));
+        if (world != nullptr) publishSceneObject(*world);
+        const bool built = a != nullptr && b != nullptr && world != nullptr && b->isFaceSupportedCad();
+
+        TransformValues moveTo;
+        moveTo.positionX = 5.0;
+        moveTo.rotationZ = 30.0;
+        const uint64_t fingerprintBefore = projectSemanticFingerprint(scene, ProjectKind::Construction);
+        const std::vector<uint8_t> documentBefore =
+                encodeProjectV1Unchecked(captureProjectDocument(scene, ProjectKind::Construction));
+        Mat4 worldBefore;
+        const bool resolvedBefore = built && scene.resolveWorldModel(b->objectId(), &worldBefore);
+        BodyPlacementRefusal refusal = BodyPlacementRefusal::None;
+        const TransformApplyResult refused = built
+                ? applySceneBodyTransform(b->objectId(), moveTo, scene, history, &refusal)
+                : TransformApplyResult{};
+        r.check("FSP_T01_a_typed_write_to_a_dependent_is_refused_by_name",
+                built && refusal == BodyPlacementRefusal::DerivedPlacement
+                        && refused.status == TransformUpdateStatus::Rejected
+                        && std::string(bodyPlacementRefusalName(refusal)) == "DerivedPlacement");
+        Mat4 worldAfter;
+        r.check("FSP_T01_and_leaves_no_step_no_fingerprint_change_and_no_byte",
+                built && history.undoDepth() == 0 && history.redoDepth() == 0
+                        && projectSemanticFingerprint(scene, ProjectKind::Construction) == fingerprintBefore
+                        && encodeProjectV1Unchecked(captureProjectDocument(scene, ProjectKind::Construction))
+                                == documentBefore
+                        && b->transform().values().positionX == 0.0
+                        && b->transform().values().rotationZ == 0.0);
+        r.check("FSP_T01_and_the_dependent_is_still_drawn_where_it_was",
+                resolvedBefore && scene.resolveWorldModel(b->objectId(), &worldAfter)
+                        && std::memcmp(worldBefore.m, worldAfter.m, sizeof(worldBefore.m)) == 0);
+
+        // T03 (typed): the producer moves, as one step, and carries the dependent.
+        BodyPlacementRefusal producerRefusal = BodyPlacementRefusal::DerivedPlacement;
+        const TransformApplyResult producerMove = built
+                ? applySceneBodyTransform(a->objectId(), moveTo, scene, history, &producerRefusal)
+                : TransformApplyResult{};
+        Mat4 followed;
+        r.check("FSP_T03_the_producer_still_takes_a_typed_write_as_one_step",
+                built && producerRefusal == BodyPlacementRefusal::None
+                        && producerMove.status == TransformUpdateStatus::Applied
+                        && history.undoDepth() == 1);
+        r.check("FSP_T03_and_its_dependent_follows",
+                built && scene.resolveWorldModel(b->objectId(), &followed)
+                        && std::fabs(followed.m[12] - worldBefore.m[12]) > 0.1f
+                        && b->transform().values().positionX == 0.0);
+
+        // T04: an independent CAD body is still an ordinary transformable body.
+        BodyPlacementRefusal worldRefusal = BodyPlacementRefusal::DerivedPlacement;
+        const TransformApplyResult worldMove = built
+                ? applySceneBodyTransform(world->objectId(), moveTo, scene, history, &worldRefusal)
+                : TransformApplyResult{};
+        r.check("FSP_T04_an_independent_cad_body_still_takes_a_typed_write",
+                built && worldRefusal == BodyPlacementRefusal::None
+                        && worldMove.status == TransformUpdateStatus::Applied
+                        && history.undoDepth() == 2);
+
+        // Lock keeps its own refusal and its precedence (OD-29 unchanged).
+        if (built) {
+            setSceneBodyLocked(b->objectId(), true, scene, history);
+        }
+        BodyPlacementRefusal lockedRefusal = BodyPlacementRefusal::None;
+        if (built) {
+            applySceneBodyTransform(b->objectId(), moveTo, scene, history, &lockedRefusal);
+        }
+        r.check("FSP_T01_a_locked_dependent_still_reports_the_lock",
+                built && lockedRefusal == BodyPlacementRefusal::Locked);
+    }
+
+    // T06: a file written by an older build may store a NON-IDENTITY transform
+    // on a dependent. It must still load and re-encode byte for byte (OD-16
+    // untouched), while every consumer -- snapshot and export -- keeps placing
+    // the body by its face and never by that inert transform.
+    {
+        ConstructionScene scene{NoProjectTag{}};
+        SceneObject* a = scene.addCadBody(rectBody(Workplane::XY, 2.0, 1.0, 3.0));
+        if (a != nullptr) publishSceneObject(*a);
+        CadStatus why = CadStatus::Ok;
+        SceneObject* b = a == nullptr ? nullptr : scene.addCadBody(
+                childOn(a->cadOrNull()->state(), a->objectId(),
+                        tokenFor(a->cadOrNull()->state(), CadFaceKind::CapFar), 0.5, 0.5, 0.5), &why);
+        if (b != nullptr) publishSceneObject(*b);
+        bool built = a != nullptr && b != nullptr;
+        Mat4 derived;
+        built = built && scene.resolveWorldModel(b->objectId(), &derived);
+        if (built) {
+            TransformValues legacy;
+            legacy.positionX = 4.0;
+            legacy.rotationY = 25.0;
+            applyTransformValues(b->transform(), legacy);  // what an older build could store
+        }
+        const std::vector<uint8_t> written =
+                encodeProjectV1Unchecked(captureProjectDocument(scene, ProjectKind::Construction));
+        ProjectDocument decoded;
+        const bool decodedOk = !written.empty()
+                && decodeProject(written.data(), written.size(), &decoded) == ProjectCodecStatus::Ok;
+        r.check("FSP_T06_a_stored_non_identity_dependent_transform_round_trips_byte_for_byte",
+                built && decodedOk && encodeProjectV1Unchecked(decoded) == written);
+        ConstructionScene reopened{NoProjectTag{}};
+        ConstructionHistory reopenedHistory(reopened);
+        SculptSession session;
+        const bool loaded = decodedOk
+                && loadProjectDocument(decoded, reopened, session, reopenedHistory) == ProjectCodecStatus::Ok;
+        const SceneObject* again = loaded && reopened.bodyCount() == 2 ? &reopened.bodyAt(1) : nullptr;
+        Mat4 reopenedDerived;
+        r.check("FSP_T06_and_reloads_with_the_same_stored_values_and_the_same_drawn_placement",
+                again != nullptr && again->isFaceSupportedCad()
+                        && again->transform().values().positionX == 4.0
+                        && again->transform().values().rotationY == 25.0
+                        && reopened.resolveWorldModel(again->objectId(), &reopenedDerived)
+                        && std::memcmp(reopenedDerived.m, derived.m, sizeof(derived.m)) == 0);
+        GlbExportScene captured;
+        bool exportedByFace = built
+                && captureGlbExportScene(scene, ProjectKind::Construction, &captured) == GlbExportStatus::Ok
+                && captured.bodies.size() == 2;
+        exportedByFace = exportedByFace
+                && std::fabs(captured.bodies[1].translation[0] - derived.m[12]) < 1e-6f
+                && std::fabs(captured.bodies[1].translation[1] - derived.m[13]) < 1e-6f
+                && std::fabs(captured.bodies[1].translation[2] - derived.m[14]) < 1e-6f;
+        r.check("FSP_T06_and_exports_by_its_face_never_by_the_inert_transform", exportedByFace);
+    }
+
+    // The device recorder for this suite holds 128 results (`kMaxA3Checks`,
+    // forgeshape_jni.cpp).
+    r.check("FSP_cad_a3_suite_fits_its_128_slot_device_recorder", r.n + 1 <= 128);
     return r.n;
 }
 

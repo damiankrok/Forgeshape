@@ -140,7 +140,7 @@ ForgeShape project, damaged, or from a newer ForgeShape — it says so on Home a
 nothing is created.
 
 **New Project** is the next page rather than a box over Home, and it asks which
-representation the project begins in. Exactly two answers, and **Back**:
+representation the project begins in. Exactly four answers, and **Back**:
 
 **CAD** opens a sketch straight away, flat on the XY plane and seen square-on,
 with the grid filling the viewport — there is nothing to pick first. Draw a
@@ -158,6 +158,12 @@ without moving anything you have drawn. The plane can be changed while the
 sketch is still empty — once there is geometry on it the numbers mean that
 plane, and ForgeShape will not quietly reinterpret them somewhere else, so it
 says the plane is fixed instead.
+Flip and the two turns move the actual view: after a turn or a flip you keep
+drawing, snapping and picking exactly where you see the geometry, and nothing
+you have drawn moves. A sketch on a body's face can be turned but not flipped.
+Going back to the sketch from the extrusion, cancelling, or starting a new or
+edited sketch shows the plane from the front again, the right way up, and
+leaving the sketch returns the camera you had before it.
 
 **Sculpt** begins on a sphere already prepared for sculpting, so the first thing
 you can do is make a stroke. Nothing is skipped to get there — the sphere is an
@@ -166,10 +172,25 @@ ordinary exact Construction sphere and it was prepared the ordinary way, so
 Sculpt** returns to the same sculpt mesh with the strokes already on it.
 Preparing it is not your first Undo.
 
+**Freeform** begins on a smooth box shaped by its control cage, with the cage
+open under **Shape**. Preparing it is not your first Undo.
+
+**Surface** opens a sketch exactly as CAD does. Draw with the ordinary sketch
+tools — open curves are welcome — and **Finish Sketch** opens a short list of
+what the sketch can make, hanging under the toolbar: a **Patch**, an
+**Extrude**d surface or a **Revolve**d surface. Choosing one creates the
+project, with an empty Undo history; Back to Home before that costs nothing.
+
 **Open File…** opens a `.forge` from your files straight into the editor.
 
-Once a project is open, the Project surface offers **New Project…** beside Save,
-Open Saved Project, Save Copy…, Open File…, Share Diagnostics… and Import GLB….
+Once a project is open, the **ForgeShape mark** in the top-left corner opens
+the project drawer, which unfolds from the mark down the left edge: **Create**
+(**New Sketch**, **New Project…**), **Project** (Save Project, Open Saved
+Project), **Transfer** (Save Copy…, Open File…, Share Diagnostics…), **Import a
+mesh** (Import GLB…) and **Application** (Settings…). Tapping the mark again,
+or System Back, closes it; choosing a row closes it and does that thing. The
+mark is not there in a brand-new CAD sketch, before the first Extrude, because
+there is no project yet — **Back to Home** is the way out there.
 Starting a new project or opening one while the current project has changes
 you have not saved asks first — **Save and continue**, **Discard changes**, or
 **Cancel — stay in this project**. Save writes the project to this device and
@@ -183,9 +204,7 @@ takes the New Project page back to Home, takes a New-CAD sketch back to Home
 (nothing was created, so there is nowhere else to go), and from Home leaves the
 app.
 
-Neither choice is a document, a template or a saved project, and neither closes
-anything off: both representations stay one control apart for the life of the
-body.
+None of the four is a document, a template or a saved project.
 
 ## The Editor Workspace
 
@@ -193,11 +212,14 @@ The editor is one workspace, and **the model is the workspace**. Everything else
 stands at an edge and is small, and nothing at all sits across the bottom of the
 screen waiting to be used.
 
-There is no bar across the top: the **Global Toolbar**'s controls sit in two small
-floating groups with the model visible between and behind them — an editing group
-on the leading edge carrying what is being edited and the control that crosses
-between constructing and sculpting, and a utility group on the trailing edge
-carrying the viewport's display settings and the control that hides the chrome.
+There is no bar across the top: the **Global Toolbar**'s controls sit in small
+floating groups with the model visible between and behind them — the
+**ForgeShape mark** first, in the top-left corner, which opens the project
+drawer; an editing group beside it carrying what is being edited and the
+control that crosses between constructing and sculpting; and a utility group on
+the trailing edge carrying Export, the viewport's display settings and the
+control that hides the chrome. On a narrow phone the mark and the trailing
+controls keep their full size and only the transition's label gives way.
 
 **The workspace at rest says nothing, and draws nothing to say it.** A status or
 error message appears in a quiet capsule of its own just below the toolbar, sized
@@ -575,10 +597,14 @@ drop. The list is a flat list of objects.
 
 ## Sketching a CAD Body
 
-The **+** offers one more thing beside the six shapes: **New Sketch**. Choosing
-it puts the three principal planes — and, in a CAD project, the flat faces of
+**New Sketch** is in the project drawer under the ForgeShape mark, and the
+**+** offers it too, beside the six shapes. Choosing it closes the drawer and
+puts the three principal planes — and, in a CAD project, the flat faces of
 your CAD bodies — into the viewport as targets: tap one to highlight it, tap it
-again to sketch on it. **Choose a plane by name** under the tile still lists
+again to sketch on it. Every flat face counts: a body's caps and straight
+sides, an Add's faces, and the floor and straight walls of a pocket a Cut left
+behind; a curved side never does, nor does a face a later Cut carved away.
+While you are choosing, nothing else stands on the bodies to take the tap. **Choose a plane by name** under the tile still lists
 **XY** (the front view), **XZ** (the top view) and **YZ** (the side view) for
 anyone who prefers the words. Either way the viewport becomes that plane: the
 camera looks straight at it, the view goes orthographic so equal lengths are
@@ -657,8 +683,27 @@ never changes any region but the one under your finger**. Choosing several
 regions extrudes them **together, as one shape**: with the ring and its disk
 both chosen the hole is filled, so a rectangle holding circles A and B, with
 the rectangle and A chosen, becomes a block with only B's hole, and all three
-chosen make a solid block. Regions whose loops touch or cross cannot be
-combined; tapping the second one says so and leaves your choice as it was.
+chosen make a solid block. When curves cross, each enclosed cell is its own
+choice, and **any cell can be added or removed in any order** — no tap is ever
+refused because of what else is chosen. Cells that share an edge merge into
+one shape; cells that only meet at a point, or not at all, stay separate pieces
+of the same solid. Whether the chosen set can be extruded (for example an Add
+that would not touch the body) is said on the operation badge and by the
+missing Extrude, and your choice stays exactly as you made it. A finger that
+wobbles a little while tapping neither turns the view nor misses its cell, and
+a cell is tappable from either side of the sketch plane. A still tap on the
+arrow's shaft chooses the cell under it; a drag from the shaft changes the
+distance; a tap on the arrow's head belongs to the arrow.
+There is no limit of sixteen: every cell a sketch's curves make can be chosen
+(a 24-cell grid takes all 24, one tap at a time), and the status line counts
+them — *Regions in the extrusion: N.* The first Extrude of a brand-new CAD
+project extrudes the chosen cells like any later one. "Several profiles are
+closed — choose one" is said only when nothing is chosen; an Extrude that is
+refused names its own reason, and changing the choice replaces that message
+with the new count. Cells that meet only at a point are fine: chosen apart they
+become separate pieces of one body, and a choice that leaves two inner cells
+unchosen where they meet at a point — every cell of a busy sketch but those
+two, say — extrudes as one solid with those two left open.
 What is chosen is hatched as one shape, and a hole it leaves open stays
 empty. The first
 region you choose also turns the view to one the arrow can be dragged in.
@@ -680,23 +725,25 @@ distance** stands just above that line, turned to run along it and never upside
 down; tap it to type one (the field opens level, where it is easy to type). It
 is written to three decimals in the display unit — `2.359 m`, never a long
 string of binary digits — while the field it opens still holds every digit.
-The **extent**, the **operation** (a separate box for New Body, a solid with a
-plus for Add, a solid with a notch for Cut) and, for a One Side extrusion,
-**Flip** are one small **panel** just past the arrow's point: one plate, its
-icons always together and always the same distance apart. Tap anywhere on it
-and one readable panel opens with every choice at full size — One Side,
-Symmetric or Two Sides; the operations this sketch can make; Flip. Zooming out
-makes the arrow head, the line, the panel and the number smaller with the
-model, and zooming in makes them larger, both within limits; the place you tap
-does not shrink — the panel is always at least a full fingertip wide, and the
-extra room is invisible. When the panel does not fit past the arrow's point it
-stands beside it; when it cannot stand whole anywhere near the arrow it is not
-shown at all, never cut in half or pushed away from the arrow. Far enough out
-that the number would be wider than the line it measures, the number and the
-panel step aside together, and the exact fields stay one tap away on the
-panel toggle. With **Tool labels** turned on in *Settings → Interface*, the
-choices carry a one-word caption. A distance typed at the arrow and the same
-number typed in the panel are the same thing; there is one extrusion, and both
+Just past the arrow's point stands one small **badge** showing the operation
+(a separate box for New Body, a solid with a plus for Add, a solid with a notch
+for Cut). It is a little plate standing in the model on the line of the arrow,
+so it tilts and foreshortens with the arrow as you orbit, follows it smoothly,
+and turns the right way up to read; it never slides along the screen edge or
+jumps to the other side of the arrow. When it would be cut off by the screen
+edge, or you look almost straight down the arrow, it is simply not shown — it
+fades out as you approach that view. Tap the badge and one readable panel
+opens with every choice at full size — One Side, Symmetric or Two Sides; the
+operations this sketch can make; Flip. The place you tap is always at least a
+full fingertip wide, but only the badge and that fingertip-sized square take a
+tap: a cell just beside the badge can still be chosen. Zooming out makes the
+arrow head, the line, the badge and the number smaller with the model, and
+zooming in makes them larger, both within limits. Far enough out that the
+number would be wider than the line it measures, the number steps aside, and
+the exact fields stay one tap away on the panel toggle. With **Tool labels**
+turned on in *Settings → Interface*, the choices in the open panel carry a
+one-word caption. A distance typed at the arrow and the same number typed in
+the panel are the same thing; there is one extrusion, and both
 places show it. These sizes are provisional and are being tuned on a physical
 phone.
 
@@ -712,7 +759,7 @@ each also recognisable by its icon — and when the result would not make sense
 (an Add that does not touch the body, a Cut that misses it or would remove all
 of it) the operation badge says so by name and Extrude is not offered.
 
-The dimension line, its number and the panel **follow** the arrow through a
+The dimension line, its number and the badge **follow** the arrow through a
 drag, an orbit and a zoom, and so does the **Edit Sketch** control below. When
 the line runs off the screen, the number stands on the part of it that is still
 visible.
@@ -797,6 +844,13 @@ If another body is sketched on one of this body's faces, an edit that would
 take that face away is refused and says so — the dependent is never quietly
 broken.
 
+**A body sketched on another body's face stands on that face.** It moves when
+the body under it moves or changes size, and it cannot be moved on its own:
+*Transform* is not offered for it and no move handles appear over it — choosing
+it while Transform is open switches the tool to *Shape*, where its sketch and
+extrusion are. Dragging a finger over it moves the view, never the body, and
+nothing is recorded. To move it, move the body it stands on.
+
 **Every feature stays editable.** A CAD body built from several features lists
 them in its *Shape* panel in order — the first extrusion, then each Add and Cut.
 Tap one to reopen it: an Add or a Cut opens on its own extrusion, with its
@@ -805,6 +859,31 @@ drawing. Finishing applies the edit as one Undo step, and everything after it
 is rebuilt in order — deepen the first extrusion and an Add standing on its top
 face rises with it. Saving and reopening keep the whole chain.
 
+**Revolving a region instead of extruding it** (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`).
+A new CAD body can also be made by turning the chosen region about a straight
+edge of its own sketch. Draw the region and, if you want an axis apart from it,
+a Line; after *Finish Sketch* open the exact fields and tap **Revolve…**. The
+status line asks you to choose an axis: tap any straight edge of the sketch — a
+Line, one segment of a Polyline, or one side of a Rectangle; a circle, arc or
+spline is not an axis and says so. The view leans so the turn can be seen, and
+the preview shows a **full turn (360°)**: the axis is drawn across the region,
+with a ring, a handle on it and the angle written beside the ring. Drag the
+handle round the ring to change the angle in whole degrees — dragging it never
+turns the camera — or tap the angle and type an exact one (37.5° stays
+37.5°). **Flip direction** turns the other way with the same angle, **Change axis** picks
+another edge, and **Extrude instead** goes back to the extrusion with the same
+region chosen. A region that crosses the axis line cannot be revolved and the
+status line says so; the *Revolve* button is not offered until it can succeed.
+A region that merely touches the axis makes a solid with no hole. *Revolve* in
+the toolbar makes the body as one Undo step — in a new project it creates the
+project. The revolved body's *Shape* panel lists it as a Revolve; tap the row
+to reopen it with its axis, angle and direction, change them, and finish as one
+Undo step. Saving and reopening keep the axis, the angle and the direction.
+
+Not yet: a revolve that adds to or cuts from an existing body, a later feature
+on a revolved body, sketching on a revolved body's faces, and an axis that is
+not an edge of the sketch.
+
 What a CAD Body does **not** offer yet: *Start Sculpting*. It is absent for one,
 because the way back from Sculpt over a sketch needs its own design; every other
 body sculpts as before.
@@ -812,8 +891,15 @@ body sculpts as before.
 **Sketching on a body's face** (`CAD-A3`). In a CAD project the flat faces of
 your CAD bodies are targets too — both ends of an extrusion and every flat
 side; the curved side of an extruded circle is not. Tap a face to highlight it,
-tap it again to start sketching on it, looking straight at it. A stylus
-hovering over a target highlights it without choosing it. Two fingers still
+tap it again to start sketching on it, looking straight at it. What you tap
+is what stands in front: a plane square in front of a body takes the tap, and a
+body surface in front of a plane takes it from the plane. A surface that cannot
+carry a sketch — the curved wall of a round pocket, a revolved body — chooses
+nothing at all, so two taps there never open a sketch on a plane hidden behind
+it. A tap exactly on the line where a face's triangles meet (its centre, very
+often) chooses that face in the orthographic view too — it used to fall through
+to the plane behind. A stylus hovering over a target highlights it without
+choosing it. Two fingers still
 orbit and pan while you choose; System Back leaves without changing anything.
 A sketch drawn on a body's face and extruded becomes a new CAD body that
 **stays attached to that face**: move, turn or resize the body it sits on and
@@ -824,6 +910,180 @@ stays a useful size, and a value you type is never nudged to it.
 
 Not yet: sketching on an imported or sculpted surface; a curved face as a
 sketch support; and moving a face-attached body on its own.
+
+## Drafting inside a sketch
+
+While a sketch is being drawn, a **Modify** control stands under the
+orientation navigator in the upper corner. It opens the **sketch actions
+palette**: *Select multiple*, *Dimension*, *Make Construction* (or *Make
+Regular*), *Trim*, *Extend*, *Offset*, *Mirror* and *Delete*, plus the
+*Dimensions* choice — *Selected*, *All* or *Off*. The palette offers only what
+can work for what is selected: Trim and Extend are always there, Dimension and
+Offset appear for one entity whose kind has them, and Mirror and Delete need a
+selection. While a mode is active the same corner shows its name, what it needs
+and *Done*; choosing a drawing tool ends it.
+
+**Construction geometry.** *Make Construction* turns the selected entities into
+construction geometry: drawn dashed and quieter, still selectable, snapped to
+and dimensioned, but never part of a filled area — a rectangle made
+Construction leaves nothing to extrude, and Finish says so. A construction line
+can be the axis of a Revolve. *Make Regular* turns it back.
+
+**Dimensions.** *Dimension* with an entity selected offers the measurements
+that entity has — a line's Length and Angle (and Horizontal / Vertical), a
+rectangle's Width and Height, a circle's Radius and Diameter, an arc's Radius
+and Sweep. Tapping another entity while the mode is on makes it the next
+target. A new dimension is **Driving** unless you switch the chip to
+**Reference**. Each dimension is a number on the drawing: `R` for a radius, `Ø`
+for a diameter, `°` for an angle, and a Reference in parentheses and paler.
+Tap a Driving number to type a new value — plain numbers or simple arithmetic
+such as `12+3` — and the geometry changes exactly: a line keeps its start point
+and direction, an angle keeps the length, a rectangle and a circle keep their
+centre. A Reference number only reads; tapping it offers *Delete*. *Selected*
+shows the numbers of what is selected, *All* shows every one, *Off* none; the
+numbers follow pinching and panning. Where two numbers would overlap, one is
+hidden — the selected entity's own first, then Driving — rather than moved, and
+a number that would not fit on screen is hidden rather than pushed in. **A
+number never covers the line or curve it measures**, and a tap beside a number
+reaches the drawing.
+
+**Snapping while drawing.** A new point lands exactly on a nearby endpoint,
+midpoint, centre, crossing of two lines, or the origin, or lines up
+horizontally or vertically with one.
+
+**Trim, Extend, Offset, Mirror.** *Trim*: tap the piece of a line, circle or
+rectangle edge between two crossings and it is removed (a circle becomes an
+arc, a rectangle becomes lines); the filled areas follow. *Extend*: tap near
+the end of a line and it reaches exactly to the next line or circle in its way.
+*Offset*: a parallel copy of a line, circle, rectangle or polyline, previewed
+first; drag to set the distance or type it exactly, then *Confirm* — *Done*
+without confirming creates nothing. *Mirror*: with *Select multiple* on, select
+the entities, choose *Mirror*, tap a straight line as the mirror line, see the
+preview, *Confirm*. An entity a dimension measures cannot be trimmed, and a line
+whose length is Driving cannot be extended — the status line says so; delete
+the dimension first. Offset and Mirror copy no dimension.
+
+**Saving and editing later.** Construction geometry and dimensions are saved
+with the project and come back on reopen, with nothing selected. Editing the
+sketch of an extruded body — the *Edit Sketch* control on the body — or of a
+revolved body — *Edit Sketch* in the body's precision panel — and changing a
+Driving dimension or trimming regenerates the same body as one Undo step.
+
+Not yet: a constraint solver that keeps relations, a "fully defined" state,
+projecting edges of other bodies into a sketch, drawing sheets and title
+blocks, and dimensioning, trimming, extending or offsetting a spline.
+
+## How a body was built — the History
+
+A CAD body and a Surface body keep the steps they were built from, and the
+**History** control in the history capsule (beside Undo and Redo) lists them:
+one row per sketch and per feature, in the order they were made — *Sketch 1*,
+*Extrude 1 · New Body*, *Cut 2*, *Revolve 1*, or for a Surface body *Extruded
+Surface 1*, *Thicken 2* — each with its values on a second line. A filled dot
+marks a step that rebuilds. The control is there only for a CAD or Surface body,
+and not while sketching or sculpting.
+
+Tapping a row edits that step without touching the project yet: a CAD sketch
+reopens as a sketch, a CAD feature reopens its exact values, and a Surface
+feature opens its one value (a distance, an angle, a thickness, or a sketch's
+offset) on the Surface panel. Every later step is rebuilt from the edit as you
+type. If the edit would make a LATER step impossible, that step is named — a
+cross on its row, the reason in words, the steps after it marked as not
+rebuilt — and the commit is withdrawn until the edit works again; **Fix** goes
+back to the value and **Cancel** leaves the body exactly as it was. A finished
+edit is one Undo. Steps cannot be reordered, suppressed or rolled back.
+
+### Sketches, features and what each can do
+
+For a CAD body the History surface has three segments at its top: **Steps**
+(the list above, unchanged), **Sketches** and **Features**.
+
+**Sketches** lists every sketch the body keeps — *Sketch 1*, *Sketch 2* … —
+each with how it is used (*Used by Extrude 2 · Cut*, *Shared by 2 features*,
+or *Unused*), where it stands (*on the XY plane*, *on a face of Extrude 1 ·
+New Body*) and its entity count. Tapping a sketch selects it and shows, above
+the list, its dependencies and the acts it allows — only the ones that can
+succeed: **Edit Sketch**, **Use for Add**, **Use for Cut** and **Delete
+Sketch**. An act that cannot succeed is absent and the reason is written
+instead (*Not deletable: The body's first sketch says where the body is and
+can't be removed.*, *A feature still uses this sketch.*, or why a revolved
+body takes no Add or Cut).
+
+* **Keep Sketch.** A sketch started with New Sketch on a face of the body
+  (a top, a straight side, an Add's face, a Cut's floor or straight wall) can
+  be kept with **Keep Sketch** beside the sketch's own controls, without
+  making a feature. It becomes an *Unused* sketch of that body, saved with the
+  project and reopened with the same identity. One Undo removes it. A sketch
+  on a world plane still makes a new body; it cannot be kept inside an
+  existing one.
+* **Use for Add / Use for Cut** opens a new Add or Cut on that SAME sketch,
+  directly at its extrusion — nothing is copied. Back to Sketch is not offered
+  there: the sketch belongs to every feature that uses it.
+* **Edit Sketch** opens exactly that sketch. A sketch used by several features
+  says how many it rebuilds; Finish rebuilds all of them in one step, or is
+  refused naming the first feature that can no longer be rebuilt — **Fix** and
+  **Cancel** as above. An unused sketch is edited on its own and committed
+  with **Keep Sketch**.
+* **Delete Sketch** removes an unused sketch as one Undo; Undo brings back the
+  same sketch, and a later sketch never takes its number.
+
+**Features** lists the features in order; tapping one selects it and offers
+**Edit Feature** (its exact values, by its own identity) and **Edit Sketch**
+(the sketch it is made from), with the sketch it is built from written above.
+Every act is a 48 dp target, and in a short window the list scrolls rather
+than any act shrinking — verified at the system font sizes 1.0, 1.3 and 1.5, in
+portrait and landscape. While History is open the body's floating Edit Sketch
+control steps aside, so it can never stand on one of History's own acts.
+
+In a sketch's region list (the precision surface after Finish Sketch), **Select
+All** and **Clear** choose every area of the sketch or none, exactly as tapping
+each one would.
+
+## Freeform bodies
+
+A **Freeform** body is a smooth surface shaped by a coarse **control cage** of
+four-sided faces; the surface follows the cage. New Project → Freeform starts
+on a box. With **Shape** held, the panel chooses whether a tap on the cage
+picks a **Vertex**, an **Edge** or a **Face**; a picked vertex has a handle
+that drags it. A face can be **Push/Pull**ed or **Extrude**d by a typed
+distance, and an edge can carry an **Insert Loop** at a typed ratio along its
+ring or a **Crease** weight that keeps it sharp. **Symmetry** X keeps the two
+halves of the cage exactly mirrored, and the **Subdivision** level (0 to 4)
+sets how smooth the surface is drawn. Every tool, and the handle drag, is one
+Undo, and a project saves and reopens with exactly the cage it had. A
+Freeform body is not sculpted, and there is no T-junction or local refinement:
+an inserted loop always runs the whole ring.
+
+UNVERIFIED on a device (host self-tested only): the Rotate and Scale handle
+modes, adding to a selection, Delete Face, Symmetry Y and Z, and the Freeform
+Box, Plane and Cylinder entries of **Add**.
+
+## Surface bodies
+
+A **Surface** body is built from open surfaces rather than closed solids, one
+feature at a time. Each feature begins as a sketch — from **New Surface Sketch**
+on the Surface panel (under **Shape**), standing at a typed offset along XY's
+normal — and Finish Sketch lists only what that sketch can actually make:
+
+* **Patch** fills the sketch's closed regions with flat surface, keeping holes.
+* **Extrude** sweeps its curves straight up by a typed distance. Open chains
+  are fine; the ends stay open, there are no caps.
+* **Revolve** sweeps its curves about the sketch's one **Construction** line
+  by a typed angle. An open profile is fine. Without exactly one Construction
+  line Revolve is not offered.
+* **Keep as Section** keeps the sketch as the first section of a loft; a later
+  sketch at another offset then offers **Loft**, a surface between the two.
+* **Trim** cuts the sketch's region out of the flat patch on the same plane.
+
+With the body selected, **Stitch** joins surfaces whose edges meet, and
+**Thicken** turns an extruded surface into a solid of a typed thickness; each
+is offered only where it works — over a stitched surface Thicken is not
+offered at all. A surface that is still open is drawn from both sides. Every
+feature is one Undo, the History lists them, and a project saves and reopens
+with exactly the features it had. A Surface body is not sculpted.
+
+UNVERIFIED on a device (host self-tested only): Trim's **Keep inside**,
+Thicken of a flat patch, a partial Revolve, and the Surface entry of **Add**.
 
 ## Choosing and sizing the shape
 
@@ -1830,6 +2090,8 @@ What lands in the file:
   way they look in ForgeShape.
 - **Metres.** One metre in ForgeShape is one metre in the file, and up is up.
   Nothing needs rotating or rescaling after it opens.
+- **A body sketched on another body's face is exported on that face**, exactly
+  where you see it, following wherever that body has been moved or turned.
 - **Sculpted shapes as you sculpted them.** A body you have been sculpting
   exports its sculpted surface, not the shape it started as. A body you have
   not sculpted exports its Construction shape.
@@ -1877,6 +2139,15 @@ you had already picked a file before you started sculpting, it is not imported
 when the picker returns: the status line says *Import is not available while
 sculpting. Your project is unchanged.*, and nothing about your sculpt or your
 project moves.
+
+**Importing is not offered while a sketch is open either.** While you draw a
+sketch, after *Finish Sketch*, or while you edit a body's sketch, the Project
+surface has no *Import a mesh* group: a sketch is finished or cancelled before
+anything else is added to the project. If you had already picked a file before
+the sketch began, it is not imported when the picker returns: the status line
+says *Import is not available while a sketch is open. Your project and your
+sketch are unchanged.*, and your drawing is exactly as you left it. You can
+still finish it or cancel it, and the same file imports normally afterwards.
 
 **An imported object is not a shape you can re-dimension.** It came in as a
 mesh, not as a box or a sphere with numbers behind it, so *Shape* is not offered
@@ -1969,10 +2240,13 @@ by typing exact values and pressing Apply**: there are no handles that change a
 body's *dimensions*. A sketch is lines, polylines, rectangles, circles, arcs
 and splines on one of the three principal planes or on a flat face of a CAD
 body; its regions may have holes; a CAD body is a first New Body extrusion plus
-up to fifteen Add and Cut extrusions on its own flat faces, each reopenable. There
+up to fifteen Add and Cut extrusions on its own flat faces, each reopenable, or
+a single Revolve New Body about a straight sketch edge. There
 is no Through All or Up To Face extent, no Intersect, no deleting or reordering
-a feature, and no fillet, chamfer, shell, revolve, sweep, loft, pattern, feature
-mirror, offset, trim or constraint solver, no custom construction plane, no
+a feature, and no fillet, chamfer, shell, sweep, loft, pattern, feature
+mirror or constraint solver on a CAD body (a Surface body has its own loft —
+see *Surface bodies* — and sketch Trim, Extend, Offset and Mirror exist —
+see *Drafting inside a sketch*), no custom construction plane, no
 sketch on the inside of a Cut, and no sketch on a
 curved or imported surface; a polygon profile's points are not numerically
 editable, a spline's points are edited by redrawing it, and a CAD Body does not
@@ -2003,9 +2277,14 @@ as the Mask tool and Clear Mask above; inverting, growing, shrinking or blurring
 a mask, masking by topology, and keeping a mask across a reopen are not.
 Sculpt Undo IS
 implemented, over whole strokes, and so is the *Sculpt History* list described
-above; both are Sculpt's alone. The Construction history has no such panel,
-neither history has named or thumbnailed steps, there is no branching tree, and
-there is no keyboard shortcut for any of the three controls.
+above; both are Sculpt's alone. The Construction history has no such panel
+(a CAD or Surface body's *History* lists how it was built, not the Undo
+steps), neither history has named or thumbnailed steps, there is no branching
+tree, and there is no keyboard shortcut for any of the three controls.
+
+A Surface body has no general curved-surface (NURBS) editing, no trim of a
+curved surface, no fillet or draft, and no repair or exchange of surfaces with
+other programs; a Freeform cage has no local refinement.
 
 **There is a grid, but there is no snapping of any kind.** Nothing you drag,
 type or place is quantised to it, no value is ever measured off it, and there is

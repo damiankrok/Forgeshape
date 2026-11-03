@@ -38,6 +38,8 @@ final class CadFeatureEditorView extends LinearLayout
     private final NumericPropertyRow[] rectangleFields = new NumericPropertyRow[2];
     private final NumericPropertyRow[] circleFields = new NumericPropertyRow[1];
     private final NumericPropertyRow depthField;
+    /** The extrusion's section label, withdrawn with its rows over a revolved body. */
+    private final TextView extrudeLabel;
     private final TextView directionAlong;
     private final TextView directionAgainst;
     /**
@@ -86,9 +88,9 @@ final class CadFeatureEditorView extends LinearLayout
         addView(rectangleRow, EditorControlStyles.rowParams(gap));
         addView(circleRow, EditorControlStyles.rowParams(gap));
 
-        addView(EditorControlStyles.sectionLabel(context,
-                        context.getString(R.string.sketch_extrude_section)),
-                EditorControlStyles.rowParams(sectionGap));
+        extrudeLabel = EditorControlStyles.sectionLabel(context,
+                context.getString(R.string.sketch_extrude_section));
+        addView(extrudeLabel, EditorControlStyles.rowParams(sectionGap));
         depthField = new NumericPropertyRow(context, R.id.field_cad_depth,
                 context.getString(R.string.label_depth), true);
         addView(depthField, EditorControlStyles.rowParams(smallGap));
@@ -213,6 +215,25 @@ final class CadFeatureEditorView extends LinearLayout
                         (int) nativeCad[NativeViewport.CAD_PROFILE_VERTICES]));
                 break;
         }
+        // A REVOLVED body (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`) has no extrusion and
+        // no size this panel can type: its truth is the revolve feature, which
+        // its row below reopens. The extrude rows and Apply are withdrawn
+        // rather than drawn and then refused.
+        final boolean revolved =
+                (int) nativeCad[NativeViewport.CAD_STATE_KIND] == NativeViewport.FEATURE_KIND_REVOLVE;
+        extrudeLabel.setVisibility(revolved ? GONE : VISIBLE);
+        depthField.setVisibility(revolved ? GONE : VISIBLE);
+        apply.setVisibility(revolved ? GONE : VISIBLE);
+        if (revolved) {
+            rectangleRow.setVisibility(GONE);
+            circleRow.setVisibility(GONE);
+            directionRow.setVisibility(GONE);
+            profileSummary.setText(context.getString(R.string.cad_profile_revolve,
+                    CadRevolvePresentation.label(nativeCad[NativeViewport.CAD_STATE_REVOLVE_ANGLE])));
+            unitChips.showSelected(unit);
+            refreshFeatures(context);
+            return;
+        }
         // The extent is authored ON THE CANVAS, where both sides are visible;
         // this panel edits the PRIMARY distance of whatever mode the body has
         // and withdraws the side chips where there is no side to choose.
@@ -234,7 +255,11 @@ final class CadFeatureEditorView extends LinearLayout
         featureList.removeAllViews();
         final long body = NativeViewport.sceneActiveBodyId();
         final int count = NativeViewport.cadFeatureCount(body);
-        if (count <= 1) {
+        // One feature is not a choice -- unless it is a Revolve, whose row is
+        // the one way back into its axis, angle and direction.
+        final boolean revolved =
+                (int) nativeCad[NativeViewport.CAD_STATE_KIND] == NativeViewport.FEATURE_KIND_REVOLVE;
+        if (count <= 1 && !revolved) {
             featureList.setVisibility(GONE);
             return;
         }
@@ -249,8 +274,13 @@ final class CadFeatureEditorView extends LinearLayout
             }
             final long featureId = (long) featureInfo[NativeViewport.CAD_FEATURE_ID];
             final int operation = (int) featureInfo[NativeViewport.CAD_FEATURE_OPERATION];
-            final String label = context.getString(R.string.cad_feature_row, i + 1,
-                    context.getString(operationName(operation)));
+            final boolean revolveRow = (int) featureInfo[NativeViewport.CAD_FEATURE_KIND]
+                    == NativeViewport.FEATURE_KIND_REVOLVE;
+            final String label = revolveRow
+                    ? context.getString(R.string.cad_feature_row_revolve, i + 1,
+                            CadRevolvePresentation.label(featureInfo[NativeViewport.CAD_FEATURE_ANGLE]))
+                    : context.getString(R.string.cad_feature_row, i + 1,
+                            context.getString(operationName(operation)));
             final TextView row = EditorControlStyles.listRow(context, R.id.cad_feature_row,
                     label);
             row.setTag(Long.valueOf(featureId));

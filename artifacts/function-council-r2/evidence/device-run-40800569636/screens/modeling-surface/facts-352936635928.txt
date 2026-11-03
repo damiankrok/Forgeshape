@@ -1,0 +1,13 @@
+capture.01_open_wall=01_open_wall.png frames=6
+capture.02_thickened=02_thickened.png frames=6
+history.rows=[●  Sketch 1
+XY · offset 0 m · 2 entities, ●  Extruded Surface 1
+0.5 m, ●  Thicken 2
+0.1 m]
+capture.03_first_feature_edited=03_first_feature_edited.png frames=6
+history.rows=[●  Sketch 1
+XY · offset 0 m · 2 entities, ●  Extruded Surface 1
+0.8 m, ●  Thicken 2
+0.1 m]
+surf02.staged_failure=Thicken 2 cannot be rebuilt with this value.
+capture.04_staged_failure=04_staged_failure.png frames=6

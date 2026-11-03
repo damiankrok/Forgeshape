@@ -1,0 +1,14 @@
+sketch.grid_step=0.25
+sketch.unit=0.25
+capture.j1_00_finished=j1_00_finished.png 1080x2400
+tap.a_only=413.26456,1136.6323 corridor=false status=0
+tap.lens=630.30756,1224.9546 corridor=false status=0
+tap.b_only=737.7014,1267.8958 corridor=false status=0
+capture.j1_03_three_cells=j1_03_three_cells.png 1080x2400
+tap.c_in=636.1251,981.47015 corridor=false status=0
+tap.c_out=639.32434,847.5723 corridor=false status=0
+tap.loop_in=531.1541,1516.223 corridor=false status=0
+tap.loop_out=531.384,1606.8878 corridor=false status=0
+tap.rest=779.14343,1513.796 corridor=false status=0
+j1.taps_inside_arrow_corridor=0
+capture.j1_08_all_cells=j1_08_all_cells.png 1080x2400

@@ -375,6 +375,18 @@ final class NativeViewport {
      */
     static final int APPLY_REJECTED_UNAVAILABLE = 10;
 
+    /**
+     * Refused: the body is a FACE-SUPPORTED CAD Body
+     * ({@code CAD-FACE-SUPPORTED-PLACEMENT-R1}).
+     *
+     * <p>Its placement is derived from its producer's face, so it cannot be
+     * moved on its own; moving the producer moves it. Its own code for the
+     * reason a lock has one: every number passed may be good. Transform, the
+     * gizmo and the placement editor are withdrawn for such a body; this is
+     * the guard that stays regardless. APPENDED after 10.
+     */
+    static final int APPLY_REJECTED_DERIVED_PLACEMENT = 11;
+
     // ---------------------------------------------------------------------
     // Body Dimensions and Relative Scale (Stage 020M, `UI-OWNER-33B`)
     //
@@ -503,6 +515,13 @@ final class NativeViewport {
      * this is the guard behind them.
      */
     static final int SCULPT_REFUSED_HIDDEN_BODY = 4;
+    /**
+     * The active body is a Freeform body: its truth is the control cage, and
+     * Start Sculpting is refused by name (the control is absent for one).
+     */
+    static final int SCULPT_REFUSED_FREEFORM_BODY = 5;
+    /** The active body is a Surface body: its truth is a feature list. */
+    static final int SCULPT_REFUSED_SURFACE_BODY = 6;
 
     // -----------------------------------------------------------------------
     // The seven sculpt tools.
@@ -1232,6 +1251,18 @@ final class NativeViewport {
      * and Construction history is refused. Nothing changes on this answer.
      */
     static final int IMPORT_REFUSED_IN_SCULPT = IMPORT_COMMIT_BASE + 5;
+
+    /**
+     * The project refused an import because a sketch is open
+     * ({@code ImportCommitStatus::RefusedInSketch}, appended as ordinal 6).
+     *
+     * <p>Native decides it under the commit's lock from its own sketch session
+     * -- Editing or Ready, a staged Edit Sketch or Edit Feature included: the
+     * sketch is the one authoring act until it is finished or cancelled, and
+     * an import underneath it would record a Construction step the open sketch
+     * makes un-undoable. Sculpt is asked first. Nothing changes on this answer.
+     */
+    static final int IMPORT_REFUSED_IN_SKETCH = IMPORT_COMMIT_BASE + 6;
 
     /**
      * Reads GLB bytes and creates durable Imported Mesh bodies from them.
@@ -2274,6 +2305,45 @@ final class NativeViewport {
     static final int CAD_PLANAR_FACE_DEGENERATE = 59;
     /** Two chosen areas meet only at a point: their union cannot be extruded. */
     static final int CAD_PLANAR_FACES_TOUCH_AT_POINT = 61;
+    /**
+     * `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: the Revolve feature's refusals, appended
+     * below JNI so every earlier code keeps its number.
+     */
+    static final int CAD_INVALID_FEATURE_KIND = 62;
+    static final int CAD_REVOLVE_AXIS_UNRESOLVED = 63;
+    static final int CAD_REVOLVE_AXIS_NOT_STRAIGHT = 64;
+    static final int CAD_REVOLVE_AXIS_DEGENERATE = 65;
+    static final int CAD_REVOLVE_ANGLE_INVALID = 66;
+    static final int CAD_REVOLVE_DIRECTION_INVALID = 67;
+    static final int CAD_REVOLVE_PROFILE_CROSSES_AXIS = 68;
+    static final int CAD_REVOLVE_ZERO_RADIUS = 69;
+    static final int CAD_REVOLVE_COMPONENTS_OVERLAP = 70;
+    static final int CAD_REVOLVE_PAYLOAD_MISMATCH = 71;
+    static final int CAD_REVOLVE_LATER_FEATURE_UNSUPPORTED = 72;
+    static final int CAD_REVOLVE_NEEDS_AXIS = 73;
+    // `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`, appended in the native order.
+    static final int CAD_SKETCH_DIMENSION_INVALID = 74;
+    static final int CAD_SKETCH_DIMENSION_CONFLICT = 75;
+    static final int CAD_SKETCH_DIMENSION_DEPENDENCY = 76;
+    static final int CAD_SKETCH_DIMENSION_LOCKED = 77;
+    static final int CAD_SKETCH_DIMENSION_READ_ONLY = 78;
+    static final int CAD_SKETCH_DIMENSION_VALUE_INVALID = 79;
+    static final int CAD_TRIM_SPLINE_UNSUPPORTED = 80;
+    static final int CAD_DRAFTING_NO_TARGET = 81;
+    static final int CAD_EXTEND_UNSUPPORTED = 82;
+    static final int CAD_EXTEND_NO_TARGET = 83;
+    static final int CAD_EXTEND_AMBIGUOUS = 84;
+    static final int CAD_OFFSET_SPLINE_UNSUPPORTED = 85;
+    static final int CAD_OFFSET_INVALID = 86;
+    static final int CAD_OFFSET_MITER_LIMIT = 87;
+    static final int CAD_OFFSET_SELF_INTERSECTING = 88;
+    static final int CAD_MIRROR_AXIS_INVALID = 89;
+    static final int CAD_MIRROR_NOTHING_SELECTED = 90;
+    /** A sketch id the body's table does not carry (`CAD-V6-S1`, code 47). */
+    static final int CAD_SKETCH_NOT_FOUND = 47;
+    // `CAD-R2`: retained sketch management. APPENDED.
+    static final int CAD_SKETCH_IN_USE = 91;
+    static final int CAD_SKETCH_IS_ROOT = 92;
 
     /**
      * What an extrusion does to material (`CAD-VERTICAL-SLICE-R1`), in the
@@ -2349,6 +2419,183 @@ final class NativeViewport {
     static final int SKETCH_VIEW_FACE_SUPPORTED = 4;
     static final int SKETCH_VIEW_PLANE_SWITCHABLE = 5;
 
+    // -----------------------------------------------------------------------
+    // Sketch drafting (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`)
+    // -----------------------------------------------------------------------
+    //
+    // The selection set, the Construction role, the modify modes and the
+    // retained dimensions all live in the ONE native session. Java reads them on
+    // every refresh and holds none of them.
+
+    /** What the last snap landed on: slot {@link #SKETCH_LAST_SNAP}. */
+    static final int SNAP_NONE = 0;
+    static final int SNAP_GRID = 1;
+    static final int SNAP_ENDPOINT = 2;
+    static final int SNAP_INTERSECTION = 3;
+    static final int SNAP_MIDPOINT = 4;
+    static final int SNAP_CENTER = 5;
+    static final int SNAP_ORIGIN = 6;
+    static final int SNAP_HORIZONTAL_GUIDE = 7;
+    static final int SNAP_VERTICAL_GUIDE = 8;
+
+    /** The modify modes, as the native SketchModifyMode index. */
+    static final int MODIFY_NONE = 0;
+    static final int MODIFY_DIMENSION = 1;
+    static final int MODIFY_TRIM = 2;
+    static final int MODIFY_EXTEND = 3;
+    static final int MODIFY_OFFSET = 4;
+    static final int MODIFY_MIRROR = 5;
+
+    /** Dimension kinds, as the native SketchDimensionKind index. */
+    static final int DIM_LINE_LENGTH = 0;
+    static final int DIM_LINE_ANGLE = 1;
+    static final int DIM_LINE_HORIZONTAL = 2;
+    static final int DIM_LINE_VERTICAL = 3;
+    static final int DIM_RECTANGLE_WIDTH = 4;
+    static final int DIM_RECTANGLE_HEIGHT = 5;
+    static final int DIM_CIRCLE_RADIUS = 6;
+    static final int DIM_CIRCLE_DIAMETER = 7;
+    static final int DIM_EDGE_LENGTH = 8;
+    static final int DIM_ARC_RADIUS = 9;
+    static final int DIM_ARC_SWEEP = 10;
+    static final int DIM_EDGE_ANGLE = 11;
+    static final int DIM_KIND_COUNT = 12;
+    /** Dimension modes as {@link #sketchAddDimension} takes them. */
+    static final int DIM_MODE_DRIVING = 0;
+    static final int DIM_MODE_REFERENCE = 1;
+
+    /** Dimension visibility, as the native SketchDimensionVisibility index. */
+    static final int DIM_VISIBILITY_SELECTED = 0;
+    static final int DIM_VISIBILITY_ALL = 1;
+    static final int DIM_VISIBILITY_OFF = 2;
+
+    /** Slots of {@link #sketchDraftingState}. */
+    static final int SKETCH_DRAFT_SIZE = 25;
+    static final int SKETCH_DRAFT_MODE = 0;
+    static final int SKETCH_DRAFT_SELECTION_COUNT = 1;
+    static final int SKETCH_DRAFT_MULTI_SELECT = 2;
+    static final int SKETCH_DRAFT_CONSTRUCTION_TARGET = 3;
+    static final int SKETCH_DRAFT_DIM_TARGET_ENTITY = 4;
+    static final int SKETCH_DRAFT_DIM_TARGET_EDGE = 5;
+    static final int SKETCH_DRAFT_DIM_AWAIT_SECOND = 6;
+    static final int SKETCH_DRAFT_OFFSET_SOURCE = 7;
+    static final int SKETCH_DRAFT_OFFSET_DISTANCE = 8;
+    static final int SKETCH_DRAFT_OFFSET_STATUS = 9;
+    static final int SKETCH_DRAFT_MIRROR_AXIS_SET = 10;
+    static final int SKETCH_DRAFT_MIRROR_AXIS_ENTITY = 11;
+    static final int SKETCH_DRAFT_MIRROR_AXIS_EDGE = 12;
+    static final int SKETCH_DRAFT_DIM_VISIBILITY = 13;
+    static final int SKETCH_DRAFT_DIM_COUNT = 14;
+    static final int SKETCH_DRAFT_LAST_DELETED_DIMS = 15;
+    static final int SKETCH_DRAFT_TRIM_CONVERTED_RECTANGLE = 16;
+    static final int SKETCH_DRAFT_LAST_SNAP = 17;
+    static final int SKETCH_DRAFT_GUIDE_H = 18;
+    static final int SKETCH_DRAFT_GUIDE_V = 19;
+    static final int SKETCH_DRAFT_CONSTRUCTION_COUNT = 20;
+    static final int SKETCH_DRAFT_SINGLE_ROLE = 21;
+    /** Advances on every Trim or Extend that landed, so each is reported once. */
+    static final int SKETCH_DRAFT_TAP_ACT_SERIAL = 22;
+    /** The single selection's SKETCH_ENTITY_KIND_*, or -1. */
+    static final int SKETCH_DRAFT_SINGLE_KIND = 23;
+    /** Which tap act last landed: {@link #TAP_ACT_TRIM} or {@link #TAP_ACT_EXTEND}. */
+    static final int SKETCH_DRAFT_TAP_ACT = 24;
+    static final int TAP_ACT_NONE = 0;
+    static final int TAP_ACT_TRIM = 1;
+    static final int TAP_ACT_EXTEND = 2;
+
+    /** Stride of {@link #sketchDimensionLabels}. */
+    static final int SKETCH_LABEL_STRIDE = 10;
+    static final int SKETCH_LABEL_ID = 0;
+    static final int SKETCH_LABEL_KIND = 1;
+    static final int SKETCH_LABEL_MODE = 2;
+    static final int SKETCH_LABEL_VALUE = 3;
+    static final int SKETCH_LABEL_X = 4;
+    static final int SKETCH_LABEL_Y = 5;
+    static final int SKETCH_LABEL_PROJECTS = 6;
+    static final int SKETCH_LABEL_ENTITY = 7;
+    /** The point on the measured geometry the label stands off from (screen px). */
+    static final int SKETCH_LABEL_ATTACH_X = 8;
+    static final int SKETCH_LABEL_ATTACH_Y = 9;
+    /** The most labels a refresh reads; the domain caps dimensions at 512. */
+    static final int SKETCH_LABEL_MAX = 512;
+
+    /** Stride of {@link #sketchDimensions}. */
+    static final int SKETCH_DIM_STRIDE = 8;
+    static final int SKETCH_DIM_ID = 0;
+    static final int SKETCH_DIM_KIND = 1;
+    static final int SKETCH_DIM_MODE = 2;
+    static final int SKETCH_DIM_FIRST_ENTITY = 3;
+    static final int SKETCH_DIM_FIRST_EDGE = 4;
+    static final int SKETCH_DIM_SECOND_ENTITY = 5;
+    static final int SKETCH_DIM_SECOND_EDGE = 6;
+    static final int SKETCH_DIM_VALUE = 7;
+
+    /** Size of {@link #sketchEntityValues}: the entity slots plus role and a point. */
+    static final int SKETCH_ENTITY_VALUES_SIZE = 9;
+    static final int SKETCH_ENTITY_ROLE = 6;
+    static final int SKETCH_ENTITY_EXTRA_U = 7;
+    static final int SKETCH_ENTITY_EXTRA_V = 8;
+
+    /** The selection, in the order it was made. Returns the count. */
+    static native int sketchSelection(long[] out);
+
+    /** Whether a Select tap adds to and removes from the selection. */
+    static native void sketchSetMultiSelect(boolean on);
+
+    /** Adds the entity to the selection or removes it. */
+    static native boolean sketchToggleSelectEntity(long entityId);
+
+    /** Make Construction / Make Regular for the whole selection, as one act. */
+    static native int sketchToggleConstruction();
+
+    /** Enters or leaves a modify mode ({@code MODIFY_*}). */
+    static native int sketchSetModifyMode(int mode);
+
+    /** The drafting state; {@link #SKETCH_DRAFT_SIZE} slots. */
+    static native void sketchDraftingState(double[] out);
+
+    /** The dimension kinds the Dimension mode's target supports. */
+    static native int sketchDimensionTargetKinds(int[] out);
+
+    /** Chooses the Dimension mode's target edge directly (the panel's path). */
+    static native int sketchSetDimensionTarget(long entityId, int edge);
+
+    /** The next straight-edge tap becomes an angle's second edge. */
+    static native int sketchBeginDimensionAngle();
+
+    /** Adds a dimension of {@code kind} ({@code DIM_*}) and {@code mode} on the target. */
+    static native int sketchAddDimension(int kind, int mode);
+
+    /** Removes a dimension; the geometry is untouched. */
+    static native int sketchRemoveDimension(long dimensionId);
+
+    /** THE Driving edit: metres for a length, degrees for an angle. */
+    static native int sketchApplyDimensionValue(long dimensionId, double value);
+
+    /** Selected / All / Off ({@code DIM_VISIBILITY_*}). */
+    static native void sketchSetDimensionVisibility(int visibility);
+
+    /** The shown labels, stride {@link #SKETCH_LABEL_STRIDE}. Returns the count. */
+    static native int sketchDimensionLabels(double[] out);
+
+    /** Every retained dimension, stride {@link #SKETCH_DIM_STRIDE}. Returns the count. */
+    static native int sketchDimensions(double[] out);
+
+    /** Every entity id in stored order. Returns the count. */
+    static native int sketchEntityIds(long[] out);
+
+    /** One entity by id; {@link #SKETCH_ENTITY_VALUES_SIZE} slots. */
+    static native boolean sketchEntityValues(long entityId, double[] out);
+
+    /** The Offset mode's signed distance, metres, as typed. */
+    static native int sketchSetOffsetDistance(double meters);
+
+    /** Creates the offset previewed now; the mode ends. */
+    static native int sketchConfirmOffset();
+
+    /** Creates the mirror previewed now; the mode ends. */
+    static native int sketchConfirmMirror();
+
     /** Slots of {@link #sketchLineDimension}. */
     static final int SKETCH_DIMENSION_SIZE = 4;
     static final int SKETCH_DIMENSION_ENTITY = 0;
@@ -2364,7 +2611,7 @@ final class NativeViewport {
      * land between two of them. Every slot is DERIVED below JNI on every read —
      * the shell stores no depth, no direction and no anchor.
      */
-    static final int CAD_EXTRUDE_SIZE = 45;
+    static final int CAD_EXTRUDE_SIZE = 59;
     /** 1 when the canvas manipulator is live; 0 is the whole reason it is absent. */
     static final int CAD_EXTRUDE_ACTIVE = 0;
     /** The PRIMARY side's distance: the whole depth of a One Side extrusion. */
@@ -2453,6 +2700,25 @@ final class NativeViewport {
     static final int CAD_EXTRUDE_HEAD_ON_SCREEN = 42;
     static final int CAD_EXTRUDE_HEAD_X = 43;
     static final int CAD_EXTRUDE_HEAD_Y = 44;
+    // `CAD-V6-S2-OWNER-CORRECTION-E2E-R1`. The action DOCK: a world rectangle
+    // on the axis past that point, projected below JNI, whole or not at all.
+    /** 1 when the dock is drawn; 0 means it is ABSENT (46..56 meaningless). */
+    static final int CAD_EXTRUDE_DOCK_VISIBLE = 45;
+    /** The near-axis fade, (0, 1]. */
+    static final int CAD_EXTRUDE_DOCK_ALPHA = 46;
+    /** Top-left x; then y, top-right x/y, bottom-right x/y, bottom-left x/y (47..54). */
+    static final int CAD_EXTRUDE_DOCK_TL_X = 47;
+    static final int CAD_EXTRUDE_DOCK_CENTRE_X = 55;
+    static final int CAD_EXTRUDE_DOCK_CENTRE_Y = 56;
+    /** |sin| of the view against the axis at the arrow point. Diagnostic. */
+    static final int CAD_EXTRUDE_DOCK_AXIS_SINE = 57;
+    /** Why the dock is hidden: 0 shown, 1 no frame, 2 near the axis, 3 behind the eye, 4 off the viewport. */
+    static final int CAD_EXTRUDE_DOCK_HIDDEN = 58;
+    static final int DOCK_SHOWN = 0;
+    static final int DOCK_HIDDEN_NO_FRAME = 1;
+    static final int DOCK_HIDDEN_NEAR_AXIS = 2;
+    static final int DOCK_HIDDEN_BEHIND_EYE = 3;
+    static final int DOCK_HIDDEN_OFF_VIEWPORT = 4;
 
     /** Extent modes, in the native enum's own order. */
     static final int EXTENT_ONE_SIDE = 0;
@@ -2622,6 +2888,58 @@ final class NativeViewport {
      */
     static native int sketchFlipExtrudeDirection();
 
+    // --- Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`) -------------------------
+    //
+    // The axis, the angle and the direction live below JNI until the one
+    // commit; Java submits acts and re-reads the REVOLVE_* slots.
+
+    /** Ready (Extrude) -> Ready (Revolve). Returns a {@code CAD_*} code. */
+    static native int sketchBeginRevolve();
+
+    /** Ready (Revolve) -> Ready (Extrude), keeping the selection. */
+    static native int sketchEndRevolve();
+
+    /** Re-enters the axis pick: the next tap on a straight edge sets the axis. */
+    static native int sketchBeginRevolveAxisPick();
+
+    /** Sets the axis to exactly this edge, or refuses it by name. */
+    static native int sketchSetRevolveAxis(long entityId, int edgeIndex);
+
+    /** A typed angle in degrees, refused (never clamped) outside (0, 360]. */
+    static native int sketchSetRevolveAngle(double degrees);
+
+    /** Reverses the revolve direction, keeping the exact angle. */
+    static native int sketchFlipRevolve();
+
+    /** The Revolve chrome's state, in the REVOLVE_* slots, in one read. */
+    static native void cadRevolveToolState(double[] out);
+
+    static final int REVOLVE_STATE_SIZE = 24;
+    static final int REVOLVE_ACTIVE = 0;
+    static final int REVOLVE_AXIS_PICKING = 1;
+    static final int REVOLVE_AXIS_ENTITY = 2;
+    static final int REVOLVE_AXIS_EDGE = 3;
+    static final int REVOLVE_ANGLE = 4;
+    static final int REVOLVE_DIRECTION = 5;
+    static final int REVOLVE_CANDIDATE_STATUS = 6;
+    static final int REVOLVE_LABEL_VISIBLE = 7;
+    static final int REVOLVE_LABEL_X = 8;
+    static final int REVOLVE_LABEL_Y = 9;
+    static final int REVOLVE_HANDLE_VISIBLE = 10;
+    static final int REVOLVE_HANDLE_X = 11;
+    static final int REVOLVE_HANDLE_Y = 12;
+    static final int REVOLVE_AXIS_VISIBLE = 13;
+    static final int REVOLVE_AXIS_START_X = 14;
+    static final int REVOLVE_AXIS_START_Y = 15;
+    static final int REVOLVE_AXIS_END_X = 16;
+    static final int REVOLVE_AXIS_END_Y = 17;
+    static final int REVOLVE_DRAGGING = 18;
+    static final int REVOLVE_AVAILABLE = 19;
+    static final int REVOLVE_FULL_TURN = 20;
+    static final int REVOLVE_SELECTED_AREAS = 21;
+    static final int REVOLVE_EDITING_REVOLVE_BODY = 22;
+    static final int REVOLVE_CANDIDATE_REVISION = 23;
+
     /**
      * Changes the extent mode (`CAD-EXT-R1`): {@link #EXTENT_ONE_SIDE},
      * {@link #EXTENT_SYMMETRIC} or {@link #EXTENT_TWO_SIDES}.
@@ -2715,6 +3033,106 @@ final class NativeViewport {
      */
     static native int sketchBeginEditFeature(long bodyId, long featureId, boolean startReady);
 
+    // --- Retained sketches (`CAD-R2`) -----------------------------------------
+
+    /** Slots of {@link #cadSketchInventory}'s header. */
+    static final int SKETCH_INV_HEADER_SIZE = 4;
+    static final int SKETCH_INV_STATUS = 0;
+    static final int SKETCH_INV_ROW_COUNT = 1;
+    static final int SKETCH_INV_NEXT_ID = 2;
+    static final int SKETCH_INV_FAILED_FEATURE = 3;
+
+    /** Slots of one {@link #cadSketchInventory} row. */
+    static final int SKETCH_INV_ROW_SIZE = 20;
+    /** The durable {@code CadSketchId}. Never a position. */
+    static final int SKETCH_INV_ID = 0;
+    /** 1-based; the History's own sketch ordinal. Presentation only. */
+    static final int SKETCH_INV_ORDINAL = 1;
+    static final int SKETCH_INV_ROOT = 2;
+    /** One of the SKETCH_SUPPORT_* values. */
+    static final int SKETCH_INV_SUPPORT = 3;
+    static final int SKETCH_INV_PLANE = 4;
+    static final int SKETCH_INV_SUPPORT_FEATURE = 5;
+    static final int SKETCH_INV_SUPPORT_FACE_KIND = 6;
+    static final int SKETCH_INV_ENTITIES = 7;
+    static final int SKETCH_INV_DIMENSIONS = 8;
+    static final int SKETCH_INV_CONSUMERS = 9;
+    static final int SKETCH_INV_FIRST_CONSUMER = 10;
+    static final int SKETCH_INV_LAST_CONSUMER = 11;
+    /** One of the SKETCH_ROW_* values. */
+    static final int SKETCH_INV_STATE = 12;
+    /** The row's reason (Failed / SupportLost), a CAD_* code. */
+    static final int SKETCH_INV_STATUS_CODE = 13;
+    /** SKETCH_ACT_* bits native accepts. */
+    static final int SKETCH_INV_ACTS = 14;
+    /** Why Delete is not offered, a CAD_* code (CAD_OK when it is). */
+    static final int SKETCH_INV_DELETE_REFUSAL = 15;
+    /** Why reuse is not offered, a CAD_* code (CAD_OK when it is). */
+    static final int SKETCH_INV_REUSE_REFUSAL = 16;
+
+    /** {@link #SKETCH_INV_SUPPORT_FACE_KIND} values: the face token's kind. */
+    static final int SKETCH_FACE_CAP_PLANE = 0;
+    static final int SKETCH_FACE_CAP_FAR = 1;
+    static final int SKETCH_FACE_SIDE = 2;
+
+    static final int SKETCH_SUPPORT_WORLD_PLANE = 0;
+    static final int SKETCH_SUPPORT_BODY_FACE = 1;
+    static final int SKETCH_SUPPORT_FEATURE_FACE = 2;
+
+    static final int SKETCH_ROW_OK = 0;
+    static final int SKETCH_ROW_UNUSED = 1;
+    static final int SKETCH_ROW_FAILED = 2;
+    static final int SKETCH_ROW_NOT_REGENERATED = 3;
+    static final int SKETCH_ROW_SUPPORT_LOST = 4;
+
+    static final int SKETCH_ACT_EDIT = 1;
+    static final int SKETCH_ACT_DELETE = 2;
+    static final int SKETCH_ACT_REUSE_ADD = 4;
+    static final int SKETCH_ACT_REUSE_CUT = 8;
+
+    /** The most retained sketches one CAD body can carry. */
+    static final int SKETCH_INV_MAX_ROWS = 16;
+
+    /**
+     * The retained sketches of a CAD body, in the History's construction order,
+     * derived from the committed state on every call and stored nowhere.
+     * Returns the row count, or -1 for a body that is not a CAD body.
+     */
+    static native int cadSketchInventory(long bodyId, double[] header, double[] rows);
+
+    /** The features extruding one sketch, in chain order; -1 for no such sketch. */
+    static native int cadSketchConsumers(long bodyId, long sketchId, long[] out);
+
+    /** Delete Sketch: an unused, non-root sketch, as one Undo. A CAD_* code. */
+    static native int cadDeleteSketch(long bodyId, long sketchId);
+
+    /**
+     * Opens a staged NEW Add ({@link #OPERATION_ADD}) or Cut on an EXISTING
+     * retained sketch, directly in Ready. The ordinary Extrude commits it.
+     */
+    static native int sketchBeginReuseSketch(long bodyId, long sketchId, int operation);
+
+    /** Opens a staged edit of one retained sketch by its durable id. */
+    static native int sketchBeginEditSketch(long bodyId, long sketchId);
+
+    /** Keep Sketch: commits the open sketch with no feature, as one Undo. */
+    static native int sketchCommitSketch();
+
+    /** Whether Keep Sketch can be offered now. */
+    static native boolean sketchCanKeepSketch();
+
+    /** Whether the open session edits an unused sketch alone (no Finish). */
+    static native boolean sketchIsSketchOnly();
+
+    /** Clears the Ready area selection (`CAD-R2` P2.1). A CAD_* code. */
+    static native int sketchClearAreaSelection();
+
+    /** Chooses every selectable area of the Ready sketch, bounded. A CAD_* code. */
+    static native int sketchSelectAllAreas();
+
+    /** The retained sketch a reuse session extrudes, or 0. */
+    static native long sketchReuseSketchId();
+
     /** The feature an open edit session edits, or 0. */
     static native long sketchEditingFeatureId();
 
@@ -2722,7 +3140,7 @@ final class NativeViewport {
     static native int cadFeatureCount(long bodyId);
 
     /** Slots of {@link #cadFeatureInfo}. */
-    static final int CAD_FEATURE_INFO_SIZE = 9;
+    static final int CAD_FEATURE_INFO_SIZE = 12;
     static final int CAD_FEATURE_ID = 0;
     static final int CAD_FEATURE_OPERATION = 1;
     static final int CAD_FEATURE_EXTENT = 2;
@@ -2732,6 +3150,18 @@ final class NativeViewport {
     static final int CAD_FEATURE_HOLES = 6;
     static final int CAD_FEATURE_SUPPORT = 7;
     static final int CAD_FEATURE_ENTITIES = 8;
+    /** {@link #FEATURE_KIND_EXTRUDE} or {@link #FEATURE_KIND_REVOLVE}. */
+    static final int CAD_FEATURE_KIND = 9;
+    /** A Revolve's angle in degrees; 0 for an Extrude. */
+    static final int CAD_FEATURE_ANGLE = 10;
+    /** A Revolve's direction: {@link #REVOLVE_POSITIVE} or {@link #REVOLVE_NEGATIVE}. */
+    static final int CAD_FEATURE_REVOLVE_DIRECTION = 11;
+
+    /** A feature's kind (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`), in the native enum's order. */
+    static final int FEATURE_KIND_EXTRUDE = 0;
+    static final int FEATURE_KIND_REVOLVE = 1;
+    static final int REVOLVE_POSITIVE = 0;
+    static final int REVOLVE_NEGATIVE = 1;
 
     /** One feature of a CAD body's chain, by chain position. False past the end. */
     static native boolean cadFeatureInfo(long bodyId, int index, double[] out);
@@ -2773,12 +3203,14 @@ final class NativeViewport {
 
     static native String cadStatusToken(int code);
 
-    /** 1 Construction, 2 Imported, 3 CAD; 0 for an unknown id. */
+    /** 1 Construction, 2 Imported, 3 CAD, 4 Freeform; 0 for an unknown id. */
     static native int sceneBodyRepresentation(long objectId);
 
     static final int REPRESENTATION_CONSTRUCTION = 1;
     static final int REPRESENTATION_IMPORTED = 2;
     static final int REPRESENTATION_CAD = 3;
+    static final int REPRESENTATION_FREEFORM = 4;
+    static final int REPRESENTATION_SURFACE = 5;
 
     static native boolean sceneActiveBodyIsCad();
 
@@ -2786,7 +3218,7 @@ final class NativeViewport {
     static native boolean sceneActiveBodyIsFaceSupportedCad();
 
     /** Slots of {@link #cadState}. */
-    static final int CAD_STATE_SIZE = 9;
+    static final int CAD_STATE_SIZE = 11;
     static final int CAD_PLANE = 0;
     /** The PRIMARY authored distance: One Side's depth, Symmetric's per side. */
     static final int CAD_DEPTH = 1;
@@ -2800,6 +3232,10 @@ final class NativeViewport {
     static final int CAD_PROFILE_VERTICES = 7;
     /** The body's extent mode (`CAD-EXT-R1`), one of the EXTENT_* values. */
     static final int CAD_STATE_EXTENT = 8;
+    /** The base feature's kind: {@link #FEATURE_KIND_EXTRUDE} or {@link #FEATURE_KIND_REVOLVE}. */
+    static final int CAD_STATE_KIND = 9;
+    /** A Revolve body's angle in degrees. */
+    static final int CAD_STATE_REVOLVE_ANGLE = 10;
     static final int CAD_PROFILE_NONE = 0;
     static final int CAD_PROFILE_RECTANGLE = 1;
     static final int CAD_PROFILE_CIRCLE = 2;
@@ -2818,4 +3254,276 @@ final class NativeViewport {
 
     /** The exact CAD reason behind the last CAD Apply, as a CAD_* code. */
     static native int cadLastStatus();
+
+    // --- Parametric History (`MODELING-FOUNDATIONS-R1` A) -------------------
+
+    /** Slots of {@link #cadTimeline}'s header. */
+    static final int TIMELINE_HEADER_SIZE = 5;
+    /** The regeneration verdict, a {@code CAD_*} code (Surface: a SURFACE_* code). */
+    static final int TIMELINE_STATUS = 0;
+    /** The first failing feature's id, or 0. */
+    static final int TIMELINE_FAILED_FEATURE = 1;
+    /** The feature a staged edit changes, or 0. */
+    static final int TIMELINE_EDITING_FEATURE = 2;
+    /** 1 when the verdict is a real evaluation, 0 while a staged sketch is drawn. */
+    static final int TIMELINE_EVALUATED = 3;
+    static final int TIMELINE_ROW_COUNT = 4;
+
+    /** Slots of one {@link #cadTimeline} row. */
+    static final int TIMELINE_ROW_SIZE = 27;
+    /** {@link #TIMELINE_KIND_SKETCH} or {@link #TIMELINE_KIND_FEATURE}. */
+    static final int TIMELINE_ROW_KIND = 0;
+    /** The durable id: a sketch id or a feature id. Never a position. */
+    static final int TIMELINE_ROW_ID = 1;
+    static final int TIMELINE_ROW_SKETCH = 2;
+    /** The feature a tap on the row edits; 0 for a sketch no feature consumes. */
+    static final int TIMELINE_ROW_EDIT_FEATURE = 3;
+    static final int TIMELINE_ROW_ORDINAL = 4;
+    /** One of the TIMELINE_STATE_* values. */
+    static final int TIMELINE_ROW_STATE = 5;
+    /** A Failed row's reason, a {@code CAD_*} code. */
+    static final int TIMELINE_ROW_STATUS = 6;
+    static final int TIMELINE_ROW_EDITING = 7;
+    static final int TIMELINE_ROW_ENTITIES = 8;
+    static final int TIMELINE_ROW_DIMENSIONS = 9;
+    static final int TIMELINE_ROW_PLANE = 10;
+    static final int TIMELINE_ROW_ON_BODY_FACE = 11;
+    static final int TIMELINE_ROW_ON_FEATURE_FACE = 12;
+    static final int TIMELINE_ROW_SUPPORT_FEATURE = 13;
+    static final int TIMELINE_ROW_FEATURE_KIND = 14;
+    static final int TIMELINE_ROW_OPERATION = 15;
+    static final int TIMELINE_ROW_PLANAR_FACES = 16;
+    static final int TIMELINE_ROW_REGIONS = 17;
+    static final int TIMELINE_ROW_HOLES = 18;
+    static final int TIMELINE_ROW_EXTENT = 19;
+    static final int TIMELINE_ROW_SIDE = 20;
+    static final int TIMELINE_ROW_POSITIVE = 21;
+    static final int TIMELINE_ROW_NEGATIVE = 22;
+    static final int TIMELINE_ROW_ANGLE = 23;
+    static final int TIMELINE_ROW_REVOLVE_DIRECTION = 24;
+    static final int TIMELINE_ROW_AXIS_ENTITY = 25;
+    static final int TIMELINE_ROW_AXIS_EDGE = 26;
+
+    static final int TIMELINE_KIND_SKETCH = 0;
+    static final int TIMELINE_KIND_FEATURE = 1;
+
+    static final int TIMELINE_STATE_OK = 0;
+    static final int TIMELINE_STATE_FAILED = 1;
+    static final int TIMELINE_STATE_NOT_REGENERATED = 2;
+    static final int TIMELINE_STATE_PENDING = 3;
+    static final int TIMELINE_STATE_UNUSED = 4;
+
+    /** The most rows a CAD timeline can have: one per feature and one per sketch. */
+    static final int TIMELINE_MAX_ROWS = 32;
+
+    /**
+     * A CAD body's feature chain as a TIMELINE of sketch and feature rows in
+     * construction order, derived on every call and stored nowhere. With
+     * {@code staged} and an open edit session over the body, the chain the edit
+     * stages and its own evaluation: the failing downstream row is the one a
+     * commit would be refused by. Returns the row count, or -1 for a body that
+     * is not a CAD body.
+     */
+    static native int cadTimeline(long bodyId, boolean staged, double[] header, double[] rows);
+
+    // -----------------------------------------------------------------------
+    // Freeform/SubD (MODELING-FOUNDATIONS-R1 B)
+    // -----------------------------------------------------------------------
+    //
+    // A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is
+    // derived by Catmull-Clark and never stored. Codes are the native
+    // FreeformStatus codes, plus two transport refusals.
+
+    static final int FREEFORM_OK = 0;
+    static final int FREEFORM_EMPTY_SELECTION = 30;
+    static final int FREEFORM_REFUSED_IN_SCULPT = 100;
+    static final int FREEFORM_REFUSED_IN_SKETCH = 101;
+
+    static final int FREEFORM_FORM_BOX = 0;
+    static final int FREEFORM_FORM_PLANE = 1;
+    static final int FREEFORM_FORM_CYLINDER = 2;
+
+    static final int FREEFORM_ELEMENT_VERTEX = 0;
+    static final int FREEFORM_ELEMENT_EDGE = 1;
+    static final int FREEFORM_ELEMENT_FACE = 2;
+
+    static final int FREEFORM_SYMMETRY_X = 0x01;
+    static final int FREEFORM_SYMMETRY_Y = 0x02;
+    static final int FREEFORM_SYMMETRY_Z = 0x04;
+
+    static final int FREEFORM_MAX_LEVEL = 4;
+
+    static final int FREEFORM_STATE_SIZE = 24;
+    static final int FREEFORM_STATE_ACTIVE = 0;
+    static final int FREEFORM_STATE_BODY = 1;
+    static final int FREEFORM_STATE_ELEMENT = 2;
+    static final int FREEFORM_STATE_MULTI = 3;
+    static final int FREEFORM_STATE_MODE = 4;
+    static final int FREEFORM_STATE_SELECTION_COUNT = 5;
+    static final int FREEFORM_STATE_LEVEL = 6;
+    static final int FREEFORM_STATE_SYMMETRY = 7;
+    static final int FREEFORM_STATE_VERTICES = 8;
+    static final int FREEFORM_STATE_EDGES = 9;
+    static final int FREEFORM_STATE_FACES = 10;
+    static final int FREEFORM_STATE_NEXT_VERTEX = 11;
+    static final int FREEFORM_STATE_NEXT_EDGE = 12;
+    static final int FREEFORM_STATE_NEXT_FACE = 13;
+    static final int FREEFORM_STATE_OPEN = 14;
+    static final int FREEFORM_STATE_DERIVED_QUADS = 15;
+    static final int FREEFORM_STATE_CAPTURING = 16;
+    static final int FREEFORM_STATE_LAST_STATUS = 17;
+    static final int FREEFORM_STATE_CENTROID_X = 18;
+    static final int FREEFORM_STATE_CENTROID_Y = 19;
+    static final int FREEFORM_STATE_CENTROID_Z = 20;
+    static final int FREEFORM_STATE_ACTIVE_IS_FREEFORM = 21;
+    static final int FREEFORM_STATE_DRAGS = 22;
+    static final int FREEFORM_STATE_EDITABLE = 23;
+
+    /** Creates a Freeform Box, Plane or Cylinder as one Undo and makes it active. */
+    static native int freeformCreateBody(int form);
+
+    /** Opens cage editing on the active body. */
+    static native int freeformBeginEdit();
+
+    static native void freeformEndEdit();
+
+    /** Vertex, Edge or Face; changing it clears the selection. */
+    static native int freeformSetElement(int element);
+
+    static native void freeformSetMultiSelect(boolean multi);
+
+    /** Move (0), Rotate (1) or Scale (2). */
+    static native int freeformSetTransformMode(int mode);
+
+    /** Replaces the selection with ids of the current element kind. */
+    static native int freeformSelect(int[] ids);
+
+    static native void freeformClearSelection();
+
+    static native int freeformPushPull(double distance);
+
+    static native int freeformExtrude(double distance);
+
+    static native int freeformInsertLoop(double ratio);
+
+    static native int freeformSetCrease(double weight);
+
+    static native int freeformDeleteFaces();
+
+    static native int freeformSetSymmetry(int symmetry);
+
+    static native int freeformSetLevel(int level);
+
+    /** The session and the active body's cage in one read; 0 when it is Freeform. */
+    static native int freeformState(double[] out);
+
+    /** The selection's ids, ascending; returns how many there are. */
+    static native int freeformSelection(int[] out);
+
+    static native boolean freeformVertexPosition(int id, double[] out);
+
+    /** A cage element's projected point (vertex, edge midpoint, face centroid). */
+    static native boolean freeformElementScreenPoint(int element, int id, float[] out);
+
+    /** A cage gizmo handle's projected grab point, by the gizmo's handle code. */
+    static native boolean freeformGizmoHandlePoint(int handleCode, float[] out);
+
+    static native long freeformMeshDigest();
+
+    static native String freeformStatusToken(int code);
+
+    // -----------------------------------------------------------------------
+    // Surface (MODELING-FOUNDATIONS-R1 C)
+    // -----------------------------------------------------------------------
+    //
+    // A Surface body's truth is an ordered feature list over its own retained
+    // sketches; every patch, stitch and thickened solid is derived. Codes are
+    // the native SurfaceStatus codes, plus one transport refusal.
+
+    static final int SURFACE_OK = 0;
+    static final int SURFACE_AXIS_UNRESOLVED = 20;
+    static final int SURFACE_THICKEN_UNSUPPORTED = 36;
+    static final int SURFACE_REFUSED_IN_SCULPT = 100;
+
+    /** What a Surface sketch's Finish makes; the native SurfaceCreateKind codes. */
+    static final int SURFACE_CREATE_PATCH = 1;
+    static final int SURFACE_CREATE_EXTRUDE = 2;
+    static final int SURFACE_CREATE_REVOLVE = 3;
+    static final int SURFACE_CREATE_LOFT = 4;
+    static final int SURFACE_CREATE_TRIM = 5;
+    static final int SURFACE_CREATE_SECTION = 6;
+    static final int SURFACE_CREATE_KIND_COUNT = 6;
+
+    /** A Surface feature's kind, as a timeline row's FEATURE_KIND slot carries it. */
+    static final int SURFACE_KIND_PATCH = 1;
+    static final int SURFACE_KIND_EXTRUDE = 2;
+    static final int SURFACE_KIND_REVOLVE = 3;
+    static final int SURFACE_KIND_LOFT = 4;
+    static final int SURFACE_KIND_TRIM = 5;
+    static final int SURFACE_KIND_STITCH = 6;
+    static final int SURFACE_KIND_THICKEN = 7;
+
+    /** {@link #surfaceApplyValue}'s targets. */
+    static final int SURFACE_VALUE_FEATURE = 0;
+    static final int SURFACE_VALUE_SKETCH = 1;
+
+    static final int SURFACE_SKETCH_STATE_SIZE = 9;
+    static final int SURFACE_SKETCH_ACTIVE = 0;
+    static final int SURFACE_SKETCH_BODY = 1;
+    static final int SURFACE_SKETCH_OFFSET = 2;
+    /** Slot of a create kind's verdict: {@code SURFACE_SKETCH_VERDICT + kind}. */
+    static final int SURFACE_SKETCH_VERDICT = 2;
+
+    static final int SURFACE_STATE_SIZE = 9;
+    static final int SURFACE_STATE_FEATURES = 0;
+    static final int SURFACE_STATE_SKETCHES = 1;
+    static final int SURFACE_STATE_PATCHES = 2;
+    static final int SURFACE_STATE_OPEN_EDGES = 3;
+    static final int SURFACE_STATE_STITCHES = 4;
+    static final int SURFACE_STATE_SOLID_TRIANGLES = 5;
+    static final int SURFACE_STATE_SOLID_VOLUME = 6;
+    static final int SURFACE_STATE_PENDING_SECTION = 7;
+    static final int SURFACE_STATE_TWO_SIDED = 8;
+
+    /** The most features a Surface body holds (the native bound). */
+    static final int SURFACE_MAX_FEATURES = 32;
+
+    /**
+     * Opens a sketch for a Surface feature on {@code plane}, {@code offset}
+     * metres along its normal. {@code bodyId} {@link #NO_OBJECT} makes a new
+     * body -- or, with no project open, the first project.
+     */
+    static native int surfaceBeginSketch(long bodyId, int plane, double offset);
+
+    /** What each Finish kind would answer now, in SURFACE_SKETCH_* slots. */
+    static native boolean surfaceSketchState(double distance, double angle, boolean keepInside,
+                                             double[] out);
+
+    /** The Finish: one transaction, or the first project. */
+    static native int surfaceCommitSketch(int kind, double value, boolean keepInside);
+
+    static native int surfaceLiveFeatures(long bodyId, long[] out);
+
+    /** With {@code commit} false, what Stitch would answer; true performs it. */
+    static native int surfaceStitch(long bodyId, boolean commit);
+
+    static native int surfaceThicken(long bodyId, long featureId, double thickness, boolean commit);
+
+    static native int surfaceApplyValue(long bodyId, int target, long id, double value);
+
+    /** The row's current value, NaN when it has none. */
+    static native double surfaceValue(long bodyId, int target, long id);
+
+    /**
+     * A Surface body's timeline in the CAD timeline's row layout; with
+     * {@code editTarget} >= 0 the STAGED chain with one value replaced.
+     */
+    static native int surfaceTimeline(long bodyId, int editTarget, long editId, double value,
+                                      double[] header, double[] rows);
+
+    static native boolean surfaceState(long bodyId, double[] out);
+
+    static native long surfaceMeshDigest(long bodyId);
+
+    static native String surfaceStatusToken(int code);
 }

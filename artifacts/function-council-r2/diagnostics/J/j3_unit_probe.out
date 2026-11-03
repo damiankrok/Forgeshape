@@ -1,0 +1,10 @@
+freeform distance text="0.25" unit=mm -> meters=2.5E-4
+freeform distance text="0.25" unit=cm -> meters=0.0025
+freeform distance text="0.25" unit=m -> meters=0.25
+surface distance text="0.5" unit=mm -> meters=5.0E-4
+surface distance text="0.5" unit=cm -> meters=0.005
+surface distance text="0.5" unit=m -> meters=0.5
+surface thickness text="0.1" unit=mm -> meters=1.0E-4
+surface thickness text="0.1" unit=cm -> meters=0.001
+surface thickness text="0.1" unit=m -> meters=0.1
+comma: "2,5" parse -> 2.5

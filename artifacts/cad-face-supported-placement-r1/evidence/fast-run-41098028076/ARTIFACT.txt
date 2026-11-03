@@ -1,0 +1,10 @@
+CI FAST 41098028076 (head 7ee9fa0, product tree = 912b861), job 124208762455: success.
+Artifact ci-fast-evidence id 12996659575, size 11702854 bytes.
+GitHub digest           sha256:d568b891b1c2aa1bc539e4bf1e435a0834f541efe2127d7958e44f2a4a24507a
+Downloaded ZIP sha256          d568b891b1c2aa1bc539e4bf1e435a0834f541efe2127d7958e44f2a4a24507a  (MATCH)
+app/build/outputs/apk/debug/app-debug.apk                       17714955 bytes  sha256 8ec4356e30bb42195300214f42d17f91ebb4810bd576a2d0277546565c31edf9
+app/build/outputs/apk/release/app-release-unsigned.apk           6553359 bytes  sha256 77bcbe588caf089c19002aa3efc8de1c44496a7743ec8ff2ce69a042f534d2f0
+app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk 2391315 bytes sha256 550541e8397debfc4c3885ce1b165939ac8f59e6f061a950add98da5eb88ce96
+Earlier attempt CI FAST 41097660891 (head ce1a375): FAILURE at the first gate (git diff --check from the main
+merge-base) on whitespace in raw evidence inherited from the audit base (7c2fc91 fails the same check) and this
+stage's two CI job logs; fixed by .gitattributes (7ee9fa0), no byte of evidence changed. Its log: ../fast-run-41097660891/job.log

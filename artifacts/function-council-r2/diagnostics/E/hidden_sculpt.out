@@ -1,0 +1,18 @@
+== testdata/forge/v1/imported_sculpt_v1.forge
+decode=Ok kind=Construction
+encode hidden-active sculpt document: Ok bytes=492
+decode=Ok
+load=Ok
+inSculptMode=1 activeVisible=0
+== testdata/forge/v1/mixed_imported_sculpt_v1.forge
+decode=Ok kind=Construction
+encode hidden-active sculpt document: Ok bytes=1278
+decode=Ok
+load=Ok
+inSculptMode=1 activeVisible=0
+== testdata/forge/v1/sculpt_mixed_v1.forge
+decode=Ok kind=Construction
+encode hidden-active sculpt document: Ok bytes=635
+decode=Ok
+load=Ok
+inSculptMode=1 activeVisible=0

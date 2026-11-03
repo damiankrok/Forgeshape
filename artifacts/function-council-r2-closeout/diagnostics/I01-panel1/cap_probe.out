@@ -1,0 +1,9 @@
+PROJECT cap=8192 recorded=256 failed=0 device_line=SELFTEST_OK last=DAR1_02_rebinding_mid_stroke_drops_the_stroke_and_records_it_nowhere
+PROJECT cap=257 recorded=256 failed=0 device_line=SELFTEST_OK last=DAR1_02_rebinding_mid_stroke_drops_the_stroke_and_records_it_nowhere
+PROJECT cap=256 recorded=256 failed=0 device_line=SELFTEST_OK last=DAR1_02_rebinding_mid_stroke_drops_the_stroke_and_records_it_nowhere
+PROJECT cap=255 recorded=255 failed=0 device_line=SELFTEST_OK last=DAR1_02_the_loaded_mesh_is_exactly_the_document_s
+PROJECT cap=200 recorded=200 failed=0 device_line=SELFTEST_OK last=FSR1B_01_a_shape_edit_changes_the_fingerprint
+CAMERA cap=8192 recorded=119 failed=0 device_line=SELFTEST_OK last=camproj_unknown_mode_index_is_refused
+CAMERA cap=128 recorded=119 failed=0 device_line=SELFTEST_OK last=camproj_unknown_mode_index_is_refused
+CAMERA cap=119 recorded=119 failed=0 device_line=SELFTEST_OK last=camproj_unknown_mode_index_is_refused
+CAMERA cap=118 recorded=118 failed=0 device_line=SELFTEST_OK last=camproj_mode_index_mapping_is_closed

@@ -1,0 +1,7 @@
+decode=Ok load=Ok bodies=1 id=1
+[HIDDEN] decode=Ok load=Ok cmd=Ok inSnapshot=0 beginEdit=Ok finish=Ok setExtrude=Ok candidate=Ok targetIsBody=1
+[HIDDEN] commitEdit=Ok depth 1.5000 -> 3.0000 undoSteps 1 -> 2 visible=0 locked=0
+decode=Ok load=Ok bodies=1 id=1
+[LOCKED] decode=Ok load=Ok cmd=Ok inSnapshot=1 beginEdit=Ok finish=Ok setExtrude=Ok candidate=Ok targetIsBody=1
+[LOCKED] commitEdit=Ok depth 1.5000 -> 3.0000 undoSteps 1 -> 2 visible=1 locked=1
+[FREEFORM] load=Ok beginHidden=BodyHidden beginLocked=BodyLocked

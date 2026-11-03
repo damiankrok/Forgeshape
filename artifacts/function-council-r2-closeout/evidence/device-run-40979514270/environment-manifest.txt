@@ -1,0 +1,65 @@
+serial=emulator-5580
+avd=ForgeShape_CI_API36 (confirmed by emu avd name: ForgeShape_CI_API36)
+system_image=system-images;android-36;google_apis;x86_64
+device_profile=medium_phone
+gpu_mode=swiftshader_indirect
+emulator_version=INFO         | Android emulator version 37.2.13.0 (build_id 16740729) (CL:N/A)
+kvm=crw-rw-rw- 1 root kvm 10, 232 Oct 30 00:29 /dev/kvm
+accel_check=accel: 0 KVM (version 12) is installed and usable. accel 
+ro.build.fingerprint=google/sdk_gphone64_x86_64/emu64xa:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys
+ro.build.version.sdk=36
+ro.build.version.release=16
+ro.product.cpu.abi=x86_64
+ro.kernel.qemu=1
+ro.boot.qemu.gltransport.name=pipe
+ro.hardware.egl=emulation
+ro.hardware.vulkan=ranchu
+ro.opengles.version=196608
+ro.boot.hardware.vulkan=ranchu
+ro.boot.qemu.vsync=60
+ro.sf.lcd_density=
+wm_size=Physical size: 1080x2400 
+wm_density=Physical density: 420 
+vulkan_features:
+feature:android.hardware.vulkan.compute
+feature:android.hardware.vulkan.level=1
+feature:android.hardware.vulkan.version=4206592
+feature:android.software.vulkan.deqp.level=132711169
+emulator_boot_log_gpu_lines:
+INFO         | Graphics backend: gfxstream
+INFO         | Guest usage of host flag 'VulkanVirtualQueue' will be ignored.
+INFO         | emuglConfig_init: vulkan_mode_selected:swiftshader gles_mode_selected:swiftshader
+INFO         |   Checking: hasSufficientHwGpu
+INFO         |      Ok: Hardware GPU compatibility checks are not required
+INFO         | Initializing gfxstream backend
+INFO         | startOpenglesRendererImpl: gpu info
+INFO         | initIcdPaths: ICD set to 'swiftshader', using Swiftshader ICD
+INFO         | Setting ICD filenames for the loader = /usr/local/lib/android/sdk/emulator/lib64/vulkan/vk_swiftshader_icd.json
+INFO         | SharedLibrary::open for [/usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/lib64/vulkan/libvulkan.so]
+INFO         | SharedLibrary::open for [/usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/lib64/vulkan/libvulkan.so.1]
+INFO         | SharedLibrary::open for [/usr/local/lib/android/sdk/emulator/lib64/vulkan/libvulkan.so]
+INFO         | Added library: /usr/local/lib/android/sdk/emulator/lib64/vulkan/libvulkan.so
+INFO         | Selecting Vulkan device: SwiftShader Device (Subzero), Version: 1.3.0
+INFO         | Using Vulkan externalMemoryMode: OpaqueFd for VkEmulation
+INFO         |     useVulkanComposition: false
+INFO         |     useVulkanNativeSwapchain: false
+INFO         |     ASTC LDR emulation mode: Gpu
+INFO         |     guestVulkanOnly: false
+INFO         |     guestVulkanMaxApiVersion: 1.3.0
+INFO         | Graphics Adapter Android Emulator OpenGL ES Translator (Google SwiftShader)
+INFO         | Graphics API Version OpenGL ES 3.0 (OpenGL ES 3.0 SwiftShader 4.0.0.1)
+INFO         |   androidboot.debug.hwui.renderer=skiagl
+INFO         |   androidboot.hardware.vulkan=ranchu
+INFO         |   androidboot.qemu.cpuvulkan.version=4206592
+vulkan_lines_from_forgeshape:
+  10-30 00:33:29.217  4980  4998 I ForgeShape: Vulkan loader instance version: 1.4.0
+  10-30 00:33:29.224  4980  4998 I ForgeShape: Vulkan instance created (requested API 1.1)
+  10-30 00:33:29.670  4980  4980 I ForgeShape: render recovery selftest pass: FSR1B_16_unexpected_suboptimal_rebuilds_the_swapchain
+  10-30 00:33:29.670  4980  4980 I ForgeShape: render recovery selftest pass: FSR1B_16_out_of_date_rebuilds_the_swapchain
+  10-30 00:33:29.670  4980  4980 I ForgeShape: render recovery selftest pass: FSR1B_16_an_out_of_date_swapchain_is_not_a_lifecycle_event
+  10-30 00:33:43.549  4980  4998 I ForgeShape: Android Vulkan surface created (window 1080x2400)
+  10-30 00:33:43.593  4980  4998 I ForgeShape: Physical device selected: SwiftShader Device (Subzero) (type=4, deviceApi=1.3.0, driver=20971520)
+  10-30 00:33:43.594  4980  4998 I ForgeShape: Queue families: graphics=0 present=0
+  10-30 00:33:44.069  4980  4998 I ForgeShape: Swapchain created: format=37 extent=1080x2400 images=4 presentMode=FIFO
+  10-30 00:33:44.663  4980  4998 I ForgeShape: Swapchain created: format=37 extent=1080x2400 images=4 presentMode=FIFO
+  10-30 00:33:45.312  4980  4998 I ForgeShape: Swapchain rebuilt

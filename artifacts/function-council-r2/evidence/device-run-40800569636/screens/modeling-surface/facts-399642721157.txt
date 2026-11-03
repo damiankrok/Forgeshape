@@ -1,0 +1,5 @@
+capture.01_patch=01_patch.png frames=6
+capture.02_trimmed=02_trimmed.png frames=6
+capture.03_stitched=03_stitched.png frames=6
+save.bytes=733
+surf01.digest=1eedce1bcb12dc8d

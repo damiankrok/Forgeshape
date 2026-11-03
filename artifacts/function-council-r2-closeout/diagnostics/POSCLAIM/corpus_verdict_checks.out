@@ -1,0 +1,4 @@
+# closeout verdicts vs recorded artifacts/modeling-r1-owner-shell-sketch-fix/corpus_verdicts_after.txt
+diff_exit=0
+# CAD fixtures in testdata: cad_* 49, mixed_cad* 3
+# CAD verdict lines: 52 (Ok 31, InvalidSemanticValue 20, UnresolvedReference 1)

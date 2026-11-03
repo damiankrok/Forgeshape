@@ -1,0 +1,4 @@
+stroke1 begin=1 undoDepth=1 notRetained=0 hasEdits=1 yC=0.02130 yCorner=0.00000
+stroke2 begin=1 moved=52900 undoDepth=1 notRetained=1 hasEdits=1 yC=0.04262 yCorner=0.01227
+undo status=0 hasEdits=0 yC=0.00000 (pre-stroke1=0, after-stroke1=0.02130) yCorner=0.01227 stillDisplaced=52352 canUndo=0
+RESULT mixed_state=1 hasEdits_false_while_displaced=1

@@ -6,6 +6,8 @@
 #include "forgeshape_cad_face.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_project_bytes.h"
+#include "forgeshape_project_freeform.h"
+#include "forgeshape_project_surface.h"
 
 namespace forgeshape {
 namespace {
@@ -279,6 +281,71 @@ bool sketchEntityKindFromFileCode(uint8_t code, SketchEntityKind* out) {
     }
 }
 
+uint8_t sketchEntityRoleFileCode(SketchEntityRole role) {
+    switch (role) {
+        case SketchEntityRole::Regular: return 1;
+        case SketchEntityRole::Construction: return 2;
+    }
+    return 0;
+}
+
+bool sketchEntityRoleFromFileCode(uint8_t code, SketchEntityRole* out) {
+    if (out == nullptr) return false;
+    switch (code) {
+        case 1: *out = SketchEntityRole::Regular; return true;
+        case 2: *out = SketchEntityRole::Construction; return true;
+        default: return false;
+    }
+}
+
+uint8_t sketchDimensionKindFileCode(SketchDimensionKind kind) {
+    switch (kind) {
+        case SketchDimensionKind::LineLength: return 1;
+        case SketchDimensionKind::LineAngle: return 2;
+        case SketchDimensionKind::LineHorizontal: return 3;
+        case SketchDimensionKind::LineVertical: return 4;
+        case SketchDimensionKind::RectangleWidth: return 5;
+        case SketchDimensionKind::RectangleHeight: return 6;
+        case SketchDimensionKind::CircleRadius: return 7;
+        case SketchDimensionKind::CircleDiameter: return 8;
+        case SketchDimensionKind::EdgeLength: return 9;
+        case SketchDimensionKind::ArcRadius: return 10;
+        case SketchDimensionKind::ArcSweep: return 11;
+        case SketchDimensionKind::EdgeAngle: return 12;
+    }
+    return 0;
+}
+
+bool sketchDimensionKindFromFileCode(uint8_t code, SketchDimensionKind* out) {
+    if (out == nullptr || code < 1 || code > 12) return false;
+    static const SketchDimensionKind kinds[12] = {
+            SketchDimensionKind::LineLength,      SketchDimensionKind::LineAngle,
+            SketchDimensionKind::LineHorizontal,  SketchDimensionKind::LineVertical,
+            SketchDimensionKind::RectangleWidth,  SketchDimensionKind::RectangleHeight,
+            SketchDimensionKind::CircleRadius,    SketchDimensionKind::CircleDiameter,
+            SketchDimensionKind::EdgeLength,      SketchDimensionKind::ArcRadius,
+            SketchDimensionKind::ArcSweep,        SketchDimensionKind::EdgeAngle};
+    *out = kinds[code - 1];
+    return true;
+}
+
+uint8_t sketchDimensionModeFileCode(SketchDimensionMode mode) {
+    switch (mode) {
+        case SketchDimensionMode::Driving: return 1;
+        case SketchDimensionMode::Reference: return 2;
+    }
+    return 0;
+}
+
+bool sketchDimensionModeFromFileCode(uint8_t code, SketchDimensionMode* out) {
+    if (out == nullptr) return false;
+    switch (code) {
+        case 1: *out = SketchDimensionMode::Driving; return true;
+        case 2: *out = SketchDimensionMode::Reference; return true;
+        default: return false;
+    }
+}
+
 uint8_t cadFaceKindFileCode(CadFaceKind kind) {
     switch (kind) {
         case CadFaceKind::CapPlane: return 1;
@@ -314,6 +381,40 @@ constexpr uint8_t kCadSketchPlacementFeatureFace = 3;
 // A fragment side face token (`CAD-V6-S2`, §7g `FACE`): v6 only. Every v1..v5
 // reader refuses it as an unknown face kind, which is the point.
 constexpr uint8_t kCadFaceFragmentSideFileCode = 4;
+
+// CAD-V6-REVOLVE-NEWBODY-E2E-R1 file codes (DATA_PACKAGE_SPEC.md §7h). 1-based
+// like every other code, so an all-zero field is refused, never a default.
+uint8_t cadFeatureKindFileCode(CadFeatureKind kind) {
+    switch (kind) {
+        case CadFeatureKind::Extrude: return 1;
+        case CadFeatureKind::Revolve: return 2;
+    }
+    return 0;
+}
+
+bool cadFeatureKindFromFileCode(uint8_t code, CadFeatureKind* out) {
+    switch (code) {
+        case 1: *out = CadFeatureKind::Extrude; return true;
+        case 2: *out = CadFeatureKind::Revolve; return true;
+        default: return false;
+    }
+}
+
+uint8_t revolveDirectionFileCode(RevolveDirection direction) {
+    switch (direction) {
+        case RevolveDirection::Positive: return 1;
+        case RevolveDirection::Negative: return 2;
+    }
+    return 0;
+}
+
+bool revolveDirectionFromFileCode(uint8_t code, RevolveDirection* out) {
+    switch (code) {
+        case 1: *out = RevolveDirection::Positive; return true;
+        case 2: *out = RevolveDirection::Negative; return true;
+        default: return false;
+    }
+}
 
 uint8_t cadSelectionKindFileCode(CadSelectionKind kind) {
     switch (kind) {
@@ -401,6 +502,31 @@ bool cadDocumentNeedsV6(const ProjectDocument& document) {
     return false;
 }
 
+// Whether any CAD body needs the v7 section (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): a
+// Revolve feature, which no earlier layout has a kind tag to say. Everything
+// else keeps whichever of v1..v6 it already used, byte for byte.
+bool cadDocumentNeedsV7(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (cadBodyStateUsesRevolve(body.state)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Whether any CAD body needs the v8 section (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`):
+// a Construction entity, a sketch dimension or a dimension high-water mark
+// above 1, none of which an earlier layout has a byte for. Everything else
+// keeps whichever of v1..v7 it already used, byte for byte.
+bool cadDocumentNeedsV8(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (cadBodyStateUsesDrafting(body.state)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Whether any CAD body needs the v3 section: a curve entity is the ONLY thing
 // v3 records that v2 cannot, so a project drawn entirely from lines, polylines,
 // rectangles and circles keeps whichever of v1 or v2 it already used and stays
@@ -473,7 +599,14 @@ bool primitiveKindFromFileCode(uint8_t code, PrimitiveKind* out) {
 bool sameProjectDocument(const ProjectDocument& a, const ProjectDocument& b) {
     if (a.kind != b.kind || a.hasConstruction != b.hasConstruction
         || a.hasSculpt != b.hasSculpt || a.hasImported != b.hasImported
-        || a.hasCad != b.hasCad) {
+        || a.hasCad != b.hasCad || a.hasFreeform != b.hasFreeform
+        || a.hasSurface != b.hasSurface) {
+        return false;
+    }
+    if (a.hasFreeform && !sameProjectFreeformRecord(a.freeform, b.freeform)) {
+        return false;
+    }
+    if (a.hasSurface && !sameProjectSurfaceRecord(a.surface, b.surface)) {
         return false;
     }
     if (a.hasCad) {
@@ -795,7 +928,11 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
             // exactly against its sketch's arrangement -- but not regenerated:
             // this build has no solid for one yet (`CAD-V6-S1`), and the
             // runtime refuses to load it (`runtimeCanEvaluateProject`).
-            if (!body.state.laterFeatures.empty() && !cadBodyStateUsesPlanarFaces(body.state)) {
+            // A Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`) is regenerated here too,
+            // because its solid is held to the kernel's validity answer and a
+            // file must not carry one the load would then refuse.
+            if ((!body.state.laterFeatures.empty() && !cadBodyStateUsesPlanarFaces(body.state))
+                || cadBodyStateUsesRevolve(body.state)) {
                 ConstructionMesh regenerated;
                 if (generateCadMesh(body.state, &regenerated) != CadStatus::Ok) {
                     return ProjectCodecStatus::InvalidSemanticValue;
@@ -883,6 +1020,71 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
         }
     }
 
+    if (document.hasFreeform) {
+        // The fourth geometry source (`MODELING-FOUNDATIONS-R1` B), on CADB's
+        // terms: a subsequence of the scene in strictly ascending order,
+        // claiming each body exactly once and never one another branch claimed,
+        // each cage held to the domain's own `validateFreeformCage`.
+        if (document.freeform.bodies.empty() || document.freeform.bodies.size() > bodies.size()) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        size_t sceneCursor = 0;
+        for (const ProjectFreeformBody& body : document.freeform.bodies) {
+            size_t found = bodies.size();
+            for (size_t s = sceneCursor; s < bodies.size(); ++s) {
+                if (bodies[s].objectId == body.objectId) {
+                    found = s;
+                    break;
+                }
+            }
+            if (found == bodies.size() || covered[found] != 0) {
+                return ProjectCodecStatus::UnresolvedReference;
+            }
+            sceneCursor = found + 1;
+            covered[found] = 4;
+            if (body.cage.vertices.size() > kMaxFreeformVertices
+                || body.cage.edges.size() > kMaxFreeformEdges
+                || body.cage.faces.size() > kMaxFreeformFaces) {
+                return ProjectCodecStatus::ImpossibleCount;
+            }
+            if (validateFreeformCage(body.cage) != FreeformStatus::Ok) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+        }
+    }
+
+    if (document.hasSurface) {
+        // The fifth geometry source (`MODELING-FOUNDATIONS-R1` C), on FRFM's
+        // terms, each feature list held to the domain's own rules AND
+        // regenerated whole: a file whose list does not regenerate is refused
+        // rather than opened with a body that cannot be drawn.
+        if (document.surface.bodies.empty() || document.surface.bodies.size() > bodies.size()) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        size_t sceneCursor = 0;
+        for (const ProjectSurfaceBody& body : document.surface.bodies) {
+            size_t found = bodies.size();
+            for (size_t s = sceneCursor; s < bodies.size(); ++s) {
+                if (bodies[s].objectId == body.objectId) {
+                    found = s;
+                    break;
+                }
+            }
+            if (found == bodies.size() || covered[found] != 0) {
+                return ProjectCodecStatus::UnresolvedReference;
+            }
+            sceneCursor = found + 1;
+            covered[found] = 5;
+            if (body.state.sketches.size() > kMaxSurfaceSketches
+                || body.state.features.size() > kMaxSurfaceFeatures) {
+                return ProjectCodecStatus::ImpossibleCount;
+            }
+            if (regenerateSurfaceBody(body.state, nullptr) != SurfaceStatus::Ok) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+        }
+    }
+
     // A body named by NEITHER branch is deliberately not refused here.
     //
     // It is a legal document: an optional section at a version this reader
@@ -937,7 +1139,7 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
             // a CAD Body describes something this build cannot evaluate. The
             // same fail-closed shape the pre-`IMPORT-01B` reader gave an
             // `IMPT`+`SCUL` file.
-            if (covered[found] == 3) {
+            if (covered[found] == 3 || covered[found] == 4 || covered[found] == 5) {
                 return ProjectCodecStatus::UnresolvedReference;
             }
             // A `SCUL` entry over an `IMPT` body is VALID since `IMPORT-01B`.
@@ -986,11 +1188,15 @@ namespace {
 
 // The entity list, exactly as §7b and §7d write it. One writer for a first
 // feature's sketch and a later feature's alike, so the two can never drift.
-void writeCadEntities(ByteWriter& out, const CadSketch& sketch) {
+void writeCadEntities(ByteWriter& out, const CadSketch& sketch, bool roles = false) {
     out.u32(static_cast<uint32_t>(sketch.entities.size()));
     for (const SketchEntity& entity : sketch.entities) {
         out.u32(entity.id());
         out.u8(sketchEntityKindFileCode(entity.kind()));
+        if (roles) {
+            // v8 (§7i): the role byte, directly after the kind it qualifies.
+            out.u8(sketchEntityRoleFileCode(entity.role()));
+        }
         if (const SketchLine* line = entity.line()) {
             out.f64(line->start.u);
             out.f64(line->start.v);
@@ -1106,9 +1312,47 @@ void writePlanarFaceCycle(ByteWriter& out, const FragmentCycle& cycle) {
     }
 }
 
-// One body in the v6 layout (§7g): the high-water marks, the sketch table,
-// then every feature -- base first -- referencing a sketch by id.
-void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body) {
+// A feature's SELECTION block (§7g): its kind, then the LoopRegions block or the
+// FACES block. The same bytes for an Extrude (v6, v7) and a Revolve (v7).
+void writeCadSelectionV6(ByteWriter& out, const ExtrudeFeature& selection) {
+    out.u8(cadSelectionKindFileCode(selection.selection));
+    if (selection.selection == CadSelectionKind::PlanarFaces) {
+        out.u32(static_cast<uint32_t>(selection.planarFaces.size()));
+        for (const PlanarFaceRef& face : selection.planarFaces) {
+            writePlanarFaceCycle(out, face.outer);
+            out.u32(static_cast<uint32_t>(face.holes.size()));
+            for (const FragmentCycle& hole : face.holes) {
+                writePlanarFaceCycle(out, hole);
+            }
+        }
+    } else {
+        out.u32(selection.profileEntityId);
+        writeCadRegions(out, selection);
+    }
+}
+
+// One body in the v6 layout (§7g) -- or, with `featureKinds`, the v7 layout
+// (§7h), which is the same table with a KIND after every feature id: the
+// high-water marks, the sketch table, then every feature -- base first --
+// referencing a sketch by id.
+// v8's dimension table (§7i): the high-water mark, the count, then each record
+// in ascending id order, 22 bytes each.
+void writeCadDimensions(ByteWriter& out, const CadSketch& sketch) {
+    out.u32(sketch.nextDimensionId);
+    out.u32(static_cast<uint32_t>(sketch.dimensions.size()));
+    for (const SketchDimension& dimension : sketch.dimensions) {
+        out.u32(dimension.id);
+        out.u8(sketchDimensionKindFileCode(dimension.kind));
+        out.u8(sketchDimensionModeFileCode(dimension.mode));
+        out.u32(dimension.first.entityId);
+        out.u32(dimension.first.edgeLocalIndex);
+        out.u32(dimension.second.entityId);
+        out.u32(dimension.second.edgeLocalIndex);
+    }
+}
+
+void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKinds,
+                    bool drafting) {
     const CadBodyState& state = body.state;
     out.u64(body.objectId);
     out.u32(state.nextSketchId);
@@ -1131,34 +1375,39 @@ void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body) {
             out.u8(workplaneFileCode(record.sketch.plane));
         }
         out.u32(record.sketch.nextEntityId);
-        writeCadEntities(out, record.sketch);
+        writeCadEntities(out, record.sketch, drafting);
+        if (drafting) {
+            writeCadDimensions(out, record.sketch);
+        }
     }
     out.u32(cadFeatureCount(state));
     for (uint32_t index = 0; index < cadFeatureCount(state); ++index) {
         CadFeatureView view;
         cadFeatureAt(state, index, &view);
-        const ExtrudeFeature& extrude = *view.extrude;
         out.u32(view.featureId);
+        if (featureKinds) {
+            out.u8(cadFeatureKindFileCode(view.kind));
+        }
+        if (view.kind == CadFeatureKind::Revolve && view.revolve != nullptr) {
+            // A Revolve's own payload (§7h): nothing of it is an Extrude field.
+            const RevolveFeature& revolve = *view.revolve;
+            out.u8(cadFeatureOperationFileCode(view.operation));
+            out.u32(view.sketchId);
+            out.u32(revolve.axis.entityId);
+            out.u32(revolve.axis.edgeLocalIndex);
+            out.f64(revolve.angleDegrees);
+            out.u8(revolveDirectionFileCode(revolve.direction));
+            writeCadSelectionV6(out, revolveSelectionCarrier(revolve));
+            continue;
+        }
+        const ExtrudeFeature& extrude = *view.extrude;
         out.u8(cadFeatureOperationFileCode(view.operation));
         out.u32(view.sketchId);
         out.u8(extrudeExtentFileCode(extrude.extent));
         out.u8(extrudeDirectionFileCode(extrude.direction));
         out.f64(extrude.depth);
         out.f64(extrude.secondDistance);
-        out.u8(cadSelectionKindFileCode(extrude.selection));
-        if (extrude.selection == CadSelectionKind::PlanarFaces) {
-            out.u32(static_cast<uint32_t>(extrude.planarFaces.size()));
-            for (const PlanarFaceRef& face : extrude.planarFaces) {
-                writePlanarFaceCycle(out, face.outer);
-                out.u32(static_cast<uint32_t>(face.holes.size()));
-                for (const FragmentCycle& hole : face.holes) {
-                    writePlanarFaceCycle(out, hole);
-                }
-            }
-        } else {
-            out.u32(extrude.profileEntityId);
-            writeCadRegions(out, extrude);
-        }
+        writeCadSelectionV6(out, extrude);
     }
 }
 
@@ -1274,7 +1523,9 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
 
     // The section is written at the LOWEST version that can carry it, so every
     // project that predates a feature keeps the bytes it always had.
-    const bool cadV6 = document.hasCad && cadDocumentNeedsV6(document);
+    const bool cadV8 = document.hasCad && cadDocumentNeedsV8(document);
+    const bool cadV7 = document.hasCad && (cadV8 || cadDocumentNeedsV7(document));
+    const bool cadV6 = document.hasCad && (cadV7 || cadDocumentNeedsV6(document));
     const bool cadV5 = document.hasCad && cadDocumentNeedsV5(document);
     const bool cadV4 = document.hasCad && (cadV5 || cadDocumentNeedsV4(document));
     const bool cadV3 = document.hasCad && (cadV4 || cadDocumentNeedsV3(document));
@@ -1286,8 +1537,9 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         for (const ProjectCadBody& body : document.cad.bodies) {
             if (cadV6) {
                 // v6 is its own layout (§7g), not a tail on v5: the sketch
-                // table replaces the inline sketches outright.
-                writeCadBodyV6(out, body);
+                // table replaces the inline sketches outright. v7 (§7h) is that
+                // layout with a kind after every feature id.
+                writeCadBodyV6(out, body, /*featureKinds=*/cadV7, /*drafting=*/cadV8);
                 continue;
             }
             const CadBodyState& state = body.state;
@@ -1358,6 +1610,18 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
     if (document.hasSculpt) ++sectionCount;
     if (document.hasImported) ++sectionCount;
     if (document.hasCad) ++sectionCount;
+    std::vector<uint8_t> freeformPayload;
+    if (document.hasFreeform) {
+        ++sectionCount;
+        ByteWriter out(freeformPayload);
+        writeFreeformPayload(out, document.freeform);
+    }
+    std::vector<uint8_t> surfacePayload;
+    if (document.hasSurface) {
+        ++sectionCount;
+        ByteWriter out(surfacePayload);
+        writeSurfacePayload(out, document.surface);
+    }
 
     uint64_t fileBytes = kForgeHeaderBytes;
     fileBytes += kForgeSectionHeaderBytes + scenePayload.size();
@@ -1373,6 +1637,12 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
     if (document.hasCad) {
         fileBytes += kForgeSectionHeaderBytes + cadPayload.size();
     }
+    if (document.hasFreeform) {
+        fileBytes += kForgeSectionHeaderBytes + freeformPayload.size();
+    }
+    if (document.hasSurface) {
+        fileBytes += kForgeSectionHeaderBytes + surfacePayload.size();
+    }
 
     std::vector<uint8_t> file;
     file.reserve(static_cast<size_t>(fileBytes));
@@ -1386,7 +1656,9 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         out.u8(static_cast<uint8_t>((document.hasConstruction ? kHeaderFlagHasConstruction : 0u)
                                     | (document.hasSculpt ? kHeaderFlagHasSculpt : 0u)
                                     | (document.hasImported ? kHeaderFlagHasImported : 0u)
-                                    | (document.hasCad ? kHeaderFlagHasCad : 0u)));
+                                    | (document.hasCad ? kHeaderFlagHasCad : 0u)
+                                    | (document.hasFreeform ? kHeaderFlagHasFreeform : 0u)
+                                    | (document.hasSurface ? kHeaderFlagHasSurface : 0u)));
         out.u32(sectionCount);
         out.u64(fileBytes);
     }
@@ -1420,13 +1692,27 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
         appendSection(file, kSectionTagCad,
-                      cadV6   ? kCadSectionVersionV6
+                      cadV8   ? kCadSectionVersionV8
+                      : cadV7 ? kCadSectionVersionV7
+                      : cadV6 ? kCadSectionVersionV6
                       : cadV5 ? kCadSectionVersionV5
                       : cadV4 ? kCadSectionVersionV4
                       : cadV3 ? kCadSectionVersionV3
                       : cadV2 ? kCadSectionVersionV2
                               : kCadSectionVersion,
                       /*required=*/true, cadPayload);
+    }
+    if (document.hasFreeform) {
+        // ALWAYS required, on IMPT's and CADB's terms: no other branch
+        // describes a Freeform body.
+        appendSection(file, kSectionTagFreeform, kFreeformSectionVersion, /*required=*/true,
+                      freeformPayload);
+    }
+    if (document.hasSurface) {
+        // ALWAYS required, for the same reason: no other branch describes a
+        // Surface body.
+        appendSection(file, kSectionTagSurface, kSurfaceSectionVersion, /*required=*/true,
+                      surfacePayload);
     }
     return file;
 }
@@ -1705,7 +1991,7 @@ ProjectCodecStatus decodeImportedPayload(ByteReader& in, ProjectImportedRecord* 
 // The entity list after its count (§7b, §7d). One reader for a first
 // feature's sketch and a later feature's alike.
 ProjectCodecStatus readCadEntities(ByteReader& in, uint32_t entityCount, CadSketch* sketch,
-                                   bool allowCurves) {
+                                   bool allowCurves, bool roles = false) {
     if (entityCount == 0 || entityCount > kMaxSketchEntities) {
         return ProjectCodecStatus::ImpossibleCount;
     }
@@ -1724,6 +2010,20 @@ ProjectCodecStatus readCadEntities(ByteReader& in, uint32_t entityCount, CadSket
         if (!sketchEntityKindFromFileCode(kindCode, &kind)) {
             return ProjectCodecStatus::InvalidSemanticValue;
         }
+        // v8 (§7i): the role byte. An unknown role is refused by name, never
+        // read as Regular -- a construction line read as material would close
+        // a profile the user never drew.
+        SketchEntityRole role = SketchEntityRole::Regular;
+        if (roles) {
+            uint8_t roleCode = 0;
+            if (!in.u8(&roleCode)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            if (!sketchEntityRoleFromFileCode(roleCode, &role)) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+        }
+        const size_t entitiesBefore = sketch->entities.size();
         // A curve kind is a v3 field. Meeting one inside a section that
         // declared itself v1 or v2 is a malformed file, not a newer one:
         // the version says what the payload may contain, and a payload
@@ -1817,6 +2117,41 @@ ProjectCodecStatus readCadEntities(ByteReader& in, uint32_t entityCount, CadSket
                 sketch->entities.emplace_back(id, std::move(spline));
                 break;
             }
+        }
+        if (sketch->entities.size() == entitiesBefore + 1u) {
+            sketch->entities.back().setRole(role);
+        }
+    }
+    return ProjectCodecStatus::Ok;
+}
+
+// v8's dimension table (§7i). Structure and file codes here -- the count bound
+// proven against the remaining bytes before anything is allocated; every
+// relation (ids, order, high-water mark, refs, modes, conflicts) is
+// `validateCadSketch`'s, judged on the decoded state as a whole.
+ProjectCodecStatus readCadDimensions(ByteReader& in, CadSketch* sketch) {
+    uint32_t count = 0;
+    if (!in.u32(&sketch->nextDimensionId) || !in.u32(&count)) {
+        return ProjectCodecStatus::Truncated;
+    }
+    if (count > kMaxSketchDimensions) {
+        return ProjectCodecStatus::ImpossibleCount;
+    }
+    if (static_cast<uint64_t>(count) * 22ull > in.remaining()) {
+        return ProjectCodecStatus::Truncated;
+    }
+    sketch->dimensions.resize(count);
+    for (SketchDimension& dimension : sketch->dimensions) {
+        uint8_t kindCode = 0;
+        uint8_t modeCode = 0;
+        if (!in.u32(&dimension.id) || !in.u8(&kindCode) || !in.u8(&modeCode)
+            || !in.u32(&dimension.first.entityId) || !in.u32(&dimension.first.edgeLocalIndex)
+            || !in.u32(&dimension.second.entityId) || !in.u32(&dimension.second.edgeLocalIndex)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        if (!sketchDimensionKindFromFileCode(kindCode, &dimension.kind)
+            || !sketchDimensionModeFromFileCode(modeCode, &dimension.mode)) {
+            return ProjectCodecStatus::InvalidSemanticValue;
         }
     }
     return ProjectCodecStatus::Ok;
@@ -1973,11 +2308,72 @@ ProjectCodecStatus readPlanarFaceCycle(ByteReader& in, FragmentCycle* cycle) {
     return ProjectCodecStatus::Ok;
 }
 
-// One body in the v6 layout (§7g), into the in-memory model it names one for
-// one: the table as stored, the base feature from the first feature record.
+// A feature's SELECTION block (§7g), into an extrusion's selection fields --
+// an Extrude's own, or a Revolve's through its carrier.
+ProjectCodecStatus readCadSelectionV6(ByteReader& in, ExtrudeFeature* extrude) {
+    uint8_t selectionCode = 0;
+    if (!in.u8(&selectionCode)) {
+        return ProjectCodecStatus::Truncated;
+    }
+    if (!cadSelectionKindFromFileCode(selectionCode, &extrude->selection)) {
+        return ProjectCodecStatus::InvalidSemanticValue;
+    }
+    if (extrude->selection == CadSelectionKind::PlanarFaces) {
+        uint32_t faceCount = 0;
+        if (!in.u32(&faceCount)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        // The bound is the arrangement's own face bound
+        // (`kMaxPlanarFaceSelection` = `kMaxArrangementFaces`), not the
+        // field's width; the count is held to it before anything is
+        // allocated, and then to the bytes that are actually there.
+        if (faceCount == 0 || faceCount > kMaxPlanarFaceSelection) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        // Smallest face: an outer cycle of one smallest fragment (4 + 11
+        // bytes) and a zero hole count (4).
+        if (static_cast<uint64_t>(faceCount) * 19ull > in.remaining()) {
+            return ProjectCodecStatus::Truncated;
+        }
+        extrude->planarFaces.resize(faceCount);
+        for (PlanarFaceRef& face : extrude->planarFaces) {
+            ProjectCodecStatus why = readPlanarFaceCycle(in, &face.outer);
+            if (why != ProjectCodecStatus::Ok) {
+                return why;
+            }
+            uint32_t holeCount = 0;
+            if (!in.u32(&holeCount)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            if (holeCount > kMaxPlanarFaceHoles) {
+                return ProjectCodecStatus::ImpossibleCount;
+            }
+            if (static_cast<uint64_t>(holeCount) * 15ull > in.remaining()) {
+                return ProjectCodecStatus::Truncated;
+            }
+            face.holes.resize(holeCount);
+            for (FragmentCycle& hole : face.holes) {
+                why = readPlanarFaceCycle(in, &hole);
+                if (why != ProjectCodecStatus::Ok) {
+                    return why;
+                }
+            }
+        }
+        return ProjectCodecStatus::Ok;
+    }
+    if (!in.u32(&extrude->profileEntityId)) {
+        return ProjectCodecStatus::Truncated;
+    }
+    return readCadRegions(in, extrude);
+}
+
+// One body in the v6 layout (§7g) -- or, with `featureKinds`, the v7 layout
+// (§7h) -- into the in-memory model it names one for one: the table as
+// stored, the base feature from the first feature record.
 // Structure and file codes here; every relation between the parts --
 // ids, order, references, placements, selections -- is `validateCadBodyState`'s.
-ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body) {
+ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool featureKinds,
+                                   bool drafting) {
     CadBodyState& state = body->state;
     uint32_t sketchCount = 0;
     if (!in.u64(&body->objectId) || !in.u32(&state.nextSketchId)
@@ -2045,9 +2441,15 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body) {
             return ProjectCodecStatus::Truncated;
         }
         const ProjectCodecStatus entities =
-                readCadEntities(in, entityCount, &sketch, /*allowCurves=*/true);
+                readCadEntities(in, entityCount, &sketch, /*allowCurves=*/true, /*roles=*/drafting);
         if (entities != ProjectCodecStatus::Ok) {
             return entities;
+        }
+        if (drafting) {
+            const ProjectCodecStatus dimensions = readCadDimensions(in, &sketch);
+            if (dimensions != ProjectCodecStatus::Ok) {
+                return dimensions;
+            }
         }
     }
     uint32_t featureCount = 0;
@@ -2058,20 +2460,67 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body) {
         return ProjectCodecStatus::ImpossibleCount;
     }
     // Smallest feature: its 27 fixed bytes, a selection kind and an empty
-    // LoopRegions block (profile + two zero counts) -- 40 bytes.
+    // LoopRegions block (profile + two zero counts) -- 40 bytes. A v7 Extrude
+    // is one byte longer (its kind) and a v7 Revolve is exactly 40, so the
+    // bound holds for both layouts.
     if (static_cast<uint64_t>(featureCount) * (27ull + 1ull + 12ull) > in.remaining()) {
         return ProjectCodecStatus::Truncated;
     }
     state.laterFeatures.resize(featureCount - 1u);
     for (uint32_t f = 0; f < featureCount; ++f) {
         uint32_t featureId = 0;
+        if (!in.u32(&featureId)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        CadFeatureKind kind = CadFeatureKind::Extrude;
+        if (featureKinds) {
+            uint8_t kindCode = 0;
+            if (!in.u8(&kindCode)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            // An unknown kind is refused by name: a later kind this build
+            // cannot regenerate is never read as one it can.
+            if (!cadFeatureKindFromFileCode(kindCode, &kind)) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+        }
+        if (kind == CadFeatureKind::Revolve) {
+            // A Revolve (§7h) is the body's FIRST feature and a New Body in R1;
+            // anything else is refused rather than renumbered or re-read.
+            uint8_t operationCode = 0;
+            uint32_t sketchId = 0;
+            uint8_t directionCode = 0;
+            RevolveFeature revolve;
+            if (!in.u8(&operationCode) || !in.u32(&sketchId) || !in.u32(&revolve.axis.entityId)
+                || !in.u32(&revolve.axis.edgeLocalIndex) || !in.f64(&revolve.angleDegrees)
+                || !in.u8(&directionCode)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            CadFeatureOperation operation = CadFeatureOperation::NewBody;
+            if (!cadFeatureOperationFromFileCode(operationCode, &operation)
+                || operation != CadFeatureOperation::NewBody || f != 0
+                || featureId != kCadFeatureId
+                || !revolveDirectionFromFileCode(directionCode, &revolve.direction)) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            ExtrudeFeature selection;
+            const ProjectCodecStatus selected = readCadSelectionV6(in, &selection);
+            if (selected != ProjectCodecStatus::Ok) {
+                return selected;
+            }
+            setRevolveSelectionFrom(&revolve, selection);
+            state.baseSketchId = sketchId;
+            state.baseKind = CadFeatureKind::Revolve;
+            state.revolve = std::move(revolve);
+            continue;
+        }
         uint8_t operationCode = 0;
         uint32_t sketchId = 0;
         uint8_t extentCode = 0;
         uint8_t directionCode = 0;
         ExtrudeFeature extrude;
-        if (!in.u32(&featureId) || !in.u8(&operationCode) || !in.u32(&sketchId)
-            || !in.u8(&extentCode) || !in.u8(&directionCode) || !in.f64(&extrude.depth)
+        if (!in.u8(&operationCode) || !in.u32(&sketchId) || !in.u8(&extentCode)
+            || !in.u8(&directionCode) || !in.f64(&extrude.depth)
             || !in.f64(&extrude.secondDistance)) {
             return ProjectCodecStatus::Truncated;
         }
@@ -2090,53 +2539,9 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body) {
             || (f == 0 && featureId != kCadFeatureId)) {
             return ProjectCodecStatus::InvalidSemanticValue;
         }
-        uint8_t selectionCode = 0;
-        if (!in.u8(&selectionCode)) {
-            return ProjectCodecStatus::Truncated;
-        }
-        if (!cadSelectionKindFromFileCode(selectionCode, &extrude.selection)) {
-            return ProjectCodecStatus::InvalidSemanticValue;
-        }
-        if (extrude.selection == CadSelectionKind::PlanarFaces) {
-            uint32_t faceCount = 0;
-            if (!in.u32(&faceCount)) {
-                return ProjectCodecStatus::Truncated;
-            }
-            if (faceCount == 0 || faceCount > kMaxPlanarFaceSelection) {
-                return ProjectCodecStatus::ImpossibleCount;
-            }
-            extrude.planarFaces.resize(faceCount);
-            for (PlanarFaceRef& face : extrude.planarFaces) {
-                ProjectCodecStatus why = readPlanarFaceCycle(in, &face.outer);
-                if (why != ProjectCodecStatus::Ok) {
-                    return why;
-                }
-                uint32_t holeCount = 0;
-                if (!in.u32(&holeCount)) {
-                    return ProjectCodecStatus::Truncated;
-                }
-                if (holeCount > kMaxPlanarFaceHoles) {
-                    return ProjectCodecStatus::ImpossibleCount;
-                }
-                if (static_cast<uint64_t>(holeCount) * 15ull > in.remaining()) {
-                    return ProjectCodecStatus::Truncated;
-                }
-                face.holes.resize(holeCount);
-                for (FragmentCycle& hole : face.holes) {
-                    why = readPlanarFaceCycle(in, &hole);
-                    if (why != ProjectCodecStatus::Ok) {
-                        return why;
-                    }
-                }
-            }
-        } else {
-            if (!in.u32(&extrude.profileEntityId)) {
-                return ProjectCodecStatus::Truncated;
-            }
-            const ProjectCodecStatus regions = readCadRegions(in, &extrude);
-            if (regions != ProjectCodecStatus::Ok) {
-                return regions;
-            }
+        const ProjectCodecStatus selected = readCadSelectionV6(in, &extrude);
+        if (selected != ProjectCodecStatus::Ok) {
+            return selected;
         }
         if (f == 0) {
             state.baseSketchId = sketchId;
@@ -2153,7 +2558,8 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body) {
 }
 
 ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, uint16_t version) {
-    if (version == kCadSectionVersionV6) {
+    if (version == kCadSectionVersionV6 || version == kCadSectionVersionV7
+        || version == kCadSectionVersionV8) {
         uint32_t bodyCount = 0;
         if (!in.u32(&bodyCount)) {
             return ProjectCodecStatus::Truncated;
@@ -2170,7 +2576,9 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         }
         record->bodies.resize(bodyCount);
         for (ProjectCadBody& body : record->bodies) {
-            const ProjectCodecStatus why = decodeCadBodyV6(in, &body);
+            const ProjectCodecStatus why =
+                    decodeCadBodyV6(in, &body, /*featureKinds=*/version >= kCadSectionVersionV7,
+                                    /*drafting=*/version == kCadSectionVersionV8);
             if (why != ProjectCodecStatus::Ok) {
                 return why;
             }
@@ -2374,6 +2782,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
     // singleton rule is about the former too.
     bool sawSceneTag = false;
     bool sawCadTag = false;
+    bool sawFreeformTag = false;
+    bool sawSurfaceTag = false;
     bool sawConstructionTag = false;
     bool sawSculptTag = false;
     bool sawImportedTag = false;
@@ -2414,8 +2824,11 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         const bool isSculpt = tagIs(tag, kSectionTagSculpt);
         const bool isImported = tagIs(tag, kSectionTagImported);
         const bool isCad = tagIs(tag, kSectionTagCad);
+        const bool isFreeform = tagIs(tag, kSectionTagFreeform);
+        const bool isSurface = tagIs(tag, kSectionTagSurface);
 
-        if (!isScene && !isConstruction && !isSculpt && !isImported && !isCad) {
+        if (!isScene && !isConstruction && !isSculpt && !isImported && !isCad && !isFreeform
+            && !isSurface) {
             if (required) {
                 return ProjectCodecStatus::UnknownRequiredSection;
             }
@@ -2431,9 +2844,12 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         // understand the first would be a hole in the singleton rule.
         if ((isScene && sawSceneTag) || (isConstruction && sawConstructionTag)
             || (isSculpt && sawSculptTag) || (isImported && sawImportedTag)
-            || (isCad && sawCadTag)) {
+            || (isCad && sawCadTag) || (isFreeform && sawFreeformTag)
+            || (isSurface && sawSurfaceTag)) {
             return ProjectCodecStatus::DuplicateSection;
         }
+        sawFreeformTag = sawFreeformTag || isFreeform;
+        sawSurfaceTag = sawSurfaceTag || isSurface;
         sawSceneTag = sawSceneTag || isScene;
         sawConstructionTag = sawConstructionTag || isConstruction;
         sawSculptTag = sawSculptTag || isSculpt;
@@ -2452,13 +2868,19 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
                         || sectionVersion == kCadSectionVersionV3
                         || sectionVersion == kCadSectionVersionV4
                         || sectionVersion == kCadSectionVersionV5
-                        || sectionVersion == kCadSectionVersionV6;
+                        || sectionVersion == kCadSectionVersionV6
+                        || sectionVersion == kCadSectionVersionV7
+                        || sectionVersion == kCadSectionVersionV8;
         } else if (isScene) {
             // SCNE became the second multi-version section at Stage 018A: v1 as
             // every build before it wrote, and v2 carrying per-body visibility,
             // lock and name.
             versionOk = sectionVersion == kSceneSectionVersion
                         || sectionVersion == kSceneSectionVersionV2;
+        } else if (isFreeform) {
+            versionOk = sectionVersion == kFreeformSectionVersion;
+        } else if (isSurface) {
+            versionOk = sectionVersion == kSurfaceSectionVersion;
         } else {
             const uint16_t known =
                     isConstruction ? kConstructionSectionVersion
@@ -2493,6 +2915,12 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         } else if (isImported) {
             status = decodeImportedPayload(payload, &document.imported);
             document.hasImported = (status == ProjectCodecStatus::Ok);
+        } else if (isFreeform) {
+            status = decodeFreeformPayload(payload, &document.freeform);
+            document.hasFreeform = (status == ProjectCodecStatus::Ok);
+        } else if (isSurface) {
+            status = decodeSurfacePayload(payload, &document.surface);
+            document.hasSurface = (status == ProjectCodecStatus::Ok);
         } else {
             status = decodeCadPayload(payload, &document.cad, sectionVersion);
             document.hasCad = (status == ProjectCodecStatus::Ok);
@@ -2514,7 +2942,9 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
             static_cast<uint8_t>((sawConstructionTag ? kHeaderFlagHasConstruction : 0u)
                                  | (sawSculptTag ? kHeaderFlagHasSculpt : 0u)
                                  | (sawImportedTag ? kHeaderFlagHasImported : 0u)
-                                 | (sawCadTag ? kHeaderFlagHasCad : 0u));
+                                 | (sawCadTag ? kHeaderFlagHasCad : 0u)
+                                 | (sawFreeformTag ? kHeaderFlagHasFreeform : 0u)
+                                 | (sawSurfaceTag ? kHeaderFlagHasSurface : 0u));
     if (headerFlags != expectedFlags) {
         return ProjectCodecStatus::BadHeader;
     }
@@ -2576,7 +3006,7 @@ ProjectCodecStatus decodeProject(const uint8_t* data, size_t size, ProjectDocume
     }
     if ((headerFlags
          & ~(kHeaderFlagHasConstruction | kHeaderFlagHasSculpt | kHeaderFlagHasImported
-             | kHeaderFlagHasCad))
+             | kHeaderFlagHasCad | kHeaderFlagHasFreeform | kHeaderFlagHasSurface))
         != 0u) {
         return ProjectCodecStatus::BadHeader;
     }
@@ -2590,6 +3020,22 @@ ProjectCodecStatus decodeProject(const uint8_t* data, size_t size, ProjectDocume
 
     return decodeProjectV1(file, static_cast<ProjectKind>(kindCode), headerFlags, sectionCount,
                            out, outSkippedOptionalSections);
+}
+
+void writeProjectSketchEntities(ByteWriter& out, const CadSketch& sketch) {
+    writeCadEntities(out, sketch, /*roles=*/true);
+}
+
+void writeProjectSketchDimensions(ByteWriter& out, const CadSketch& sketch) {
+    writeCadDimensions(out, sketch);
+}
+
+ProjectCodecStatus readProjectSketchEntities(ByteReader& in, uint32_t entityCount, CadSketch* sketch) {
+    return readCadEntities(in, entityCount, sketch, /*allowCurves=*/true, /*roles=*/true);
+}
+
+ProjectCodecStatus readProjectSketchDimensions(ByteReader& in, CadSketch* sketch) {
+    return readCadDimensions(in, sketch);
 }
 
 }  // namespace forgeshape

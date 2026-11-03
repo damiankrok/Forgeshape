@@ -1,0 +1,19 @@
+runner_image=ubuntu24 20261026.354.1
+runner_os=Ubuntu 24.04.5 LTS
+commit=9cfc3f518da5f1583018b14da770fe324b6d46d7
+ref=refs/heads/audit/function-council-r2-full-product-ux-platform-r1
+event=workflow_dispatch
+java=openjdk version "17.0.21" 2026-10-20
+java_home=/opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+android_home=/usr/local/lib/android/sdk
+ndk=Pkg.Revision = 29.0.14206865
+cmake=cmake version 3.22.1-g37088a8
+build_tools=Pkg.Revision=36.1.0
+#Pkg.Revision=36.1.0 rc1
+platform=Pkg.Revision=2
+pwsh=7.6.9
+gradle_wrapper=distributionUrl=https\://services.gradle.org/distributions/gradle-8.14.3-bin.zip
+Gradle 8.14.3
+Kotlin:        2.0.21
+Groovy:        3.0.24
+OS:            Linux 7.0.0-1017-azure amd64

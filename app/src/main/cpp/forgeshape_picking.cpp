@@ -182,6 +182,19 @@ bool transformRayToLocal(const Ray& worldRay, const Mat4& inverseModel, Ray* out
 // Moller-Trumbore. With the canonical convention (N = e1 x e2 points outward)
 // the determinant satisfies det = -dot(direction, N), so det > 0 is exactly
 // "front-facing to this ray" and the culling branch needs no separate normal.
+//
+// The arithmetic is carried in DOUBLE from the float inputs (`CAD-R2-C2`). The
+// barycentrics come from `s = origin - v0`, and an orthographic pick ray starts
+// on the view plane kOrthoViewPlaneDistance (250 m) out, so |s| is hundreds of
+// metres while u and v are fractions of a sub-metre triangle: in float32 the
+// cancellation error is about eps * |s| -- measured at 3.5e-6 to 6.2e-6 on the
+// C1 pocket floor -- which exceeds kBarycentricEpsilon (a fixed 1e-6 of the
+// triangle), so a ray ON the diagonal two triangles share fell between both
+// and the face it plainly hits answered "nothing". In double every difference
+// of two floats is exact, every product of two floats is exact, and the error
+// left is ~1e-16 * |s| -- some ten orders below the overlap at any distance
+// the camera can produce. The tolerances, the culling rule, the thresholds and
+// the float interface are unchanged; only the precision of the evaluation is.
 bool intersectRayTriangle(const Ray& ray, const Vec3& v0, const Vec3& v1, const Vec3& v2,
                           bool frontFacesOnly, float* outT) {
     if (outT == nullptr) {
@@ -192,43 +205,55 @@ bool intersectRayTriangle(const Ray& ray, const Vec3& v0, const Vec3& v1, const 
         return false;
     }
 
-    const Vec3 e1 = vec3Sub(v1, v0);
-    const Vec3 e2 = vec3Sub(v2, v0);
-    const Vec3 p = vec3Cross(ray.direction, e2);
-    const float det = vec3Dot(e1, p);
+    struct D3 {
+        double x, y, z;
+    };
+    const auto widen = [](const Vec3& a) { return D3{a.x, a.y, a.z}; };
+    const auto sub = [](const D3& a, const D3& b) { return D3{a.x - b.x, a.y - b.y, a.z - b.z}; };
+    const auto dot = [](const D3& a, const D3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
+    const auto cross = [](const D3& a, const D3& b) {
+        return D3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+    };
+
+    const D3 a0 = widen(v0);
+    const D3 direction = widen(ray.direction);
+    const D3 e1 = sub(widen(v1), a0);
+    const D3 e2 = sub(widen(v2), a0);
+    const D3 p = cross(direction, e2);
+    const double det = dot(e1, p);
 
     if (frontFacesOnly) {
-        if (det < kRayTriangleEpsilon) {
+        if (det < static_cast<double>(kRayTriangleEpsilon)) {
             return false;  // back-facing, parallel, or degenerate
         }
-    } else if (std::fabs(det) < kRayTriangleEpsilon) {
+    } else if (std::fabs(det) < static_cast<double>(kRayTriangleEpsilon)) {
         return false;  // parallel or degenerate
     }
 
-    const float invDet = 1.0f / det;
-    const Vec3 s = vec3Sub(ray.origin, v0);
+    const double invDet = 1.0 / det;
+    const D3 s = sub(widen(ray.origin), a0);
 
     // The containment bounds are widened by kBarycentricEpsilon so a hit lying
     // exactly on an edge shared with a neighbouring triangle cannot be rejected
     // by both of them; see that constant for why an exact test is ABI-dependent.
-    const float u = vec3Dot(s, p) * invDet;
-    if (!std::isfinite(u) || u < -kBarycentricEpsilon || u > 1.0f + kBarycentricEpsilon) {
+    const double epsilon = static_cast<double>(kBarycentricEpsilon);
+    const double u = dot(s, p) * invDet;
+    if (!std::isfinite(u) || u < -epsilon || u > 1.0 + epsilon) {
         return false;
     }
 
-    const Vec3 q = vec3Cross(s, e1);
-    const float v = vec3Dot(ray.direction, q) * invDet;
-    if (!std::isfinite(v) || v < -kBarycentricEpsilon ||
-        (u + v) > 1.0f + kBarycentricEpsilon) {
+    const D3 q = cross(s, e1);
+    const double v = dot(direction, q) * invDet;
+    if (!std::isfinite(v) || v < -epsilon || (u + v) > 1.0 + epsilon) {
         return false;
     }
 
-    const float t = vec3Dot(e2, q) * invDet;
-    if (!std::isfinite(t) || t <= kMinRayDistance) {
+    const double t = dot(e2, q) * invDet;
+    if (!std::isfinite(t) || t <= static_cast<double>(kMinRayDistance)) {
         return false;  // behind the origin, or the origin sits on the surface
     }
 
-    *outT = t;
+    *outT = static_cast<float>(t);
     return true;
 }
 

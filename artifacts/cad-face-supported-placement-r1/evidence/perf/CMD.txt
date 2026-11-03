@@ -1,0 +1,17 @@
+Host benchmark (Linux x86_64, 4 cores, g++ 13, -O1 as scripts/host-native-selftests.sh). NOT an ARM64 or device claim.
+S=<scratch>; CPP=app/src/main/cpp; P=artifacts/cad-face-supported-placement-r1/evidence/perf
+COMMON="-std=c++17 -O1 -g0 -I$CPP -I$CPP/third_party/manifold/include -DMANIFOLD_PAR=-1 -DMANIFOLD_NO_IOSTREAM -DMANIFOLD_NO_FILESYSTEM"
+# product objects of this stage's tree: every forgeshape_*.cpp except jni/renderer -> $S/obj (98 objects)
+# base exporter: git show 7c2fc91:$CPP/forgeshape_gltf_export.{cpp,h} -> $S/base, compiled alone
+g++ $COMMON -c $S/base/forgeshape_gltf_export.cpp -o $S/base/gltf_base.o
+g++ $COMMON $P/fsp_export_bench.cpp $S/base/gltf_base.o <all $S/obj except forgeshape_gltf_export.o> libmanifold.a -o $S/bench_base
+g++ $COMMON $P/fsp_export_bench.cpp $S/obj/*.o libmanifold.a -o $S/bench_after
+Interleaved A/B runs: bench_ABBA.out (A B B A A B), bench_ABBA_2.out (A B A B A B B A). Each line = median of 401 exports.
+
+Result (medians of the per-run medians):
+  12 independent CAD bodies : base 92-99 us, after 92-96 us (two after-runs read 173/197 us, a first-run outlier
+                              of the same unchanged code path; bytes identical 16136 in every run).
+  1 producer + 11-deep face-supported chain: base ~93-100 us (WRONG placement, 16372 bytes),
+                              after 412-455 us (correct placement, 16468 bytes: non-zero node translations).
+The chain cost is resolveWorldModel walking each dependent's producer chain (depth 1..11) once per body
+per export -- a read-only, one-shot act; < 0.5 ms for the worst-case chain.

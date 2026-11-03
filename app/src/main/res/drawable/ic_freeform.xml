@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Freeform (MODELING-FOUNDATIONS-R1 B): a square CONTROL CAGE with its four
+  corner points, and inside it the smooth rounded surface subdivided from it:
+  the cage is what is edited, and the surface is what follows.
+
+  Drawn white and tinted at use; see EditorControlStyles.icon().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M4,4 L20,4 L20,20 L4,20 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M2.5,2.5 L5.5,2.5 L5.5,5.5 L2.5,5.5 Z M18.5,2.5 L21.5,2.5 L21.5,5.5 L18.5,5.5 Z M2.5,18.5 L5.5,18.5 L5.5,21.5 L2.5,21.5 Z M18.5,18.5 L21.5,18.5 L21.5,21.5 L18.5,21.5 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:pathData="M12,7 C16,7 17,8 17,12 C17,16 16,17 12,17 C8,17 7,16 7,12 C7,8 8,7 12,7 Z" />
+</vector>

@@ -77,8 +77,10 @@ CadStatus enumerateCadFaces(const CadBodyState& state, std::vector<CadFace>* out
 
 // The same for any feature of the chain, in the body's local space
 // (`CAD-VERTICAL-SLICE-R1`). A later feature's faces are placed by its support,
-// so they move with the feature they stand on; every face of a Cut is reported
-// but never eligible, because it is the inside of a pocket.
+// so they move with the feature they stand on. A Cut's faces are the inside of
+// a pocket and are reported material-outward; a flat one is eligible, and a
+// resolving site asks the regenerated body whether it survived
+// (`MODELING-R1-OWNER-CORRECTION`).
 CadStatus enumerateCadFeatureFaces(const CadBodyState& state, uint32_t featureId,
                                    std::vector<CadFace>* out);
 

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CAD-V6-REVOLVE-NEWBODY-E2E-R1: stable semantic ids of the Revolve controls. -->
+<resources>
+    <item name="revolve_sketch" type="id" />
+    <item name="sketch_revolve_begin" type="id" />
+    <item name="sketch_revolve_section" type="id" />
+    <item name="sketch_revolve_axis_summary" type="id" />
+    <item name="sketch_revolve_change_axis" type="id" />
+    <item name="sketch_revolve_flip" type="id" />
+    <item name="sketch_revolve_back_to_extrude" type="id" />
+    <item name="sketch_revolve_commit" type="id" />
+    <item name="field_revolve_angle" type="id" />
+    <item name="cad_revolve_angle_label" type="id" />
+    <item name="cad_revolve_angle_value" type="id" />
+    <item name="cad_revolve_angle_editor" type="id" />
+    <item name="field_revolve_angle_canvas" type="id" />
+    <item name="apply_revolve_angle" type="id" />
+</resources>

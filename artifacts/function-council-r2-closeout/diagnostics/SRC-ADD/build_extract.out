@@ -1,0 +1,6 @@
+ROWS 400
+BY_KIND {'decision': 74, 'non_goal': 97, 'gate': 40, 'status_claim': 116, 'requirement': 73}
+BY_AUTHORITY {'UNKNOWN_CURRENT_PLAN': 7, 'HISTORICAL': 68, 'CURRENT_REPO_CONFIRMED': 238, 'UNRESOLVED_AUTHORITY': 32, 'SUPERSEDED': 26, 'OWNER_DECISION_REQUIRED': 29}
+BY_MATCH {'partial': 183, 'none': 119, 'exact': 98}
+BY_SOURCE {'A62': 57, 'H62': 16, 'A63': 49, 'H63': 10, 'A64': 49, 'H64': 10, 'A65': 31, 'H65': 11, 'A66': 55, 'H66': 10, 'S66': 28, 'S65': 35, 'S64': 39}
+QUOTES_VERBATIM 400 / 400

@@ -313,6 +313,12 @@ ArrangementStatus collectSourceEdges(const CadSketch& sketch, std::vector<Source
     std::vector<const SketchEntity*> entities;
     entities.reserve(sketch.entities.size());
     for (const SketchEntity& entity : sketch.entities) {
+        // Material topology only (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`): a
+        // Construction entity cuts no face and bounds none. Drafting queries
+        // that DO want it as a cutter derive over `cadSketchAllCurvesView`.
+        if (entity.role() != SketchEntityRole::Regular) {
+            continue;
+        }
         entities.push_back(&entity);
     }
     // Semantic order: nothing downstream may depend on the vector's order.
@@ -1579,13 +1585,16 @@ bool samePlanarFaceRef(const PlanarFaceRef& a, const PlanarFaceRef& b) {
 bool resolvePlanarFaceRef(const SketchArrangement& arrangement, const PlanarFaceRef& ref,
                           size_t* outIndex) {
     if (arrangement.status != ArrangementStatus::Ok) return false;
-    for (size_t i = 0; i < arrangement.faces.size(); ++i) {
-        if (samePlanarFaceRef(arrangement.faces[i].ref, ref)) {
-            if (outIndex != nullptr) *outIndex = i;
-            return true;
-        }
-    }
-    return false;
+    // `faces` is sorted by ref and no two faces share one (a directed
+    // half-edge bounds exactly one face), so exact equality is one binary
+    // search: resolving a whole selection stays O(n log F).
+    const auto it = std::lower_bound(arrangement.faces.begin(), arrangement.faces.end(), ref,
+                                     [](const AtomicPlanarFace& face, const PlanarFaceRef& key) {
+                                         return comparePlanarFaceRef(face.ref, key) < 0;
+                                     });
+    if (it == arrangement.faces.end() || !samePlanarFaceRef(it->ref, ref)) return false;
+    if (outIndex != nullptr) *outIndex = static_cast<size_t>(it - arrangement.faces.begin());
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -2122,15 +2131,23 @@ double distanceToPolygon(const SketchPoint& p, const std::vector<SketchPoint>& p
     return best;
 }
 
-}  // namespace
-
-ArrangementStatus mergePlanarFaces(const SketchArrangement& arrangement,
-                                   const std::vector<size_t>& faceIndices,
-                                   std::vector<PlanarProfileComponent>* out) {
-    if (out == nullptr || arrangement.status != ArrangementStatus::Ok || faceIndices.empty()) {
-        return arrangement.status != ArrangementStatus::Ok ? arrangement.status
-                                                           : ArrangementStatus::InvalidSelection;
-    }
+// The union of ONE edge-connected group of chosen faces (see
+// `partitionSelectedPlanarFacesBySharedBoundary`), appended to `out` unsorted.
+//
+// A union loop that passes one node twice -- two unchosen cells that are holes
+// of the group and meet at a point, or a hole touching the outer boundary --
+// is SPLIT there (`MODELING-R1-OWNER-CORRECTION`), never refused: the walk
+// turns by the tightest turn inside the union, so each piece between two
+// visits of the node is a simple loop wholly on one side, every boundary
+// half-edge stays in exactly one piece, and the pieces bound exactly the region
+// the faces cover. Each piece becomes its own outer or hole loop and gets its
+// own vertex ring in the prism, so the extruded solid is a closed, oriented
+// 2-manifold that merely touches itself along a vertical edge. Only an
+// edge-connected group whose pieces are not one outer plus its holes is still
+// refused as `PinchedSelection`.
+ArrangementStatus mergeEdgeConnectedFaces(const SketchArrangement& arrangement,
+                                          const std::vector<size_t>& faceIndices,
+                                          std::vector<PlanarProfileComponent>* out) {
     // Every chosen face's boundary cycles as half-edge ids, and where each
     // half-edge sits: (cycle, position). A directed half-edge bounds exactly
     // one face, so a repeat is a repeated face.
@@ -2138,13 +2155,12 @@ ArrangementStatus mergePlanarFaces(const SketchArrangement& arrangement,
     const uint32_t halfCount = static_cast<uint32_t>(arrangement.fragments.size() * 2u);
     std::vector<int64_t> cycleOf(halfCount, -1);
     std::vector<uint32_t> positionOf(halfCount, 0);
-    std::vector<size_t> seen;
+    std::vector<uint8_t> seen(arrangement.faces.size(), 0);
     for (size_t index : faceIndices) {
-        if (index >= arrangement.faces.size()
-            || std::find(seen.begin(), seen.end(), index) != seen.end()) {
+        if (index >= arrangement.faces.size() || seen[index] != 0u) {
             return ArrangementStatus::InvalidSelection;
         }
-        seen.push_back(index);
+        seen[index] = 1u;
         const PlanarFaceRef& ref = arrangement.faces[index].ref;
         std::vector<const FragmentCycle*> boundary{&ref.outer};
         for (const FragmentCycle& hole : ref.holes) boundary.push_back(&hole);
@@ -2194,24 +2210,22 @@ ArrangementStatus mergePlanarFaces(const SketchArrangement& arrangement,
     std::vector<PlanarProfileLoop> outers;
     std::vector<PlanarProfileLoop> holes;
     std::vector<uint8_t> walked(halfCount, 0);
-    // Every node a union loop passes, across ALL loops: two loops meeting at
-    // one node (two chosen faces touching only at a corner) pinch the union
-    // exactly as one loop revisiting a node does.
-    std::vector<uint8_t> nodeUsed(arrangement.nodes.size(), 0);
+    // The simple loops of the union: every walked loop split at the nodes it
+    // revisits. Deterministic -- the walks start at ascending half-edge ids and
+    // a loop splits in walk order -- and every piece is canonically rotated
+    // below, so the order they are found in never reaches a result.
+    std::vector<std::vector<uint32_t>> simpleLoops;
+    std::vector<int64_t> stackAt(arrangement.nodes.size(), -1);
     for (uint32_t start = 0; start < halfCount; ++start) {
         if (!remains(start) || walked[start] != 0u) continue;
-        std::vector<uint32_t> loop;
-        std::vector<uint32_t> nodesSeen;
+        std::vector<uint32_t> walk;
         uint32_t h = start;
         for (uint32_t guard = 0; guard <= halfCount; ++guard) {
             walked[h] = 1u;
-            const uint32_t node = originNode(h);
-            if (node >= nodeUsed.size() || nodeUsed[node] != 0u) {
-                return ArrangementStatus::PinchedSelection;
+            if (originNode(h) >= arrangement.nodes.size()) {
+                return ArrangementStatus::InvalidSelection;
             }
-            nodeUsed[node] = 1u;
-            nodesSeen.push_back(node);
-            loop.push_back(h);
+            walk.push_back(h);
             uint32_t next = 0;
             if (!nextOnUnion(h, &next)) {
                 return ArrangementStatus::InvalidSelection;
@@ -2222,6 +2236,26 @@ ArrangementStatus mergePlanarFaces(const SketchArrangement& arrangement,
         if (h != start) {
             return ArrangementStatus::InvalidSelection;
         }
+        // Split at revisited nodes: a node met again closes the piece that
+        // left it, which therefore starts and ends there.
+        std::vector<uint32_t> stack;
+        for (uint32_t half : walk) {
+            const uint32_t node = originNode(half);
+            if (stackAt[node] >= 0) {
+                const size_t from = static_cast<size_t>(stackAt[node]);
+                std::vector<uint32_t> piece(stack.begin() + static_cast<std::ptrdiff_t>(from),
+                                            stack.end());
+                for (uint32_t popped : piece) stackAt[originNode(popped)] = -1;
+                stack.resize(from);
+                simpleLoops.push_back(std::move(piece));
+            }
+            stackAt[node] = static_cast<int64_t>(stack.size());
+            stack.push_back(half);
+        }
+        for (uint32_t kept : stack) stackAt[originNode(kept)] = -1;
+        simpleLoops.push_back(std::move(stack));
+    }
+    for (std::vector<uint32_t>& loop : simpleLoops) {
         // Canonical rotation: start at the smallest fragment ref.
         size_t best = 0;
         const auto refOf = [&](uint32_t half) {
@@ -2275,6 +2309,12 @@ ArrangementStatus mergePlanarFaces(const SketchArrangement& arrangement,
     if (outers.empty()) {
         return ArrangementStatus::InvalidSelection;
     }
+    // One edge-connected group has a connected interior, so its boundary is
+    // one outer loop and its holes. Pieces that are anything else could not be
+    // extruded as one closed solid honestly, and stay refused by name.
+    if (outers.size() != 1u) {
+        return ArrangementStatus::PinchedSelection;
+    }
     std::vector<PlanarProfileComponent> components(outers.size());
     for (size_t i = 0; i < outers.size(); ++i) {
         components[i].outer = std::move(outers[i]);
@@ -2313,6 +2353,117 @@ ArrangementStatus mergePlanarFaces(const SketchArrangement& arrangement,
         component.area = component.outer.area;
         for (const PlanarProfileLoop& hole : component.holes) component.area -= hole.area;
     }
+    for (PlanarProfileComponent& component : components) out->push_back(std::move(component));
+    return ArrangementStatus::Ok;
+}
+
+}  // namespace
+
+ArrangementStatus partitionSelectedPlanarFacesBySharedBoundary(
+        const SketchArrangement& arrangement, const std::vector<size_t>& faceIndices,
+        std::vector<std::vector<size_t>>* outGroups) {
+    if (outGroups == nullptr || arrangement.status != ArrangementStatus::Ok
+        || faceIndices.empty()) {
+        return arrangement.status != ArrangementStatus::Ok ? arrangement.status
+                                                           : ArrangementStatus::InvalidSelection;
+    }
+    // Which chosen face (by its slot in `faceIndices`) owns each directed
+    // half-edge. A directed half-edge bounds exactly one face, so a repeat is a
+    // repeated face.
+    const uint32_t halfCount = static_cast<uint32_t>(arrangement.fragments.size() * 2u);
+    std::vector<int64_t> ownerOf(halfCount, -1);
+    std::vector<uint8_t> seen(arrangement.faces.size(), 0);
+    for (size_t slot = 0; slot < faceIndices.size(); ++slot) {
+        const size_t index = faceIndices[slot];
+        if (index >= arrangement.faces.size() || seen[index] != 0u) {
+            return ArrangementStatus::InvalidSelection;
+        }
+        seen[index] = 1u;
+        const PlanarFaceRef& ref = arrangement.faces[index].ref;
+        std::vector<const FragmentCycle*> boundary{&ref.outer};
+        for (const FragmentCycle& hole : ref.holes) boundary.push_back(&hole);
+        for (const FragmentCycle* cycle : boundary) {
+            for (const FragmentRef& fragment : *cycle) {
+                uint32_t k = 0;
+                if (!fragmentIndexOf(arrangement, fragment, &k)) {
+                    return ArrangementStatus::InvalidSelection;
+                }
+                const uint32_t h = halfOf(k, fragment.reversed);
+                if (ownerOf[h] >= 0) {
+                    return ArrangementStatus::InvalidSelection;
+                }
+                ownerOf[h] = static_cast<int64_t>(slot);
+            }
+        }
+    }
+    // Union-find over the slots. Two chosen faces join ONLY through a fragment
+    // both of them bound -- one walks it each way. A shared node is not a
+    // shared fragment, so faces meeting only at a point stay apart.
+    std::vector<size_t> parent(faceIndices.size());
+    for (size_t i = 0; i < parent.size(); ++i) parent[i] = i;
+    const auto root = [&](size_t x) {
+        while (parent[x] != x) {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        return x;
+    };
+    for (uint32_t k = 0; k < halfCount / 2u; ++k) {
+        const int64_t a = ownerOf[halfOf(k, false)];
+        const int64_t b = ownerOf[halfOf(k, true)];
+        if (a < 0 || b < 0) continue;
+        const size_t ra = root(static_cast<size_t>(a));
+        const size_t rb = root(static_cast<size_t>(b));
+        if (ra != rb) parent[std::max(ra, rb)] = std::min(ra, rb);
+    }
+    // Deterministic: each group's face indices ascending, groups ordered by
+    // their smallest face index.
+    std::vector<std::vector<size_t>> groups;
+    std::vector<int64_t> groupOfRoot(faceIndices.size(), -1);
+    std::vector<size_t> sortedSlots(faceIndices.size());
+    for (size_t i = 0; i < sortedSlots.size(); ++i) sortedSlots[i] = i;
+    std::sort(sortedSlots.begin(), sortedSlots.end(),
+              [&](size_t x, size_t y) { return faceIndices[x] < faceIndices[y]; });
+    for (size_t slot : sortedSlots) {
+        const size_t r = root(slot);
+        if (groupOfRoot[r] < 0) {
+            groupOfRoot[r] = static_cast<int64_t>(groups.size());
+            groups.emplace_back();
+        }
+        groups[static_cast<size_t>(groupOfRoot[r])].push_back(faceIndices[slot]);
+    }
+    *outGroups = std::move(groups);
+    return ArrangementStatus::Ok;
+}
+
+ArrangementStatus mergePlanarFaces(const SketchArrangement& arrangement,
+                                   const std::vector<size_t>& faceIndices,
+                                   std::vector<PlanarProfileComponent>* out) {
+    if (out == nullptr || arrangement.status != ArrangementStatus::Ok || faceIndices.empty()) {
+        return arrangement.status != ArrangementStatus::Ok ? arrangement.status
+                                                           : ArrangementStatus::InvalidSelection;
+    }
+    // Edge-connected groups first (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`), each
+    // merged on its own: shared fragments cancel inside a group exactly as
+    // before, a group's own pinch is still refused, and two groups that touch
+    // at a point are simply two components -- each prism gets its own vertex
+    // rings, so the solid stays closed and oriented with no shared vertex.
+    std::vector<std::vector<size_t>> groups;
+    const ArrangementStatus partitioned =
+            partitionSelectedPlanarFacesBySharedBoundary(arrangement, faceIndices, &groups);
+    if (partitioned != ArrangementStatus::Ok) {
+        return partitioned;
+    }
+    std::vector<PlanarProfileComponent> components;
+    for (const std::vector<size_t>& group : groups) {
+        const ArrangementStatus why = mergeEdgeConnectedFaces(arrangement, group, &components);
+        if (why != ArrangementStatus::Ok) {
+            return why;
+        }
+    }
+    // The canonical order (by the outer cycle) is independent of how the
+    // components were found, so a selection that merged before derives
+    // bit-identically now.
     std::sort(components.begin(), components.end(),
               [](const PlanarProfileComponent& x, const PlanarProfileComponent& y) {
                   return compareCycle(x.outer.fragments, y.outer.fragments) < 0;

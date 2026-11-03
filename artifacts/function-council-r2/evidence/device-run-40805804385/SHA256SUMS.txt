@@ -1,0 +1,2 @@
+049199bc63b3f192f19ecc51f52ca16744806e58f66eed1f30bf5ae31b669049  ./post-test-screenshot.png
+6e46f1b5c3a183037efdc089106e9f2ca0a2359266125338fafdcf002acdbdfd  ./startup-screenshot.png

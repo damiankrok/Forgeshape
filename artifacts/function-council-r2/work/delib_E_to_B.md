@@ -1,0 +1,31 @@
+# Deliberation: seat E → seat B (Round 2)
+
+Source of record: `artifacts/function-council-r2/SEAT_B.md` § Round 2; row changes in `work/req_B.tsv` (CON-001, 024, 025, 030, 032, 036, 038, 052, 070, 074, 077, 079, 088).
+
+
+Every objection was re-checked against the tree (`app/src/main` at 70a6c14) and against
+seat E's saved outputs in `/tmp/claude-0/fc2-scratch/E-vs-B/`. Commands used: `sed -n`
+over the cited lines, `grep -n` for `resolveWorldModel`, `LengthFilter`, `FSR1A_13_a` and
+`expandedRow() != null`, `awk` over the `e2eMirror0101` body, and `tail` / `cat` over
+`fc2/release_guard.txt` and `run_status.txt`.
+
+| # | Objection | Response | Status |
+|---|---|---|---|
+| 1 | B-02 and E-01 are the same defect; merge them, with E-01 as primary; add the case where an unresolved support is still exported. | **CONCEDED.** `gltf_export.cpp:177-179` reads the stored transform. `scene.cpp:359-365` leaves out a body whose support does not resolve, and `gltf_export.cpp:167-185` loops over every `bodyAt(i)` with no resolve. B-02 is now merged with E-01, which is primary, and stays P1 / DEFECT-CONFIRMED with two E1 reproductions (seat E's fixture-based `export_face`, and the programmatic `diag_face_supported.out`). The fix now says to refuse by name when `resolveWorldModel` is false; that case is graded E2. CON-025 is updated. | RESOLVED |
+| 2 | B-01's impact on persistence is understated. | **CONCEDED.** The impact now covers the dirty prompt, autosave writing a checkpoint for a change no one can see, and the non-canonical `.forge` placement (`project_document.cpp:739` checks only `transformValid`; two projects that look the same have different bytes and fingerprints). It also covers the touch path `jni:9932-9934`. Owner question 1 now also asks whether the decoder should refuse or ignore that transform. Stays P2 / DEFECT-CONFIRMED, cross-seat with E. | RESOLVED |
+| 3 | B-07's fix would break New Sculpt project creation. | **CONCEDED.** `onNewSculptProjectChosen` (`EditorWorkspaceView.java:2402-2406`) calls `sceneAddBody` at Home on purpose, inside `beginSessionInitialization`, and `ensureConstructionProjectForTest` (`:2739-2749`) relies on it. B-07 is withdrawn as a defect. It is kept only as HYPOTHESIS H-B4 (E5), which notes that any guard would have to be `!hasProject() && !sessionInitializationOpen`. The fix line is removed from CON-074. | RESOLVED |
+| 4 | CON-074 mixes two requirements. | **CONCEDED.** The stated requirement is met at `jni:1350-1357`. CON-074 is regraded PASS-SOURCE-AND-RECORDED-RUNTIME (E2 + E3 HomeFlowTest) with no severity. | RESOLVED |
+| 5 | The release guard is misreported. | **CONCEDED.** `release_guard.txt` currently ends `RELEASE_SELFTEST_GUARD=PASS`: release on both ABIs has 0 symbols and 0 strings, and debug has 35 / 398. Both sentences are corrected. The fact that `run_status.txt` still says `guard_exit=2` (00:54) is carried as an orchestrator question, not reported as an ERROR. | RESOLVED (orchestrator question open) |
+| 6 | B-04 is accurate; optionally move the refusal into `beginDrag` so it covers locked and face-supported bodies together. | **ACCEPTED.** The fix is reworded so that `GizmoSession::beginDrag` refuses locked and face-supported bodies together. Saved E1 artefact: `diag_objects.out` case 1. | RESOLVED |
+| 7 | B-05 stands; add the false comment as DOC-DIVERGENCE; the Mirror half is E2. | **CONCEDED.** The comment at `body_commands.cpp:177` is false, and `grep LengthFilter` over `app/src/main/java` finds nothing. That comment is now a DOC-DIVERGENCE (E2). The Mirror half is E2 because only Duplicate was exercised. Stays DEFECT-CONFIRMED / P3. CON-036 is updated. | RESOLVED |
+| 8 | CON-052 cites the wrong evidence for the Back half. | **CONCEDED.** The `e2eMirror0101` body contains no Back press. Opening the chooser is E3. Back is E2 (`hasDismissibleSurface` `:1112-1116`) and its verdict is IMPLEMENTED-UNTESTED. | RESOLVED |
+| 9 | CON-070's citation is missing the check for its second clause. | **CONCEDED.** Added `forgeshape_project_selftest.cpp:2490` `FSR1A_13_a_load_during_an_open_edit_is_refused`. Adversarial #8 is now E1, which matches the row. | RESOLVED |
+| 10 | CON-001/038/077 miss the Import route that is not guarded in a sketch. | **CONCEDED as a cross-reference.** `importGlbDurable` (`jni:8586-8600`) checks only `inSculptMode()`. The rows keep PASS for their own entry points (`jni:3206/3246`) and now point to E-03, which is recorded once in the synthesis and not as a seat B defect. | RESOLVED |
+| 11 | CON-088 is consistent; note E-07; E-10 applies only to edits the gizmo does not own. | **ACCEPTED.** E-07 is noted on CON-088. `setActive(false)` cancels a captured drag (`gizmo.cpp:1138-1143`) before the history is cleared. | RESOLVED |
+| 12 | Horizon and source labels (CON-079, CON-032). | **CONCEDED.** CON-079's source is now PRODUCT.md "Several bodies, and which one you are editing" (line 431). CON-032 / B-06 now carry no ranked severity and are labelled owner-pending. No change to CON-053/061/062/078/024/025. | RESOLVED |
+| 13 | Check the five strongest positive claims; reword the Mirror claim as "sampled". | **CONCEDED** for Mirror: it now says "sampled, not proven" (worst error 0 over 9 × 3 samples), and the "for any q" claim rests on the algebra and `MIRROR01-*`. The other four stand. The rename claim now also cites `jni:3421` and `obj018a_02_utf16_round_trip_is_exact`. | RESOLVED |
+| 14 | No output files were saved for B's diagnostics. | **CONCEDED.** B-01, B-02, B-04, B-05, B-06, CON-024/025/030/032/036 now cite `/tmp/claude-0/fc2-scratch/E-vs-B/{diag_face_supported,diag_objects,diag_math}.out` as the saved E1 artefacts. | RESOLVED |
+
+Net change: 12 conceded with corrections, 2 accepted with no change to the verdict
+(6, 11), 0 rebutted. B-07 is withdrawn, and B-02 is merged into E-01. The only open item
+is the orchestrator question about `guard_exit=2` versus `RELEASE_SELFTEST_GUARD=PASS`.

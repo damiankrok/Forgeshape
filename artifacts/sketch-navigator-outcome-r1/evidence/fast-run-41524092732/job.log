@@ -1,0 +1,818 @@
+﻿2026-11-02T20:58:46.1941166Z Current runner version: '2.338.2'
+2026-11-02T20:58:46.1978856Z ##[group]Runner Image Provisioner
+2026-11-02T20:58:46.1980482Z Hosted Compute Agent
+2026-11-02T20:58:46.1981458Z Version: 20261021.618
+2026-11-02T20:58:46.1982694Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+2026-11-02T20:58:46.1984002Z Build Date: 2026-10-21T00:45:21Z
+2026-11-02T20:58:46.1986079Z Worker ID: {d27e8be3-ecf7-4e47-962b-cf9e88b49d09}
+2026-11-02T20:58:46.1987370Z Region: eastus
+2026-11-02T20:58:46.1988259Z Cloud: Azure
+2026-11-02T20:58:46.1989263Z ##[endgroup]
+2026-11-02T20:58:46.1991766Z ##[group]Operating System
+2026-11-02T20:58:46.1992842Z Ubuntu
+2026-11-02T20:58:46.1993742Z 24.04.5
+2026-11-02T20:58:46.1994594Z LTS
+2026-11-02T20:58:46.1996005Z ##[endgroup]
+2026-11-02T20:58:46.1996921Z ##[group]Runner Image
+2026-11-02T20:58:46.1998174Z Image: ubuntu-24.04
+2026-11-02T20:58:46.1999120Z Version: 20261025.353.1
+2026-11-02T20:58:46.2001366Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261025.353/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-02T20:58:46.2004114Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261025.353
+2026-11-02T20:58:46.2006215Z ##[endgroup]
+2026-11-02T20:58:46.2008020Z ##[group]GITHUB_TOKEN Permissions
+2026-11-02T20:58:46.2010991Z Contents: read
+2026-11-02T20:58:46.2011990Z Metadata: read
+2026-11-02T20:58:46.2012982Z ##[endgroup]
+2026-11-02T20:58:46.2017085Z Secret source: Actions
+2026-11-02T20:58:46.2018809Z Cache mode: write
+2026-11-02T20:58:46.2020085Z Prepare workflow directory
+2026-11-02T20:58:46.2628727Z Prepare all required actions
+2026-11-02T20:58:46.2706621Z Getting action download info
+2026-11-02T20:58:46.4913460Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-11-02T20:58:46.6319566Z Download action repository 'gradle/actions@v4' (SHA:ed408507eac070d1f99cc633dbcf757c94c7933a)
+2026-11-02T20:58:47.3916395Z Download action repository 'actions/setup-java@v4' (SHA:cf277c60eb25467037889841efdb72551f06f6c3)
+2026-11-02T20:58:47.6367713Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-11-02T20:58:47.9521454Z Complete job name: FAST (build, unit, guards, corpus)
+2026-11-02T20:58:48.0911807Z ##[group]Run actions/checkout@v4
+2026-11-02T20:58:48.0913185Z with:
+2026-11-02T20:58:48.0913946Z   fetch-depth: 0
+2026-11-02T20:58:48.0915045Z   repository: damiankrok/Forgeshape
+2026-11-02T20:58:48.0925136Z   token: ***
+2026-11-02T20:58:48.0925925Z   ssh-strict: true
+2026-11-02T20:58:48.0926711Z   ssh-user: git
+2026-11-02T20:58:48.0927523Z   persist-credentials: true
+2026-11-02T20:58:48.0928423Z   clean: true
+2026-11-02T20:58:48.0929249Z   sparse-checkout-cone-mode: true
+2026-11-02T20:58:48.0930249Z   fetch-tags: false
+2026-11-02T20:58:48.0931082Z   show-progress: true
+2026-11-02T20:58:48.0931912Z   lfs: false
+2026-11-02T20:58:48.0932650Z   submodules: false
+2026-11-02T20:58:48.0933470Z   set-safe-directory: true
+2026-11-02T20:58:48.0934420Z   allow-unsafe-pr-checkout: false
+2026-11-02T20:58:48.0935910Z env:
+2026-11-02T20:58:48.0936686Z   ANDROID_PLATFORM: android-36
+2026-11-02T20:58:48.0937643Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T20:58:48.0938651Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T20:58:48.0939652Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T20:58:48.0940557Z ##[endgroup]
+2026-11-02T20:58:48.6881984Z Syncing repository: damiankrok/Forgeshape
+2026-11-02T20:58:48.6885011Z ##[group]Getting Git version info
+2026-11-02T20:58:48.6885952Z Working directory is '/home/runner/work/Forgeshape/Forgeshape'
+2026-11-02T20:58:48.6887102Z [command]/usr/bin/git version
+2026-11-02T20:58:48.7042235Z git version 2.56.0
+2026-11-02T20:58:48.7068930Z ##[endgroup]
+2026-11-02T20:58:48.7088703Z Temporarily overriding HOME='/home/runner/work/_temp/814de838-f3be-476a-a228-ba8ea92c2689' before making global git config changes
+2026-11-02T20:58:48.7090682Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T20:58:48.7096141Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Forgeshape/Forgeshape
+2026-11-02T20:58:48.7174684Z Deleting the contents of '/home/runner/work/Forgeshape/Forgeshape'
+2026-11-02T20:58:48.7181258Z ##[group]Initializing the repository
+2026-11-02T20:58:48.7187479Z [command]/usr/bin/git init /home/runner/work/Forgeshape/Forgeshape
+2026-11-02T20:58:48.7378328Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-02T20:58:48.7380317Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-02T20:58:48.7381776Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-02T20:58:48.7382930Z hint: call:
+2026-11-02T20:58:48.7383609Z hint:
+2026-11-02T20:58:48.7384427Z hint: 	git config --global init.defaultBranch <name>
+2026-11-02T20:58:48.7385932Z hint:
+2026-11-02T20:58:48.7387321Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-02T20:58:48.7388712Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-02T20:58:48.7389789Z hint:
+2026-11-02T20:58:48.7390458Z hint: 	git branch -m <name>
+2026-11-02T20:58:48.7391162Z hint:
+2026-11-02T20:58:48.7392364Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-02T20:58:48.7402415Z Initialized empty Git repository in /home/runner/work/Forgeshape/Forgeshape/.git/
+2026-11-02T20:58:48.7419686Z [command]/usr/bin/git remote add origin https://github.com/damiankrok/Forgeshape
+2026-11-02T20:58:48.7488241Z ##[endgroup]
+2026-11-02T20:58:48.7489920Z ##[group]Disabling automatic garbage collection
+2026-11-02T20:58:48.7492693Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-02T20:58:48.7542142Z ##[endgroup]
+2026-11-02T20:58:48.7543475Z ##[group]Setting up auth
+2026-11-02T20:58:48.7552785Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T20:58:48.7609489Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T20:58:48.8104635Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T20:58:48.8159150Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T20:58:48.8431177Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T20:58:48.8481943Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T20:58:48.8749218Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-02T20:58:48.8813141Z ##[endgroup]
+2026-11-02T20:58:48.8814986Z ##[group]Fetching the repository
+2026-11-02T20:58:48.8830104Z [command]/usr/bin/git -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+2026-11-02T20:58:51.9223426Z From https://github.com/damiankrok/Forgeshape
+2026-11-02T20:58:51.9224469Z  * [new branch]      audit/function-council-r2-closeout-r1 -> origin/audit/function-council-r2-closeout-r1
+2026-11-02T20:58:51.9226097Z  * [new branch]      audit/function-council-r2-full-product-ux-platform-r1 -> origin/audit/function-council-r2-full-product-ux-platform-r1
+2026-11-02T20:58:51.9227160Z  * [new branch]      claude/new-session-g87rge -> origin/claude/new-session-g87rge
+2026-11-02T20:58:51.9228029Z  * [new branch]      feature/cad-face-supported-placement-r1 -> origin/feature/cad-face-supported-placement-r1
+2026-11-02T20:58:51.9229013Z  * [new branch]      feature/cad-foundation-c1-union-hud-r1 -> origin/feature/cad-foundation-c1-union-hud-r1
+2026-11-02T20:58:51.9230069Z  * [new branch]      feature/cad-foundation-c2-owner-correction-r1 -> origin/feature/cad-foundation-c2-owner-correction-r1
+2026-11-02T20:58:51.9231556Z  * [new branch]      feature/cad-planar-face-pf-s1-arrangement-r1 -> origin/feature/cad-planar-face-pf-s1-arrangement-r1
+2026-11-02T20:58:51.9232572Z  * [new branch]      feature/cad-r2-c1-quality-gate-r1 -> origin/feature/cad-r2-c1-quality-gate-r1
+2026-11-02T20:58:51.9233471Z  * [new branch]      feature/cad-r2-c2-picking-seam-r1 -> origin/feature/cad-r2-c2-picking-seam-r1
+2026-11-02T20:58:51.9234516Z  * [new branch]      feature/cad-r2-retained-sketch-parametric-ux-r1 -> origin/feature/cad-r2-retained-sketch-parametric-ux-r1
+2026-11-02T20:58:51.9235978Z  * [new branch]      feature/cad-v6-revolve-newbody-r1 -> origin/feature/cad-v6-revolve-newbody-r1
+2026-11-02T20:58:51.9236852Z  * [new branch]      feature/cad-v6-s2-fill-pick-r2 -> origin/feature/cad-v6-s2-fill-pick-r2
+2026-11-02T20:58:51.9237795Z  * [new branch]      feature/cad-v6-s2-owner-correction-e2e-r1 -> origin/feature/cad-v6-s2-owner-correction-e2e-r1
+2026-11-02T20:58:51.9239017Z  * [new branch]      feature/cad-v6-s2-owner-feedback-multiface-r1 -> origin/feature/cad-v6-s2-owner-feedback-multiface-r1
+2026-11-02T20:58:51.9240298Z  * [new branch]      feature/cad-v6-sketch-face-r1 -> origin/feature/cad-v6-sketch-face-r1
+2026-11-02T20:58:51.9241254Z  * [new branch]      feature/cad-v8-sketch-drafting-toolkit-r1 -> origin/feature/cad-v8-sketch-drafting-toolkit-r1
+2026-11-02T20:58:51.9242488Z  * [new branch]      feature/cad-vertical-slice-r1 -> origin/feature/cad-vertical-slice-r1
+2026-11-02T20:58:51.9243865Z  * [new branch]      feature/import-glb-sketch-guard-r1 -> origin/feature/import-glb-sketch-guard-r1
+2026-11-02T20:58:51.9245731Z  * [new branch]      feature/modeling-r1-owner-shell-sketch-fix-r1 -> origin/feature/modeling-r1-owner-shell-sketch-fix-r1
+2026-11-02T20:58:51.9247528Z  * [new branch]      feature/modeling-v9-parametric-freeform-surface-r1 -> origin/feature/modeling-v9-parametric-freeform-surface-r1
+2026-11-02T20:58:51.9249228Z  * [new branch]      feature/sketch-navigator-outcome-r1 -> origin/feature/sketch-navigator-outcome-r1
+2026-11-02T20:58:51.9250725Z  * [new branch]      feature/stage027-sculpt-isolate-r1 -> origin/feature/stage027-sculpt-isolate-r1
+2026-11-02T20:58:51.9252498Z  * [new branch]      fix/function-council-d1-import-sculpt-guard-r1 -> origin/fix/function-council-d1-import-sculpt-guard-r1
+2026-11-02T20:58:51.9253763Z  * [new branch]      infra/ci-cloud-r1 -> origin/infra/ci-cloud-r1
+2026-11-02T20:58:51.9254481Z  * [new branch]      main              -> origin/main
+2026-11-02T20:58:51.9256295Z [command]/usr/bin/git branch --list --remote origin/feature/sketch-navigator-outcome-r1
+2026-11-02T20:58:51.9292725Z   origin/feature/sketch-navigator-outcome-r1
+2026-11-02T20:58:51.9308643Z [command]/usr/bin/git rev-parse refs/remotes/origin/feature/sketch-navigator-outcome-r1
+2026-11-02T20:58:51.9359328Z 3b60086c2ea7572b83358e57e4efa47e5269183c
+2026-11-02T20:58:51.9374126Z ##[endgroup]
+2026-11-02T20:58:51.9375240Z ##[group]Determining the checkout info
+2026-11-02T20:58:51.9376209Z ##[endgroup]
+2026-11-02T20:58:51.9378577Z [command]/usr/bin/git sparse-checkout disable
+2026-11-02T20:58:51.9448881Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-02T20:58:51.9499547Z ##[group]Checking out the ref
+2026-11-02T20:58:51.9504435Z [command]/usr/bin/git checkout --progress --force -B feature/sketch-navigator-outcome-r1 refs/remotes/origin/feature/sketch-navigator-outcome-r1
+2026-11-02T20:58:52.7561232Z Switched to a new branch 'feature/sketch-navigator-outcome-r1'
+2026-11-02T20:58:52.7567105Z branch 'feature/sketch-navigator-outcome-r1' set up to track 'origin/feature/sketch-navigator-outcome-r1'.
+2026-11-02T20:58:52.7614562Z ##[endgroup]
+2026-11-02T20:58:52.7692420Z [command]/usr/bin/git log -1 --format=%H
+2026-11-02T20:58:52.7736250Z 3b60086c2ea7572b83358e57e4efa47e5269183c
+2026-11-02T20:58:52.8001970Z ##[group]Run gradle/actions/wrapper-validation@v4
+2026-11-02T20:58:52.8002344Z with:
+2026-11-02T20:58:52.8002567Z   min-wrapper-count: 1
+2026-11-02T20:58:52.8003006Z   allow-snapshots: false
+2026-11-02T20:58:52.8003252Z env:
+2026-11-02T20:58:52.8003465Z   ANDROID_PLATFORM: android-36
+2026-11-02T20:58:52.8003740Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T20:58:52.8004013Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T20:58:52.8004302Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T20:58:52.8004564Z ##[endgroup]
+2026-11-02T20:58:53.1086555Z ✓ Found known Gradle Wrapper JAR files:
+2026-11-02T20:58:53.1096146Z   7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172 gradle/wrapper/gradle-wrapper.jar
+2026-11-02T20:58:53.1475844Z ##[group]Run actions/setup-java@v4
+2026-11-02T20:58:53.1476258Z with:
+2026-11-02T20:58:53.1476470Z   distribution: temurin
+2026-11-02T20:58:53.1476705Z   java-version: 17
+2026-11-02T20:58:53.1476924Z   java-package: jdk
+2026-11-02T20:58:53.1477142Z   check-latest: false
+2026-11-02T20:58:53.1477369Z   server-id: github
+2026-11-02T20:58:53.1477590Z   server-username: GITHUB_ACTOR
+2026-11-02T20:58:53.1477857Z   server-password: GITHUB_TOKEN
+2026-11-02T20:58:53.1478140Z   overwrite-settings: true
+2026-11-02T20:58:53.1478384Z   job-status: success
+2026-11-02T20:58:53.1481371Z   token: ***
+2026-11-02T20:58:53.1481577Z env:
+2026-11-02T20:58:53.1481780Z   ANDROID_PLATFORM: android-36
+2026-11-02T20:58:53.1482048Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T20:58:53.1482302Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T20:58:53.1482593Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T20:58:53.1482898Z   GRADLE_ACTION_ID: gradle/actions/wrapper-validation
+2026-11-02T20:58:53.1483287Z ##[endgroup]
+2026-11-02T20:58:53.3519000Z ##[warning]setup-java v4 is deprecated and will no longer receive updates. Please migrate to actions/setup-java@v5.
+2026-11-02T20:58:53.3528122Z ##[group]Installed distributions
+2026-11-02T20:58:53.3582042Z Resolved Java 17.0.21+9 from tool-cache
+2026-11-02T20:58:53.3582785Z Setting Java 17.0.21+9 as the default
+2026-11-02T20:58:53.3596989Z (node:2260) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T20:58:53.3598365Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T20:58:53.3601503Z Creating toolchains.xml for JDK version 17 from temurin
+2026-11-02T20:58:53.3689299Z Writing to /home/runner/.m2/toolchains.xml
+2026-11-02T20:58:53.3690123Z 
+2026-11-02T20:58:53.3690463Z Java configuration:
+2026-11-02T20:58:53.3691241Z   Distribution: temurin
+2026-11-02T20:58:53.3692038Z   Version: 17.0.21+9
+2026-11-02T20:58:53.3693225Z   Path: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T20:58:53.3694245Z 
+2026-11-02T20:58:53.3695711Z ##[endgroup]
+2026-11-02T20:58:53.3725267Z Creating settings.xml with server-id: github
+2026-11-02T20:58:53.3757769Z Writing to /home/runner/.m2/settings.xml
+2026-11-02T20:58:53.4221298Z ##[group]Run gradle/actions/setup-gradle@v4
+2026-11-02T20:58:53.4221699Z with:
+2026-11-02T20:58:53.4221944Z   cache-disabled: false
+2026-11-02T20:58:53.4222207Z   cache-read-only: true
+2026-11-02T20:58:53.4222486Z   cache-write-only: false
+2026-11-02T20:58:53.4222760Z   cache-overwrite-existing: false
+2026-11-02T20:58:53.4223067Z   cache-cleanup: on-success
+2026-11-02T20:58:53.4223406Z   gradle-home-cache-includes: caches
+notifications
+
+2026-11-02T20:58:53.4223765Z   add-job-summary: always
+2026-11-02T20:58:53.4224119Z   add-job-summary-as-pr-comment: never
+2026-11-02T20:58:53.4224596Z   dependency-graph: disabled
+2026-11-02T20:58:53.4225284Z   dependency-graph-report-dir: dependency-graph-reports
+2026-11-02T20:58:53.4225693Z   dependency-graph-continue-on-failure: true
+2026-11-02T20:58:53.4226022Z   build-scan-publish: false
+2026-11-02T20:58:53.4226464Z   validate-wrappers: true
+2026-11-02T20:58:53.4226754Z   allow-snapshot-wrappers: false
+2026-11-02T20:58:53.4227191Z   gradle-home-cache-strict-match: false
+2026-11-02T20:58:53.4227546Z   workflow-job-context: null
+2026-11-02T20:58:53.4230896Z   github-token: ***
+2026-11-02T20:58:53.4231193Z env:
+2026-11-02T20:58:53.4231437Z   ANDROID_PLATFORM: android-36
+2026-11-02T20:58:53.4232139Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T20:58:53.4232441Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T20:58:53.4232746Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T20:58:53.4233077Z   GRADLE_ACTION_ID: gradle/actions/wrapper-validation
+2026-11-02T20:58:53.4233549Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T20:58:53.4234103Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T20:58:53.4234635Z ##[endgroup]
+2026-11-02T20:58:53.9762403Z Merged default JDK locations into /home/runner/.m2/toolchains.xml
+2026-11-02T20:58:53.9776212Z ##[group]Restore Gradle state from cache
+2026-11-02T20:58:54.0532371Z Gradle User Home cache not found. Will initialize empty.
+2026-11-02T20:58:54.0533683Z ##[endgroup]
+2026-11-02T20:58:54.1057920Z ##[group]All Gradle Wrapper jars are valid
+2026-11-02T20:58:54.1093832Z ✓ Found known Gradle Wrapper JAR files:
+2026-11-02T20:58:54.1095412Z   7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172 gradle/wrapper/gradle-wrapper.jar
+2026-11-02T20:58:54.1097117Z ##[endgroup]
+2026-11-02T20:58:54.1261291Z ##[group]Run set -euo pipefail
+2026-11-02T20:58:54.1261731Z [36;1mset -euo pipefail[0m
+2026-11-02T20:58:54.1262208Z [36;1mSDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"[0m
+2026-11-02T20:58:54.1262806Z [36;1myes | "$SDKMANAGER" --licenses > /dev/null || true[0m
+2026-11-02T20:58:54.1263246Z [36;1m"$SDKMANAGER" --install \[0m
+2026-11-02T20:58:54.1263595Z [36;1m  "platform-tools" \[0m
+2026-11-02T20:58:54.1263951Z [36;1m  "platforms;$ANDROID_PLATFORM" \[0m
+2026-11-02T20:58:54.1264351Z [36;1m  "build-tools;$ANDROID_BUILD_TOOLS" \[0m
+2026-11-02T20:58:54.1266616Z [36;1m  "ndk;$ANDROID_NDK_VERSION" \[0m
+2026-11-02T20:58:54.1267003Z [36;1m  "cmake;$ANDROID_CMAKE_VERSION" \[0m
+2026-11-02T20:58:54.1267415Z [36;1m  > "$RUNNER_TEMP/sdkmanager-install.log" 2>&1[0m
+2026-11-02T20:58:54.1267903Z [36;1mtr '\r' '\n' < "$RUNNER_TEMP/sdkmanager-install.log" | tail -n 5[0m
+2026-11-02T20:58:54.1268541Z [36;1mtest -f "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/source.properties"[0m
+2026-11-02T20:58:54.1269120Z [36;1mtest -x "$ANDROID_HOME/cmake/$ANDROID_CMAKE_VERSION/bin/cmake"[0m
+2026-11-02T20:58:54.1294596Z shell: /usr/bin/bash -e {0}
+2026-11-02T20:58:54.1295126Z env:
+2026-11-02T20:58:54.1295382Z   ANDROID_PLATFORM: android-36
+2026-11-02T20:58:54.1295713Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T20:58:54.1296029Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T20:58:54.1296374Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T20:58:54.1296733Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T20:58:54.1297255Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T20:58:54.1297915Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T20:58:54.1298448Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T20:58:54.1298825Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T20:58:54.1299211Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T20:58:54.1299808Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T20:58:54.1300455Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T20:58:54.1300871Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T20:58:54.1301215Z ##[endgroup]
+2026-11-02T20:59:00.8002683Z yes: standard output: Broken pipe
+2026-11-02T20:59:04.9800385Z [=====================                  ] 54% Unzipping... share/cmake-3.22/Modu
+2026-11-02T20:59:04.9800985Z [=====================                  ] 55% Unzipping... share/cmake-3.22/Modu
+2026-11-02T20:59:04.9801491Z [=======================================] 100% Unzipping... share/cmake-3.22/Mod
+2026-11-02T20:59:04.9801815Z 
+2026-11-02T20:59:04.9801821Z 
+2026-11-02T20:59:04.9845656Z ##[group]Run set -uo pipefail
+2026-11-02T20:59:04.9846062Z [36;1mset -uo pipefail[0m
+2026-11-02T20:59:04.9846378Z [36;1mmkdir -p ci-fast-evidence[0m
+2026-11-02T20:59:04.9846683Z [36;1m{[0m
+2026-11-02T20:59:04.9847242Z [36;1m  echo "runner_image=${ImageOS:-unknown} ${ImageVersion:-unknown}"[0m
+2026-11-02T20:59:04.9847772Z [36;1m  echo "runner_os=$(lsb_release -ds 2>/dev/null)"[0m
+2026-11-02T20:59:04.9848148Z [36;1m  echo "commit=$GITHUB_SHA"[0m
+2026-11-02T20:59:04.9848445Z [36;1m  echo "ref=$GITHUB_REF"[0m
+2026-11-02T20:59:04.9848746Z [36;1m  echo "event=$GITHUB_EVENT_NAME"[0m
+2026-11-02T20:59:04.9849109Z [36;1m  echo "java=$(java -version 2>&1 | head -n 1)"[0m
+2026-11-02T20:59:04.9849477Z [36;1m  echo "java_home=$JAVA_HOME"[0m
+2026-11-02T20:59:04.9849797Z [36;1m  echo "android_home=$ANDROID_HOME"[0m
+2026-11-02T20:59:04.9850351Z [36;1m  echo "ndk=$(grep Pkg.Revision "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/source.properties")"[0m
+2026-11-02T20:59:04.9851146Z [36;1m  echo "cmake=$("$ANDROID_HOME/cmake/$ANDROID_CMAKE_VERSION/bin/cmake" --version | head -n 1)"[0m
+2026-11-02T20:59:04.9851958Z [36;1m  echo "build_tools=$(grep Pkg.Revision "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS/source.properties")"[0m
+2026-11-02T20:59:04.9852818Z [36;1m  echo "platform=$(grep Pkg.Revision "$ANDROID_HOME/platforms/$ANDROID_PLATFORM/source.properties")"[0m
+2026-11-02T20:59:04.9853583Z [36;1m  echo "pwsh=$(pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>&1)"[0m
+2026-11-02T20:59:04.9854313Z [36;1m  echo "gradle_wrapper=$(grep distributionUrl gradle/wrapper/gradle-wrapper.properties)"[0m
+2026-11-02T20:59:04.9855691Z [36;1m  bash ./gradlew --version 2>&1 | grep -E '^(Gradle|Kotlin|Groovy|JVM|OS)'[0m
+2026-11-02T20:59:04.9856315Z [36;1m} | tee ci-fast-evidence/toolchain-manifest.txt[0m
+2026-11-02T20:59:04.9877157Z shell: /usr/bin/bash -e {0}
+2026-11-02T20:59:04.9877417Z env:
+2026-11-02T20:59:04.9877631Z   ANDROID_PLATFORM: android-36
+2026-11-02T20:59:04.9877925Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T20:59:04.9878188Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T20:59:04.9878461Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T20:59:04.9878759Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T20:59:04.9879201Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T20:59:04.9879733Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T20:59:04.9880164Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T20:59:04.9880472Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T20:59:04.9880788Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T20:59:04.9881251Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T20:59:04.9881761Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T20:59:04.9882095Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T20:59:04.9882369Z ##[endgroup]
+2026-11-02T20:59:04.9956871Z runner_image=ubuntu24 20261026.354.1
+2026-11-02T20:59:05.0040444Z runner_os=Ubuntu 24.04.5 LTS
+2026-11-02T20:59:05.0040964Z commit=3b60086c2ea7572b83358e57e4efa47e5269183c
+2026-11-02T20:59:05.0041538Z ref=refs/heads/feature/sketch-navigator-outcome-r1
+2026-11-02T20:59:05.0042081Z event=workflow_dispatch
+2026-11-02T20:59:05.0463541Z java=openjdk version "17.0.21" 2026-10-20
+2026-11-02T20:59:05.0465082Z java_home=/opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T20:59:05.0466281Z android_home=/usr/local/lib/android/sdk
+2026-11-02T20:59:05.0869725Z ndk=Pkg.Revision = 29.0.14206865
+2026-11-02T20:59:05.0901439Z cmake=cmake version 3.22.1-g37088a8
+2026-11-02T20:59:05.0918471Z build_tools=Pkg.Revision=36.1.0
+2026-11-02T20:59:05.0919240Z #Pkg.Revision=36.1.0 rc1
+2026-11-02T20:59:05.0934474Z platform=Pkg.Revision=2
+2026-11-02T20:59:05.6774044Z pwsh=7.6.9
+2026-11-02T20:59:05.6799501Z gradle_wrapper=distributionUrl=https\://services.gradle.org/distributions/gradle-8.14.3-bin.zip
+2026-11-02T20:59:09.0599617Z Gradle 8.14.3
+2026-11-02T20:59:09.0600090Z Kotlin:        2.0.21
+2026-11-02T20:59:09.0600410Z Groovy:        3.0.24
+2026-11-02T20:59:09.0600748Z OS:            Linux 7.0.0-1017-azure amd64
+2026-11-02T20:59:09.0659779Z ##[group]Run set -euo pipefail
+2026-11-02T20:59:09.0660397Z [36;1mset -euo pipefail[0m
+2026-11-02T20:59:09.0660742Z [36;1mbase=""[0m
+2026-11-02T20:59:09.0661041Z [36;1mcase "$EVENT" in[0m
+2026-11-02T20:59:09.0661418Z [36;1m  pull_request) base="$PR_BASE" ;;[0m
+2026-11-02T20:59:09.0661856Z [36;1m  push) base="$PUSH_BEFORE" ;;[0m
+2026-11-02T20:59:09.0662232Z [36;1mesac[0m
+2026-11-02T20:59:09.0662706Z [36;1m# A new branch (all-zero "before"), a dispatch, or a base that is not[0m
+2026-11-02T20:59:09.0663449Z [36;1m# in the clone falls back to where HEAD left origin/main, or HEAD~1.[0m
+2026-11-02T20:59:09.0664138Z [36;1mif [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \[0m
+2026-11-02T20:59:09.0665087Z [36;1m    || ! git cat-file -e "$base^{commit}" 2>/dev/null; then[0m
+2026-11-02T20:59:09.0665785Z [36;1m  base="$(git merge-base HEAD origin/main 2>/dev/null || true)"[0m
+2026-11-02T20:59:09.0666425Z [36;1m  if [ -z "$base" ] || [ "$base" = "$(git rev-parse HEAD)" ]; then[0m
+2026-11-02T20:59:09.0666921Z [36;1m    base="$(git rev-parse HEAD~1)"[0m
+2026-11-02T20:59:09.0667275Z [36;1m  fi[0m
+2026-11-02T20:59:09.0667517Z [36;1mfi[0m
+2026-11-02T20:59:09.0667789Z [36;1mecho "git diff --check $base HEAD"[0m
+2026-11-02T20:59:09.0668167Z [36;1mgit diff --check "$base" HEAD[0m
+2026-11-02T20:59:09.0689529Z shell: /usr/bin/bash -e {0}
+2026-11-02T20:59:09.0689853Z env:
+2026-11-02T20:59:09.0690106Z   ANDROID_PLATFORM: android-36
+2026-11-02T20:59:09.0690451Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T20:59:09.0690769Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T20:59:09.0691110Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T20:59:09.0691471Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T20:59:09.0692002Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T20:59:09.0692646Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T20:59:09.0693183Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T20:59:09.0693564Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T20:59:09.0694019Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T20:59:09.0694600Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T20:59:09.0695580Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T20:59:09.0696003Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T20:59:09.0696361Z   EVENT: workflow_dispatch
+2026-11-02T20:59:09.0696652Z   PR_BASE: 
+2026-11-02T20:59:09.0696900Z   PUSH_BEFORE: 
+2026-11-02T20:59:09.0697157Z ##[endgroup]
+2026-11-02T20:59:09.0819176Z git diff --check 6c9f156c1df91fe1a55445aed6186105a075ab31 HEAD
+2026-11-02T20:59:09.3173381Z ##[group]Run bash ./gradlew --stacktrace \
+2026-11-02T20:59:09.3174045Z [36;1mbash ./gradlew --stacktrace \[0m
+2026-11-02T20:59:09.3174562Z [36;1m  :app:testDebugUnitTest \[0m
+2026-11-02T20:59:09.3175353Z [36;1m  :app:assembleDebug \[0m
+2026-11-02T20:59:09.3175856Z [36;1m  :app:assembleDebugAndroidTest \[0m
+2026-11-02T20:59:09.3176416Z [36;1m  :app:assembleRelease[0m
+2026-11-02T20:59:09.3206927Z shell: /usr/bin/bash -e {0}
+2026-11-02T20:59:09.3207390Z env:
+2026-11-02T20:59:09.3207753Z   ANDROID_PLATFORM: android-36
+2026-11-02T20:59:09.3208311Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T20:59:09.3208772Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T20:59:09.3209261Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T20:59:09.3209750Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T20:59:09.3210477Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T20:59:09.3211470Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T20:59:09.3212214Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T20:59:09.3212781Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T20:59:09.3213334Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T20:59:09.3214175Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T20:59:09.3215451Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T20:59:09.3216462Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T20:59:09.3217000Z ##[endgroup]
+2026-11-02T20:59:10.2175197Z Starting a Gradle Daemon (subsequent builds will be faster)
+2026-11-02T20:59:44.8183068Z > Task :app:preBuild UP-TO-DATE
+2026-11-02T20:59:44.8184687Z > Task :app:preDebugBuild UP-TO-DATE
+2026-11-02T20:59:45.0173816Z > Task :app:checkDebugAarMetadata
+2026-11-02T20:59:45.0180639Z > Task :app:javaPreCompileDebug
+2026-11-02T20:59:45.0185562Z > Task :app:processDebugNavigationResources
+2026-11-02T20:59:45.3176521Z > Task :app:generateDebugResValues
+2026-11-02T20:59:45.3186032Z > Task :app:compileDebugNavigationResources
+2026-11-02T20:59:45.3205912Z > Task :app:mapDebugSourceSetPaths
+2026-11-02T20:59:45.3236272Z > Task :app:generateDebugResources
+2026-11-02T20:59:46.0176150Z > Task :app:packageDebugResources
+2026-11-02T20:59:46.6171165Z > Task :app:mergeDebugResources
+2026-11-02T20:59:47.0166477Z > Task :app:createDebugCompatibleScreenManifests
+2026-11-02T20:59:47.0205950Z > Task :app:extractDeepLinksDebug
+2026-11-02T20:59:47.3186199Z > Task :app:processDebugMainManifest
+2026-11-02T20:59:47.4195931Z > Task :app:parseDebugLocalResources
+2026-11-02T20:59:47.8176165Z > Task :app:processDebugManifest
+2026-11-02T20:59:47.8195948Z > Task :app:preDebugUnitTestBuild UP-TO-DATE
+2026-11-02T20:59:47.8200436Z > Task :app:javaPreCompileDebugUnitTest
+2026-11-02T20:59:47.8209878Z > Task :app:processDebugJavaRes NO-SOURCE
+2026-11-02T20:59:47.8225591Z > Task :app:processDebugUnitTestJavaRes NO-SOURCE
+2026-11-02T20:59:47.8226568Z > Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+2026-11-02T20:59:47.8265967Z > Task :app:mergeDebugShaders
+2026-11-02T20:59:47.8306130Z > Task :app:compileDebugShaders NO-SOURCE
+2026-11-02T20:59:47.8335939Z > Task :app:generateDebugAssets UP-TO-DATE
+2026-11-02T20:59:47.9206644Z > Task :app:mergeDebugAssets
+2026-11-02T20:59:47.9209337Z > Task :app:desugarDebugFileDependencies
+2026-11-02T20:59:47.9236004Z > Task :app:compressDebugAssets
+2026-11-02T20:59:48.0196151Z > Task :app:checkDebugDuplicateClasses
+2026-11-02T20:59:48.0236244Z > Task :app:mergeDebugJavaResource
+2026-11-02T20:59:58.2162928Z > Task :app:configureCMakeDebug[arm64-v8a]
+2026-11-02T20:59:58.2169849Z > Task :app:processDebugManifestForPackage
+2026-11-02T20:59:58.2171154Z > Task :app:mergeExtDexDebug
+2026-11-02T20:59:58.2171901Z > Task :app:mergeLibDexDebug
+2026-11-02T20:59:58.5164549Z > Task :app:processDebugResources
+2026-11-02T21:00:28.2185969Z > Task :app:buildCMakeDebug[arm64-v8a]
+2026-11-02T21:01:19.4171268Z Note: Some input files use or override a deprecated API.
+2026-11-02T21:01:19.4196049Z 
+2026-11-02T21:01:19.4197008Z Note: Recompile with -Xlint:deprecation for details.
+2026-11-02T21:01:19.4225826Z > Task :app:compileDebugJavaWithJavac
+2026-11-02T21:01:21.6203599Z 
+2026-11-02T21:01:21.6207031Z > Task :app:bundleDebugClassesToRuntimeJar
+2026-11-02T21:01:21.7176173Z > Task :app:bundleDebugClassesToCompileJar
+2026-11-02T21:01:25.8160855Z > Task :app:dexBuilderDebug
+2026-11-02T21:01:27.4176351Z > Task :app:compileDebugUnitTestJavaWithJavac
+2026-11-02T21:01:30.0161244Z > Task :app:testDebugUnitTest
+2026-11-02T21:01:30.0176323Z > Task :app:mergeDebugGlobalSynthetics
+2026-11-02T21:01:30.5160561Z > Task :app:mergeProjectDexDebug
+2026-11-02T21:01:31.3236399Z > Task :app:configureCMakeDebug[x86_64]
+2026-11-02T21:02:01.3159913Z > Task :app:buildCMakeDebug[x86_64]
+2026-11-02T21:02:37.8176249Z > Task :app:mergeDebugJniLibFolders
+2026-11-02T21:02:38.2160479Z > Task :app:mergeDebugNativeLibs
+2026-11-02T21:02:39.0171435Z > Task :app:validateSigningDebug
+2026-11-02T21:02:39.0172685Z > Task :app:writeDebugAppMetadata
+2026-11-02T21:02:39.0173583Z > Task :app:writeDebugSigningConfigVersions
+2026-11-02T21:02:39.0174495Z > Task :app:preDebugAndroidTestBuild SKIPPED
+2026-11-02T21:02:39.0175599Z > Task :app:javaPreCompileDebugAndroidTest
+2026-11-02T21:02:39.4160726Z > Task :app:stripDebugDebugSymbols
+2026-11-02T21:02:40.2226307Z > Task :app:checkDebugAndroidTestAarMetadata
+2026-11-02T21:02:40.2232212Z > Task :app:processDebugAndroidTestNavigationResources
+2026-11-02T21:02:40.2296650Z > Task :app:compileDebugAndroidTestNavigationResources
+2026-11-02T21:02:40.2325956Z > Task :app:generateDebugAndroidTestResValues
+2026-11-02T21:02:40.3176183Z > Task :app:mapDebugAndroidTestSourceSetPaths
+2026-11-02T21:02:40.3216972Z > Task :app:generateDebugAndroidTestResources
+2026-11-02T21:02:40.4176105Z > Task :app:mergeDebugAndroidTestResources
+2026-11-02T21:02:40.4226801Z > Task :app:processDebugAndroidTestManifest
+2026-11-02T21:02:40.5186285Z > Task :app:packageDebug
+2026-11-02T21:02:40.5226128Z > Task :app:createDebugApkListingFileRedirect
+2026-11-02T21:02:40.5255813Z > Task :app:assembleDebug
+2026-11-02T21:02:40.6178580Z > Task :app:mergeDebugAndroidTestShaders
+2026-11-02T21:02:40.6216108Z > Task :app:compileDebugAndroidTestShaders NO-SOURCE
+2026-11-02T21:02:40.6218413Z > Task :app:generateDebugAndroidTestAssets UP-TO-DATE
+2026-11-02T21:02:40.6255694Z > Task :app:mergeDebugAndroidTestAssets
+2026-11-02T21:02:40.6256673Z > Task :app:compressDebugAndroidTestAssets
+2026-11-02T21:02:40.6275538Z > Task :app:desugarDebugAndroidTestFileDependencies
+2026-11-02T21:02:40.6276513Z > Task :app:processDebugAndroidTestJavaRes NO-SOURCE
+2026-11-02T21:02:40.7161388Z > Task :app:processDebugAndroidTestResources
+2026-11-02T21:02:41.3186127Z > Task :app:mergeDebugAndroidTestJavaResource
+2026-11-02T21:02:46.2161377Z 
+2026-11-02T21:02:46.2162527Z > Task :app:compileDebugAndroidTestJavaWithJavac
+2026-11-02T21:02:46.2163261Z Note: Some input files use or override a deprecated API.
+2026-11-02T21:02:46.2165860Z Note: Recompile with -Xlint:deprecation for details.
+2026-11-02T21:02:53.0165503Z 
+2026-11-02T21:02:53.0296009Z > Task :app:dexBuilderDebugAndroidTest
+2026-11-02T21:03:03.0166292Z > Task :app:mergeDebugAndroidTestGlobalSynthetics
+2026-11-02T21:03:03.0196422Z > Task :app:mergeDebugAndroidTestJniLibFolders
+2026-11-02T21:03:03.0266125Z > Task :app:checkDebugAndroidTestDuplicateClasses
+2026-11-02T21:03:03.0285883Z > Task :app:mergeDebugAndroidTestNativeLibs NO-SOURCE
+2026-11-02T21:03:03.1215998Z > Task :app:stripDebugAndroidTestDebugSymbols NO-SOURCE
+2026-11-02T21:03:03.1216646Z > Task :app:validateSigningDebugAndroidTest
+2026-11-02T21:03:03.1217210Z > Task :app:writeDebugAndroidTestSigningConfigVersions
+2026-11-02T21:03:03.1217757Z > Task :app:preReleaseBuild UP-TO-DATE
+2026-11-02T21:03:03.1218217Z > Task :app:mergeLibDexDebugAndroidTest
+2026-11-02T21:03:03.4200745Z > Task :app:configureCMakeRelWithDebInfo[arm64-v8a]
+2026-11-02T21:03:05.4176239Z > Task :app:mergeProjectDexDebugAndroidTest
+2026-11-02T21:03:07.0185939Z > Task :app:mergeExtDexDebugAndroidTest
+2026-11-02T21:03:33.4167086Z > Task :app:buildCMakeRelWithDebInfo[arm64-v8a]
+2026-11-02T21:04:05.4179382Z > Task :app:configureCMakeRelWithDebInfo[x86_64]
+2026-11-02T21:04:35.2166680Z > Task :app:packageDebugAndroidTest
+2026-11-02T21:04:35.4167345Z > Task :app:buildCMakeRelWithDebInfo[x86_64]
+2026-11-02T21:05:04.1175426Z > Task :app:mergeReleaseJniLibFolders
+2026-11-02T21:05:04.1202933Z > Task :app:createDebugAndroidTestApkListingFileRedirect
+2026-11-02T21:05:04.1230635Z > Task :app:assembleDebugAndroidTest
+2026-11-02T21:05:04.1235434Z > Task :app:checkReleaseDuplicateClasses
+2026-11-02T21:05:04.1288121Z > Task :app:javaPreCompileRelease
+2026-11-02T21:05:04.2205997Z > Task :app:checkReleaseAarMetadata
+2026-11-02T21:05:04.2235878Z > Task :app:processReleaseNavigationResources
+2026-11-02T21:05:04.2265471Z > Task :app:compileReleaseNavigationResources
+2026-11-02T21:05:04.2266106Z > Task :app:generateReleaseResValues
+2026-11-02T21:05:04.2310302Z > Task :app:mapReleaseSourceSetPaths
+2026-11-02T21:05:04.2348756Z > Task :app:generateReleaseResources
+2026-11-02T21:05:04.5166469Z > Task :app:mergeReleaseNativeLibs
+2026-11-02T21:05:04.5175806Z > Task :app:mergeReleaseResources
+2026-11-02T21:05:04.5205828Z > Task :app:packageReleaseResources
+2026-11-02T21:05:04.5235644Z > Task :app:createReleaseCompatibleScreenManifests
+2026-11-02T21:05:04.5265573Z > Task :app:extractDeepLinksRelease
+2026-11-02T21:05:04.5275447Z > Task :app:stripReleaseDebugSymbols
+2026-11-02T21:05:04.5295536Z > Task :app:processReleaseMainManifest
+2026-11-02T21:05:04.6187684Z > Task :app:parseReleaseLocalResources
+2026-11-02T21:05:04.6206191Z > Task :app:processReleaseManifest
+2026-11-02T21:05:04.6235795Z > Task :app:desugarReleaseFileDependencies
+2026-11-02T21:05:04.6265566Z > Task :app:processReleaseManifestForPackage
+2026-11-02T21:05:04.6270284Z > Task :app:mergeReleaseStartupProfile
+2026-11-02T21:05:04.6295798Z > Task :app:mergeExtDexRelease
+2026-11-02T21:05:04.7185870Z > Task :app:mergeReleaseArtProfile
+2026-11-02T21:05:04.7215903Z > Task :app:mergeReleaseShaders
+2026-11-02T21:05:04.7245742Z > Task :app:compileReleaseShaders NO-SOURCE
+2026-11-02T21:05:04.7246448Z > Task :app:generateReleaseAssets UP-TO-DATE
+2026-11-02T21:05:04.7275501Z > Task :app:mergeReleaseAssets
+2026-11-02T21:05:04.7276020Z > Task :app:compressReleaseAssets
+2026-11-02T21:05:04.7276556Z > Task :app:extractReleaseNativeSymbolTables
+2026-11-02T21:05:04.8176066Z > Task :app:extractReleaseVersionControlInfo
+2026-11-02T21:05:04.8205427Z > Task :app:extractProguardFiles
+2026-11-02T21:05:04.8215607Z > Task :app:processReleaseJavaRes NO-SOURCE
+2026-11-02T21:05:04.8253118Z > Task :app:mergeReleaseJavaResource
+2026-11-02T21:05:04.8265293Z > Task :app:processReleaseResources
+2026-11-02T21:05:04.8289528Z > Task :app:collectReleaseDependencies
+2026-11-02T21:05:05.3196200Z > Task :app:mergeReleaseNativeDebugMetadata
+2026-11-02T21:05:06.3167403Z Note: Some input files use or override a deprecated API.
+2026-11-02T21:05:06.3167952Z 
+2026-11-02T21:05:06.3229910Z Note: Recompile with -Xlint:deprecation for details.
+2026-11-02T21:05:06.3230753Z > Task :app:compileReleaseJavaWithJavac
+2026-11-02T21:05:07.8165534Z 
+2026-11-02T21:05:07.8225936Z > Task :app:dexBuilderRelease
+2026-11-02T21:05:07.8255496Z > Task :app:mergeReleaseGlobalSynthetics
+2026-11-02T21:05:08.1159682Z > Task :app:mergeDexRelease
+2026-11-02T21:05:08.4160361Z > Task :app:generateReleaseLintVitalReportModel
+2026-11-02T21:05:08.4161857Z > Task :app:compileReleaseArtProfile
+2026-11-02T21:05:13.6162186Z > Task :app:sdkReleaseDependencyData
+2026-11-02T21:05:13.6176174Z > Task :app:writeReleaseAppMetadata
+2026-11-02T21:05:13.6177207Z > Task :app:writeReleaseSigningConfigVersions
+2026-11-02T21:05:13.6178218Z > Task :app:optimizeReleaseResources
+2026-11-02T21:05:19.8171391Z > Task :app:lintVitalAnalyzeRelease
+2026-11-02T21:05:19.9159693Z > Task :app:lintVitalReportRelease
+2026-11-02T21:05:19.9160857Z > Task :app:lintVitalRelease
+2026-11-02T21:05:20.0174605Z > Task :app:packageRelease
+2026-11-02T21:05:20.0176354Z > Task :app:createReleaseApkListingFileRedirect
+2026-11-02T21:05:20.0177374Z > Task :app:assembleRelease
+2026-11-02T21:05:20.0178601Z gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_4-1793653156895.json
+2026-11-02T21:05:20.0179702Z 
+2026-11-02T21:05:20.0183589Z [Incubating] Problems report is available at: file:///home/runner/work/Forgeshape/Forgeshape/build/reports/problems/problems-report.html
+2026-11-02T21:05:20.0187598Z 
+2026-11-02T21:05:20.0188130Z Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+2026-11-02T21:05:20.0189040Z 
+2026-11-02T21:05:20.0189982Z You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+2026-11-02T21:05:20.0191420Z 
+2026-11-02T21:05:20.0192553Z For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+2026-11-02T21:05:20.0193642Z 
+2026-11-02T21:05:20.0194177Z BUILD SUCCESSFUL in 6m 10s
+2026-11-02T21:05:20.0195011Z 124 actionable tasks: 124 executed
+2026-11-02T21:05:20.4072993Z ##[group]Run bash scripts/ci-release-selftest-guard.sh | tee ci-fast-evidence/release-selftest-guard.md
+2026-11-02T21:05:20.4074018Z [36;1mbash scripts/ci-release-selftest-guard.sh | tee ci-fast-evidence/release-selftest-guard.md[0m
+2026-11-02T21:05:20.4095216Z shell: /usr/bin/bash -e {0}
+2026-11-02T21:05:20.4095527Z env:
+2026-11-02T21:05:20.4095783Z   ANDROID_PLATFORM: android-36
+2026-11-02T21:05:20.4096120Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T21:05:20.4096438Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T21:05:20.4096775Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T21:05:20.4097136Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T21:05:20.4097660Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T21:05:20.4098300Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T21:05:20.4098820Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T21:05:20.4099252Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T21:05:20.4099648Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T21:05:20.4100233Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T21:05:20.4100872Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T21:05:20.4101297Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T21:05:20.4101639Z ##[endgroup]
+2026-11-02T21:05:20.4197359Z | variant | ABI | packaged bytes | `SelfTests` dynamic symbols | self-test strings | verdict |
+2026-11-02T21:05:20.4198486Z | --- | --- | --- | --- | --- | --- |
+2026-11-02T21:05:21.0834025Z | release | x86_64 | 3258704 | 0 | 0 | PASS |
+2026-11-02T21:05:21.1390844Z | release | arm64-v8a | 2918784 | 0 | 0 | PASS |
+2026-11-02T21:05:21.2608361Z | debug | x86_64 | 8682168 | 35 | 398 | PASS |
+2026-11-02T21:05:21.3818978Z | debug | arm64-v8a | 8627336 | 35 | 398 | PASS |
+2026-11-02T21:05:21.3859830Z RELEASE_SELFTEST_GUARD=PASS
+2026-11-02T21:05:21.3904046Z ##[group]Run set -euo pipefail
+2026-11-02T21:05:21.3904707Z [36;1mset -euo pipefail[0m
+2026-11-02T21:05:21.3905464Z [36;1mregen="$RUNNER_TEMP/forge-corpus"[0m
+2026-11-02T21:05:21.3905905Z [36;1mmkdir -p "$regen"[0m
+2026-11-02T21:05:21.3906385Z [36;1m# The builder is the second, independent encoder written from[0m
+2026-11-02T21:05:21.3907125Z [36;1m# DATA_PACKAGE_SPEC.md. Regenerate into a scratch directory and require[0m
+2026-11-02T21:05:21.3907879Z [36;1m# every committed fixture to be byte-identical, with none missing or[0m
+2026-11-02T21:05:21.3908632Z [36;1m# extra. (-OutputDirectory is passed explicitly: the script's default[0m
+2026-11-02T21:05:21.3909250Z [36;1m# is a Windows-style relative path.)[0m
+2026-11-02T21:05:21.3909942Z [36;1mpwsh -NoProfile -File scripts/build-forge-corpus.ps1 -OutputDirectory "$regen" \[0m
+2026-11-02T21:05:21.3910684Z [36;1m  > ci-fast-evidence/forge-corpus-build.txt[0m
+2026-11-02T21:05:21.3911370Z [36;1mpwsh -NoProfile -File scripts/build-forge-corpus.ps1 -VerifyOnly \[0m
+2026-11-02T21:05:21.3912083Z [36;1m  -OutputDirectory "$GITHUB_WORKSPACE/testdata/forge/v1" \[0m
+2026-11-02T21:05:21.3912621Z [36;1m  > ci-fast-evidence/forge-corpus-verify.txt[0m
+2026-11-02T21:05:21.3913077Z [36;1mcommitted=$(ls testdata/forge/v1 | wc -l)[0m
+2026-11-02T21:05:21.3913491Z [36;1mgenerated=$(ls "$regen" | wc -l)[0m
+2026-11-02T21:05:21.3913866Z [36;1mmismatches=0[0m
+2026-11-02T21:05:21.3914171Z [36;1mfor f in testdata/forge/v1/*; do[0m
+2026-11-02T21:05:21.3915283Z [36;1m  cmp -s "$f" "$regen/$(basename "$f")" || { echo "MISMATCH $(basename "$f")"; mismatches=$((mismatches + 1)); }[0m
+2026-11-02T21:05:21.3915937Z [36;1mdone[0m
+2026-11-02T21:05:21.3916213Z [36;1mfor f in "$regen"/*; do[0m
+2026-11-02T21:05:21.3916888Z [36;1m  [ -f "testdata/forge/v1/$(basename "$f")" ] || { echo "UNCOMMITTED $(basename "$f")"; mismatches=$((mismatches + 1)); }[0m
+2026-11-02T21:05:21.3917579Z [36;1mdone[0m
+2026-11-02T21:05:21.3918035Z [36;1mecho "committed=$committed generated=$generated mismatches=$mismatches" \[0m
+2026-11-02T21:05:21.3918673Z [36;1m  | tee ci-fast-evidence/forge-corpus-parity.txt[0m
+2026-11-02T21:05:21.3919118Z [36;1mtest "$committed" -eq 72[0m
+2026-11-02T21:05:21.3919461Z [36;1mtest "$generated" -eq 72[0m
+2026-11-02T21:05:21.3919801Z [36;1mtest "$mismatches" -eq 0[0m
+2026-11-02T21:05:21.3920716Z [36;1mecho "FORGE_CORPUS_PARITY=PASS (72/72 byte-identical)" | tee -a ci-fast-evidence/forge-corpus-parity.txt[0m
+2026-11-02T21:05:21.3944538Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-11-02T21:05:21.3945315Z env:
+2026-11-02T21:05:21.3945589Z   ANDROID_PLATFORM: android-36
+2026-11-02T21:05:21.3945933Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T21:05:21.3946256Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T21:05:21.3946603Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T21:05:21.3946975Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T21:05:21.3947531Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T21:05:21.3948202Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T21:05:21.3948756Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T21:05:21.3949150Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T21:05:21.3949546Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T21:05:21.3950151Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T21:05:21.3950792Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T21:05:21.3951213Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T21:05:21.3951561Z ##[endgroup]
+2026-11-02T21:05:29.8650492Z committed=72 generated=72 mismatches=0
+2026-11-02T21:05:29.8664150Z FORGE_CORPUS_PARITY=PASS (72/72 byte-identical)
+2026-11-02T21:05:29.8704067Z ##[group]Run set -uo pipefail
+2026-11-02T21:05:29.8704448Z [36;1mset -uo pipefail[0m
+2026-11-02T21:05:29.8705394Z [36;1m# verify-device-guards.ps1 spawns its children as `powershell.exe`[0m
+2026-11-02T21:05:29.8706017Z [36;1m# (a real process boundary, for honest exit codes). On Linux that[0m
+2026-11-02T21:05:29.8706579Z [36;1m# name is pwsh, so give it a CI-only shim rather than editing the[0m
+2026-11-02T21:05:29.8707033Z [36;1m# proven local script.[0m
+2026-11-02T21:05:29.8707360Z [36;1mshim="$RUNNER_TEMP/pwsh-shim"[0m
+2026-11-02T21:05:29.8707725Z [36;1mmkdir -p "$shim"[0m
+2026-11-02T21:05:29.8708118Z [36;1mprintf '#!/bin/sh\nexec pwsh "$@"\n' > "$shim/powershell.exe"[0m
+2026-11-02T21:05:29.8708577Z [36;1mchmod +x "$shim/powershell.exe"[0m
+2026-11-02T21:05:29.8708907Z [36;1mstatus=0[0m
+2026-11-02T21:05:29.8709402Z [36;1mfor s in test-instrumented-runtime test-instrumented-sharding verify-device-guards; do[0m
+2026-11-02T21:05:29.8710020Z [36;1m  echo "::group::$s"[0m
+2026-11-02T21:05:29.8710553Z [36;1m  PATH="$shim:$PATH" pwsh -NoProfile -File "scripts/$s.ps1" 2>&1 | tee "ci-fast-evidence/$s.txt"[0m
+2026-11-02T21:05:29.8711140Z [36;1m  rc=${PIPESTATUS[0]}[0m
+2026-11-02T21:05:29.8711443Z [36;1m  echo "::endgroup::"[0m
+2026-11-02T21:05:29.8711721Z [36;1m  echo "$s exit=$rc"[0m
+2026-11-02T21:05:29.8711979Z [36;1m  [ "$rc" -eq 0 ] || status=1[0m
+2026-11-02T21:05:29.8712244Z [36;1mdone[0m
+2026-11-02T21:05:29.8712448Z [36;1mexit $status[0m
+2026-11-02T21:05:29.8733924Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-11-02T21:05:29.8734322Z env:
+2026-11-02T21:05:29.8734551Z   ANDROID_PLATFORM: android-36
+2026-11-02T21:05:29.8735098Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T21:05:29.8735376Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T21:05:29.8735666Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T21:05:29.8735977Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T21:05:29.8736437Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T21:05:29.8736988Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T21:05:29.8737438Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T21:05:29.8737764Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T21:05:29.8738123Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T21:05:29.8738622Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T21:05:29.8739171Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T21:05:29.8739529Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T21:05:29.8740018Z ##[endgroup]
+2026-11-02T21:05:29.8835428Z ##[group]test-instrumented-runtime
+2026-11-02T21:05:33.7667739Z TESTRUNTIME-01 | PASS | fingerprint is stable for the same APKs and inventory | assertions passed
+2026-11-02T21:05:33.7669865Z TESTRUNTIME-02 | PASS | a changed app APK invalidates the checkpoint | assertions passed
+2026-11-02T21:05:33.7672959Z TESTRUNTIME-03 | PASS | a changed test APK invalidates the checkpoint | assertions passed
+2026-11-02T21:05:33.7676174Z TESTRUNTIME-04 | PASS | a changed test inventory invalidates the checkpoint | assertions passed
+2026-11-02T21:05:33.7678752Z TESTRUNTIME-05 | PASS | a changed partition invalidates the checkpoint | assertions passed
+2026-11-02T21:05:33.7681600Z TESTRUNTIME-06 | PASS | a changed shard count invalidates the checkpoint | assertions passed
+2026-11-02T21:05:33.7684244Z TESTRUNTIME-07 | PASS | a different device invalidates the checkpoint | assertions passed
+2026-11-02T21:05:33.7687135Z TESTRUNTIME-08 | PASS | a corrupt checkpoint is refused | assertions passed
+2026-11-02T21:05:33.7689664Z TESTRUNTIME-09 | PASS | a future checkpoint schema is refused | assertions passed
+2026-11-02T21:05:33.7692197Z TESTRUNTIME-10 | PASS | a checkpoint write replaces atomically | assertions passed
+2026-11-02T21:05:33.7695019Z TESTRUNTIME-11 | PASS | shard-only plans exactly one shard | assertions passed
+2026-11-02T21:05:33.7698053Z TESTRUNTIME-12 | PASS | shard-only cannot emit an aggregate marker | assertions passed
+2026-11-02T21:05:33.7700319Z TESTRUNTIME-13 | PASS | a same-tree resume skips the shards that passed | assertions passed
+2026-11-02T21:05:33.7702803Z TESTRUNTIME-14 | PASS | a resume reruns the shard that failed | assertions passed
+2026-11-02T21:05:33.7705670Z TESTRUNTIME-15 | PASS | a resume reruns a shard that never ran | assertions passed
+2026-11-02T21:05:33.7708347Z TESTRUNTIME-16 | PASS | a changed tree cannot reuse a passed shard | assertions passed
+2026-11-02T21:05:33.7710907Z TESTRUNTIME-17 | PASS | the target budget warns and does not stop | assertions passed
+2026-11-02T21:05:33.7713440Z TESTRUNTIME-18 | PASS | the hard stop stops launching shards | assertions passed
+2026-11-02T21:05:33.7716645Z TESTRUNTIME-19 | PASS | invalid budget parameters are refused | assertions passed
+2026-11-02T21:05:33.7719087Z TESTRUNTIME-20 | PASS | the first two aggregate attempts are allowed | assertions passed
+2026-11-02T21:05:33.7721830Z TESTRUNTIME-21 | PASS | a third aggregate attempt needs an explicit override | assertions passed
+2026-11-02T21:05:33.7724435Z TESTRUNTIME-22 | PASS | infrastructure signatures classify as infrastructure | assertions passed
+2026-11-02T21:05:33.7727380Z TESTRUNTIME-23 | PASS | an assertion failure classifies as a product failure | assertions passed
+2026-11-02T21:05:33.7729793Z TESTRUNTIME-24 | PASS | ambiguous evidence fails closed | assertions passed
+2026-11-02T21:05:33.7732457Z TESTRUNTIME-25 | PASS | the Gradle call differs by host only in the wrapper | assertions passed
+2026-11-02T21:05:33.7735281Z TESTRUNTIME-26 | PASS | the APK paths are the historical ones in the host separator | assertions passed
+2026-11-02T21:05:33.7749913Z TESTRUNTIME-01..26 PASS (26 checks).
+2026-11-02T21:05:33.8242466Z ##[endgroup]
+2026-11-02T21:05:33.8243028Z test-instrumented-runtime exit=0
+2026-11-02T21:05:33.8244031Z ##[group]test-instrumented-sharding
+2026-11-02T21:05:36.0416889Z THR1-01 | PASS | discovery finds complete inventory | assertions passed
+2026-11-02T21:05:36.0419139Z THR1-02 | PASS | partition is deterministic | assertions passed
+2026-11-02T21:05:36.0421755Z THR1-03 | PASS | zero duplicate assignment | assertions passed
+2026-11-02T21:05:36.0424326Z THR1-04 | PASS | zero missing assignment | assertions passed
+2026-11-02T21:05:36.0427398Z THR1-05 | PASS | changing shard count preserves union | assertions passed
+2026-11-02T21:05:36.0430104Z THR1-06 | PASS | shard failure makes aggregate fail | assertions passed
+2026-11-02T21:05:36.0432881Z THR1-07 | PASS | instrumentation abort makes aggregate fail | assertions passed
+2026-11-02T21:05:36.0435843Z THR1-08 | PASS | missing result makes aggregate fail | assertions passed
+2026-11-02T21:05:36.0438374Z THR1-09 | PASS | focused mode cannot emit full-suite PASS | assertions passed
+2026-11-02T21:05:36.0441189Z THR1-10 | PASS | aggregate totals equal discovered totals | assertions passed
+2026-11-02T21:05:36.0451766Z THR1-01..10 PASS.
+2026-11-02T21:05:36.0907965Z ##[endgroup]
+2026-11-02T21:05:36.0908522Z test-instrumented-sharding exit=0
+2026-11-02T21:05:36.0909446Z ##[group]verify-device-guards
+2026-11-02T21:05:45.4160126Z DEV2-01 | PASS | start-forgeshape-emulator.ps1 -Port 5554 exited 1 (nonzero = rejected)
+2026-11-02T21:05:45.4162263Z DEV2-02 | PASS | start-forgeshape-emulator.ps1 -Port 58123 (pre-occupied) exited 1 (nonzero = BLOCKED)
+2026-11-02T21:05:45.4166338Z DEV2-03 | PASS | default $Port = 5580 and launch command line interpolates "-avd $Avd -port $Port"
+2026-11-02T21:05:45.4168616Z DEV2-04 | PASS | -Serial '' exited 1 (engine Mandatory binding); -Serial ' ' exited 1 (script's own IsNullOrWhiteSpace guard); both nonzero = rejected pre-adb
+2026-11-02T21:05:45.4170528Z DEV2-05 | PASS | run-instrumented-tests.ps1 -Serial emulator-5554 exited 1 (nonzero = rejected pre-adb)
+2026-11-02T21:05:45.4172615Z DEV2-06 | PASS | no bare '& adb' invocation across 15 other script(s)
+2026-11-02T21:05:45.4187796Z DEV2-07 | PASS | line 177: $state = & adb -s $Serial get-state 2>$null | line 196: & adb -s $Serial install -r $appApk | line 199: & adb -s $Serial install -r $testApk | line 216: $avdName = & adb -s $Serial emu avd name 2>$null | Select-Object -First 1 | line 220: $model = & adb -s $Serial shell getprop ro.product.model 2>$null | Select-Object -First 1 | line 228: $discoveryOutput = @(& adb -s $Serial shell am instrument -w -r -e listTestsForOrchestrator true $instrumentTarget 2>&1 | ForEach-Object { "$_" }) | line 235: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 239: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 282: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 302: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 309: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 324: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 333: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 346: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 375: $shardOutput = @(& adb -s $Serial shell am instrument -w -e class $filter $instrumentTarget 2>&1 | ForEach-Object { "$_" }) | line 407: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 469: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 483: $testOutput = @(& adb @instrumentArgs 2>&1 | ForEach-Object { "$_" }) | line 488: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null
+2026-11-02T21:05:45.4195896Z DEV3-01 | PASS | bare 'adb shell' -> 1 violation(s) (1 = detected)
+2026-11-02T21:05:45.4196488Z DEV3-02 | PASS | bare '& adb shell' -> 1 violation(s) (1 = detected)
+2026-11-02T21:05:45.4197122Z DEV3-03 | PASS | scoped calls + prose/comments -> 0 violation(s) (0 = correct)
+2026-11-02T21:05:45.4198112Z DEV3-04 | PASS | array proving -s -> 0 violation(s) (0 expected); identically-named array WITHOUT -s -> 1 (1 expected, so the name alone is not trusted)
+2026-11-02T21:05:45.4199178Z DEV3-05 | PASS | executable connectedDebugAndroidTest -> 1 violation(s) (1 = detected)
+2026-11-02T21:05:45.4200173Z DEV3-06 | PASS | scanned 24 executable surface(s) including all 4 required; 0 violations
+2026-11-02T21:05:45.4200847Z All device-guard checks PASS.
+2026-11-02T21:05:45.4648237Z ##[endgroup]
+2026-11-02T21:05:45.4649053Z verify-device-guards exit=0
+2026-11-02T21:05:45.4691842Z ##[group]Run {
+2026-11-02T21:05:45.4692169Z [36;1m{[0m
+2026-11-02T21:05:45.4692440Z [36;1m  echo "## CI FAST"[0m
+2026-11-02T21:05:45.4692778Z [36;1m  echo '```'[0m
+2026-11-02T21:05:45.4693253Z [36;1m  cat ci-fast-evidence/toolchain-manifest.txt 2>/dev/null || true[0m
+2026-11-02T21:05:45.4693974Z [36;1m  echo '```'[0m
+2026-11-02T21:05:45.4694327Z [36;1m  echo "### Release self-test guard"[0m
+2026-11-02T21:05:45.4695339Z [36;1m  cat ci-fast-evidence/release-selftest-guard.md 2>/dev/null || true[0m
+2026-11-02T21:05:45.4695940Z [36;1m  echo "### .forge corpus parity"[0m
+2026-11-02T21:05:45.4696313Z [36;1m  echo '```'[0m
+2026-11-02T21:05:45.4696740Z [36;1m  cat ci-fast-evidence/forge-corpus-parity.txt 2>/dev/null || true[0m
+2026-11-02T21:05:45.4697232Z [36;1m  echo '```'[0m
+2026-11-02T21:05:45.4697518Z [36;1m} >> "$GITHUB_STEP_SUMMARY"[0m
+2026-11-02T21:05:45.4718582Z shell: /usr/bin/bash -e {0}
+2026-11-02T21:05:45.4718926Z env:
+2026-11-02T21:05:45.4719249Z   ANDROID_PLATFORM: android-36
+2026-11-02T21:05:45.4719615Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T21:05:45.4719966Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T21:05:45.4720338Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T21:05:45.4720729Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T21:05:45.4721311Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T21:05:45.4722020Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T21:05:45.4722601Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T21:05:45.4723017Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T21:05:45.4723440Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T21:05:45.4724082Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T21:05:45.4725070Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T21:05:45.4725543Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T21:05:45.4725920Z ##[endgroup]
+2026-11-02T21:05:45.4886749Z ##[group]Run actions/upload-artifact@v4
+2026-11-02T21:05:45.4887117Z with:
+2026-11-02T21:05:45.4887345Z   name: ci-fast-evidence
+2026-11-02T21:05:45.4887620Z   retention-days: 14
+2026-11-02T21:05:45.4887882Z   if-no-files-found: warn
+2026-11-02T21:05:45.4889045Z   path: ci-fast-evidence/
+app/build/reports/tests/
+app/build/test-results/
+app/build/outputs/apk/debug/app-debug.apk
+app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+app/build/outputs/apk/release/app-release-unsigned.apk
+
+2026-11-02T21:05:45.4890255Z   compression-level: 6
+2026-11-02T21:05:45.4890515Z   overwrite: false
+2026-11-02T21:05:45.4890772Z   include-hidden-files: false
+2026-11-02T21:05:45.4891051Z env:
+2026-11-02T21:05:45.4891278Z   ANDROID_PLATFORM: android-36
+2026-11-02T21:05:45.4891570Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T21:05:45.4891864Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T21:05:45.4892178Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T21:05:45.4892548Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T21:05:45.4893033Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T21:05:45.4893623Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T21:05:45.4894115Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T21:05:45.4894468Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T21:05:45.4895123Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T21:05:45.4895760Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T21:05:45.4896364Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T21:05:45.4896730Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T21:05:45.4897027Z ##[endgroup]
+2026-11-02T21:05:45.6792403Z (node:4606) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T21:05:45.6794067Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T21:05:45.7080617Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-11-02T21:05:45.7084598Z The least common ancestor is /home/runner/work/Forgeshape/Forgeshape. This will be the root directory of the artifact
+2026-11-02T21:05:45.7086180Z With the provided path, there will be 59 files uploaded
+2026-11-02T21:05:45.7089206Z Artifact name is valid!
+2026-11-02T21:05:45.7090853Z Root directory input is valid!
+2026-11-02T21:05:45.9367887Z Beginning upload of artifact content to blob storage
+2026-11-02T21:05:46.6598678Z (node:4606) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-11-02T21:05:46.9412462Z Uploaded bytes 8388608
+2026-11-02T21:05:47.0593620Z Uploaded bytes 11737597
+2026-11-02T21:05:47.0980133Z Finished uploading artifact content to blob storage!
+2026-11-02T21:05:47.0982159Z SHA256 digest of uploaded artifact zip is b7fcb051e0da75cb3b5387726fd531c46777261c075a33e91a5956cca28aeee9
+2026-11-02T21:05:47.0984531Z Finalizing artifact upload
+2026-11-02T21:05:47.6624336Z Artifact ci-fast-evidence.zip successfully finalized. Artifact ID 13179561711
+2026-11-02T21:05:47.6627252Z Artifact ci-fast-evidence has been successfully uploaded! Final size is 11737597 bytes. Artifact ID is 13179561711
+2026-11-02T21:05:47.6633841Z Artifact download URL: https://github.com/damiankrok/Forgeshape/actions/runs/41524092732/artifacts/13179561711
+2026-11-02T21:05:47.6955479Z Post job cleanup.
+2026-11-02T21:05:47.9551437Z In post-action step
+2026-11-02T21:05:47.9563785Z Cache is read-only: will not save state for use in subsequent builds.
+2026-11-02T21:05:47.9571018Z Generating Job Summary
+2026-11-02T21:05:47.9590971Z Completed post-action step
+2026-11-02T21:05:47.9869988Z Post job cleanup.
+2026-11-02T21:05:48.1381661Z (node:4631) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T21:05:48.1383115Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T21:05:48.1625361Z Post job cleanup.
+2026-11-02T21:05:48.2660413Z [command]/usr/bin/git version
+2026-11-02T21:05:48.2709432Z git version 2.56.0
+2026-11-02T21:05:48.2784435Z Temporarily overriding HOME='/home/runner/work/_temp/1748fd08-1964-4c3f-8bc7-992d6c98d226' before making global git config changes
+2026-11-02T21:05:48.2786114Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T21:05:48.2790705Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Forgeshape/Forgeshape
+2026-11-02T21:05:48.2853128Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T21:05:48.2930541Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T21:05:48.3225921Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T21:05:48.3269766Z http.https://github.com/.extraheader
+2026-11-02T21:05:48.3288472Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-11-02T21:05:48.3339105Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T21:05:48.3661167Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T21:05:48.3716024Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T21:05:48.4147457Z Cleaning up orphan processes
+2026-11-02T21:05:48.4470121Z Terminate orphan process: pid (2611) (java)
+2026-11-02T21:05:48.4596801Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-java@v4, actions/upload-artifact@v4, gradle/actions/setup-gradle@v4, gradle/actions/wrapper-validation@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

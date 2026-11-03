@@ -1,0 +1,32 @@
+== base 7c2fc91
+FSP_EXPORT_BENCH runs=401 independent_bodies=12 median_us=92.1 bytes=16136
+FSP_EXPORT_BENCH runs=401 face_supported_chain_bodies=11(+1 producer) median_us=92.4 bytes=16372
+exit=0
+== after
+FSP_EXPORT_BENCH runs=401 independent_bodies=12 median_us=197.2 bytes=16136
+FSP_EXPORT_BENCH runs=401 face_supported_chain_bodies=11(+1 producer) median_us=416.2 bytes=16468
+exit=0
+== base 7c2fc91
+FSP_EXPORT_BENCH runs=401 independent_bodies=12 median_us=92.3 bytes=16136
+FSP_EXPORT_BENCH runs=401 face_supported_chain_bodies=11(+1 producer) median_us=93.0 bytes=16372
+exit=0
+== after
+FSP_EXPORT_BENCH runs=401 independent_bodies=12 median_us=95.6 bytes=16136
+FSP_EXPORT_BENCH runs=401 face_supported_chain_bodies=11(+1 producer) median_us=412.2 bytes=16468
+exit=0
+== base 7c2fc91
+FSP_EXPORT_BENCH runs=401 independent_bodies=12 median_us=92.3 bytes=16136
+FSP_EXPORT_BENCH runs=401 face_supported_chain_bodies=11(+1 producer) median_us=93.5 bytes=16372
+exit=0
+== after
+FSP_EXPORT_BENCH runs=401 independent_bodies=12 median_us=92.7 bytes=16136
+FSP_EXPORT_BENCH runs=401 face_supported_chain_bodies=11(+1 producer) median_us=414.5 bytes=16468
+exit=0
+== after
+FSP_EXPORT_BENCH runs=401 independent_bodies=12 median_us=92.2 bytes=16136
+FSP_EXPORT_BENCH runs=401 face_supported_chain_bodies=11(+1 producer) median_us=423.5 bytes=16468
+exit=0
+== base 7c2fc91
+FSP_EXPORT_BENCH runs=401 independent_bodies=12 median_us=93.2 bytes=16136
+FSP_EXPORT_BENCH runs=401 face_supported_chain_bodies=11(+1 producer) median_us=93.9 bytes=16372
+exit=0

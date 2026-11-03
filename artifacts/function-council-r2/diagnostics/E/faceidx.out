@@ -1,0 +1,8 @@
+original decode=Ok
+original body2 faceSupport kind=2 entity=1 localIndex=1 lineage=958f78af1c70baa1
+mutated decode=Ok
+mutated body2 faceSupport entity=1 localIndex=524289 (0x00080001)
+load original=Ok mutated=Ok
+fingerprint original=e5ebec3e274d33d4 mutated=e5ebec3e274d33d4
+resave original==file:1 mutated==mutatedfile:1 resaves_equal:0
+sameProjectDocument(d0,d1)=1

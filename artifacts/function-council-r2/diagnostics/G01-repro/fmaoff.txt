@@ -1,0 +1,396 @@
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5529:9: warning: variable 'wraps' set but not used [-Wunused-but-set-variable]
+ 5529 |     int wraps = 0;
+      |         ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5594:16: warning: variable 'bx' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+ 5594 |         edge = edge && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                ^~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5595:60: note: uninitialized use occurs here
+ 5595 |         lineDistance(d.screenCentre[0], d.screenCentre[1], bx, by, px, py, &dist, &param);
+      |                                                            ^~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5594:16: note: remove the '&&' if its condition is always true
+ 5594 |         edge = edge && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                ^~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5593:17: note: initialize the variable 'bx' to silence this warning
+ 5593 |         float bx, by, px, py, dist, param;
+      |                 ^
+      |                  = 0.0
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5594:16: warning: variable 'by' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+ 5594 |         edge = edge && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                ^~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5595:64: note: uninitialized use occurs here
+ 5595 |         lineDistance(d.screenCentre[0], d.screenCentre[1], bx, by, px, py, &dist, &param);
+      |                                                                ^~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5594:16: note: remove the '&&' if its condition is always true
+ 5594 |         edge = edge && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                ^~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5593:21: note: initialize the variable 'by' to silence this warning
+ 5593 |         float bx, by, px, py, dist, param;
+      |                     ^
+      |                      = 0.0
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5594:16: warning: variable 'px' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+ 5594 |         edge = edge && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                ^~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5595:68: note: uninitialized use occurs here
+ 5595 |         lineDistance(d.screenCentre[0], d.screenCentre[1], bx, by, px, py, &dist, &param);
+      |                                                                    ^~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5594:16: note: remove the '&&' if its condition is always true
+ 5594 |         edge = edge && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                ^~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5593:25: note: initialize the variable 'px' to silence this warning
+ 5593 |         float bx, by, px, py, dist, param;
+      |                         ^
+      |                          = 0.0
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5594:16: warning: variable 'py' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+ 5594 |         edge = edge && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                ^~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5595:72: note: uninitialized use occurs here
+ 5595 |         lineDistance(d.screenCentre[0], d.screenCentre[1], bx, by, px, py, &dist, &param);
+      |                                                                        ^~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5594:16: note: remove the '&&' if its condition is always true
+ 5594 |         edge = edge && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                ^~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5593:29: note: initialize the variable 'py' to silence this warning
+ 5593 |         float bx, by, px, py, dist, param;
+      |                             ^
+      |                              = 0.0
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5549:20: warning: variable 'bx' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+ 5549 |         attached = attached && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                    ^~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5550:60: note: uninitialized use occurs here
+ 5550 |         lineDistance(d.screenCentre[0], d.screenCentre[1], bx, by, px, py, &dist, &param);
+      |                                                            ^~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5549:20: note: remove the '&&' if its condition is always true
+ 5549 |         attached = attached && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                    ^~~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5548:17: note: initialize the variable 'bx' to silence this warning
+ 5548 |         float bx, by, px, py, dist, param;
+      |                 ^
+      |                  = 0.0
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5549:20: warning: variable 'by' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+ 5549 |         attached = attached && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                    ^~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5550:64: note: uninitialized use occurs here
+ 5550 |         lineDistance(d.screenCentre[0], d.screenCentre[1], bx, by, px, py, &dist, &param);
+      |                                                                ^~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5549:20: note: remove the '&&' if its condition is always true
+ 5549 |         attached = attached && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                    ^~~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5548:21: note: initialize the variable 'by' to silence this warning
+ 5548 |         float bx, by, px, py, dist, param;
+      |                     ^
+      |                      = 0.0
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5549:20: warning: variable 'px' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+ 5549 |         attached = attached && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                    ^~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5550:68: note: uninitialized use occurs here
+ 5550 |         lineDistance(d.screenCentre[0], d.screenCentre[1], bx, by, px, py, &dist, &param);
+      |                                                                    ^~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5549:20: note: remove the '&&' if its condition is always true
+ 5549 |         attached = attached && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                    ^~~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5548:25: note: initialize the variable 'px' to silence this warning
+ 5548 |         float bx, by, px, py, dist, param;
+      |                         ^
+      |                          = 0.0
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5549:20: warning: variable 'py' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+ 5549 |         attached = attached && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                    ^~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5550:72: note: uninitialized use occurs here
+ 5550 |         lineDistance(d.screenCentre[0], d.screenCentre[1], bx, by, px, py, &dist, &param);
+      |                                                                        ^~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5549:20: note: remove the '&&' if its condition is always true
+ 5549 |         attached = attached && rig.axisOnScreen(d, &bx, &by, &px, &py);
+      |                    ^~~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_feature_selftest.cpp:5548:29: note: initialize the variable 'py' to silence this warning
+ 5548 |         float bx, by, px, py, dist, param;
+      |                             ^
+      |                              = 0.0
+9 warnings generated.
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cad_r2_selftest.cpp:162:13: warning: unused function 'localOn' [-Wunused-function]
+  162 | SketchPoint localOn(const CadFrame64& frame, double x, double y, double z) {
+      |             ^~~~~~~
+1 warning generated.
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cone_capsule_selftest.cpp:206:27: warning: unused variable 'placement_' [-Wunused-variable]
+  206 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cone_capsule_selftest.cpp:249:27: warning: unused variable 'placement_' [-Wunused-variable]
+  249 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cone_capsule_selftest.cpp:298:27: warning: unused variable 'placement_' [-Wunused-variable]
+  298 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cone_capsule_selftest.cpp:425:27: warning: unused variable 'placement_' [-Wunused-variable]
+  425 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_cone_capsule_selftest.cpp:1075:27: warning: unused variable 'placement_' [-Wunused-variable]
+ 1075 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+5 warnings generated.
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_demo_mesh.cpp:11:53: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+   11 |     {{-kHalf, -kHalf, -kHalf}, {0.10f, 0.15f, 0.85f}},
+      |                                                     ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_demo_mesh.cpp:12:53: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+   12 |     {{ kHalf, -kHalf, -kHalf}, {0.95f, 0.25f, 0.15f}},
+      |                                                     ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_demo_mesh.cpp:13:53: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+   13 |     {{ kHalf,  kHalf, -kHalf}, {0.98f, 0.85f, 0.15f}},
+      |                                                     ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_demo_mesh.cpp:14:53: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+   14 |     {{-kHalf,  kHalf, -kHalf}, {0.15f, 0.85f, 0.35f}},
+      |                                                     ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_demo_mesh.cpp:15:53: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+   15 |     {{-kHalf, -kHalf,  kHalf}, {0.10f, 0.75f, 0.90f}},
+      |                                                     ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_demo_mesh.cpp:16:53: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+   16 |     {{ kHalf, -kHalf,  kHalf}, {0.90f, 0.35f, 0.75f}},
+      |                                                     ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_demo_mesh.cpp:17:53: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+   17 |     {{ kHalf,  kHalf,  kHalf}, {0.98f, 0.98f, 0.98f}},
+      |                                                     ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_demo_mesh.cpp:18:53: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+   18 |     {{-kHalf,  kHalf,  kHalf}, {0.45f, 0.30f, 0.85f}},
+      |                                                     ^
+8 warnings generated.
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_picking_selftest.cpp:217:41: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  217 |         {{-1.0f, -1.0f, 0.0f}, {0, 0, 0}}, {{1.0f, -1.0f, 0.0f}, {0, 0, 0}},
+      |                                         ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_picking_selftest.cpp:217:75: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  217 |         {{-1.0f, -1.0f, 0.0f}, {0, 0, 0}}, {{1.0f, -1.0f, 0.0f}, {0, 0, 0}},
+      |                                                                           ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_picking_selftest.cpp:218:39: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  218 |         {{0.0f, 1.0f, 0.0f}, {0, 0, 0}},
+      |                                       ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_picking_selftest.cpp:219:41: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  219 |         {{-1.0f, -1.0f, 2.0f}, {0, 0, 0}}, {{1.0f, -1.0f, 2.0f}, {0, 0, 0}},
+      |                                         ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_picking_selftest.cpp:219:75: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  219 |         {{-1.0f, -1.0f, 2.0f}, {0, 0, 0}}, {{1.0f, -1.0f, 2.0f}, {0, 0, 0}},
+      |                                                                           ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_picking_selftest.cpp:220:39: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  220 |         {{0.0f, 1.0f, 2.0f}, {0, 0, 0}},
+      |                                       ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_picking_selftest.cpp:221:42: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  221 |         {{-1.0f, -1.0f, -3.0f}, {0, 0, 0}}, {{1.0f, -1.0f, -3.0f}, {0, 0, 0}},
+      |                                          ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_picking_selftest.cpp:221:77: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  221 |         {{-1.0f, -1.0f, -3.0f}, {0, 0, 0}}, {{1.0f, -1.0f, -3.0f}, {0, 0, 0}},
+      |                                                                             ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_picking_selftest.cpp:222:40: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  222 |         {{0.0f, 1.0f, -3.0f}, {0, 0, 0}},
+      |                                        ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_primitive_selftest.cpp:189:27: warning: unused variable 'placement_' [-Wunused-variable]
+  189 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_primitive_selftest.cpp:306:27: warning: unused variable 'placement_' [-Wunused-variable]
+  306 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_primitive_selftest.cpp:782:27: warning: unused variable 'placement_' [-Wunused-variable]
+  782 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_primitive_selftest.cpp:828:27: warning: unused variable 'placement_' [-Wunused-variable]
+  828 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+9 warnings generated.
+4 warnings generated.
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_render_mesh_selftest.cpp:691:64: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  691 |     const MeshVertex one{{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}};
+      |                                                                ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_render_mesh_selftest.cpp:711:70: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  711 |     MeshVertex poisoned[3] = {{{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+      |                                                                      ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_render_mesh_selftest.cpp:712:70: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  712 |                               {{1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+      |                                                                      ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_render_mesh_selftest.cpp:713:70: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  713 |                               {{0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
+      |                                                                      ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_render_mesh_selftest.cpp:721:78: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  721 |     const MeshVertex degenerate[3] = {{{1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}},
+      |                                                                              ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_render_mesh_selftest.cpp:722:78: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  722 |                                       {{1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}},
+      |                                                                              ^
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_render_mesh_selftest.cpp:723:78: warning: missing field 'mask' initializer [-Wmissing-field-initializers]
+  723 |                                       {{1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}}};
+      |                                                                              ^
+7 warnings generated.
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_scene_selftest.cpp:199:29: warning: unused variable 'specBBefore' [-Wunused-variable]
+  199 |         const PrimitiveSpec specBBefore = bodyB.construction().spec();
+      |                             ^~~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:120:27: warning: unused variable 'placement_' [-Wunused-variable]
+  120 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:133:27: warning: unused variable 'placement_' [-Wunused-variable]
+  133 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:323:27: warning: unused variable 'placement_' [-Wunused-variable]
+  323 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:2205:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 2205 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:2253:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 2253 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:2339:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 2339 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:2378:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 2378 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:2420:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 2420 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:2519:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 2519 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:2587:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 2587 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:2668:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 2668 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:2796:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 2796 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:2922:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 2922 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:3009:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 3009 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:3131:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 3131 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:3155:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 3155 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:3198:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 3198 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:3314:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 3314 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:3411:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 3411 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:3463:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 3463 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:3528:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 3528 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:3608:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 3608 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:3794:31: warning: unused variable 'placement_' [-Wunused-variable]
+ 3794 |         ConstructionTransform placement_;
+      |                               ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:4032:39: warning: unused variable 'placement_' [-Wunused-variable]
+ 4032 |                 ConstructionTransform placement_;
+      |                                       ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:4091:35: warning: unused variable 'placement_' [-Wunused-variable]
+ 4091 |             ConstructionTransform placement_;
+      |                                   ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:4127:35: warning: unused variable 'placement_' [-Wunused-variable]
+ 4127 |             ConstructionTransform placement_;
+      |                                   ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:4210:39: warning: unused variable 'placement_' [-Wunused-variable]
+ 4210 |                 ConstructionTransform placement_;
+      |                                       ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:4270:39: warning: unused variable 'placement_' [-Wunused-variable]
+ 4270 |                 ConstructionTransform placement_;
+      |                                       ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:4309:39: warning: unused variable 'placement_' [-Wunused-variable]
+ 4309 |                 ConstructionTransform placement_;
+      |                                       ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sculpt_selftest.cpp:4529:39: warning: unused variable 'placement_' [-Wunused-variable]
+ 4529 |                 ConstructionTransform placement_;
+      |                                       ^~~~~~~~~~
+1 warning generated.
+30 warnings generated.
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sketch.cpp:235:6: warning: unused function 'pointStrictlyInside' [-Wunused-function]
+  235 | bool pointStrictlyInside(const SketchPoint& p, const std::vector<SketchPoint>& polygon) {
+      |      ^~~~~~~~~~~~~~~~~~~
+1 warning generated.
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sketch_region.cpp:50:8: warning: unused function 'signedAreaTwice' [-Wunused-function]
+   50 | double signedAreaTwice(const std::vector<SketchPoint>& polygon) {
+      |        ^~~~~~~~~~~~~~~
+1 warning generated.
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sphere_selftest.cpp:144:27: warning: unused variable 'placement_' [-Wunused-variable]
+  144 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sphere_selftest.cpp:246:27: warning: unused variable 'placement_' [-Wunused-variable]
+  246 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sphere_selftest.cpp:264:27: warning: unused variable 'placement_' [-Wunused-variable]
+  264 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sphere_selftest.cpp:737:27: warning: unused variable 'placement_' [-Wunused-variable]
+  737 |     ConstructionTransform placement_;
+      |                           ^~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sketch_ux_selftest.cpp:1477:13: warning: variable 'tx' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+ 1477 |             projectWorldToScreen(camera, anchors.base, w, h, &bx, &by)
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sketch_ux_selftest.cpp:1480:16: note: uninitialized use occurs here
+ 1480 |     float dx = tx - bx;
+      |                ^~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sketch_ux_selftest.cpp:1477:13: note: remove the '&&' if its condition is always true
+ 1477 |             projectWorldToScreen(camera, anchors.base, w, h, &bx, &by)
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 1478 |             && projectWorldToScreen(camera, anchors.positive.tip, w, h, &tx, &ty)
+      |             ~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sketch_ux_selftest.cpp:1475:21: note: initialize the variable 'tx' to silence this warning
+ 1475 |     float bx, by, tx, ty, lx, ly;
+      |                     ^
+      |                      = 0.0
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sketch_ux_selftest.cpp:1477:13: warning: variable 'ty' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+ 1477 |             projectWorldToScreen(camera, anchors.base, w, h, &bx, &by)
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sketch_ux_selftest.cpp:1481:16: note: uninitialized use occurs here
+ 1481 |     float dy = ty - by;
+      |                ^~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sketch_ux_selftest.cpp:1477:13: note: remove the '&&' if its condition is always true
+ 1477 |             projectWorldToScreen(camera, anchors.base, w, h, &bx, &by)
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 1478 |             && projectWorldToScreen(camera, anchors.positive.tip, w, h, &tx, &ty)
+      |             ~~
+/home/user/Forgeshape/app/src/main/cpp/forgeshape_sketch_ux_selftest.cpp:1475:25: note: initialize the variable 'ty' to silence this warning
+ 1475 |     float bx, by, tx, ty, lx, ly;
+      |                         ^
+      |                          = 0.0
+4 warnings generated.
+2 warnings generated.
+HOST_SUITE_OK CAMERA (119 checks, 0 failed, 0 ms)
+HOST_SUITE_OK PICKING (185 checks, 0 failed, 0 ms)
+HOST_SUITE_OK DYNAMIC_MESH (91 checks, 0 failed, 0 ms)
+HOST_SUITE_OK CONSTRUCTION_BOX (100 checks, 0 failed, 0 ms)
+HOST_SUITE_OK CONSTRUCTION_TRANSFORM (121 checks, 0 failed, 0 ms)
+HOST_SUITE_OK CONSTRUCTION_PRIMITIVE (126 checks, 0 failed, 0 ms)
+HOST_SUITE_OK CONSTRUCTION_SPHERE (105 checks, 0 failed, 1 ms)
+HOST_SUITE_OK CONE_CAPSULE (163 checks, 0 failed, 2 ms)
+HOST_SUITE_OK SCULPT_BRUSH_KERNEL (655 checks, 0 failed, 24 ms)
+HOST_SUITE_OK RENDER_SHADING (412 checks, 0 failed, 5 ms)
+HOST_SUITE_OK SCENE (175 checks, 0 failed, 1 ms)
+HOST_SUITE_OK CONSTRUCTION_HISTORY (147 checks, 0 failed, 5 ms)
+HOST_SUITE_OK GIZMO (176 checks, 0 failed, 1 ms)
+HOST_SUITE_OK PROJECT (256 checks, 0 failed, 2 ms)
+HOST_SUITE_OK RENDER_RECOVERY (24 checks, 0 failed, 0 ms)
+HOST_SUITE_OK GLTF_EXPORT (93 checks, 0 failed, 2 ms)
+HOST_SUITE_OK GLTF_IMPORT (189 checks, 0 failed, 3 ms)
+HOST_SUITE_OK CAD (155 checks, 0 failed, 2 ms)
+HOST_SUITE_OK CAD_A3 (66 checks, 0 failed, 2 ms)
+HOST_SUITE_OK SKETCH_UX (118 checks, 0 failed, 2 ms)
+HOST_SUITE_OK BODY_DIMENSIONS (102 checks, 0 failed, 0 ms)
+HOST_SUITE_OK MIRROR (62 checks, 0 failed, 15 ms)
+CAD_R2_ORACLE_PASS=17
+HOST_SUITE_OK CAD_FEATURE (638 checks, 0 failed, 2022 ms)
+FORGESHAPE_CAD_FEATURE_PERFORMANCE region_base_us=92 add_us=895 add_cut_us=2679 codec_roundtrip_us=5279 triangles=288 arrangement_cap_us=23470/29837 runs=20 cells=3969 largest_legal_refusal_us=495 fill_spline_us=4742/5301 runs=3 cells=553 max_splines_us=19708 oss_owner21_eval_us=451 oss_owner_faces=23 multiface_mixed36_eval_us=273 components=21 bytes=5851 multiface_tap32_us=118/163 multiface_toggle128_us=62 multiface_eval128_us=612 multiface_all_faces=3969 finish_us=680404 toggle_all_us=599 eval_all_us=28350 revolve_disk_max_us=2626 revolve_square_max_us=415 revolve_disk_triangles=2048 revolve_index_digest=0c3ff125ec6ce725 drafting_snap100_collect_us=9086 drafting_snap100_query_us=10.8 drafting_snap_cap_collect_us=22435 drafting_snap_cap_query_us=24.0 drafting_snap_cap_intersections=4096 drafting_trim100_us=8827 drafting_trim100_cached_us=22 drafting_extend100_us=227 extend_ok=1 drafting_mirror100_us=10 drafting_offset100_us=63 drafting_dims100_us=27 drafting_dims100_segments=1400 parametric_chain16_regen_us=8746 parametric_upstream_edit_us=17494 parametric_chain16_triangles=254 cad_r2_keep_us=452 cad_r2_reuse_us=1437 cad_r2_delete_us=388 cad_r2_grid36_arrangement_us=102 cad_r2_inventory16_us=655/692 CAD_R2_ORACLE_PASS=17
+HOST_SUITE_OK FREEFORM (74 checks, 0 failed, 104 ms)
+FORGESHAPE_FREEFORM_PERFORMANCE closed96_l1_us=302 closed96_l2_us=463 closed96_l3_us=1426 closed96_l4_us=5176 closed96_drag_us=623 open500_l1_us=1300 open500_l2_us=2324 open500_l3_us=7078 open500_l4_us=32015 open500_drag_us=3780
+FORGESHAPE_FREEFORM_GOLDEN_SHA256 freeform_box_v1=2f38b285c5718a5f53cbac8e9dcac9749ae474a3ae2423dd4e7dca97157faf0e freeform_crease_symmetry_v1=b218fda7d3eaea4170827a8fece576e032969681c710b1cf9d17521f199e2029 freeform_bad_topology_v1=e896be40f36453d588ea22d4a0dacc6289222484d5d95db377b521d27f86c562
+HOST_SUITE_OK SURFACE (40 checks, 0 failed, 6 ms)
+FORGESHAPE_SURFACE_PERFORMANCE patch_us=51 loft_us=7 trim_stitch_loft_us=94 trim_thicken_us=280
+FORGESHAPE_SURFACE_GOLDEN_SHA256 surface_patch_extrude_v1=d4cb49a6500718e1e1482a788aa897cf28d9922421ac9e1b73bffb89c3d55e14 surface_loft_trim_stitch_v1=006374495e44da8332cae0fc07533ebface1f59fde8e12eb5ff9981c33736c8e surface_bad_ref_v1=4a0367a4a05f432633a81cd54313db07ab4a88da87d447d85dec8b93df3f640d
+HOST_SELFTESTS_OK (4392 checks, 0 failed)
+exit=0

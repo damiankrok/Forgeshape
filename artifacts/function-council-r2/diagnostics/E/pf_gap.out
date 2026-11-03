@@ -1,0 +1,10 @@
+original: regenerateCadBody=Ok validateProjectDocument=Ok decode(bytes)=Ok runtimeCanEvaluate=1 (=> validateProject JNI says PROJECT_OK) loadProjectDocument=Ok bodies_after=1
+later op=Add depth=0.25
+operation_flipped: regenerateCadBody=CutNoIntersection validateProjectDocument=Ok decode(bytes)=Ok runtimeCanEvaluate=1 (=> validateProject JNI says PROJECT_OK) loadProjectDocument=InvalidSemanticValue bodies_after=0
+direction_flipped: regenerateCadBody=AddNoEffect validateProjectDocument=Ok decode(bytes)=Ok runtimeCanEvaluate=1 (=> validateProject JNI says PROJECT_OK) loadProjectDocument=InvalidSemanticValue bodies_after=0
+operation_and_direction_flipped: regenerateCadBody=Ok validateProjectDocument=Ok decode(bytes)=Ok runtimeCanEvaluate=1 (=> validateProject JNI says PROJECT_OK) loadProjectDocument=Ok bodies_after=1
+original: regenerateCadBody=Ok validateProjectDocument=Ok decode(bytes)=Ok runtimeCanEvaluate=1 (=> validateProject JNI says PROJECT_OK) loadProjectDocument=Ok bodies_after=1
+later op=Add depth=0.2
+operation_flipped: regenerateCadBody=CutNoIntersection validateProjectDocument=Ok decode(bytes)=Ok runtimeCanEvaluate=1 (=> validateProject JNI says PROJECT_OK) loadProjectDocument=InvalidSemanticValue bodies_after=0
+direction_flipped: regenerateCadBody=AddNoEffect validateProjectDocument=Ok decode(bytes)=Ok runtimeCanEvaluate=1 (=> validateProject JNI says PROJECT_OK) loadProjectDocument=InvalidSemanticValue bodies_after=0
+operation_and_direction_flipped: regenerateCadBody=Ok validateProjectDocument=Ok decode(bytes)=Ok runtimeCanEvaluate=1 (=> validateProject JNI says PROJECT_OK) loadProjectDocument=Ok bodies_after=1

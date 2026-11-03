@@ -1,0 +1,95 @@
+freeform pushPull            v=nan          -> InvalidDistance            refused=1 unchanged=1 OK
+freeform extrude             v=nan          -> InvalidDistance            refused=1 unchanged=1 OK
+freeform setCrease           v=nan          -> EmptySelection             refused=1 unchanged=1 OK
+freeform pushPull            v=inf          -> InvalidDistance            refused=1 unchanged=1 OK
+freeform extrude             v=inf          -> InvalidDistance            refused=1 unchanged=1 OK
+freeform setCrease           v=inf          -> EmptySelection             refused=1 unchanged=1 OK
+freeform pushPull            v=-inf         -> InvalidDistance            refused=1 unchanged=1 OK
+freeform extrude             v=-inf         -> InvalidDistance            refused=1 unchanged=1 OK
+freeform setCrease           v=-inf         -> EmptySelection             refused=1 unchanged=1 OK
+freeform pushPull            v=1e+308       -> InvalidDistance            refused=1 unchanged=1 OK
+freeform extrude             v=1e+308       -> InvalidDistance            refused=1 unchanged=1 OK
+freeform setCrease           v=1e+308       -> EmptySelection             refused=1 unchanged=1 OK
+freeform pushPull            v=-1e+308      -> InvalidDistance            refused=1 unchanged=1 OK
+freeform extrude             v=-1e+308      -> InvalidDistance            refused=1 unchanged=1 OK
+freeform setCrease           v=-1e+308      -> EmptySelection             refused=1 unchanged=1 OK
+freeform setLevel            v=-1           -> InvalidSubdivisionLevel    refused=1 unchanged=1 OK
+freeform setLevel            v=5            -> InvalidSubdivisionLevel    refused=1 unchanged=1 OK
+freeform setLevel            v=1000         -> InvalidSubdivisionLevel    refused=1 unchanged=1 OK
+surface value feature 1      v=nan          -> NonFinite                  refused=1 unchanged=1 OK
+surface value sketch 1       v=nan          -> NonFinite                  refused=1 unchanged=1 OK
+surface thicken 1            v=nan          -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 1      v=inf          -> NonFinite                  refused=1 unchanged=1 OK
+surface value sketch 1       v=inf          -> NonFinite                  refused=1 unchanged=1 OK
+surface thicken 1            v=inf          -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 1      v=-inf         -> NonFinite                  refused=1 unchanged=1 OK
+surface value sketch 1       v=-inf         -> NonFinite                  refused=1 unchanged=1 OK
+surface thicken 1            v=-inf         -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 1      v=1e+308       -> PayloadMismatch            refused=1 unchanged=1 OK
+surface value sketch 1       v=1e+308       -> OutOfRange                 refused=1 unchanged=1 OK
+surface thicken 1            v=1e+308       -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 1      v=-1e+308      -> PayloadMismatch            refused=1 unchanged=1 OK
+surface value sketch 1       v=-1e+308      -> OutOfRange                 refused=1 unchanged=1 OK
+surface thicken 1            v=-1e+308      -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 2      v=nan          -> NonFinite                  refused=1 unchanged=1 OK
+surface value sketch 2       v=nan          -> NonFinite                  refused=1 unchanged=1 OK
+surface thicken 2            v=nan          -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 2      v=inf          -> NonFinite                  refused=1 unchanged=1 OK
+surface value sketch 2       v=inf          -> NonFinite                  refused=1 unchanged=1 OK
+surface thicken 2            v=inf          -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 2      v=-inf         -> NonFinite                  refused=1 unchanged=1 OK
+surface value sketch 2       v=-inf         -> NonFinite                  refused=1 unchanged=1 OK
+surface thicken 2            v=-inf         -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 2      v=1e+308       -> DistanceInvalid            refused=1 unchanged=1 OK
+surface value sketch 2       v=1e+308       -> OutOfRange                 refused=1 unchanged=1 OK
+surface thicken 2            v=1e+308       -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 2      v=-1e+308      -> DistanceInvalid            refused=1 unchanged=1 OK
+surface value sketch 2       v=-1e+308      -> OutOfRange                 refused=1 unchanged=1 OK
+surface thicken 2            v=-1e+308      -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 3      v=nan          -> NonFinite                  refused=1 unchanged=1 OK
+surface value sketch 3       v=nan          -> NonFinite                  refused=1 unchanged=1 OK
+surface thicken 3            v=nan          -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 3      v=inf          -> NonFinite                  refused=1 unchanged=1 OK
+surface value sketch 3       v=inf          -> NonFinite                  refused=1 unchanged=1 OK
+surface thicken 3            v=inf          -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 3      v=-inf         -> NonFinite                  refused=1 unchanged=1 OK
+surface value sketch 3       v=-inf         -> NonFinite                  refused=1 unchanged=1 OK
+surface thicken 3            v=-inf         -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 3      v=1e+308       -> UnknownFeature             refused=1 unchanged=1 OK
+surface value sketch 3       v=1e+308       -> UnknownSketch              refused=1 unchanged=1 OK
+surface thicken 3            v=1e+308       -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 3      v=-1e+308      -> UnknownFeature             refused=1 unchanged=1 OK
+surface value sketch 3       v=-1e+308      -> UnknownSketch              refused=1 unchanged=1 OK
+surface thicken 3            v=-1e+308      -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 4      v=nan          -> NonFinite                  refused=1 unchanged=1 OK
+surface value sketch 4       v=nan          -> NonFinite                  refused=1 unchanged=1 OK
+surface thicken 4            v=nan          -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 4      v=inf          -> NonFinite                  refused=1 unchanged=1 OK
+surface value sketch 4       v=inf          -> NonFinite                  refused=1 unchanged=1 OK
+surface thicken 4            v=inf          -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 4      v=-inf         -> NonFinite                  refused=1 unchanged=1 OK
+surface value sketch 4       v=-inf         -> NonFinite                  refused=1 unchanged=1 OK
+surface thicken 4            v=-inf         -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 4      v=1e+308       -> UnknownFeature             refused=1 unchanged=1 OK
+surface value sketch 4       v=1e+308       -> UnknownSketch              refused=1 unchanged=1 OK
+surface thicken 4            v=1e+308       -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+surface value feature 4      v=-1e+308      -> UnknownFeature             refused=1 unchanged=1 OK
+surface value sketch 4       v=-1e+308      -> UnknownSketch              refused=1 unchanged=1 OK
+surface thicken 4            v=-1e+308      -> ThickenInvalidThickness    refused=1 unchanged=1 OK
+cad setExtrude               v=nan          -> NonFinite                  refused=1 unchanged=1 OK
+cad setExtrudeSide           v=nan          -> NonFinite                  refused=1 unchanged=1 OK
+cad setRevolveAngle (no revolve) v=nan          -> NotSketching               refused=1 unchanged=1 OK
+cad setExtrude               v=inf          -> NonFinite                  refused=1 unchanged=1 OK
+cad setExtrudeSide           v=inf          -> NonFinite                  refused=1 unchanged=1 OK
+cad setRevolveAngle (no revolve) v=inf          -> NotSketching               refused=1 unchanged=1 OK
+cad setExtrude               v=-inf         -> NonFinite                  refused=1 unchanged=1 OK
+cad setExtrudeSide           v=-inf         -> NonFinite                  refused=1 unchanged=1 OK
+cad setRevolveAngle (no revolve) v=-inf         -> NotSketching               refused=1 unchanged=1 OK
+cad setExtrude               v=1e+308       -> InvalidExtrudeDepth        refused=1 unchanged=1 OK
+cad setExtrudeSide           v=1e+308       -> InvalidExtrudeDepth        refused=1 unchanged=1 OK
+cad setRevolveAngle (no revolve) v=1e+308       -> NotSketching               refused=1 unchanged=1 OK
+cad setExtrude               v=-1e+308      -> InvalidExtrudeDepth        refused=1 unchanged=1 OK
+cad setExtrudeSide           v=-1e+308      -> InvalidExtrudeDepth        refused=1 unchanged=1 OK
+cad setRevolveAngle (no revolve) v=-1e+308      -> NotSketching               refused=1 unchanged=1 OK
+cad commit after refusals=Ok fpUnchanged=1 (staged edit carried no value)
+J5_SUMMARY probes=93 violations=0

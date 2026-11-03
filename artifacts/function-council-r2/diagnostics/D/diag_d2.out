@@ -1,0 +1,3 @@
+INFO before load: p1Id=1 p2Id=1 active=1 selection=1
+INFO after load: status=Ok activeBody=1 loadedCageIsP2=1 sessionActive=1 selection=1 firstSel=3
+INFO pushPull after load -> Ok undo=1

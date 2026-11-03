@@ -1,0 +1,6 @@
+face_union.areas_m2=ring=0.940568775638712 disk=0.4994312243612884
+capture.19_merged_add.presented_frames=6 in 1475ms
+capture.19_merged_add=19_merged_add.png 1080x2400
+face_union.areas_m2=ring=0.940568775638712 disk=0.4994312243612884
+capture.20_merged_cut.presented_frames=6 in 1447ms
+capture.20_merged_cut=20_merged_cut.png 1080x2400

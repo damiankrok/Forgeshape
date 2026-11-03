@@ -98,7 +98,7 @@ All multibyte fields are explicit little-endian. Offsets are from byte 0.
 | 10 | minor | `u16` | `0` |
 | 12 | headerBytes | `u16` | `28` |
 | 14 | projectKind | `u8` | `1` = Construction, `2` = Sculpt |
-| 15 | headerFlags | `u8` | bit0 `hasCONS`, bit1 `hasSCUL`, bit2 `hasIMPT`, bit3 `hasCADB`; all other bits zero |
+| 15 | headerFlags | `u8` | bit0 `hasCONS`, bit1 `hasSCUL`, bit2 `hasIMPT`, bit3 `hasCADB`, bit4 `hasFRFM`, bit5 `hasSURF`; all other bits zero |
 | 16 | sectionCount | `u32` | exact number of sections that follow |
 | 20 | fileBytes | `u64` | exact total file size |
 
@@ -122,6 +122,13 @@ every legacy fixture's bytes for no added protection.
 a build that cannot regenerate a sketch cannot open a file that needs one, and
 refuses it on the header flag first and the `CADB` section's required bit
 second. Files without a CAD Body are byte-for-byte what they were.
+
+`hasFRFM` (bit4, `0x10`) and `hasSURF` (bit5, `0x20`) (`MODELING-FOUNDATIONS-R1`)
+are the same gate twice more: a Freeform body's control cage (§7j) and a
+Surface body's feature list (§7k) can only be rebuilt by a build that knows
+them, so an older reader refuses the header bit first and the required section
+second. A file with neither body sets neither bit and writes neither section,
+so every earlier file is byte-for-byte what it was.
 
 ---
 
@@ -873,12 +880,24 @@ counter-clockwise order the extraction produces: a rectangle from its
 `(-w/2, -h/2)` corner (edges 0..3), a circle from `+U` (32 curved edges), and
 a polyline or chain in its stored order when that order is counter-clockwise;
 when it is clockwise the vertex sequence is reversed and edge `j` of the result
-is stored edge `(n − 2 − j) mod n` of the `n` edges. Eligibility is 0 for a
-curved side (a circle's, an arc's or a spline's) and 0 for EVERY face of a Cut
-feature — a Cut leaves its faces behind as the inside of a pocket, facing the
-other way, and R1 does not let a sketch stand there — and 1 otherwise. For a
-first feature that selects one region without holes this is §7c exactly, so no
-stored token of any earlier fixture changes.
+is stored edge `(n − 2 − j) mod n` of the `n` edges. The eligibility bit
+MIXED HERE is a frozen FORMAT bit: 0 for a curved side (a circle's, an arc's or
+a spline's), 0 for EVERY face of a Cut feature and of a Revolve, and 1
+otherwise. For a first feature that selects one region without holes this is
+§7c exactly, so no stored token of any earlier fixture changes.
+
+Where a sketch may STAND is a separate, later question
+(`MODELING-R1-OWNER-CORRECTION`): every FLAT face of an Extrude — a cap, or a
+straight side — is a support whatever its feature's operation, so a Cut's
+pocket floor and its straight walls carry sketches; a curved side and every
+face of a Revolve never do. A Cut's face is placed MATERIAL-OUTWARD (the tool's
+frame with `n` and `v` reversed: the floor faces up out of the material, a wall
+faces into the pocket), and it is a support only where it SURVIVED the chain —
+a placement-3 support on one that the body no longer carries is
+`SupportFaceLost`, and a §7c `TopoRef` on one is refused at load. Keeping the
+mixed bit frozen means no lineage token, no fixture byte and no version moved;
+a file standing on a Cut's face is refused by an older build (its face is
+ineligible there), never misread.
 
 A `TopoRef` of §7c may now name a LATER feature of its producer
 (`producerFeatureId` > 1): the dependent then stands on that feature's face, at
@@ -974,7 +993,7 @@ FACE      u8  faceKind                1 CapPlane, 2 CapFar, 3 Side (a WHOLE sour
           faceKind 4 only:
           CUT start                   the piece's two bounding cuts, in the
           CUT end                     source edge's own parameter order
-FACES     u32 faceCount 1 .. 16
+FACES     u32 faceCount 1 .. 9216
           repeat faceCount: CYCLE outer, u32 holeCount 0 .. 64, CYCLE × holeCount
 CYCLE     u32 fragmentCount 1 .. 1024, then FRAGMENT × fragmentCount
 FRAGMENT  u32 sourceEntityId          != 0
@@ -1000,7 +1019,21 @@ end, 13 for an intersection). Nothing in a face selection is a coordinate, a
 floating-point value, a vector index, a tessellation index or a triangle.
 
 The fixed caps, and why: sketches `kMaxCadSketches` = the feature cap (16);
-faces per selection `kMaxPlanarFaceSelection` = the region cap (16); holes per
+faces per selection `kMaxPlanarFaceSelection` = `kMaxArrangementFaces` (9216) --
+the most bounded faces an arrangement within its own caps can have, NOT the loop
+region cap (16, which still bounds a `LoopRegions` selection). A contact cuts at
+most its two source edges once each, so with S = `kMaxArrangementSourceEdges`
+(1024) and K = `kMaxArrangementContacts` (4096) there are at most S + 2K = 9216
+fragments; by Euler's formula a plane graph of E fragments, V nodes and C
+components has E − V + C ≤ E bounded faces. A valid selection names DISTINCT faces
+of one derived arrangement, so it can never reach this bound; the decoder checks
+the count against it before allocating, then against the bytes present (a face
+is at least 19 bytes: an outer `CYCLE` of one smallest fragment and a zero hole
+count), refusing `ImpossibleCount` above the bound and `Truncated` past the end.
+Until `CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1` this bound was the region cap
+(16); the field was always this u32, so the change moved no byte, no version and
+no fixture -- every file valid before is valid now and decodes identically, and
+a count of 17 .. 9216 that an older build refused is now read. Holes per
 face `kMaxPlanarFaceHoles` = `kMaxRegionHoles` (64); fragments per cycle
 `kMaxPlanarFaceCycleFragments` = `kMaxProfileVertices` (1024), because every
 fragment becomes at least one polygon vertex when a face is extruded, so a longer
@@ -1049,7 +1082,7 @@ Everything else is the domain's `validateCadBodyState`, surfaced as
 | over a sketch whose curves share a stretch | `PlanarFaceAmbiguousOverlap` |
 | over a sketch past the arrangement's caps | `PlanarFaceCapExceeded` |
 | an arrangement cycle below the area floor | `PlanarFaceDegenerate` |
-| a face selection whose UNION pinches -- two chosen faces meeting at one point | `PlanarFacesTouchAtPoint` (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`; it was `OverlappingRegions`, the loop model's name for a different thing) |
+| a face selection one of whose EDGE-CONNECTED groups does not split into one outer loop and its holes at the nodes its boundary passes twice | `PlanarFacesTouchAtPoint` (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`; it was `OverlappingRegions`, the loop model's name for a different thing). Since `CAD-V6-S2-CORRECTION-FILL-PICK-R2`, chosen faces that share no fragment -- disjoint, or meeting only at a point -- are separate components and the selection is VALID; since `MODELING-R1-OWNER-CORRECTION`, a group whose own boundary passes a node twice (two unchosen cells meeting at a point, a hole touching its outer) is SPLIT there into one outer and its holes, each extruded with its own vertex ring, and is VALID too. No layout, version or fixture changed, and every committed fixture keeps its verdict |
 | a union loop longer than `kMaxProfileVertices` | `TooManyEntities` |
 
 A code-4 FACE is refused by the CODEC (`InvalidSemanticValue`) unless it is a
@@ -1123,11 +1156,341 @@ byte; a proper piece wears a fragment token, whose §7c token code is
 (offset basis `0xCBF29CE484222325`, prime `0x100000001B3`, byte by byte), a code
 no whole-edge token can have because its top byte is a face kind 0..2. A
 straight fragment's side is eligible to carry a sketch; a curved one never is;
-every face of a Cut is ineligible. The feature's signature is §7c's rule over
+the lineage bit of every face of a Cut is 0 (the frozen bit of §7f; where a
+sketch may stand is decided per face there). The feature's signature is §7c's rule over
 this list with the selection anchor `0`. For a ONE-face selection the side list
 is the stored outer cycle fragment for fragment, so the lens of
 `cad_face_lens_v6` has the lineage `0x9873F7F20DED4004`
 (`cad_fragment_support_v6`).
+
+## 7h. `CADB` v7 — the feature KIND and the Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`)
+
+Version 7 says one thing v6 cannot: what KIND of feature a record is. v6's
+feature record IS an extrusion -- its depth, extent and direction are not
+optional -- so a Revolve could only be written there by reusing those fields
+(an angle in `depth`, a rotation sense in `direction`), which a v6 reader would
+then regenerate as an extrusion. v7 is v6's layout (§7g) with an explicit kind
+after every feature id and a payload of that kind's own:
+
+```
+FEATURE    featureId u32 | kind u8 | KIND PAYLOAD
+kind       1 Extrude, 2 Revolve (any other code: InvalidSemanticValue)
+EXTRUDE    exactly the v6 bytes after featureId:
+           operation u8 | sketchId u32 | extent u8 | direction u8 |
+           depth f64 | secondDistance f64 | SELECTION
+REVOLVE    operation u8 | sketchId u32 |
+           axisEntityId u32 | axisEdgeLocalIndex u32 |
+           angleDegrees f64 | direction u8 (1 Positive, 2 Negative) |
+           SELECTION
+SELECTION  selectionKind u8 (1 LoopRegions, 2 PlanarFaces) and its block,
+           exactly as §7g
+```
+
+Every other part of a v7 body -- the high-water marks, the sketch table and its
+placements, entities, cuts, fragments and face tokens -- is §7g byte for byte.
+
+### When v7 is written, and what an older reader does
+
+v7 is written ONLY when some body of the document carries a Revolve; the whole
+section is then v7 (an Extrude body in it wears kind 1). A document of
+Extrudes alone writes whichever of v1..v6 it always wrote, byte for byte, so
+no existing file and no fixture moves. `CADB` is a required section, so a
+build that predates v7 refuses a v7 file (`UnsupportedSectionVersion`) rather
+than opening a Revolve as an extrusion or a project with a body missing.
+
+### The Revolve, and what is refused
+
+A Revolve sweeps the selected area -- the same union an Extrude of that
+selection would extrude (§7f, §7g), holes included -- about a straight edge of
+its own sketch by `angleDegrees` in the stated sense.
+
+- **Kind and chain (R1).** A Revolve is the body's FIRST feature (id 1) with
+  operation New Body (code 1), and a Revolve body carries no later feature. A
+  Revolve elsewhere, or with another operation, is `InvalidSemanticValue`.
+- **The axis** is the pair `(axisEntityId, axisEdgeLocalIndex)` of the base
+  sketch -- a SEMANTIC edge, never a renderer line, a tessellation sample or a
+  screen point: a Line's edge 0; a Polyline's segment `i`, `vertices[i] ->
+  vertices[i+1]` (a closed one's segment `n-1` closes `n-1 -> 0`); a
+  Rectangle's edge `k` between its counter-clockwise corners `k -> k+1` from
+  `(-w/2, -h/2)` (0 bottom, 1 right, 2 top, 3 left). The axis DIRECTION is that
+  edge's own start -> end. A ref naming no entity, an index past the entity's
+  edges, a Circle, an Arc or a Spline, or a zero-length edge is refused
+  (`InvalidSemanticValue`; the domain names `RevolveAxisUnresolved`,
+  `RevolveAxisNotStraight`, `RevolveAxisDegenerate`). Nothing is retargeted to a
+  nearest edge.
+- **The angle** is binary64 DEGREES -- the product's authored-angle unit, which
+  keeps 360, 180, 90 and 37.5 exact -- in `[0.001, 360]`, 360 a full turn. A
+  non-finite value, zero, a negative value or anything above 360 is refused,
+  never clamped. **The direction** is `Positive` (right-hand about the axis
+  direction) or `Negative`; any other code is refused.
+- **The side rule.** The selected area must lie on ONE side of the infinite
+  axis line, touching it at most: a vertex within 1 µm of the line is ON it.
+  Curves are judged on the true curve -- a Circle's or an Arc's closest approach
+  between two tessellation vertices exactly, a Spline's span against its Bezier
+  deviation bound -- so a curve that dips across the axis between samples is
+  refused (`RevolveProfileCrossesAxis`). Areas on OPPOSITE sides whose mirror
+  images meet are refused once the angle reaches 180 (`RevolveComponentsOverlap`):
+  their sweeps would need a boolean union this version does not make.
+- **One payload per kind.** A Revolve body's in-memory extrusion is the empty
+  default and an Extrude body's revolve is the empty default; a body stating the
+  other kind's values is refused (`RevolvePayloadMismatch`), so one body has one
+  encoding.
+
+A Revolve body is regenerated during validation, held to the boolean kernel's
+validity answer (closed, oriented 2-manifold, positive volume), and refused if
+it does not regenerate.
+
+### Its faces
+
+For picking only, a Revolve lists `CapPlane` (the start cap) and `CapFar` (the
+end cap) on a partial sweep and neither on a full turn, then one `Side` per
+boundary edge (or fragment, for a PlanarFaces selection) in the §7f / §7g
+order. Every one of them is INELIGIBLE: no `TopoRef` and no feature support
+may name a revolved face, so no lineage token of a Revolve is ever stored.
+
+### The mesh, for an independent implementation
+
+Not stored, and stated so a second implementation derives the same solid: the
+sweep has `sketchArcSegmentCount(angle)` angular steps -- the circle density,
+32 for a full turn, at least 4 -- at `theta_k = angle * k / steps`, the last
+exactly `angle`; a point at axial coordinate `t` and radius `r` on side `s`
+maps to `A + t*D + r*(cos(theta)*E1 + sin(theta)*E2)` with `E1 = s * (left
+normal of D)` and `E2 = ±(D x E1)` by the direction. A full turn closes its seam
+by index (no caps, no seam vertex twice); a profile vertex on the axis is one
+apex (two on a full turn when two swept edges meet there); an edge on the axis
+sweeps nothing.
+
+## 7i. `CADB` v8 — Construction geometry and sketch dimensions (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`)
+
+Version 8 records two facts of a SKETCH that no earlier version can: an
+entity's ROLE (Regular geometry, or Construction geometry that is drawn and
+snapped to but never bounds material), and the sketch's persistent DIMENSIONS.
+v8 is v7's layout (§7h, itself §7g's sketch table with a kind byte after every
+feature id) with exactly two additions, both inside every sketch record of the
+table:
+
+```
+ENTITY     u32 entityId | u8 kindCode (§7b/§7d) | u8 roleCode | PAYLOAD (§7b/§7d)
+roleCode   1 Regular, 2 Construction (any other code: InvalidSemanticValue)
+
+after the sketch's entity list:
+  u32  nextDimensionId          > every dimension id below; never 0
+  u32  dimensionCount           0 .. 512
+  repeat dimensionCount times, strictly ascending id (22 bytes each):
+    u32  dimensionId            != 0
+    u8   kindCode               1 LineLength       2 LineAngle
+                                3 LineHorizontal   4 LineVertical
+                                5 RectangleWidth   6 RectangleHeight
+                                7 CircleRadius     8 CircleDiameter
+                                9 EdgeLength      10 ArcRadius
+                               11 ArcSweep        12 EdgeAngle
+    u8   modeCode               1 Driving, 2 Reference
+    u32  firstEntityId          the measured entity
+    u32  firstEdgeLocalIndex    a straight edge (§7h's edge numbering), else 0
+    u32  secondEntityId         EdgeAngle only; 0 otherwise
+    u32  secondEdgeLocalIndex   EdgeAngle only; 0 otherwise
+```
+
+Everything else in a v8 body — the high-water marks, the placements, cuts,
+fragments, face tokens, features, kinds and selections — is §7h byte for byte.
+
+### When v8 is written, and what an older reader does
+
+A sketch carries drafting truth exactly when some entity is Construction, some
+dimension exists, or its `nextDimensionId` is not 1 (a dimension was made and
+deleted: its id is burned). v8 is written ONLY when some sketch of some body
+of the document carries drafting truth; the whole section is then v8 (every
+other body in it wears role 1 and an empty dimension table, and every feature
+a kind byte). Every other document writes whichever of v1..v7 it always wrote,
+byte for byte, and its semantic fingerprint is unchanged — the fingerprint
+mixes a `DRF8` block ONLY for a body carrying drafting truth. `CADB` is
+required, so a build that predates v8 refuses a v8 file
+(`UnsupportedSectionVersion`) rather than opening Construction geometry as
+material or dropping a dimension silently.
+
+### What a dimension IS
+
+A dimension stores no number. Its value is DERIVED from the authored geometry
+on every read; a Driving edit rewrites the geometry through one path and stores
+nothing else:
+
+| kind | target | value | Driving edit keeps |
+| --- | --- | --- | --- |
+| LineLength | Line | `|P1 − P0|` | `P0` and the direction |
+| LineAngle | Line | `atan2(Δv, Δu)` in degrees, in (−180, 180] | `P0` and the length |
+| LineHorizontal | Line | `|Δu|` | Reference only |
+| LineVertical | Line | `|Δv|` | Reference only |
+| RectangleWidth / Height | Rectangle | `width` / `height` | the centre and the other size |
+| CircleRadius / Diameter | Circle | `r` / `2r` | the centre |
+| EdgeLength | Polyline segment `i`, Rectangle edge `k` | that edge's length | Reference only |
+| ArcRadius | Arc | the circumradius of its three points | Reference only |
+| ArcSweep | Arc | `|sweep|` in degrees | Reference only |
+| EdgeAngle | two DISTINCT straight edges | `atan2(|a × b|, a · b)` in degrees, [0, 180] | Reference only |
+
+A Spline has no dimension of any kind.
+
+### What is refused
+
+The decoder refuses structure (`Truncated`, `ImpossibleCount` above 512 —
+proven against the remaining bytes before anything is allocated —
+`InvalidSemanticValue` for an unknown role, kind or mode code). The sketch
+validation then refuses relations (`InvalidSemanticValue`; the domain names
+`SketchDimensionInvalid` or `SketchDimensionConflict`): a zero id, ids not
+strictly ascending, an id at or above `nextDimensionId`, a ref naming no
+entity, an entity of the wrong kind for the dimension, an edge index past the
+entity's straight edges, a second ref on any kind but EdgeAngle (or an
+EdgeAngle whose two edges are one), a Driving mode on a Reference-only kind,
+two dimensions identical in kind and refs, and two DRIVING dimensions that own
+one degree of freedom of one entity (Length; Angle; Width; Height; Radius and
+Diameter are ONE radius). No dimension is ever dropped, re-aimed or repaired
+on load.
+
+### Construction geometry
+
+A Construction entity is invisible to material: the profile extraction, the
+region nesting, the planar arrangement, the lineage token and the face list all
+read the sketch's REGULAR entities only, so adding, removing or toggling
+Construction geometry moves no face token and no region. It may still be the
+Revolve axis (§7h) — the axis is resolved over every entity of the sketch.
+
+## 7j. `FRFM` v1 — the Freeform bodies (`MODELING-FOUNDATIONS-R1` B)
+
+A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is
+derived from it by Catmull-Clark subdivision on every load and is never
+written. `FRFM` is a REQUIRED section (header bit4), present exactly when some
+body is a Freeform body, and a body it names carries no `CONS`, `IMPT`, `CADB`
+or `SURF` record and may carry no `SCUL` entry.
+
+```
+u32  bodyCount                 1 .. 4096 (kMaxProjectBodies)
+repeat bodyCount times, in SCNE order:
+  u64  objectId                a body SCNE carries
+  u8   subdivisionLevel        0 .. 4
+  u8   symmetry                bit0 X (plane x = 0), bit1 Y, bit2 Z; others 0
+  u16  reserved                0 (anything else: BadPayload, never masked)
+  u32  nextVertexId            > every vertex id below
+  u32  nextEdgeId              > every edge id below
+  u32  nextFaceId              > every face id below
+  u32  vertexCount             1 .. 4096
+  u32  edgeCount               1 .. 8192
+  u32  faceCount               1 .. 4096
+  repeat vertexCount (strictly ascending id):  u32 id | f64 x | f64 y | f64 z
+  repeat edgeCount   (strictly ascending id):  u32 id | u32 v0 | u32 v1 | f64 crease
+  repeat faceCount   (strictly ascending id):  u32 id | u32 a | u32 b | u32 c | u32 d
+```
+
+The three counts are checked against the remaining bytes (28 per vertex, 20 per
+edge, 20 per face) before anything is allocated, and the payload must end
+exactly where the last body does (`BadPayload` otherwise).
+
+The cage is then held to `validateFreeformCage`, and a file that fails it is
+refused `InvalidSemanticValue` with nothing applied: ids non-zero, strictly
+ascending and below their mark; coordinates finite and within 1e5 m; an edge
+record canonical (`v0 < v1`) and unique per vertex pair; a face four DISTINCT
+vertices, rotated so its smallest id is first, wound counter-clockwise seen
+from outside, with no two corners coincident; every face side an edge record,
+every edge record used by one or two faces, two faces over an edge traversing
+it in OPPOSITE directions, no isolated vertex and no bow-tie vertex; a crease
+weight in [0, 1]; the stored level within the derived-quad budget
+(`faceCount × 4^level ≤ 131072`); and a declared symmetry plane under which the
+cage is EXACTLY symmetric — every vertex's reflection a vertex bit for bit, the
+reflected faces the face set. Nothing is repaired, re-wound or re-symmetrized
+on load.
+
+The semantic fingerprint mixes an `FRFM` marker and the encoded record of each
+Freeform body, so a cage edit dirties the project and a project without one
+fingerprints exactly as before.
+
+## 7k. `SURF` v1 — the Surface bodies (`MODELING-FOUNDATIONS-R1` C)
+
+A Surface body's truth is an ORDERED FEATURE LIST over its own retained
+sketches. Every patch, boundary edge, stitch and thickened solid is derived by
+regenerating that list in order on every load and is never written; a
+triangle index is never an identity. `SURF` is a REQUIRED section (header
+bit5), present exactly when some body is a Surface body, and such a body
+carries no `CONS`, `IMPT`, `CADB` or `FRFM` record and no `SCUL` entry.
+
+```
+u32  bodyCount                 1 .. 4096
+repeat bodyCount times, in SCNE order:
+  u64  objectId
+  u32  nextSketchId            > every sketch id below
+  u32  nextFeatureId           > every feature id below
+  u32  sketchCount             0 .. 32
+  u32  featureCount            1 .. 32
+  repeat sketchCount times (strictly ascending id):
+    u32  sketchId              != 0
+    f64  offset                metres along the plane's normal; finite, |offset| <= 1e5
+    u8   workplane             §4 code: 1 XY, 2 XZ, 3 YZ
+    u32  nextEntityId
+    entities                   §7i's v8 grammar: u32 count, then each ENTITY
+                               with its role byte
+    u32  nextDimensionId       §7i
+    u32  dimensionCount, dimensions   §7i
+  repeat featureCount times (strictly ascending id, in construction order):
+    FEATURE
+```
+
+Every FEATURE has ONE fixed layout, every field present for every kind; a
+field the kind does not use must hold its default (the value in brackets), and
+anything else is refused (`PayloadMismatch`), so one feature has exactly one
+encoding:
+
+```
+FEATURE  u32  featureId                          != 0
+         u8   kind      1 PlanarPatch  2 ExtrudedSurface  3 RevolvedSurface
+                        4 LoftSurface  5 TrimSurface      6 Stitch   7 Thicken
+         SECTION  section                         [0, no curves]
+         u32  regionCount (0 .. 16)               [0]
+              repeat: u32 outerAnchorId | u32 holeCount (0 .. 64) | u32 hole × holeCount
+         f64  distance                            Extrude [0]
+         u8   direction  1 along the normal, 2 against      [1]
+         u32  axisEntityId | u32 axisEdgeLocalIndex          Revolve [0 | 0]
+         f64  angleDegrees                        Revolve, 0.001 .. 360 [0]
+         u8   revolveDirection  1 positive, 2 negative      [1]
+         SECTION  sectionB                        Loft [0, no curves]
+         u8   reverseB  (0 | 1)                   Loft [0]
+         u32  startOffsetB                        Loft [0]
+         u32  target                              Trim: the planar patch feature [0]
+         u8   keepInside  (0 | 1)                 Trim [1]
+         u32  stitchCount (0 .. 32) | u32 featureId × stitchCount   Stitch [0]
+         u32  source                              Thicken: the feature thickened [0]
+         f64  thickness                           Thicken, signed metres [0]
+SECTION  u32  sketchId | u32 curveCount (0 .. 64) | u32 entityId × curveCount (ascending)
+```
+
+What each kind reads:
+
+| kind | uses | makes |
+| --- | --- | --- |
+| PlanarPatch | `section.sketchId`, regions | one planar patch per region, holes kept; one closed boundary edge per loop |
+| ExtrudedSurface | `section` curves, distance, direction | one ruled patch per curve CHAIN (open chains valid), never a cap |
+| RevolvedSurface | `section` curves, axis (a straight edge of that sketch), angle, direction | one swept patch per chain; an on-axis point is one apex; a full turn closes its seam |
+| LoftSurface | `section`, `sectionB`, reverseB, startOffsetB | one ruled patch between exactly ONE chain per section, open to open or closed to closed |
+| TrimSurface | `section.sketchId`, regions, target, keepInside | the target's planar patches clipped EXACTLY through the planar arrangement; the target is consumed |
+| Stitch | stitchFeatures (ascending, earlier) | boundary edges of those features joined where they coincide within 1e-6 m |
+| Thicken | source, thickness | the source's patches replaced by a closed solid that passes the kernel's validation |
+
+Chains are walked through coincident AUTHORED endpoints (three or more meeting
+is `CurveChainForked`); a closed chain is wound counter-clockwise and a walk
+starts at the free end of the chain's smallest entity id, so the derived
+geometry is a function of the bytes alone.
+
+Validation runs into temporary state, then the whole list is REGENERATED, and
+the file is refused `InvalidSemanticValue` with nothing applied if any feature
+fails: an unknown kind or code, a bool byte above 1 (`BadPayload`), a feature
+naming a sketch, a feature or an entity that does not exist or is not EARLIER,
+a first feature that is not a Patch, an Extrude, a Revolve or a Loft, a
+consumed feature named again, a trim of a non-planar or non-coplanar patch, a
+stitch gap (`StitchGapTooLarge`: edges within 1e-3 m but not 1e-6 m), a
+non-manifold or incompatible stitch, an undefined thicken
+(`ThickenUnsupportedForSurfaceType`), or a high-water mark at or below an id.
+Nothing is re-aimed, re-trimmed or re-stitched on load. A later Undo or Redo
+restores the list with the snapshot; an id is unique along one forward history
+branch, as `CadSketchId`'s comment states.
+
+The semantic fingerprint mixes a `SURF` marker and the encoded record of each
+Surface body; a project without one fingerprints exactly as before.
 
 ## 8. Validation and compatibility
 
@@ -1366,13 +1729,30 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `cad_spline_face_v6.forge` | 451 | `d85f98db59968bbe6c47f1842f59bb2f93f167f61deba67f5f846e98651cd800` | The lens fixture with a three-point **Spline** (entity 3) added to its sketch, clear of both curves. Refused (`PlanarFaceUnsupportedCurve`) while a Spline disabled the arrangement; since `CAD-V6-S2-CORRECTION-FILL-HUD-R1` the **same bytes** are a VALID file — the spline bounds no face and the lens resolves |
 | `cad_overlap_face_v6.forge` | 376 | `313652c95c14d3ebfd5e451447b8b46d0890fbed35b7c680911fb94426e118f9` | The rectangle with a line lying **along** its bottom side, selecting the rectangle's whole boundary — refused `InvalidSemanticValue` (`PlanarFaceAmbiguousOverlap`) |
 | `cad_fragment_support_v6.forge` | 531 | `e1726cb5cbf0504ee0e50f457d8490ab410d12e41e426fdfe631dbb1e8c0acb6` | `CAD-V6-S2`: the `cad_face_lens_v6` body, and a second retained sketch on the lens's STRAIGHT side -- a fragment of the rectangle's right side, placement 3, FACE code 4 with cuts `X(2.0#0) > X(2.0#1)`, lineage `0x9873F7F20DED4004` -- holding a 0.3 m square Added 0.2 m out of it |
+| `cad_revolve_full_v7.forge` | 332 | `1e6d021408bf3959659cef1fb119d3e5a4ced0442289b3ab5bb583fdcde5d450` | `CAD-V6-REVOLVE-NEWBODY-E2E-R1`, `CADB` **v7**: a 1 × 1 m square (rectangle entity 1, centre `(1.5, 0.5)`) and a Line (entity 2, `(0, -1)`–`(0, 2)`) on world XY; the base is a **Revolve** New Body of the square about the Line's edge 0, 360°, Positive — a tube with no caps |
+| `cad_revolve_partial_v7.forge` | 332 | `7b72037a923f8c767a8694cc6e080e0ef8a8eb624ee926e02f288e5541b2fdd2` | The same sketch revolved **90°**, direction **Negative** (code 2) — a quarter sweep with its two planar caps |
+| `cad_revolve_bad_axis_v7.forge` | 332 | `8be1bee7210c7286e72c8ba94a44f8724bda1400feff6589ef64b3ce30d5ecd1` | The full revolve with its axis naming entity **7**, which the sketch does not hold — refused `InvalidSemanticValue` (`RevolveAxisUnresolved`), never re-aimed at the nearest edge |
+| `cad_bad_feature_kind_v7.forge` | 332 | `404e648523be5069334321bf20cf2abf077ed0ba0b6bb48cc728c30ab56a9fb5` | The full revolve with its base feature's KIND byte **9** in front of the otherwise well-formed Revolve payload — refused `InvalidSemanticValue` (`InvalidFeatureKind`) at the kind byte |
+| `cad_construction_v8.forge` | 373 | `553b7e094cddaf8b65e26c4b642c67c4920646de52ab7bedaade2413b547b776` | `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`, `CADB` **v8**: a 2 × 1 m rectangle (entity 1, Regular) crossed by a **Construction** centre Line (2) and ringed by a **Construction** Circle (3, radius 1.5); the base extrudes the rectangle as ONE region — read as material the two would split it |
+| `cad_dimension_driving_v8.forge` | 483 | `d0a560450063c91f0b4473b5932b05d6e66b8245537da44e34d3434a2bcdfddf` | The rectangle (1), a Circle (2) at `(3, 0)` radius 0.5 and a Line (3) `(-1, -2)`–`(1, -2)`, with **Driving** Width, Height, Diameter, Length and Angle (ids 1..5, `nextDimensionId` 6) |
+| `cad_dimension_reference_v8.forge` | 610 | `cd8ad8620b3f9386d64789651014df57ea24db854a33f4651a107dd411aaf258` | The rectangle (1), an Arc (2), an open Polyline (3) and a Line (4) measured by **Reference** dimensions only — arc radius and sweep, a polyline segment's and a rectangle edge's length, the line's horizontal and vertical components, and the angle between the two polyline segments (ids 1..7); `nextDimensionId` **9**: id 8 was burned |
+| `cad_bad_dimension_ref_v8.forge` | 483 | `a0e1388b6b63157ff66e735fd9e1cf6e888990f9d660bb1095686183f3c96f74` | The driving fixture with its Diameter naming entity **9**, which the sketch does not hold — refused `InvalidSemanticValue` (`SketchDimensionInvalid`), never re-aimed |
+| `cad_dimension_conflict_v8.forge` | 505 | `9ca1afac3749b5f5bc6131b11df973b2687ecaa635df22a487291f963cd9f8fd` | The driving fixture plus a **Driving** Radius (id 6) on the circle the Diameter already drives — refused `InvalidSemanticValue` (`SketchDimensionConflict`) |
+| `freeform_box_v1.forge` | 800 | `2f38b285c5718a5f53cbac8e9dcac9749ae474a3ae2423dd4e7dca97157faf0e` | **`FRFM` v1.** A 1 m Freeform Box cage — 8 vertices, 12 edges, 6 faces — at level 2, no symmetry |
+| `freeform_crease_symmetry_v1.forge` | 1504 | `b218fda7d3eaea4170827a8fece576e032969681c710b1cf9d17521f199e2029` | The box symmetric about x = 0 with its ±X faces extruded 0.25 m and the four edges of its +Y face creased 0.75, at level 3 |
+| `freeform_bad_topology_v1.forge` | 800 | `e896be40f36453d588ea22d4a0dacc6289222484d5d95db377b521d27f86c562` | The box with face 1 wound the wrong way round, so four edges are walked the same way twice — refused `InvalidSemanticValue` |
+| `surface_patch_extrude_v1.forge` | 546 | `d4cb49a6500718e1e1482a788aa897cf28d9922421ac9e1b73bffb89c3d55e14` | **`SURF` v1.** A 2 × 2 planar patch and an open two-line chain extruded 0.5 m into an uncapped ruled surface |
+| `surface_loft_trim_stitch_v1.forge` | 936 | `006374495e44da8332cae0fc07533ebface1f59fde8e12eb5ff9981c33736c8e` | A 4 × 4 patch with a radius-1 hole trimmed out, a 4 × 4 tube stitched to it along the outer square, and a loft between two circles at 1 m and 2 m |
+| `surface_bad_ref_v1.forge` | 690 | `4a0367a4a05f432633a81cd54313db07ab4a88da87d447d85dec8b93df3f640d` | The patch-and-extrude body plus a Trim naming feature **7**, which does not exist — refused `InvalidSemanticValue`, never skipped |
 
-The seventeen corrupt fixtures written since `CADB` v2 — two each for `CADB` v2,
-v3 and v4, four for `CADB` v5, six for `CADB` v6 and one for `SCNE` v2 — are
+The twenty-three corrupt fixtures written since `CADB` v2 — two each for `CADB` v2,
+v3, v4, v7 and v8, four for `CADB` v5, six for `CADB` v6, one for `SCNE` v2, one
+for `FRFM` v1 and one for `SURF` v1 — are
 **constructed** by the PowerShell builder with the bad value in place, never
 generated and then mutated; the C++ self-test reaches the same bytes by its own
 route (patching the valid parent's one field and its CRC, or — for five of the
-six v6 ones — writing the bad STATE through `encodeProjectV1Unchecked`), and
+six v6 ones and the v7 bad axis — writing the bad STATE through
+`encodeProjectV1Unchecked`), and
 the digests agreeing is what proves the two routes describe one file. The
 envelope fixtures and `cad_bad_plane_v1` predate the rule and are still derived
 from their canonical parent.
@@ -1390,16 +1770,17 @@ the two matched could not tell a decoder that confused them apart. Every number
 is an exact binary fraction, so the two implementations agree byte for byte or
 not at all.
 
-No section version has moved an older fixture: `CADB` v2, v3, v4, v5 and v6 are
-each written only when a body needs what they add — a face support, a curve, an
-extent that is not One Side, a hole or a later feature, a shared or retained
-sketch or a face selection — so a world-only CAD
+No section version has moved an older fixture: `CADB` v2, v3, v4, v5, v6, v7 and
+v8 are each written only when a body needs what they add — a face support, a
+curve, an extent that is not One Side, a hole or a later feature, a shared or
+retained sketch or a face selection, a Revolve, a Construction role or a sketch
+dimension — so a world-only CAD
 project still writes `CADB` v1, a curveless one v1 or v2, a One Side one v1..v3
 and a one-region single-feature one v1..v4. Each of these features costs a
 project that does not use it exactly nothing, exactly as the imported branch
 and the generalized `SCUL` cost the files before them nothing.
 
-**Fifty-six fixtures in all.** The thirty-six that predate `CADB` v5 are
+**Seventy-two fixtures in all.** The thirty-six that predate `CADB` v5 are
 verified by `FSR1A-12`, `IMP01A-19`, `IMP01B-11/12`, `CADR0-33..36`,
 `CADA3-46..51`, `CADUXR1-38`, `CADEXT-10` and `OBJ018A-15/16`, and printed on
 every debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `…_IMPORTED`,
@@ -1412,11 +1793,28 @@ same writer without its validation (`encodeProjectV1Unchecked`), and the one bad
 code by patching the valid parent's byte; `cad_fragment_support_v6`
 (`CAD-V6-S2`, `CADV6S2_P16`) through the ordinary writer, its fragment token and
 lineage derived by the production face enumeration while the builder computes
-both from the text above. CI FAST's corpus parity step holds all
-fifty-seven byte-identical between the builder and the repository. The thirteen v6
+both from the text above. The four `CADB` v7 fixtures are asserted by
+`REV_FMT_07`: the two valid ones and the bad axis through the writers above, the
+unknown kind by patching the full fixture's kind byte and its CRC while the
+builder writes kind 9 in place. The five `CADB` v8 fixtures are asserted by `DR_FMT_11`: the three valid ones
+through the ordinary writer from states built in C++, the two refusals through
+`encodeProjectV1Unchecked`. The three `FRFM` v1 fixtures are asserted by
+`FF_20` and the three `SURF` v1 fixtures by `SURF_22`, each pinning the
+builder's digests against states built in C++ (the two refusals through
+`encodeProjectV1Unchecked`), and printed on every debug launch as
+`FORGESHAPE_FREEFORM_GOLDEN_SHA256` and `FORGESHAPE_SURFACE_GOLDEN_SHA256`.
+CI FAST's corpus parity step holds all seventy-two byte-identical between the
+builder and the repository. The thirteen v6
 fixtures are single-body Construction projects with the `SCNE` record of the
 v4/v5 ones, and every one of the forty-four before them is byte-for-byte
-unchanged: none needs what v6 adds.
+unchanged: none needs what v6 adds. The four v7 fixtures are single-body
+projects on the same `SCNE` record, and every one of the fifty-seven before them
+is byte-for-byte unchanged: none of them revolves. The five v8 fixtures are
+single-body projects on the same `SCNE` record, and every one of the sixty-one
+before them is byte-for-byte unchanged: none carries a role or a dimension.
+The six `FRFM` and `SURF` fixtures are single-body projects on a `SCNE` v1
+record, and every one of the sixty-six before them is byte-for-byte unchanged:
+none has a Freeform or a Surface body.
 
 Regenerate and re-verify with:
 

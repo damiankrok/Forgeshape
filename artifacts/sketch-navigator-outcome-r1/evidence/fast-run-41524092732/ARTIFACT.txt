@@ -1,0 +1,10 @@
+CI FAST 41524092732 on 3b60086c2ea7572b83358e57e4efa47e5269183c (product/test tree = 28cb315), job 125547252485: success.
+Artifact ci-fast-evidence id 13179561711, 11737597 bytes, expires 2026-11-16T21:05:45Z.
+GitHub digest      sha256:b7fcb051e0da75cb3b5387726fd531c46777261c075a33e91a5956cca28aeee9
+Downloaded ZIP     b7fcb051e0da75cb3b5387726fd531c46777261c075a33e91a5956cca28aeee9  (MATCH)
+app/build/outputs/apk/debug/app-debug.apk                          17755951 bytes  sha256 f8cbb67de8e1b0541ebf4d5cbd79d203eb82689d6456c195fc93022c0aaf4194
+app/build/outputs/apk/release/app-release-unsigned.apk              6554143 bytes  sha256 be5fd9a4f5d6de03a24443db3778033fb0891d0e16df9ec270796b87b861f06a
+app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk   2407955 bytes  sha256 ffe01b722e702664411d2c3a28ff6f10467031ed13ee3aab9c91cc174aa62969
+Gates: git diff --check (from main merge-base) clean; BUILD SUCCESSFUL; RELEASE_SELFTEST_GUARD=PASS
+(release x86_64 / arm64-v8a: 0 self-test symbols, 0 strings; debug x86_64 / arm64-v8a positive 35/398);
+FORGE_CORPUS_PARITY=PASS (72/72 byte-identical); TESTRUNTIME-01..26 PASS, 0 FAIL lines; JVM (artifact XML) 199/0/0/0.

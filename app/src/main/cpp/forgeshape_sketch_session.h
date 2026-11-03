@@ -53,6 +53,9 @@
 #include "forgeshape_input.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sketch.h"
+#include "forgeshape_sketch_dimension.h"
+#include "forgeshape_sketch_drafting.h"
+#include "forgeshape_sketch_snap.h"
 #include "forgeshape_sketch_overlay.h"
 #include "forgeshape_sketch_region.h"
 
@@ -118,12 +121,42 @@ const char* sketchToolName(SketchTool tool);
 bool sketchToolFromIndex(int index, SketchTool* out);
 int sketchToolIndex(SketchTool tool);
 
-// What the last snap landed on, for the overlay's marker.
-enum class SketchSnapKind : uint8_t {
+// What the last snap landed on (`SketchSnapKind`) is declared in
+// forgeshape_sketch_snap.h, with the one priority every snap follows.
+
+// The sketch MODIFY mode (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`). While one is
+// active, a viewport tap in Editing means that mode and nothing else -- never
+// both a selection and a trim -- and choosing a drawing tool ends it. Volatile:
+// never persisted, never a history step.
+enum class SketchModifyMode : uint8_t {
     None,
-    Grid,
-    Endpoint,
+    // Tap an entity (or edge) to choose what to dimension; the kinds it
+    // supports are then offered. An EdgeAngle takes a second straight edge.
+    Dimension,
+    // Tap the bounded interval to remove.
+    Trim,
+    // Tap near the end to extend to the nearest forward intersection.
+    Extend,
+    // Tap the source; drag (or type) the signed distance; Confirm creates.
+    Offset,
+    // With a selection: tap a straight edge as the axis; Confirm creates.
+    Mirror,
 };
+
+constexpr int kSketchModifyModeCount = 6;
+
+const char* sketchModifyModeName(SketchModifyMode mode);
+
+// Which retained dimensions the drawing shows. PRESENTATION, volatile and
+// never persisted; `Selected` (the default) shows the dimensions of the
+// selected entities.
+enum class SketchDimensionVisibility : uint8_t {
+    Selected,
+    All,
+    Off,
+};
+
+constexpr int kSketchDimensionVisibilityCount = 3;
 
 // ---------------------------------------------------------------------------
 // Sizes
@@ -176,16 +209,48 @@ constexpr float kSketchHitToleranceUnits = 24.0f;
 // radius the selection controller uses.
 constexpr float kSketchTapSlopPixels = 24.0f;
 
-// The dimension annotation's proportions, in reference units (dp), so it reads
-// the same at any zoom (`SKETCH-UX-R1` E1). The dimension line stands this far
-// off the stroke it measures -- far enough that the label never sits on the
-// geometry -- the extension lines start a small gap away from the endpoints and
-// overshoot the dimension line, and the end ticks are the technical-drawing
-// slash rather than a filled arrowhead, which reads better at phone sizes.
-constexpr double kSketchDimensionOffsetUnits = 30.0;
-constexpr double kSketchDimensionExtensionGapUnits = 6.0;
-constexpr double kSketchDimensionOvershootUnits = 8.0;
-constexpr double kSketchDimensionTickUnits = 7.0;
+// What became of one Ready-state tap candidate (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`).
+// DIAGNOSTIC only: the debug build logs it as `FORGESHAPE_SKETCH_TAP:<name>` so a
+// missed tap on a physical device is attributable from one logcat capture. It
+// decides nothing, is never stored and never crosses JNI as a value.
+enum class SketchTapOutcome : uint8_t {
+    None,
+    // A face (or loop region) under the Down pixel toggled.
+    Resolved,
+    // The Down pixel's ray met the sketch plane outside every bounded area.
+    Exterior,
+    // A still tap on the drawn arrow HEAD: the manipulator's, toggling nothing.
+    ArrowHead,
+    // The finger travelled past the tap slop: an orbit or a drag, not a tap.
+    Travel,
+    // The Down pixel's ray is parallel to the sketch plane (or its hit is not
+    // finite): the existing ray-plane math answered no point.
+    RayParallel,
+    // The area under the finger could not be toggled (no face, a refused
+    // region, a session not in Ready).
+    InvalidFace,
+    // The selection is at its bound (`TooManyRegions`).
+    SelectionCap,
+};
+
+const char* sketchTapOutcomeName(SketchTapOutcome outcome);
+
+// THE one statement of whether the camera is handed a sketch-session event
+// after the session saw it (`forgeshape_jni.cpp` asks nothing else). A
+// consumed event never reaches the camera; while a sketch is being DRAWN no
+// single pointer does; in READY a single pointer navigates -- EXCEPT while a
+// tap is still armed (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`), because a finger
+// that jitters inside the tap slop must neither orbit the view nor be
+// resolved against a camera that moved under it. The caller resets the
+// camera's gesture whenever this is false, so the first event after a tap
+// disarms re-anchors the orbit at the CURRENT point: no jump from the Down.
+// Two pointers are never held back.
+bool sketchEventReachesCamera(SketchSessionState state, bool consumed, int pointerCount,
+                              bool readyTapArmed);
+
+// The dimension annotation's proportions (`kSketchDimensionOffsetUnits` and
+// its three companions) are declared in forgeshape_sketch_dimension.h, beside
+// the retained dimensions that are drawn in the same language.
 
 // The snap marker's half size, in reference units.
 constexpr float kSketchSnapMarkerUnits = 8.0f;
@@ -247,6 +312,66 @@ public:
     CadStatus beginEditFeature(ObjectId bodyId, const CadBodyState& state, uint32_t featureId,
                                const SketchFrame& worldFrame, bool startReady);
 
+    // --- retained sketches (`CAD-R2`) ---------------------------------------
+
+    // Opens a session that stages a NEW later feature of body `bodyId`
+    // extruding the EXISTING retained sketch `sketchId` -- by id, never a copy
+    // -- as an Add or a Cut. It opens directly in Ready (the sketch is already
+    // drawn) and Back to Sketch is refused (`SketchInUse`): a shared sketch is
+    // edited through `beginEditSketch`, whose one commit regenerates every
+    // feature that extrudes it. The commit is the ordinary Add/Cut commit into
+    // the SAME body, one Undo. Refused while a session is open
+    // (`NotSketching`), for a Revolve body (`RevolveLaterFeatureUnsupported`),
+    // a full chain (`TooManyFeatures`), New Body (`InvalidFeatureOperation`),
+    // and by the sketch's own reasons (`cadSketchReuseRefusal`).
+    CadStatus beginReuseSketch(ObjectId bodyId, const CadBodyState& state, CadSketchId sketchId,
+                               CadFeatureOperation operation, const SketchFrame& worldFrame);
+
+    // Opens a staged edit of retained sketch `sketchId` of body `bodyId`. A
+    // sketch some feature extrudes opens through its FIRST consumer
+    // (`beginEditFeature(startReady=false)`), so its one Finish regenerates
+    // every consumer or is refused naming the first that fails. A sketch no
+    // feature extrudes opens SKETCH-ONLY: Finish Sketch is refused there
+    // (there is no extrusion to stage) and `commitSketch` is the commit.
+    CadStatus beginEditSketch(ObjectId bodyId, const CadBodyState& state, CadSketchId sketchId,
+                              const SketchFrame& worldFrame);
+
+    // Keep Sketch: commits the session's sketch WITHOUT a feature, as ONE
+    // `ScopedConstructionEdit` around ONE `applyState` (one Undo).
+    //   * a NEW sketch on a planar face of one of a CAD body's own features
+    //     becomes a retained sketch of THAT body, standing on that face, minted
+    //     from `nextSketchId` and consumed by nothing;
+    //   * a sketch-only edit (`beginEditSketch` of an unused sketch) replaces
+    //     that record's entities.
+    // `outSketchId` receives the kept sketch's id. Refused, changing nothing,
+    // when `canKeepSketch` is false (`NotSketching`), for an empty sketch
+    // (`NoClosedProfile`: there is nothing to keep), a full table
+    // (`TooManySketches`) or whatever the whole state's validation says.
+    CadStatus commitSketch(ConstructionScene& scene, ConstructionHistory& history,
+                           CadSketchId* outSketchId = nullptr);
+    // --- area selection shortcuts (`CAD-R2` P2.1) ----------------------------
+    //
+    // Clear: no area chosen (Ready only). Select All: every SELECTABLE area of
+    // this sketch -- every atomic face in fill mode, every Ok region in loop
+    // mode -- by exactly the rule a sequence of taps would apply: the face set
+    // is bounded by the arrangement's own bound, and a region set that no rule
+    // can merge is refused BY NAME with the selection standing as it was. Whether
+    // the chosen set extrudes is the candidate's question, as after any tap.
+    CadStatus clearAreaSelection();
+    CadStatus selectAllAreas();
+
+    // Whether Keep Sketch can be offered now (the shell draws it on this alone).
+    bool canKeepSketch() const;
+    // A sketch-only edit is open (no feature to stage; Finish withdrawn).
+    bool sketchOnly() const { return editingSketchId_ != kNoCadSketch; }
+    CadSketchId editingSketchId() const { return editingSketchId_; }
+    // The retained sketch a reuse session extrudes, or kNoCadSketch.
+    CadSketchId reuseSketchId() const { return reuseSketchId_; }
+    // Whether Back to Sketch is possible from Ready (false for a reuse).
+    bool canReturnToSketch() const {
+        return state_ == SketchSessionState::Ready && reuseSketchId_ == kNoCadSketch;
+    }
+
     // The feature an edit session edits, or 0 when it authors a new one.
     uint32_t editingFeatureId() const { return editingFeatureId_; }
 
@@ -292,7 +417,12 @@ public:
     // appear to turn 90 degrees counter-clockwise). Never refused, because it
     // cannot fail and cannot change the sketch.
     void rotateView(int quarterTurns);
-    void setViewFlipped(bool flipped);
+    // Looks at the plane's positive (false) or negative (true) normal.
+    // Refused with NotSketching outside a session, and with InvalidWorkplane
+    // for a FACE-supported sketch: its support is another body's face, and
+    // looking at the back of it is not a choice the navigator offers there.
+    // A refusal changes nothing.
+    CadStatus setViewFlipped(bool flipped);
 
     // Changes a WORLD-plane sketch's support plane, re-basing the authoring
     // frame (`SKETCH-UX-R1` C4).
@@ -309,6 +439,18 @@ public:
     //                           detach it from the producer it follows; that
     //                           takes a Cancel and a new support choice.
     CadStatus setSupportPlane(Workplane plane);
+
+    // Moves a WORLD-plane sketch's authoring frame `meters` along the plane's
+    // normal (`MODELING-FOUNDATIONS-R1` C): a Surface section -- the second
+    // section of a Loft -- is drawn where it will stand, so what the finger
+    // places and what the feature lofts are one place. Presentation of the
+    // frame only: the authored (u, v) never move, and the offset reaches the
+    // project only as the Surface sketch record's own offset. The CAD paths
+    // never call it -- a CAD world-plane sketch stays on the origin -- and a
+    // face-supported sketch refuses it (`InvalidWorkplane`), as it refuses a
+    // world plane. Non-finite or beyond 1e5 m is `NonFinite`, never clamped.
+    CadStatus setPlaneOffset(double meters);
+    double planeOffset() const { return planeOffset_; }
 
     // --- the selected line's dimension (`SKETCH-UX-R1` E) ----------------
 
@@ -370,12 +512,109 @@ public:
 
     const CadSketch& sketch() const { return sketch_; }
 
-    SketchEntityId selectedEntityId() const { return selectedEntityId_; }
+    // The ONE selected entity, or kNoSketchEntity when none -- or several --
+    // are selected. Every single-entity surface (the exact-value panel, the
+    // transient Line dimension) reads this.
+    SketchEntityId selectedEntityId() const {
+        return selectedIds_.size() == 1u ? selectedIds_.front() : kNoSketchEntity;
+    }
+    // The whole selection SET (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`), in the
+    // order the entities were added. Volatile; never persisted; separate from
+    // the Ready-state region / planar-face selection.
+    const std::vector<SketchEntityId>& selectedEntityIds() const { return selectedIds_; }
+    bool entitySelected(SketchEntityId id) const;
+    // Selects exactly `id`.
     bool select(SketchEntityId id);
+    // Adds `id` to the set, or removes it when it is already there.
+    bool toggleSelect(SketchEntityId id);
     void clearSelection();
 
-    // Removes the selected entity. An edit-session act, not a history step.
+    // Whether a Select tap ADDS to / removes from the set rather than replacing
+    // it: the mobile stand-in for a keyboard modifier. Volatile.
+    void setMultiSelect(bool on);
+    bool multiSelect() const { return multiSelect_; }
+
+    // Removes every selected entity, and every dimension that named only
+    // them, as one staged act. Refused (`SketchDimensionDependency`) when a
+    // dimension names a selected AND an unselected entity. An edit-session
+    // act, not a history step.
     CadStatus deleteSelected();
+    // How many dimensions the last successful delete removed with it.
+    uint32_t lastDeletedDimensionCount() const { return lastDeletedDimensions_; }
+
+    // --- drafting (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`) -------------------
+
+    // The ONE construction act for the selection: Make Construction when any
+    // selected entity is Regular, Make Regular when all are Construction.
+    // `outApplied` receives the role written. Editing only.
+    CadStatus toggleSelectionConstruction(SketchEntityRole* outApplied = nullptr);
+    // What `toggleSelectionConstruction` would write now (Regular when the
+    // selection is empty).
+    SketchEntityRole selectionConstructionTarget() const;
+
+    // Enters or leaves a modify mode. Editing only (`NotSketching`). Mirror
+    // needs a selection (`MirrorNothingSelected`). Entering Offset with ONE
+    // offsettable entity selected takes it as the source; entering Dimension
+    // with ONE entity selected takes it as the target.
+    CadStatus setModifyMode(SketchModifyMode mode);
+    SketchModifyMode modifyMode() const { return modifyMode_; }
+
+    // Dimension mode: the edge chosen to dimension, if any, and the kinds it
+    // supports. `beginDimensionAngle` makes the next straight-edge tap the
+    // second edge of an EdgeAngle (a Reference dimension).
+    bool dimensionTarget(CadSketchEdgeRef* out) const;
+    std::vector<SketchDimensionKind> dimensionTargetKinds() const;
+    CadStatus setDimensionTarget(const CadSketchEdgeRef& ref);
+    CadStatus beginDimensionAngle();
+    bool dimensionAwaitingSecondEdge() const { return dimensionAwaitSecond_; }
+    // Creates a dimension of `kind` on the target (`SketchDimensionConflict`,
+    // `SketchDimensionInvalid` by name). `outId` receives the new id.
+    CadStatus addDimension(SketchDimensionKind kind, SketchDimensionMode mode,
+                           SketchDimensionId* outId = nullptr);
+    // Removes a dimension; the geometry is untouched.
+    CadStatus removeDimension(SketchDimensionId id);
+    // The ONE Driving edit, through `applySketchDimensionValue`.
+    CadStatus applyDimensionValue(SketchDimensionId id, double value);
+
+    void setDimensionVisibility(SketchDimensionVisibility visibility);
+    SketchDimensionVisibility dimensionVisibility() const { return dimensionVisibility_; }
+    // Whether a dimension is shown under the current visibility (Editing only).
+    bool dimensionVisible(const SketchDimension& dimension) const;
+    // The annotations the drawing shows now, in ascending id order.
+    std::vector<SketchDimensionAnnotation> visibleDimensionAnnotations(double worldPerUnit) const;
+
+    // Trim and Extend at a sketch point (the tap path calls these; the tests
+    // and JNI may too). `outPlan` receives what was applied.
+    CadStatus trimAt(const SketchPoint& point, double toleranceMeters,
+                     SketchTrimPlan* outPlan = nullptr);
+    CadStatus extendAt(const SketchPoint& point, double toleranceMeters,
+                       SketchExtendPlan* outPlan = nullptr);
+    // The last applied Trim converted a Rectangle to Lines.
+    bool lastTrimConvertedRectangle() const { return lastTrimConvertedRectangle_; }
+    // Which tap act last LANDED (Trim or Extend) and a serial that advances on
+    // every one, so the shell reports each act once without diffing geometry.
+    // Presentation bookkeeping: never truth, never a history step.
+    enum class TapAct : uint8_t { None, Trim, Extend };
+    TapAct lastTapAct() const { return lastTapAct_; }
+    uint64_t tapActSerial() const { return tapActSerial_; }
+
+    // Offset mode.
+    CadStatus setOffsetSource(SketchEntityId id);
+    SketchEntityId offsetSource() const { return offsetSource_; }
+    CadStatus setOffsetDistance(double signedMeters);
+    double offsetDistance() const { return offsetDistance_; }
+    // The preview's validity: Ok when Confirm would create the offset.
+    CadStatus offsetPreviewStatus() const;
+    CadStatus confirmOffset(std::vector<SketchEntityId>* outIds = nullptr);
+
+    // Mirror mode.
+    CadStatus setMirrorAxis(const CadSketchEdgeRef& axis);
+    bool mirrorAxis(CadSketchEdgeRef* out) const;
+    CadStatus confirmMirror(std::vector<SketchEntityId>* outIds = nullptr);
+
+    // The last snap's full result (guides included), for the overlay and the
+    // diagnostics.
+    const SketchSnapResult& lastSnap() const { return lastSnap_; }
 
     // Replaces one entity's geometry with EXACT typed values. Never snapped.
     // Refused, changing nothing, when the geometry is invalid.
@@ -416,9 +655,21 @@ public:
     CadStatus toggleRegion(SketchEntityId outerAnchorId);
 
     // The tap in the canvas: the region under the pixel, toggled. False,
-    // changing nothing, when the tap lands in no region.
+    // changing nothing, when the tap lands in no region. Records the tap's
+    // diagnostic outcome. The touch path hands it the camera captured at the
+    // tap's DOWN, never a later one.
     bool toggleRegionAt(const CameraSnapshot& camera, float x, float y, int viewportWidth,
                         int viewportHeight);
+
+    // Whether a Ready-state tap is armed right now: a single finger is down,
+    // has not travelled past the slop, and is not the arrow head's.
+    bool readyTapArmed() const {
+        return state_ == SketchSessionState::Ready && regionTapArmed_;
+    }
+    // The last tap candidate's diagnostic outcome, and a serial that advances
+    // every time one is recorded, so a caller can tell a new one from an old.
+    SketchTapOutcome lastTapOutcome() const { return lastTapOutcome_; }
+    uint32_t tapOutcomeSerial() const { return tapOutcomeSerial_; }
 
     // Whether the region is part of the current selection.
     bool regionSelected(SketchEntityId outerAnchorId) const;
@@ -440,14 +691,20 @@ public:
     bool planarFaceSelected(size_t index) const;
     // A point strictly inside the face and outside its holes, and its area.
     bool planarFaceInfo(size_t index, SketchPoint* outInterior, double* outArea) const;
-    // Adds the face or, when selected, removes it. Refused by name, the
-    // selection standing as it was, when the union would pinch
-    // (`PlanarFacesTouchAtPoint`) or exceed `kMaxPlanarFaceSelection`.
+    // Adds the face or, when selected, removes it: a pure SET toggle that no
+    // other selected face can gate. Refused by name, the selection standing
+    // as it was, only outside Ready, for an index that names no face, or past
+    // `kMaxPlanarFaceSelection` (`TooManyRegions`). Whether the set extrudes
+    // is the candidate's verdict, never a tap's.
     CadStatus togglePlanarFace(size_t index);
     // Selects exactly this face: the panel's list row.
     CadStatus selectPlanarFace(size_t index);
     // Whether anything is chosen, whichever the selection kind.
     bool selectionChosen() const;
+    // Why nothing is chosen, when nothing is: the lost selection, "choose one"
+    // among several areas, or no area at all. Meaningful only while
+    // `selectionChosen()` is false -- a non-empty selection is never "choose one".
+    CadStatus unchosenStatus() const;
     // How many regions or faces are chosen.
     size_t selectedAreaCount() const;
     // True after Finish found that a stored face selection (an edited feature)
@@ -538,6 +795,13 @@ public:
     bool extrudeViewFacts(const CameraSnapshot& camera, int viewportWidth, int viewportHeight,
                           CadExtrudeViewFacts* out) const;
 
+    // The action dock for one frame (`CAD-V6-S2-OWNER-CORRECTION-E2E-R1`):
+    // `cadExtrudeDockFor` over these anchors, the SAME control scale
+    // `extrudeViewFacts` reads, and the authoring frame's `u` as the
+    // near-axis fallback. Presentation only. False when there are no anchors.
+    bool extrudeDock(const CameraSnapshot& camera, int viewportWidth, int viewportHeight,
+                     CadExtrudeDock* out) const;
+
     // Reverses which side of the sketch plane the solid grows on, keeping the
     // exact depth and the same profile. A One Side control ALONE: Symmetric
     // reaches both sides already, and Two Sides states both explicitly, so in
@@ -554,6 +818,86 @@ public:
     // The live drag, for the shell diagnostics and the tests. The session owns
     // it because the session owns what it writes.
     const CadExtrudeManipulator& extrudeManipulator() const { return extrudeDrag_; }
+
+    // --- Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`) -------------------------
+    //
+    // In Ready the finished sketch's ONE selection may be extruded or revolved.
+    // Which is a volatile session choice -- never persisted, never in a history
+    // step -- and so are the axis, the angle and the direction until the one
+    // commit writes them as a Revolve feature. A Revolve is a New Body in R1.
+
+    // Extrude (the default after every Finish of a new sketch) or Revolve.
+    CadFeatureKind featureKind() const { return featureKind_; }
+
+    // Whether Revolve can be chosen now: Ready, New Body offered, and the
+    // session authoring a new body or editing a body whose first feature is a
+    // Revolve. An edit of an Extrude body keeps its kind.
+    bool revolveAvailable() const;
+
+    // Ready (Extrude) -> Ready (Revolve). The operation becomes New Body. With
+    // no axis yet the session waits for one (`revolveAxisPicking`). Refused
+    // (`NotSketching` outside Ready, `InvalidFeatureOperation` when New Body is
+    // not offered) changing nothing.
+    CadStatus beginRevolve();
+    // Ready (Revolve) -> Ready (Extrude), keeping the selection and dropping
+    // nothing of the project. Refused for an edit of a Revolve body, whose kind
+    // is the body's own (`InvalidFeatureKind`).
+    CadStatus endRevolve();
+    // Whether a Ready tap picks the axis rather than toggling an area.
+    bool revolveAxisPicking() const {
+        return state_ == SketchSessionState::Ready && featureKind_ == CadFeatureKind::Revolve
+               && axisPicking_;
+    }
+    // Re-enters the axis pick, keeping the current axis until another is picked.
+    CadStatus beginRevolveAxisPick();
+    // Sets the axis EXACTLY to this edge, or refuses by name
+    // (`resolveRevolveAxis`). Never a nearest edge.
+    CadStatus setRevolveAxis(const CadSketchEdgeRef& axis);
+    // The tap in axis-pick mode: the straight edge under the pixel. A curve is
+    // refused by name (`RevolveAxisNotStraight`); a tap on nothing changes
+    // nothing. Recorded as a tap outcome like an area tap.
+    bool pickRevolveAxisAt(const CameraSnapshot& camera, float x, float y, int viewportWidth,
+                           int viewportHeight);
+    // A typed angle, in degrees, exactly as typed: refused, never clamped.
+    CadStatus setRevolveAngle(double degrees);
+    // Reverses the sense, keeping the exact angle.
+    CadStatus flipRevolveDirection();
+    // The axis, the angle and the direction the session holds (the selection
+    // fields of this value are not used: the selection is the session's one).
+    const RevolveFeature& revolveParameters() const { return revolve_; }
+
+    // Where the ring manipulator stands in WORLD space for the current
+    // candidate: the axis line, the ring's centre on it, the radial and
+    // tangential unit vectors, its radius, and the handle at the current angle.
+    // Camera-free; false when there is no axis or no selection to size it by.
+    struct RevolveRing {
+        Vec3 axisStart{};
+        Vec3 axisEnd{};
+        Vec3 centre{};
+        Vec3 axis{};
+        Vec3 radial{};
+        Vec3 tangent{};
+        float radius = 0.0f;
+        Vec3 handle{};
+        Vec3 label{};
+    };
+    bool revolveRing(RevolveRing* out) const;
+
+    // The view a Revolve is adjusted through once its axis is set: a 3/4 pose
+    // on the sketch's +n side that sees the ring's plane (square to the axis)
+    // at a real angle rather than edge-on, centred on the ring and wide enough
+    // for the swept solid. A pure function of the ring and the frame: four
+    // deterministic candidates, each re-measured after the orbit's pitch clamp
+    // (the extrude feature view's own rule). PRESENTATION: never stored. False
+    // when there is no ring or no candidate survives the clamp.
+    bool revolveViewPose(const CameraController::Pose& current, CameraController::Pose* out) const;
+    bool revolveDragging() const { return revolveDragPointer_ >= 0 && revolveDragLive_; }
+
+    // The grab radius around the projected handle, in reference units; and the
+    // floor a DRAG clamps at (a typed angle is refused below the domain's own
+    // minimum instead).
+    static constexpr float kRevolveHandleGrabUnits = 28.0f;
+    static constexpr double kRevolveDragMinDegrees = 1.0;
 
     // THE commit. Ready -> Inactive on success, with the new body's id in
     // `outId`. One transaction; a refusal changes nothing and stays in Ready.
@@ -628,6 +972,18 @@ private:
         SketchSnapKind kind = SketchSnapKind::None;
     };
 
+    // The Editing-state half of onTouch while a modify mode is active.
+    bool onModifyTouch(TouchAction action, int32_t actionPointerId, const TouchPointer* pointers,
+                       int count, const CameraSnapshot& camera, int viewportWidth,
+                       int viewportHeight);
+    // The tap/drag of a modify mode, at a RAW sketch point.
+    void applyModifyTap(const SketchPoint& raw);
+    void updateModifyPreview(const SketchPoint& raw);
+    void resetModifyState();
+    // The snap candidates for the current sketch, rebuilt only when the sketch
+    // changed since they were built.
+    const SketchSnapCandidates& snapCandidates() const;
+
     // The Ready-state half of onTouch: the extrude arrow, on the gizmo one-
     // pointer contract. Returns true when the manipulator consumed the event.
     bool onExtrudeTouch(TouchAction action, int32_t actionPointerId, const TouchPointer* pointers,
@@ -643,7 +999,7 @@ private:
 
     bool pointerToSketch(const CameraSnapshot& camera, float x, float y, int viewportWidth,
                          int viewportHeight, SnapResult* out);
-    SnapResult snap(const SketchPoint& raw, double snapWorld) const;
+    SnapResult snap(const SketchPoint& raw, double snapWorld);
     SketchEntityId hitTest(const SketchPoint& point, double toleranceWorld) const;
     void placeFromDrag();
     void placeArcThrough(const SketchPoint& through);
@@ -666,7 +1022,6 @@ private:
                                             const CadBodyMesh& candidateMesh) const;
     CadStatus fail(CadStatus why) { lastStatus_ = why; return why; }
     void reconcilePlanarSelection();
-    CadStatus unchosenStatus() const;
     void setPlanarSelection(std::vector<PlanarFaceRef> faces);
     void clearPlanarSelection();
     std::vector<size_t> selectedPlanarFaceIndices() const;
@@ -678,10 +1033,41 @@ private:
     CadSketch sketch_;
     // The world frame the sketch is authored on. See SketchFrame.
     SketchFrame frame_;
+    double planeOffset_ = 0.0;
     // The current adaptive minor grid step, in metres. Updated from the camera
     // at pointer-down and when the overlay is rebuilt; never persisted.
     double gridStep_ = kSketchGridSpacingMeters;
-    SketchEntityId selectedEntityId_ = kNoSketchEntity;
+    // The selection SET, in insertion order (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`).
+    std::vector<SketchEntityId> selectedIds_;
+    bool multiSelect_ = false;
+    uint32_t lastDeletedDimensions_ = 0;
+    // The modify mode and its volatile state.
+    SketchModifyMode modifyMode_ = SketchModifyMode::None;
+    bool dimensionTargetSet_ = false;
+    CadSketchEdgeRef dimensionFirst_{};
+    bool dimensionAwaitSecond_ = false;
+    SketchEntityId offsetSource_ = kNoSketchEntity;
+    double offsetDistance_ = 0.0;
+    bool mirrorAxisSet_ = false;
+    CadSketchEdgeRef mirrorAxis_{};
+    // The Trim / Extend preview under the finger: the interval that would go
+    // (Trim) or be added (Extend), in sketch coordinates. Empty when none.
+    std::vector<SketchPoint> modifyPreview_;
+    bool lastTrimConvertedRectangle_ = false;
+    TapAct lastTapAct_ = TapAct::None;
+    uint64_t tapActSerial_ = 0;
+    SketchPoint rawCursor_{};
+    // Presentation; survives a new sketch, like the grid toggle survives a frame.
+    SketchDimensionVisibility dimensionVisibility_ = SketchDimensionVisibility::Selected;
+    // The snap cache: candidates derived for `snapSketch_`. Mutable because a
+    // const query may refresh it; it is derived and never compared.
+    mutable bool snapCacheValid_ = false;
+    mutable CadSketch snapSketch_;
+    mutable SketchSnapCandidates snapCache_;
+    // The all-curves arrangement the snap cache was built from, shared with
+    // the Trim preview so a pointer move never re-derives it.
+    mutable SketchArrangement allCurvesCache_;
+    SketchSnapResult lastSnap_{};
 
     SketchRegionExtraction regions_;
     // `CAD-V6-S2`: the arrangement derived at Finish and, when the session is
@@ -702,6 +1088,13 @@ private:
     // placement is not staged here: it belongs to the sketch RECORD in the
     // staged state, which an edit rewrites the entities of and nothing else.
     uint32_t editingFeatureId_ = 0;
+    // `CAD-R2`: the retained sketch a reuse session extrudes, and the unused
+    // sketch a sketch-only edit rewrites. Volatile; kNoCadSketch otherwise.
+    CadSketchId reuseSketchId_ = kNoCadSketch;
+    CadSketchId editingSketchId_ = kNoCadSketch;
+    // The One Side direction a reuse's operation points into or out of the
+    // material, derived at begin from where the sketch stands.
+    ExtrudeDirection reuseCutDirection_ = ExtrudeDirection::AgainstNormal;
     // Bumped by every authored change that could change the candidate.
     uint64_t candidateRevision_ = 1;
     CadCandidateEvaluation evaluation_;
@@ -711,8 +1104,43 @@ private:
     int32_t regionTapPointer_ = -1;
     float regionTapX_ = 0.0f;
     float regionTapY_ = 0.0f;
+    // The camera as it stood at the tap's Down: the tap resolves its cell
+    // against THIS and the Down pixel, so nothing the camera did since can
+    // move which cell the finger meant (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`).
+    CameraSnapshot regionTapCamera_{};
+    // The Down landed on the drawn arrow HEAD: a still tap there is the
+    // manipulator's and is recorded as such on Up.
+    bool regionTapOnHead_ = false;
+    SketchTapOutcome lastTapOutcome_ = SketchTapOutcome::None;
+    uint32_t tapOutcomeSerial_ = 0;
+    void recordTapOutcome(SketchTapOutcome outcome) {
+        lastTapOutcome_ = outcome;
+        ++tapOutcomeSerial_;
+    }
     // Volatile transition intent (`CAD-EXT-R1`). See the accessor.
     ExtrudeDirection oneSideDirection_ = ExtrudeDirection::AlongNormal;
+    // `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: which feature the Ready selection makes,
+    // and a Revolve's axis, angle and direction. Volatile until the commit.
+    CadFeatureKind featureKind_ = CadFeatureKind::Extrude;
+    RevolveFeature revolve_;
+    bool axisPicking_ = false;
+    // The Revolve the candidate makes: `revolve_` with the session's selection.
+    RevolveFeature candidateRevolve() const;
+    // The ring handle drag: one captured pointer, the angle and the unwrapped
+    // pointer angle at the last sample, and the ring frozen at pointer-down so
+    // the growing preview cannot move it under the finger.
+    int32_t revolveDragPointer_ = -1;
+    bool revolveDragLive_ = false;
+    double revolveDragStartDegrees_ = 0.0;
+    double revolveDragPointerAngle_ = 0.0;
+    double revolveDragDegrees_ = 0.0;
+    RevolveRing revolveDragRing_{};
+    bool onRevolveTouch(TouchAction action, int32_t actionPointerId, const TouchPointer* pointers,
+                        int count, const CameraSnapshot& camera, int viewportWidth,
+                        int viewportHeight);
+    bool revolvePointerAngle(const RevolveRing& ring, const CameraSnapshot& camera, float x,
+                             float y, int viewportWidth, int viewportHeight, double* out) const;
+    void cancelRevolveDrag();
     // The canvas manipulator (`CAD-UX-S1`). Volatile like everything else here,
     // and alive only in Ready: while the sketch is being DRAWN the single
     // finger belongs to the drawing, and an arrow that competed with it would
@@ -770,5 +1198,15 @@ private:
 // sketch can be in progress in the product, and the JNI layer holds no
 // sketch state of its own.
 SketchSession& sketchSession();
+
+// Frames `camera` EXACTLY normal to the session's VIEW frame (`viewFrame()`:
+// the authoring frame with the navigator's flip and roll applied, always
+// right-handed). This is the one statement of what the sketch camera looks
+// at: JNI calls it every time the view must be (re)installed, and the host
+// self-tests call the same function, so the navigator's state and the camera
+// cannot disagree. Presentation only -- it reads the session and writes the
+// camera, and no authored coordinate, support, project byte or history step
+// is involved.
+void frameCameraOnSketchView(CameraController& camera, const SketchSession& session);
 
 }  // namespace forgeshape

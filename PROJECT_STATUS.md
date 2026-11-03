@@ -1,8 +1,333 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.93.0
-**Updated:** 2026-10-01
-**Latest closeout:** **`CAD-V6-S2-RESEARCH-FILL-PICK-HUD3D-R1` —
+**Status Version:** 0.107.0
+**Updated:** 2026-11-02
+**Latest stage:** **`SKETCH-NAVIGATOR-OUTCOME-R1` —
+`PASS-SKETCH-NAVIGATOR-OUTCOME-R1`** (2026-11-02). **TECH PASS (emulator) /
+OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`feature/sketch-navigator-outcome-r1` from exactly `8a797ff` (the import-guard
+head); product and tests frozen at `28cb315`. Record:
+`artifacts/sketch-navigator-outcome-r1/SUMMARY.md`. Closes CR-06-S3: the sketch
+orientation navigator's Flip and ±90 now turn the REAL camera
+(`frameCameraOnSketchView` frames on `SketchSession::viewFrame()`; JNI
+`beginSketchView` had framed on the authoring frame), picking and drawing land
+where the user sees, a face sketch rolls but refuses Flip below JNI too, and
+Back to Sketch is the aligned view with an honest navigator (OD-09
+reset-on-re-entry form; persistence across re-entry stays OWNER question
+OD-09). No format, fixture, Java or renderer change. RED: CR-06 host re-run and
+`CI DEVICE` `41507903710` 7/9 fail on the unchanged product. GREEN: host
+`HOST_SELFTESTS_OK (4472 checks, 0 failed)`, 17 oracles, JVM 199/0, corpus 72,
+release guard PASS, `CI DEVICE` `41517008402` 69/69, final `CI FAST`
+`41524092732` (`app-debug.apk` 17755951 bytes, SHA-256
+`f8cbb67de8e1b0541ebf4d5cbd79d203eb82689d6456c195fc93022c0aaf4194`). OD-01,
+OD-03, OD-09 (b), OD-27, `.gitattributes`, CR-03 Q2/Q3 stay open. No FullSharded.
+
+**Previous stage:** `IMPORT-GLB-SKETCH-GUARD-R1` (record below, unchanged).
+**Latest stage:** **`IMPORT-GLB-SKETCH-GUARD-R1` —
+`PASS-IMPORT-GLB-SKETCH-GUARD-R1`** (2026-11-02). **TECH PASS (emulator) /
+OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`feature/import-glb-sketch-guard-r1` from exactly `8eb94ce` (the
+face-supported-placement head); product and tests frozen at `e33a1ee`. Record:
+`artifacts/import-glb-sketch-guard-r1/SUMMARY.md`. Closes the sketch half of
+Council `CR-03`: Import GLB is refused while a sketch is open (Editing or Ready,
+staged edits and the CAD bootstrap's first sketch included) — natively as
+`ImportCommitStatus::RefusedInSketch` (appended, wire 1006) under
+`g_stateMutex` right before the commit, with Sculpt's 1005 first; above JNI the
+row is absent, both callbacks re-read native, and 1006 has its own sentence.
+No ordinal, format, fixture or dependency moved. RED: CR-03 host re-run and
+`CI DEVICE` `41490895211` 0/5 on the unchanged product. GREEN: host
+`HOST_SELFTESTS_OK (4454 checks, 0 failed)`, JVM 199/0, corpus 72, release
+guard PASS, `CI DEVICE` `41492901369` 65/65, final `CI FAST` `41497992257`
+(`app-debug.apk` 17727519 bytes, SHA-256
+`841a9ce50431c0085fd9f0e31beb516667dc1faff146f7105412892299ab2ba7`). Still
+OWNER questions: import with the support chooser alone (`CR-03` Q2) and with
+no project (Q3); `.gitattributes` scope (OWNER-REVIEW-PENDING). OD-01, OD-03,
+OD-05/06, OD-16, OD-22, OD-27, OD-29 open. No FullSharded.
+
+**Previous stage:** `CAD-FACE-SUPPORTED-PLACEMENT-R1` (record below, unchanged).
+**Latest stage:** **`CAD-FACE-SUPPORTED-PLACEMENT-R1` —
+`PASS-CAD-FACE-SUPPORTED-PLACEMENT-R1`** (2026-10-30). **TECH PASS (emulator) /
+OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`feature/cad-face-supported-placement-r1` from exactly `7c2fc91`; product
+frozen at `912b861`. Record: `artifacts/cad-face-supported-placement-r1/SUMMARY.md`.
+A CAD body sketched on another body's face now exports where it is drawn (GLB
+placement from `resolveWorldModel`; an unresolved support refused as
+`UnresolvedPlacement`, zero bytes; independent bodies byte-identical) and is
+not independently transformable (typed write refused as `DerivedPlacement`,
+`APPLY_REJECTED_DERIVED_PLACEMENT` = 11; the gizmo neither drawn nor dragged
+over one; Transform withdrawn above JNI). Closes closeout CR-01 and CR-02 and
+the stale `uir4a04`. No `.forge`, `CADB`, fixture or spec change. RED: host 18
+failing checks, the CR-02 reproducer and `uir4a04` on the unchanged product.
+GREEN: host `HOST_SELFTESTS_OK (4434 checks, 0 failed)`, JVM 196/0, corpus
+72, release guard PASS; `CI DEVICE` `41084823234` 50/50 and `41090517111`
+109/109 (after `41078310302` 86/87, a test footprint assumption fixed in the
+test only); final `CI FAST` `41098028076` success, `app-debug.apk` 17714955
+bytes, SHA-256 `8ec4356e30bb42195300214f42d17f91ebb4810bd576a2d0277546565c31edf9`.
+`.gitattributes` exempts raw evidence paths from FAST's whitespace gate (the
+inherited audit evidence failed it; no evidence byte changed). OD-01, OD-05,
+OD-16, OD-27 and OD-29 stay open. No FullSharded.
+**Latest audit closeout (research, no product change):**
+**`FUNCTION-COUNCIL-R2-CLOSEOUT-R1` — `AUDIT-CLOSEOUT-PARTIAL-SOURCE-GAP`**
+(2026-10-30). NO CURRENT FULL MASTER PLAN COMPLIANCE CLAIM: the OWNER source
+archive (16/16 hashes) holds Master v4.0.58, v4.1.0, a partial v4.1.58 and
+addenda 4.1.62–66, but not the canonical v4.1.61. Branch
+`audit/function-council-r2-closeout-r1` from exactly `2e5d8fc`, adding only
+`artifacts/function-council-r2-closeout/**`; nothing merged, no FullSharded.
+Record: `artifacts/function-council-r2-closeout/SUMMARY.md`. Re-reproduced
+on the host (E1): GLB export of a face-supported CAD body at the origin
+(CR-01), the invisible transform/gizmo edit on such a body (CR-02), Import GLB
+during a sketch (CR-03), Sculpt NotRetained Undo (CR-04), the recovery prompt
+after recreation (CR-05 component), the navigator camera (CR-06), and the
+PROJECT self-test cap and FMA-sensitive oracles (CR-07). Focused `CI DEVICE`
+`40979514270` 63/63 and `40983965648` 72/73 (emulator); the one failure,
+`EditorWorkspaceMobileTest#uir4a04`, is a stale test count (the authorised
+Freeform/Surface tiles), not a product regression. 33 unique current BUG
+mechanisms. Proposed next stage (not authorised):
+`CAD-FACE-SUPPORTED-PLACEMENT-R1`. The C2 status and the OD-27 gate below are
+unchanged.
+
+**Latest audit (research, no product change):** **`FUNCTION-COUNCIL-R2`
+(full capability / UX / Android-desktop portability audit) —
+`PARTIAL-PLAN-SOURCE-GAP`** (2026-10-29). The canonical Master Plan v4.1.61
+and OWNER-decision files were unavailable, so Master-Plan compliance is NOT
+claimed; the repo, tests and runtime were audited against the repo's own
+records. Branch `audit/function-council-r2-full-product-ux-platform-r1` from
+exactly `70a6c14`, adding only `artifacts/function-council-r2/**`; nothing
+merged, no FullSharded. Record: `artifacts/function-council-r2/SUMMARY.md`.
+Fresh evidence on the C2 product tree: host 4392/0 (25 suites, 17 oracles),
+JVM 196/0, release guard PASS, `CI FAST` `40796992679` (corpus 72/72),
+`CI DEVICE` `40797031704` 32/32 + `40800569636` 77/77 + `40805804385` 90/90
+(emulator only). 681 atomic requirements traced; 30 of 38 P0–P2 findings
+panel-verified, all survived (23 root causes, no P0, no regression); two P1
+(GLB export of a face-supported CAD body at the wrong placement; recovered
+work protected nowhere after Recover, OWNER decision OD-05). Old Council D1
+and D5 closed; D2, D3, D4 and import-during-sketch confirmed open; D6, D7
+partial. This audit approves no functionality; the `CAD-R2-C2` status below
+(TECH PASS / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED) is unchanged.
+**Latest closeout:** **`CAD-R2-C2` (CPU picking seam correctness) —
+`PASS-CAD-R2-C2-PICKING-SEAM`** (2026-10-28). **TECH PASS / OWNER PHYSICAL
+REVIEW REQUIRED / NOT MERGED.** Branch `feature/cad-r2-c2-picking-seam-r1` from
+exactly `08406cf` (the C1 head); the one product change `0fa12c9`
+(`forgeshape_picking.cpp`), `app/src/main` frozen at `f3db953`, docs / device
+tests only after it; no other branch moved; no FullSharded. Record:
+`artifacts/cad-r2-c2-picking-seam/SUMMARY.md` (BEFORE.md first). A2 stays
+`BLOCKED-DESIGN-DECISION-R2-WORLD-PLANE-RETAINED-SKETCH`.
+
+- **Defect.** In the ORTHOGRAPHIC projection a tap exactly on the diagonal two
+  triangles of one planar face share (the C1 pocket floor's centre) hit
+  neither, and the chooser answered the world plane BEHIND the face. Cause:
+  float32 cancellation in `intersectRayTriangle` (`s = origin − v0`, origin
+  250 m out) grows past the fixed 1e-6 barycentric overlap.
+- **Fix.** The same Möller–Trumbore, thresholds, culling and float interface,
+  evaluated in double. `kBarycentricEpsilon` unchanged; no format, JNI,
+  renderer or kernel change.
+- **Gates.** Host `HOST_SELFTESTS_OK (4392 checks, 0 failed)` (+17 PICK_C2, 8
+  red before the fix; C1_CH and the 17 oracles kept); JVM 196/196; release
+  guard PASS; corpus 72/72; DEVICE union **126/126** (`40782861799` 67/67 + `40776968165` 59/59) incl.
+  `CadRetainedSketchOwnerTest` D01..D22; perf +2.4 – 3.0 % per triangle test,
+  CAD scene pick unchanged (`PERF.md`); `CI FAST` `40787465884` success.
+- **OWNER APK.** `ci-fast-evidence` artifact `12860436405` of `CI FAST` `40787465884` (head `14a3dbc`, product tree = `f3db953`), `app/build/outputs/apk/debug/app-debug.apk`, 17,582,551 bytes, SHA-256 `262076926e8cc3f90dc70425de4363d3ba3300adfc1998092d581cdffc40be9e`; artifact expires 2026-11-11T23:31:32Z.
+
+**Previous closeout:** **`CAD-R2-C1` (post-implementation quality gate) —
+`PASS-CAD-R2-C1-WITH-RECORDED-BLOCKERS`** (2026-10-28). **TECH PASS / OWNER
+PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`feature/cad-r2-c1-quality-gate-r1` from exactly `ea24d20` (the CAD-R2 head);
+product `cf340f0`, FAST head `911f5c3` (docs only after it); no other branch
+moved; no FullSharded. Record: `artifacts/cad-r2-c1-quality-gate/SUMMARY.md`
+(BEFORE.md first). Recorded blocker: the A2 world-plane retained sketch stays
+an OWNER design decision (options in SUMMARY), not implemented.
+
+- **Performance (A).** R2's reported `eval_all` +31.5 % / `trim100` +35.1 %
+  reproduce in the HOST self-test binary but are a code-placement effect, not
+  R2's code: the same code is 25 % faster in another link of itself, a
+  product-only link removes the gap, the 32-byte branch mitigation removes it,
+  and ablating R2's new validation changes nothing (1.1 µs). All three metrics
+  `NO-REPRO-STABLE`; no product change.
+- **Chooser (B).** A tap on a surface that cannot carry a sketch (curved Cut
+  wall, revolved body) no longer falls through to a world plane BEHIND it
+  (two taps used to open a YZ sketch); a plane in front still wins.
+- **Font scale (C).** At system font 1.5 the canvas Edit Sketch chip stood on
+  History's own Edit Sketch act; the chip now steps aside while History is
+  open. History verified at 1.0 / 1.3 / 1.5 × portrait / landscape.
+- **Gates.** Host `HOST_SELFTESTS_OK (4375 checks, 0 failed)` (+6 C1_CH;
+  oracles 17); JVM 196/196; release guard PASS; corpus 72/72; DEVICE union
+  **122/122** (`40752389411` 67/67 + `40760227555` 55/55, incl.
+  `CadRetainedSketchOwnerTest` D01..D18); `CI FAST` `40766013297` success.
+- **OWNER APK.** `ci-fast-evidence` artifact `12849379257` of `CI FAST`
+  `40766013297`, `app/build/outputs/apk/debug/app-debug.apk`, 17,552,535 bytes,
+  SHA-256 `fd7a11a9a7b1bbf7748b46e2d71c71a2a830b54f59e8bd7f9011113d968b1dd5`;
+  artifact expires 2026-11-11T20:52:13Z.
+
+**Previous closeout:** **`CAD-R2` (retained sketches, parametric history,
+quality) — `PASS-CAD-R2-RETAINED-SKETCH-PARAMETRIC-UX`** (2026-10-28). **TECH
+PASS / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
+`feature/cad-r2-retained-sketch-parametric-ux-r1` from exactly `636797e`;
+product `5127cfc` (+ the Java constant in `5dd7d97`), FAST head `b747651`
+(test / docs only after that); no other branch moved; no FullSharded. Record:
+`artifacts/cad-r2-retained-sketch-parametric-ux/SUMMARY.md` (BEFORE.md and
+DESIGN.md first).
+
+- **History → Sketches.** Every retained sketch listed by durable id with its
+  support, counts, consumers and state; Edit Sketch, Use for Add / Cut and
+  Delete Sketch drawn only where native accepts them, refusals named
+  (`SketchInUse`, `SketchIsRoot`, appended CadStatus 91 / 92).
+- **Keep Sketch / reuse / safe delete.** A sketch on a face of the body's own
+  features can be kept with no feature; Add / Cut can name an EXISTING sketch
+  by id; only unused non-root sketches delete. Each one Undo. A world-plane
+  retained sketch is **BLOCKED-DESIGN-DECISION** (needs a second root).
+- **Fixes.** A sketch-only edit's candidate no longer builds a new body;
+  `CadBody::applyState` now refuses a state that strands a kept sketch; the
+  debug CAD_FEATURE device record cap 512 → 1024; History acts stand above the
+  list so landscape keeps 48 dp.
+- **Format.** None changed; corpus 72/72 byte-identical.
+- **Gates.** Host `HOST_SELFTESTS_OK (4369 checks, 0 failed)` (25 suites, 48
+  R2 checks + 17 independent oracles in CAD_FEATURE); JVM 196/196; release
+  guard PASS; DEVICE union **118/118** (`CI DEVICE` `40683528533` 67/67 on
+  `f706e92` + `40689211847` 51/51 on `7d2d7b4`, incl.
+  `CadRetainedSketchOwnerTest` D01..D14); `CI FAST` `40694343402` success.
+- **Performance risk (open).** Same-machine `eval_all` +31.5 % and
+  `drafting_trim100` +35.1 % median, not attributed to this stage's code
+  (`perf_same_machine.md`).
+- **OWNER APK.** `ci-fast-evidence` artifact `12819336381` of `CI FAST`
+  `40694343402`, `app/build/outputs/apk/debug/app-debug.apk`, 17,545,911 bytes,
+  SHA-256 `043203e18733d10e28985bf86a4cb41ed87fc3c3fd743b391fbc20a6ad5ac272`;
+  artifact expires 2026-11-11T13:19:04Z.
+
+**Previous closeout:** **`MODELING-R1-OWNER-CORRECTION-PROJECT-SHELL-SKETCH-SUPPORT-PLANAR-R1`
+— `PASS-MODELING-R1-OWNER-SHELL-SKETCH-CORRECTION`** (2026-10-06). **TECH PASS /
+OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
+`feature/modeling-r1-owner-shell-sketch-fix-r1` from exactly `7e02240`; product
+`4a393fc`, DEVICE union and FAST head `01c3942` (test-only after `4a393fc`);
+`main` stays `6c9f156`, `feature/cad-v6-sketch-face-r1` stays `bbae765`, the
+Modeling branch stays `7e02240`; no FullSharded. Record:
+`artifacts/modeling-r1-owner-shell-sketch-fix/SUMMARY.md` (OWNER_FEEDBACK.md,
+BEFORE.md and REPRO_BEFORE.md first).
+
+- **ForgeShape mark + project drawer.** The mark leads the Global Toolbar
+  (top-left, 48 dp, the one project door; the trailing `ic_project` icon is
+  gone) and opens a left drawer: Create (New Sketch, New Project…), Project,
+  Transfer, Import, Application — every row the existing handler, the drawer
+  closed first (`ProjectDrawerPolicy`). Absent only in the CAD bootstrap.
+- **New Sketch on faces.** The drawer's New Sketch is Add Primitive's own path
+  into the spatial chooser. Support eligibility is per face: every flat Extrude
+  face of any operation (a Cut's pocket floor and straight walls included,
+  framed material-outward, valid only where they survived); curved sides and
+  Revolve faces never (partial Revolve caps have no exact frame in R1). The
+  lineage bit stays the frozen R1 rule — no format change. The Edit Sketch chip
+  is withdrawn while the chooser is up (it took the face tap — found on device).
+- **Inner-cell point touch.** Reproduced on the baseline (an edge-connected
+  selection whose two unchosen inner cells meet at a node was
+  `PinchedSelection`); the union loop is now split at that node into one outer
+  and its holes, each with its own vertex ring — one solid, exact area. Add/Cut
+  rules unchanged.
+- **Gates.** Host `HOST_SELFTESTS_OK (4304 checks, 0 failed)` (25 suites, OSS
+  checks in CAD_FEATURE); JVM 179/179; release guard PASS; corpus 72/72
+  byte-identical, verdicts unchanged; focused `OwnerProjectShellSketchSupportTest`
+  `CI DEVICE` `37499163269` PASS 5/5 (six attempts, all recorded); union on
+  `01c3942`: `37507824851` PASS 67/67 (9 classes) + `37513387645` PASS 37/37
+  (`EditorWorkspaceCorrectionTest`; the workflow's 2700 s cap split the union);
+  `CI FAST` `37516245911` success.
+- **OWNER APK.** `ci-fast-evidence` artifact `11437665909` of `CI FAST`
+  `37516245911`, `app/build/outputs/apk/debug/app-debug.apk`, 17,169,462 bytes,
+  SHA-256 `b557827d56c6979cf46c3451894b38717d6c882faa7610cfbc74f088113411cb`;
+  artifact expires 2026-10-20T19:10:54Z.
+
+**Previous closeout:** **`MODELING-FOUNDATIONS-R1` — `PASS-MODELING-FOUNDATIONS-R1`**
+(2026-10-06). **TECH PASS / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task
+branch `feature/modeling-v9-parametric-freeform-surface-r1` from the drafting
+head `a3643b5`; product `30833aa`; `main` stays `6c9f156`,
+`feature/cad-v6-sketch-face-r1` stays `bbae765` and the drafting branch stays
+`a3643b5`; no FullSharded; S3 not started. Record:
+`artifacts/modeling-foundations-r1/SUMMARY.md` (BEFORE.md and DESIGN.md first).
+
+- **Parametric History.** A CAD or Surface body's sketches and features listed
+  in construction order (History control in the history capsule); a row opens
+  a STAGED edit, the first failing later feature is named, Fix / Cancel, one
+  Undo per finished edit.
+- **Freeform/SubD.** A body whose truth is a quad control cage (strong ids),
+  Catmull-Clark levels 0..4 with creases; Vertex/Edge/Face selection, gizmo,
+  Push/Pull, Extrude, Insert Loop, Crease, Delete Face, exact Symmetry; each one
+  Undo. `FRFM` v1.
+- **Surface.** A body whose truth is an ordered feature list: Patch, Extrude
+  (open chains), Revolve (Construction axis), Loft (two sections), exact
+  planar Trim, Stitch, Thicken; first-failure regeneration; Finish choices hang
+  from the toolbar. `SURF` v1.
+- **Format.** `FRFM` and `SURF` written only when needed (header bits 4 and 5);
+  six fixtures; corpus **72/72** byte-identical between the C++ writer and the
+  PowerShell builder; the 66 older fixtures unchanged.
+- **Gates.** Host `HOST_SELFTESTS_OK (4287 checks, 0 failed)` (25 suites);
+  JVM 170/170; release guard PASS; startup 25/25 tokens; union `CI DEVICE`
+  `37472535341` on `30833aa`: **PASS 54/54** (9 classes, including
+  `CadParametricHistoryOwnerTest` 3, `FreeformOwnerTest` 3, `SurfaceOwnerTest`
+  3); `CI FAST` `37478194506` on `6b54843`: success (corpus 72/72).
+- **OWNER APK.** `ci-fast-evidence` artifact `11420511634` of `CI FAST`
+  `37478194506` (product `30833aa`), `app/build/outputs/apk/debug/app-debug.apk`,
+  17,067,370 bytes, SHA-256
+  `062df5c8a769932bf85cef40877a97ef00c8a68103ac5ffae11a6319560c0862`; artifact
+  expires 2026-10-20T14:26:17Z.
+- **Deferred:** true T-Spline local refinement, general NURBS, general B-Rep
+  fillet and draft, feature reorder, advanced Surface repair and interchange.
+
+**Previous closeout:** **`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` —
+`PASS-CAD-SKETCH-DRAFTING-TOOLKIT-E2E`** (2026-10-06). TECH PASS / OWNER
+PHYSICAL REVIEW REQUIRED / NOT MERGED; branch
+`feature/cad-v8-sketch-drafting-toolkit-r1` at `a3643b5`. Construction geometry,
+twelve dimension kinds, snaps, Trim/Extend/Offset/Mirror, `CADB` v8; union
+`CI DEVICE` `37415689406` PASS 97/97; OWNER APK SHA-256
+`60ea5d03b388117379e5fa413823388e3815a0ba956de3819238d6fb1990abab`. Record:
+`artifacts/cad-sketch-drafting-toolkit/SUMMARY.md`.
+
+**Earlier closeout:** **`CAD-V6-REVOLVE-NEWBODY-E2E-R1` —
+`PASS-CAD-V6-REVOLVE-NEWBODY-E2E`** (2026-10-06). TECH PASS / OWNER PHYSICAL
+REVIEW REQUIRED / NOT MERGED; branch `feature/cad-v6-revolve-newbody-r1` at
+`5dcb73b`. Revolve New Body about a semantic straight sketch edge, exact
+degrees, `CADB` v7; `CI DEVICE` `37391067580` PASS 83/83, OWNER APK SHA-256
+`d41ad54af67f86e8d92177b1e542b932ee15ac3e1c4c836b02deecd91a2f99f6`. Record:
+`artifacts/cad-v6-revolve-newbody/SUMMARY.md`.
+
+**Earlier closeout:** **`CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E-R1` —
+`PASS-CAD-V6-S2-OWNER-FEEDBACK-MULTIFACE-E2E`** (2026-10-05). TECH PASS / OWNER
+PHYSICAL REVIEW REQUIRED / NOT MERGED; branch
+`feature/cad-v6-s2-owner-feedback-multiface-r1` at `3e2443f`. The 16-area cap
+on fill selections became the arrangement's own bound (9216) and the first
+project's Extrude stopped refusing fill selections (`AmbiguousProfile`);
+`CI DEVICE` `37365134653` PASS 69/69. Record:
+`artifacts/cad-v6-s2-owner-feedback-multiface/SUMMARY.md`.
+
+**Earlier closeout:** **`CAD-V6-S2-OWNER-CORRECTION-E2E-R1` —
+`PASS-CAD-V6-S2-OWNER-CORRECTION-E2E`** (2026-10-02). **TECH PASS / OWNER
+PHYSICAL REVIEW REQUIRED / NOT MERGED.** Task branch
+`feature/cad-v6-s2-owner-correction-e2e-r1` from the R2 head `b264cfe`; `main`
+stays `6c9f156` and `feature/cad-v6-sketch-face-r1` stays `bbae765`; no
+FullSharded; S3 not started. Record:
+`artifacts/cad-v6-s2-owner-correction-e2e/SUMMARY.md`.
+
+- **Fill/pick R2 (Phase A), device-proven.** A fill selection is a set (any
+  cell adds or removes in any order), point-touching and disjoint cells are
+  separate components, edge-adjacent cells union, a Ready tap resolves at the
+  Down pixel through the Down camera with no orbit inside the slop, from either
+  side of the plane, a still shaft tap toggles the cell under it, a shaft drag
+  changes the depth, a head tap is the arrow's, and an operation refusal keeps
+  the selection. DEV-R2-04's harness now derives its shaft pixel from a known
+  cell interior (test-only).
+- **HUD3D (Phase B).** The flat screen-space action panel is replaced by ONE
+  operation badge drawn into a native-projected WORLD rectangle on the axis
+  past the arrow point (`cadExtrudeDockFor`, tool-state slots 45..58,
+  `CadExtrudeDockView`, `CadHud3dPresentation`): it tilts with the arrow, never
+  slides or re-sides, hides whole near the axis / behind the eye / off the
+  viewport, and claims only its quad plus the 48 dp floor. The dimension
+  leader and value are unchanged. No renderer, format or fixture change.
+- **Gates.** Host `HOST_SELFTESTS_OK (4005 checks, 0 failed)`; JVM 120/120;
+  debug/release/androidTest green; release guard PASS; fixture verdicts 57/57
+  unchanged; corpus 57/57 (CI FAST). `CI DEVICE` `36999488652` on `8ca3e6b`:
+  **PASS 82/82** (11 classes). `CI FAST` `37001980955` on `7ac555c` (product
+  identical to `8ca3e6b`): success. Every failed attempt is in the record.
+- **OWNER APK.** `ci-fast-evidence` artifact `11224257836`,
+  `app/build/outputs/apk/debug/app-debug.apk`, 13,078,746 bytes, SHA-256
+  `431e233b6a33fa8dde8210a6f3291458629d6830dd008cfb91f8810ac5d948b1`
+  (expires 2026-10-16).
+
+**Previous closeout:** **`CAD-V6-S2-RESEARCH-FILL-PICK-HUD3D-R1` —
 `PASS-CAD-V6-S2-RESEARCH-FILL-PICK-HUD3D`** (2026-10-01). READ-ONLY research
 after the OWNER rejected the second S2 physical review; no product, test, build,
 format or workflow change; no CI, DEVICE or FullSharded; not merged. Record:
@@ -1832,8 +2157,8 @@ lives in Git history; only what still constrains the code is kept here.
 `SCULPT-UNDO-R0` (`ARCH-OWNER-12` — a dedicated bounded volatile per-body Sculpt
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
-**Next Stage:** **return this report to the ForgeShape coordinator.** The
-OWNER's CAD-A3-C2 review is closed with PASS; the Delete → Undo → Redo owner
+**Next Stage:** the OWNER physical-device review of the
+`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` APK; the Delete → Undo → Redo owner
 verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See *Next Stage*.
 
 ## Current state
@@ -4627,24 +4952,41 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: `CAD-V6-S2-CORRECTION-FILL-PICK-R2` on
-`feature/cad-v6-sketch-face-r1`** — Phase 1 of
-`artifacts/cad-v6-s2-research/IMPLEMENTATION_PLAN.md`: selection as a set (the
-tap checks the cap only), point-touching faces as separate components,
-refusals at preview/commit, the Ready tap resolved against the Down camera with
-no orbit while it is armed, only the arrow HEAD claiming a still tap, a stated
-edge-on threshold, and attribution tokens. It needs its own authorisation.
-Phase 2 (`CAD-V6-S2-HUD3D-R1`, the world-attached one-badge dock) follows only
-after the OWNER accepts Phase 1 on a physical device. `CAD-V6-S3` (retained-
-sketch mobile UX) waits for both. The branch merges to `main` only after the
-completed v6 migration passes the Tier-5 aggregate once.
+**Exactly one next step: OWNER physical-device review of the
+`SKETCH-NAVIGATOR-OUTCOME-R1` APK** (`ci-fast-evidence` artifact `13179561711`
+of `CI FAST` `41524092732`, `app-debug.apk` SHA-256
+`f8cbb67de8e1b0541ebf4d5cbd79d203eb82689d6456c195fc93022c0aaf4194`; it carries the
+`CAD-R2-C2` product, `CAD-FACE-SUPPORTED-PLACEMENT-R1`,
+`IMPORT-GLB-SKETCH-GUARD-R1` and this stage; navigator check: in a sketch, ±90
+and Flip turn the view and drawing still lands under the finger) against
+`artifacts/cad-face-supported-placement-r1/OWNER_LATER_TEST_PACK.md`, the
+import-during-sketch check (open the drawer while drawing: no *Import a mesh*;
+a file picked before the sketch began is refused with the sketch untouched) and the test packs in
+`artifacts/cad-r2-c2-picking-seam/SUMMARY.md` (the orthographic seam tap) and
+`artifacts/cad-r2-c1-quality-gate/SUMMARY.md` (which includes the CAD-R2
+retained-sketch checklist), together with the still-pending
+`MODELING-R1-OWNER-CORRECTION`, `MODELING-FOUNDATIONS-R1`, drafting-toolkit and
+Revolve checklists. The OWNER also decides
+BLOCKED-DESIGN-DECISION-R2-WORLD-PLANE-RETAINED-SKETCH (options in the C1
+SUMMARY; option 0, the refusal, is current behaviour, not a decision). Nothing merges to `feature/cad-v6-sketch-face-r1` or `main` before
+that verdict. The v6 branch merges to `main` only after the completed v6
+migration passes the Tier-5 aggregate once.
 
-`FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
-recorded debt, not authorised work. The Council's other OWNER decisions are
+`FUNCTION-COUNCIL-R2` adds decision support to that review, not a second next
+step: its owner-decision register (`artifacts/function-council-r2/OWNER_DECISIONS_REQUIRED.md`,
+OD-27 is this review). Its recommended stage, `CAD-FACE-SUPPORTED-PLACEMENT-R1`,
+is now technically closed (above) and joins this same review.
+
+`FUNCTION-COUNCIL-R1`'s debt, re-checked by `FUNCTION-COUNCIL-R2` on `70a6c14`
+(`artifacts/function-council-r2/COUNCIL_DEBT_RECHECK.md`): D5 is closed; D2, D3,
+D4 and the import-during-sketch observation are confirmed open; D6 and D7 are
+partial. All of it stays recorded debt, not authorised work. The Council's other OWNER decisions are
 still open (`COUNCIL_FINDINGS.md` §5, `NEXT_VERTICAL_SLICE_OPTIONS.md`).
 
-Do not start Revolve, Through All, To Object, Intersect, a Hole feature,
-fillet, chamfer, shell, a pattern, a constraint solver, CAD → Sculpt, Stage024,
+Do not start T-Spline local refinement, general NURBS, a Surface trim of a
+curved surface, feature reorder or suppression, a Revolve Add/Cut or later Revolve feature, Through All, To Object, Intersect, a Hole feature,
+fillet, chamfer, shell, a pattern, a constraint solver (or any persistent
+sketch relation), projected edges, drawing sheets, CAD → Sculpt, Stage024,
 `CAD-A4` or Stage 026 from this status. A second third-party library needs its
 own gate.
 

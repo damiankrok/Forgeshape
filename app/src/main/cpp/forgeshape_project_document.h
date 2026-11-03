@@ -60,8 +60,11 @@
 
 #include "forgeshape_cad_body.h"
 #include "forgeshape_construction.h"
+#include "forgeshape_freeform.h"
+#include "forgeshape_surface.h"
 #include "forgeshape_imported_mesh.h"
 #include "forgeshape_object_id.h"
+#include "forgeshape_project_bytes.h"
 #include "forgeshape_transform.h"
 
 namespace forgeshape {
@@ -99,6 +102,13 @@ constexpr uint8_t kHeaderFlagHasImported = 0x04u;
 // and the CADB section's required bit says it again past the header. A build
 // that cannot regenerate a sketch cannot open a file that needs one.
 constexpr uint8_t kHeaderFlagHasCad = 0x08u;
+// bit4: an `FRFM` section is present (`MODELING-FOUNDATIONS-R1` B). On CADB's
+// terms: a build that predates Freeform sees an unknown header bit and refuses
+// the file (`BadHeader`) rather than opening it with bodies missing.
+constexpr uint8_t kHeaderFlagHasFreeform = 0x10u;
+// bit5: a `SURF` section is present (`MODELING-FOUNDATIONS-R1` C), on exactly
+// FRFM's terms.
+constexpr uint8_t kHeaderFlagHasSurface = 0x20u;
 
 // FourCCs as four ASCII bytes in file order. Compared byte by byte rather than
 // packed into an integer, so nothing about the comparison depends on the host's
@@ -108,6 +118,17 @@ constexpr char kSectionTagConstruction[4] = {'C', 'O', 'N', 'S'};
 constexpr char kSectionTagSculpt[4] = {'S', 'C', 'U', 'L'};
 constexpr char kSectionTagImported[4] = {'I', 'M', 'P', 'T'};
 constexpr char kSectionTagCad[4] = {'C', 'A', 'D', 'B'};
+constexpr char kSectionTagFreeform[4] = {'F', 'R', 'F', 'M'};
+constexpr char kSectionTagSurface[4] = {'S', 'U', 'R', 'F'};
+
+// `FRFM` v1 (`MODELING-FOUNDATIONS-R1` B): one record per Freeform body, its
+// control cage and nothing derived. DATA_PACKAGE_SPEC.md §7j.
+constexpr uint16_t kFreeformSectionVersion = 1;
+
+// `SURF` v1 (`MODELING-FOUNDATIONS-R1` C): one record per Surface body, its
+// retained sketches and its ordered feature list, nothing derived.
+// DATA_PACKAGE_SPEC.md §7k.
+constexpr uint16_t kSurfaceSectionVersion = 1;
 
 constexpr uint16_t kSceneSectionVersion = 1;
 // Stage 018A: version 2 adds, per body, a FLAGS byte and a NAME.
@@ -178,6 +199,25 @@ constexpr uint16_t kCadSectionVersionV5 = 5;
 // bytes. An older build refuses v6 rather than opening a body with a shared
 // sketch duplicated or a face selection silently read as something else.
 constexpr uint16_t kCadSectionVersionV6 = 6;
+// CAD-V6-REVOLVE-NEWBODY-E2E-R1: version 7 is v6's layout with an explicit
+// FEATURE KIND after every feature id and a payload of that kind's own
+// (DATA_PACKAGE_SPEC.md §7h): Extrude (code 1) carries exactly the bytes a v6
+// feature carries after its id, Revolve (code 2) its operation, sketch id, axis
+// edge ref, angle in degrees and direction, then the same selection block.
+// Written only when a body carries a Revolve; every project without one keeps
+// the v1..v6 bytes it always had. An older build refuses v7 as a required
+// section at an unknown version rather than reading a Revolve as an Extrude.
+constexpr uint16_t kCadSectionVersionV7 = 7;
+// CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1: version 8 is v7's layout with two
+// additions inside every sketch record (DATA_PACKAGE_SPEC.md §7i): a ROLE byte
+// after every entity's kind (1 Regular, 2 Construction), and after the entity
+// list the sketch's dimension high-water mark and its DIMENSION TABLE. Written
+// only when a sketch carries drafting truth -- a Construction entity, a
+// dimension, or a dimension high-water mark above 1; every other project keeps
+// the v1..v7 bytes it always had. An older build refuses v8 as a required
+// section at an unknown version rather than extruding a construction line or
+// dropping a driving dimension.
+constexpr uint16_t kCadSectionVersionV8 = 8;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.
@@ -185,10 +225,21 @@ uint8_t workplaneFileCode(Workplane plane);
 bool workplaneFromFileCode(uint8_t code, Workplane* out);
 uint8_t extrudeDirectionFileCode(ExtrudeDirection direction);
 bool extrudeDirectionFromFileCode(uint8_t code, ExtrudeDirection* out);
+// CADB v7 revolve sense codes, file-owned and 1-based like the rest.
+uint8_t revolveDirectionFileCode(RevolveDirection direction);
+bool revolveDirectionFromFileCode(uint8_t code, RevolveDirection* out);
 // CADB v4 extent codes (`CAD-EXT-R1`), file-owned and 1-based like the rest.
 uint8_t extrudeExtentFileCode(ExtrudeExtentMode mode);
 bool extrudeExtentFromFileCode(uint8_t code, ExtrudeExtentMode* out);
 uint8_t sketchEntityKindFileCode(SketchEntityKind kind);
+// CADB v8 drafting codes (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`), file-owned and
+// 1-based like the rest.
+uint8_t sketchEntityRoleFileCode(SketchEntityRole role);
+bool sketchEntityRoleFromFileCode(uint8_t code, SketchEntityRole* out);
+uint8_t sketchDimensionKindFileCode(SketchDimensionKind kind);
+bool sketchDimensionKindFromFileCode(uint8_t code, SketchDimensionKind* out);
+uint8_t sketchDimensionModeFileCode(SketchDimensionMode mode);
+bool sketchDimensionModeFromFileCode(uint8_t code, SketchDimensionMode* out);
 bool sketchEntityKindFromFileCode(uint8_t code, SketchEntityKind* out);
 
 // CADB v2 face-kind file codes (`CAD-A3`), file-owned and 1-based like the rest.
@@ -428,6 +479,31 @@ struct ProjectCadRecord {
     std::vector<ProjectCadBody> bodies;  // scene order; only CAD bodies
 };
 
+// FRFM, per body whose representation is Freeform (`MODELING-FOUNDATIONS-R1`
+// B): the control cage -- ids, binary64 positions, creases, face loops, the
+// high-water marks, the subdivision level and the symmetry planes. The smooth
+// surface is regenerated on load and never stored.
+struct ProjectFreeformBody {
+    ObjectId objectId = kNoObject;
+    FreeformCage cage;
+};
+
+struct ProjectFreeformRecord {
+    std::vector<ProjectFreeformBody> bodies;  // scene order; only Freeform bodies
+};
+
+// SURF, per body whose representation is Surface (`MODELING-FOUNDATIONS-R1`
+// C): the sketches and the feature list. Patches, edges, stitches and solids
+// are regenerated on load and never stored.
+struct ProjectSurfaceBody {
+    ObjectId objectId = kNoObject;
+    SurfaceBodyState state;
+};
+
+struct ProjectSurfaceRecord {
+    std::vector<ProjectSurfaceBody> bodies;  // scene order; only Surface bodies
+};
+
 // A complete project, decoded or about to be encoded. Plain data with no
 // identity of its own: two documents that compare equal produce byte-identical
 // files, which is the deterministic-writer rule stated as a property.
@@ -442,6 +518,10 @@ struct ProjectDocument {
     ProjectImportedRecord imported;
     bool hasCad = false;
     ProjectCadRecord cad;
+    bool hasFreeform = false;
+    ProjectFreeformRecord freeform;
+    bool hasSurface = false;
+    ProjectSurfaceRecord surface;
 };
 
 // True when the two documents carry the same project semantics, field for
@@ -499,5 +579,13 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document);
 // there" are different outcomes, and a test must be able to tell them apart.
 ProjectCodecStatus decodeProject(const uint8_t* data, size_t size, ProjectDocument* out,
                                  uint32_t* outSkippedOptionalSections = nullptr);
+
+// The CADB v8 entity-list and dimension-table grammar (§7i), exposed so a
+// section that retains a sketch (`SURF`) writes and reads it exactly as CADB
+// does: one grammar, two sections.
+void writeProjectSketchEntities(ByteWriter& out, const CadSketch& sketch);
+void writeProjectSketchDimensions(ByteWriter& out, const CadSketch& sketch);
+ProjectCodecStatus readProjectSketchEntities(ByteReader& in, uint32_t entityCount, CadSketch* sketch);
+ProjectCodecStatus readProjectSketchDimensions(ByteReader& in, CadSketch* sketch);
 
 }  // namespace forgeshape

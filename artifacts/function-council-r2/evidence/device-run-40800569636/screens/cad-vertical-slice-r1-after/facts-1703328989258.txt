@@ -1,0 +1,5 @@
+face_sketch.area_m2=0.6400000000000001
+refusal.badge_description=Extrude options: Cut, One side. Change extent, operation or direction. Cannot extrude: Cut misses the body — nothing would be removed.
+capture.12_cut_misses_preview.presented_frames=6 in 1529ms
+capture.12_cut_misses_preview=12_cut_misses_preview.png 1080x2400
+face_sketch.area_m2=0.1599999999999997

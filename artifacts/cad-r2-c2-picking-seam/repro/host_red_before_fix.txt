@@ -1,0 +1,13 @@
+  FAIL PICKING: PICK_C2_01_far_ortho_ray_on_the_shared_diagonal_hits
+  FAIL PICKING: PICK_C2_02_the_seam_hit_does_not_depend_on_triangle_order
+  FAIL PICKING: PICK_C2_03_every_point_of_the_shared_diagonal_hits_from_the_far_eye
+  FAIL PICKING: PICK_C2_11_seam_hits_for_every_origin_distance_50_to_500_m
+HOST_SUITE_FAIL PICKING (185 checks, 4 failed, 0 ms)
+CADR2_CHECK_FAILED PICK_C2_12_the_scene_pick_hits_the_pocket_floor_on_its_seam
+CADR2_CHECK_FAILED PICK_C2_13_the_chooser_on_the_seam_names_the_exact_floor_never_the_plane_behind
+CADR2_CHECK_FAILED PICK_C2_14_a_regenerated_mesh_resolves_the_same_semantic_face_on_the_seam
+  FAIL CAD_FEATURE: PICK_C2_12_the_scene_pick_hits_the_pocket_floor_on_its_seam
+  FAIL CAD_FEATURE: PICK_C2_13_the_chooser_on_the_seam_names_the_exact_floor_never_the_plane_behind
+  FAIL CAD_FEATURE: PICK_C2_14_a_regenerated_mesh_resolves_the_same_semantic_face_on_the_seam
+HOST_SUITE_FAIL CAD_FEATURE (637 checks, 3 failed, 3595 ms)
+HOST_SELFTESTS_FAIL (4391 checks, 7 failed)

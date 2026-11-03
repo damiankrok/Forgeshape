@@ -1,0 +1,10 @@
+face_sketch.area_m2=0.6400000000000001
+face_sketch.operations_available=7
+perf.add_preview_us=663.869
+perf.add_drag_preview_us=6721.636
+add.drag_depth_m=1.0 -> 1.2311801314353943
+capture.08_add_preview.presented_frames=6 in 1725ms
+capture.08_add_preview=08_add_preview.png 1080x2400
+add.volume_m3=4.32
+capture.09_add_committed.presented_frames=6 in 1536ms
+capture.09_add_committed=09_add_committed.png 1080x2400

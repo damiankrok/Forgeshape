@@ -1205,6 +1205,14 @@ GizmoSnapshot GizmoSession::snapshot(const CameraSnapshot& camera, int viewportW
     if (body == nullptr) {
         return out;
     }
+    if (body->isFaceSupportedCad()) {
+        // A face-supported CAD Body's placement is DERIVED from its producer's
+        // face and its stored transform is inert: a handle pivoted on that
+        // transform would stand away from the drawn body and drag a placement
+        // nothing reads. No snapshot means nothing drawn, nothing hit and no
+        // drag -- the same answer as no body (`CAD-FACE-SUPPORTED-PLACEMENT-R1`).
+        return out;
+    }
     const TransformValues values = body->transform().values();
     const Vec3 pivot{static_cast<float>(values.positionX), static_cast<float>(values.positionY),
                      static_cast<float>(values.positionZ)};
@@ -1242,7 +1250,13 @@ GizmoSnapshot GizmoSession::snapshot(const CameraSnapshot& camera, int viewportW
 // 48-unit floor a number this file can state rather than an aspiration.
 GizmoHandle GizmoSession::hitTest(const CameraSnapshot& camera, float screenX, float screenY,
                                   int viewportWidth, int viewportHeight) const {
-    const GizmoSnapshot state = snapshot(camera, viewportWidth, viewportHeight);
+    return gizmoHitTestSnapshot(snapshot(camera, viewportWidth, viewportHeight), camera, screenX,
+                                screenY, viewportWidth, viewportHeight);
+}
+
+GizmoHandle gizmoHitTestSnapshot(const GizmoSnapshot& state, const CameraSnapshot& camera,
+                                 float screenX, float screenY, int viewportWidth,
+                                 int viewportHeight) {
     if (!state.visible || !std::isfinite(screenX) || !std::isfinite(screenY)) {
         return GizmoHandle::None;
     }
@@ -1436,7 +1450,10 @@ bool GizmoSession::beginDrag(int32_t pointerId, const CameraSnapshot& camera, fl
         return false;
     }
     SceneObject* body = scene_.findBody(scene_.activeBodyId());
-    if (body == nullptr) {
+    if (body == nullptr || body->isFaceSupportedCad()) {
+        // Stated here as well as in `snapshot`, so a drag can never open an
+        // edit on a derived placement even if a caller hit-tested some other
+        // way: nothing is captured and no transaction is opened.
         return false;
     }
 

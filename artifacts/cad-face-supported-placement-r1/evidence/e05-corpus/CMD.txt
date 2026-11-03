@@ -1,0 +1,13 @@
+E05 -- the committed CADB v2 corpus fixtures exported by THIS stage's exporter, parsed independently.
+Reuses the closeout diagnostic unchanged: artifacts/function-council-r2-closeout/diagnostics/CR-01/{cr01_export_face.cpp,parse_glb.py}
+(same flags, same fixtures, read-only), linked against this branch's product objects (HEAD 71c8333 product tree).
+  g++ $COMMON cr01_export_face.cpp $S/obj/*.o libmanifold.a -o $S/cr01          -> build=0
+  $S/cr01 $S/glb cad_face_sketch_cap_v2 cad_face_sketch_side_v2 cad_face_chain_v2 mixed_cad_face_v2 cad_rectangle_v1
+                                                                                 -> run=0, cr01_export_face_AFTER.out
+  python3 -I parse_glb.py <the same .glb list>                                   -> py=0, parse_glb_AFTER.out
+  sha256sum *.glb                                                                -> glb_sha256_AFTER.out
+Tallies: BEFORE (closeout, 70a6c14): 11 MISMATCH (every face-supported body), 12 MATCH, 1 NO_SOURCE_REDERIVED.
+         AFTER (this stage):          0 MISMATCH, 23 MATCH, 1 NO_SOURCE_REDERIVED (the Imported Mesh; translation equal=1).
+S1_cap.glb and S2_side.glb were byte-identical before (9934da55...) and now differ (f4264d7c... / 5fc0aedc...).
+Files containing only independent bodies are byte-identical before and after: C1_world_cad_trs.glb,
+C2_construction_trs.glb, F_cad_rectangle_v1.glb (diff of the two sha256 lists).

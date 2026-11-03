@@ -1,0 +1,6 @@
+host=0
+jvm=0
+assemble=0
+guard=0
+corpus=0
+diffcheck=0

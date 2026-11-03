@@ -25,6 +25,7 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <limits>
 #include <mutex>
 #include <thread>
 
@@ -44,6 +45,8 @@
 #include "forgeshape_construction.h"
 #include "forgeshape_construction_selftest.h"
 #include "forgeshape_display.h"
+#include "forgeshape_freeform_session.h"
+#include "forgeshape_surface_authoring.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_gizmo_selftest.h"
 #include "forgeshape_glb_import_fixture.h"
@@ -57,10 +60,14 @@
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_extrude_tool.h"
 #include "forgeshape_cad_feature.h"
+#include "forgeshape_cad_sketch_inventory.h"
+#include "forgeshape_cad_timeline.h"
 #include "forgeshape_cad_a3_selftest.h"
 #include "forgeshape_sketch_ux_selftest.h"
 #include "forgeshape_cad_selftest.h"
 #include "forgeshape_cad_feature_selftest.h"
+#include "forgeshape_freeform_selftest.h"
+#include "forgeshape_surface_selftest.h"
 #include "forgeshape_sketch_session.h"
 #include "forgeshape_support_chooser.h"
 #include "forgeshape_history.h"
@@ -299,17 +306,19 @@ float g_chooserDownY = 0.0f;
 bool g_chooserTravelled = false;
 constexpr float kChooserTapSlopPixels = 24.0f;
 
-// Frames the camera EXACTLY along the active sketch's authoring frame -- no
-// pitch-clamp approximation, and correct for a face frame at any orientation
-// (`CAD-A3` B3). Reads the frame the session already installed, so a world-plane
-// and a face sketch take the same path.
+// Frames the camera EXACTLY normal to the active sketch -- no pitch-clamp
+// approximation, and correct for a face frame at any orientation (`CAD-A3` B3)
+// -- through the session's VIEW frame, so the orientation navigator's flip and
+// roll are what the user actually sees (`SKETCH-NAVIGATOR-OUTCOME-R1`; before
+// it, this read the authoring frame and the navigator moved only its label).
+// A world-plane and a face sketch take the same path. The pre-sketch pose is
+// saved once and restored by endSketchView on cancel and on commit.
 void beginSketchView() {
     if (!g_sketchPoseSaved) {
         g_sketchSavedPose = g_camera.capturePose();
         g_sketchPoseSaved = true;
     }
-    const forgeshape::SketchFrame& f = forgeshape::sketchSession().frame();
-    g_camera.frameSketchView(f.origin, f.u, f.v, f.n);
+    forgeshape::frameCameraOnSketchView(g_camera, forgeshape::sketchSession());
 }
 
 void endSketchView() {
@@ -352,6 +361,17 @@ forgeshape::CadFeatureViewSource beginExtrudeFeatureView() {
         g_camera.restorePose(preview);
     }
     return source;
+}
+
+// The Revolve's view (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): once an axis is set the
+// camera leans to a 3/4 pose that sees the ring square to the axis -- the
+// extrude feature view's counterpart, presentation only. The caller holds
+// g_stateMutex.
+void beginRevolveFeatureView() {
+    forgeshape::CameraController::Pose pose;
+    if (forgeshape::sketchSession().revolveViewPose(g_camera.capturePose(), &pose)) {
+        g_camera.restorePose(pose);
+    }
 }
 
 // Whether Ready was entered with NO region chosen (`CAD-VERTICAL-SLICE-R1`):
@@ -574,7 +594,10 @@ void runMirrorSelfTestsAndLog() {
 // them, so drift from the committed fixtures is a value that can be read.
 void runCadFeatureSelfTestsAndLog() {
 #ifndef NDEBUG
-    constexpr int kMaxCadFeatureChecks = 512;
+    // Above the suite's own count with room to grow: a record past the cap is
+    // silently NOT run-and-counted, which is how this suite's last 49 checks
+    // went unreported on the device while the host counted 561 (`CAD-R2`).
+    constexpr int kMaxCadFeatureChecks = 1024;
     static forgeshape::CadFeatureSelfTestResult results[kMaxCadFeatureChecks];
     const int count = forgeshape::runCadFeatureSelfTests(results, kMaxCadFeatureChecks);
     int failed = 0;
@@ -590,6 +613,57 @@ void runCadFeatureSelfTestsAndLog() {
         FS_LOGI("FORGESHAPE_CAD_FEATURE_SELFTEST_OK (%d checks)", count);
     } else {
         FS_LOGE("FORGESHAPE_CAD_FEATURE_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
+    }
+#endif
+}
+
+// `MODELING-FOUNDATIONS-R1` B: the Freeform control cage, Catmull-Clark, every
+// cage tool, symmetry, the edit session and the FRFM codec. Failures only are
+// logged per check, then the suite token, the bounded subdivision and drag
+// timings and the FRFM corpus digests as this build encodes them.
+void runFreeformSelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxFreeformChecks = 256;
+    static forgeshape::FreeformSelfTestResult results[kMaxFreeformChecks];
+    const int count = forgeshape::runFreeformSelfTests(results, kMaxFreeformChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_FREEFORM_SELFTEST_CASE_FAIL:%s", results[i].name);
+        }
+    }
+    FS_LOGI("FORGESHAPE_FREEFORM_PERFORMANCE %s", forgeshape::freeformPerformanceReport());
+    FS_LOGI("FORGESHAPE_FREEFORM_GOLDEN_SHA256 %s", forgeshape::freeformFixtureDigests());
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_FREEFORM_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_FREEFORM_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
+    }
+#endif
+}
+
+// `MODELING-FOUNDATIONS-R1` C: Surface patches, sweeps, lofts, the exact Trim,
+// Stitch and Thicken with their named refusals, first-failure regeneration,
+// the authoring acts and the SURF codec. Failures only are logged per check.
+void runSurfaceSelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxSurfaceChecks = 128;
+    static forgeshape::SurfaceSelfTestResult results[kMaxSurfaceChecks];
+    const int count = forgeshape::runSurfaceSelfTests(results, kMaxSurfaceChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_SURFACE_SELFTEST_CASE_FAIL:%s", results[i].name);
+        }
+    }
+    FS_LOGI("FORGESHAPE_SURFACE_PERFORMANCE %s", forgeshape::surfacePerformanceReport());
+    FS_LOGI("FORGESHAPE_SURFACE_GOLDEN_SHA256 %s", forgeshape::surfaceFixtureDigests());
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_SURFACE_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_SURFACE_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
     }
 #endif
 }
@@ -1250,6 +1324,11 @@ constexpr jint kApplyRejectedRelation = 6;
 // statement about a value -- every number the caller passed may be good -- and a
 // status line that blamed a coordinate would be describing the wrong problem.
 constexpr jint kApplyRejectedLocked = 8;
+// `CAD-FACE-SUPPORTED-PLACEMENT-R1`: the body is a FACE-SUPPORTED CAD Body, whose
+// placement is derived from its producer's face. Its own code for the same
+// reason a lock has one: every number may be good, and what cannot be done is
+// moving this body independently. APPENDED after the Stage 020M codes 9 and 10.
+constexpr jint kApplyRejectedDerivedPlacement = 11;
 
 // Applies an authoritative transform through the one Construction transform
 // entry point and reports what happened.
@@ -1260,10 +1339,14 @@ constexpr jint kApplyRejectedLocked = 8;
 // picker read.
 forgeshape::TransformApplyResult applyBoxTransform(const char* label,
                                                    const forgeshape::TransformValues& requested,
-                                                   bool* outRefusedLocked = nullptr) {
+                                                   bool* outRefusedLocked = nullptr,
+                                                   bool* outRefusedDerived = nullptr) {
     forgeshape::TransformApplyResult result;
     if (outRefusedLocked != nullptr) {
         *outRefusedLocked = false;
+    }
+    if (outRefusedDerived != nullptr) {
+        *outRefusedDerived = false;
     }
     {
         // Same lock as the camera and the selection: the render thread reads the
@@ -1283,7 +1366,15 @@ forgeshape::TransformApplyResult applyBoxTransform(const char* label,
             result.values = forgeshape::constructionTransform().values();
             return result;
         }
-        if (forgeshape::constructionScene().activeBody().locked()) {
+        // The ONE guarded write (`applySceneBodyTransform`): its refusals are
+        // asked before any edit is opened, so a refused write leaves no step,
+        // no fingerprint change and no byte behind; an accepted one is one
+        // `ScopedConstructionEdit` around one transform update, as before.
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        forgeshape::BodyPlacementRefusal refusal = forgeshape::BodyPlacementRefusal::None;
+        result = forgeshape::applySceneBodyTransform(scene.activeBodyId(), requested, scene,
+                                                     forgeshape::constructionHistory(), &refusal);
+        if (refusal == forgeshape::BodyPlacementRefusal::Locked) {
             // Stage 018A. The FIRST of lock's two guards, and the one that
             // covers every exact-value route into a placement: the precision
             // surface, the unit chips and anything else that types a number.
@@ -1304,12 +1395,25 @@ forgeshape::TransformApplyResult applyBoxTransform(const char* label,
             if (outRefusedLocked != nullptr) {
                 *outRefusedLocked = true;
             }
-            result.status = forgeshape::TransformUpdateStatus::Rejected;
-            result.values = forgeshape::constructionTransform().values();
             return result;
         }
-        forgeshape::ScopedConstructionEdit edit(forgeshape::constructionHistory());
-        result = forgeshape::applyConstructionTransform(requested);
+        if (refusal == forgeshape::BodyPlacementRefusal::DerivedPlacement) {
+            // `CAD-FACE-SUPPORTED-PLACEMENT-R1`. A face-supported CAD Body is
+            // placed by its producer's face; its stored transform is read by
+            // nothing that draws, picks or exports it. Refused on the lock's
+            // terms -- nothing opened, nothing written -- and reported through
+            // its own out-parameter for the same reason.
+            FS_LOGE("FORGESHAPE_CONSTRUCTION_TRANSFORM_REJECTED:%s:DerivedPlacement", label);
+            if (outRefusedDerived != nullptr) {
+                *outRefusedDerived = true;
+            }
+            return result;
+        }
+        if (refusal != forgeshape::BodyPlacementRefusal::None) {
+            FS_LOGE("FORGESHAPE_CONSTRUCTION_TRANSFORM_REJECTED:%s:%s", label,
+                    forgeshape::bodyPlacementRefusalName(refusal));
+            return result;
+        }
     }
     const forgeshape::TransformValues& v = result.values;
     const forgeshape::ConstructionTransform& transform = forgeshape::constructionTransform();
@@ -1846,6 +1950,11 @@ void renderThreadMain() {
                 if (forgeshape::importedMeshPreview().visible()
                     || forgeshape::bodyDimensionSession().active()) {
                     renderer.setGizmo(forgeshape::GizmoSnapshot{});
+                } else if (forgeshape::freeformEditSession().active()) {
+                    // The cage's own instrument at the selection, on the
+                    // gizmo's terms (`MODELING-FOUNDATIONS-R1` B).
+                    renderer.setGizmo(forgeshape::freeformEditSession().gizmoSnapshot(
+                        g_camera.snapshot(), g_camera.viewportWidth(), g_camera.viewportHeight()));
                 } else {
                     renderer.setGizmo(forgeshape::gizmoSession().snapshot(
                         g_camera.snapshot(), g_camera.viewportWidth(),
@@ -1873,8 +1982,14 @@ void renderThreadMain() {
                     // mutually exclusive by construction -- a sketch cannot be
                     // open over a body being measured, because the mode refuses
                     // to open in Sculpt and creation is refused in a sketch.
+                    forgeshape::freeformEditSession().reconcile();
                     if (forgeshape::supportChooser().active()) {
                         renderer.setSketchOverlay(forgeshape::supportChooser().overlay());
+                    } else if (forgeshape::freeformEditSession().active()) {
+                        // The cage over the smooth surface: a fourth producer
+                        // for the one overlay slot, in its own revision space.
+                        renderer.setSketchOverlay(
+                            forgeshape::freeformEditSession().overlay(worldPerUnit));
                     } else if (forgeshape::bodyDimensionSession().active()) {
                         forgeshape::LocalBounds bounds;
                         const forgeshape::ConstructionScene& scene =
@@ -2033,6 +2148,8 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     runBodyDimensionsSelfTestsAndLog();
     runMirrorSelfTestsAndLog();
     runCadFeatureSelfTestsAndLog();
+    runFreeformSelfTestsAndLog();
+    runSurfaceSelfTestsAndLog();
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -2466,8 +2583,13 @@ Java_com_forgeshape_app_NativeViewport_applyBoxTransform(JNIEnv*, jclass, jdoubl
     requested.scaleY = scaleY;
     requested.scaleZ = scaleZ;
     bool refusedLocked = false;
-    const jint status = transformResultToJni(applyBoxTransform("ui", requested, &refusedLocked));
-    return refusedLocked ? kApplyRejectedLocked : status;
+    bool refusedDerived = false;
+    const jint status = transformResultToJni(
+            applyBoxTransform("ui", requested, &refusedLocked, &refusedDerived));
+    if (refusedLocked) {
+        return kApplyRejectedLocked;
+    }
+    return refusedDerived ? kApplyRejectedDerivedPlacement : status;
 }
 
 // ---------------------------------------------------------------------------
@@ -2753,6 +2875,12 @@ constexpr jint kSculptRefusedCadBody = 3;
 // GUARD-2 (Stage027): Start or Resume Sculpt refused because the active body
 // is hidden. The control is withdrawn above JNI; this is the guard behind it.
 constexpr jint kSculptRefusedHiddenBody = 4;
+// The active body is a Freeform body (`MODELING-FOUNDATIONS-R1` B): its truth
+// is the control cage, and a Frozen Sculpt Mesh beside it is not this stage.
+constexpr jint kSculptRefusedFreeformBody = 5;
+// The active body is a Surface body (`MODELING-FOUNDATIONS-R1` C): its truth is
+// a feature list, and sculpting one is not this stage.
+constexpr jint kSculptRefusedSurfaceBody = 6;
 
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_productMode(JNIEnv*, jclass) {
@@ -2783,6 +2911,8 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
     bool haveSource = false;
     bool froze = false;
     bool cadBody = false;
+    bool freeformBody = false;
+    bool surfaceBody = false;
     bool sketching = false;
     forgeshape::SculptSession* session = nullptr;
     {
@@ -2804,15 +2934,32 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
             return kSculptRefusedHiddenBody;
         }
         cadBody = body.cadOrNull() != nullptr;
+        freeformBody = body.freeformOrNull() != nullptr;
+        surfaceBody = body.surfaceOrNull() != nullptr;
         sketching = forgeshape::sketchSession().active();
         forgeshape::ConstructionMesh source;
-        haveSource = !cadBody && !sketching && forgeshape::buildSculptSourceMesh(body, &source);
+        haveSource = !cadBody && !freeformBody && !surfaceBody && !sketching
+                     && forgeshape::buildSculptSourceMesh(body, &source);
         if (haveSource) {
             g_grabbing = false;
             g_strokePending = false;
             session = &forgeshape::sculptSession();
             froze = session->freezeToSculpt(source, objectId, &why);
         }
+    }
+    if (surfaceBody) {
+        // A Surface body's truth is its feature list; Sculpt is refused by name
+        // and the control is absent for one.
+        FS_LOGE("FORGESHAPE_SCULPT_FREEZE_FAIL:SurfaceNotSculptable objectId=%llu",
+                (unsigned long long)objectId);
+        return kSculptRefusedSurfaceBody;
+    }
+    if (freeformBody) {
+        // The cage is the only truth of a Freeform body; Sculpt is refused by
+        // name and the control is absent for one.
+        FS_LOGE("FORGESHAPE_SCULPT_FREEZE_FAIL:FreeformNotSculptable objectId=%llu",
+                (unsigned long long)objectId);
+        return kSculptRefusedFreeformBody;
     }
     if (cadBody) {
         // `CAD-R0-A1A2` leaves CAD -> Sculpt out, by name. The control is
@@ -3718,11 +3865,13 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_setGizmoActive(JNI
                                                                             jboolean active) {
     bool refusedInSculpt = false;
     bool refusedLocked = false;
+    bool refusedDerived = false;
     bool nowActive = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
         const bool activeIsLocked = scene.hasProject() && scene.activeBody().locked();
+        const bool activeIsDerived = scene.hasProject() && scene.activeBody().isFaceSupportedCad();
         if (active == JNI_TRUE && forgeshape::sculptSession().inSculptMode()) {
             refusedInSculpt = true;
             // Still turned OFF, so entering Sculpt with a gizmo up cannot leave
@@ -3737,6 +3886,13 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_setGizmoActive(JNI
             // also cancels a captured handle so a finger already on one stops.
             refusedLocked = true;
             forgeshape::gizmoSession().setActive(false);
+        } else if (active == JNI_TRUE && activeIsDerived) {
+            // `CAD-FACE-SUPPORTED-PLACEMENT-R1`. A face-supported CAD Body is
+            // placed by its producer's face, so a handle over it could only
+            // move a stored transform nothing reads. Turned OFF on the lock's
+            // terms; `GizmoSession` refuses to draw or drag one regardless.
+            refusedDerived = true;
+            forgeshape::gizmoSession().setActive(false);
         } else {
             forgeshape::gizmoSession().setActive(active == JNI_TRUE);
         }
@@ -3748,6 +3904,10 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_setGizmoActive(JNI
     }
     if (refusedLocked) {
         FS_LOGI("FORGESHAPE_GIZMO_REFUSED:body_locked");
+        return;
+    }
+    if (refusedDerived) {
+        FS_LOGI("FORGESHAPE_GIZMO_REFUSED:derived_placement");
         return;
     }
     FS_LOGI("FORGESHAPE_GIZMO_ACTIVE:%d", nowActive ? 1 : 0);
@@ -4011,6 +4171,8 @@ Java_com_forgeshape_app_NativeViewport_sketchBegin(JNIEnv*, jclass, jint planeIn
         } else if (forgeshape::constructionHistory().editInProgress()) {
             status = forgeshape::CadStatus::RefusedEditInProgress;
         } else {
+            // Every CAD begin ends any Surface purpose a dropped sketch left.
+            forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
             status = forgeshape::sketchSession().begin(plane);
         }
         if (status == forgeshape::CadStatus::Ok) {
@@ -4055,6 +4217,8 @@ forgeshape::CadStatus confirmChosenSupportLocked() {
     }
     forgeshape::CadStatus status = forgeshape::CadStatus::NotSketching;
     if (c.kind == forgeshape::ChosenSupport::Kind::WorldPlane) {
+        // Every CAD begin ends any Surface purpose a dropped sketch left.
+        forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
         status = forgeshape::sketchSession().begin(c.plane);
     } else if (c.kind == forgeshape::ChosenSupport::Kind::Face) {
         // The producer's authored state is staged with the sketch
@@ -4065,6 +4229,8 @@ forgeshape::CadStatus confirmChosenSupportLocked() {
                 forgeshape::constructionScene().findBody(c.faceRef.producerObjectId);
         const forgeshape::CadBody* producerCad =
                 producer != nullptr ? producer->cadOrNull() : nullptr;
+        // Every CAD begin ends any Surface purpose a dropped sketch left.
+        forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
         status = forgeshape::sketchSession().beginOnFace(
                 c.worldFrame, c.faceRef, producerCad != nullptr ? &producerCad->state() : nullptr);
     } else {
@@ -4209,6 +4375,8 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_sketchCancel(JNIEn
         std::lock_guard<std::mutex> lock(g_stateMutex);
         wasActive = forgeshape::sketchSession().active();
         forgeshape::sketchSession().cancel();
+        // A Surface sketch's purpose ends with the sketch.
+        forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
         endSketchView();
     }
     if (wasActive) {
@@ -4247,7 +4415,8 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_sketchTool(JNIEnv*
 //   [6] chosen profile anchor id                  [7] extrude depth, metres
 //   [8] extrude direction index                   [9] last status code
 //   [10] 1 while a polyline is being placed       [11] entities placed by touch
-//   [12] last snap kind (0 none, 1 grid, 2 endpoint)
+//   [12] last snap kind (0 none, 1 grid, 2 endpoint, 3 intersection,
+//        4 midpoint, 5 centre, 6 origin, 7 horizontal guide, 8 vertical guide)
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchState(JNIEnv* env, jclass, jdoubleArray out) {
     constexpr jsize kSize = 13;
@@ -4311,7 +4480,16 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_sketchFinish(JNIEn
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchBackToEditing(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
-    forgeshape::sketchSession().backToEditing();
+    forgeshape::SketchSession& session = forgeshape::sketchSession();
+    if (session.state() == forgeshape::SketchSessionState::Ready && !session.canReturnToSketch()) {
+        // A reuse session extrudes a SHARED sketch it may not edit (`CAD-R2`):
+        // nothing changes, the camera included.
+        session.backToEditing();  // records SketchInUse as the last status
+        FS_LOGI("FORGESHAPE_SKETCH_BACK_REFUSED:%s",
+                forgeshape::cadStatusName(session.lastStatus()));
+        return;
+    }
+    session.backToEditing();
     // Back to the authored sketch is back to the EXACT support-normal view
     // (`CAD-UX-S1-C1`). The feature preview belongs to the staged
     // extrusion; the drawing is authored through the aligned one, where a
@@ -4365,7 +4543,11 @@ JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_sketchCommit(JNIE
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
-        if (!scene.hasProject()) {
+        if (forgeshape::surfaceSketchPurpose().active) {
+            // A Surface sketch commits through surfaceCommitSketch; letting the
+            // CAD commit run over one would make a CAD body of it.
+            status = forgeshape::CadStatus::NotSketching;
+        } else if (!scene.hasProject()) {
             // The CAD bootstrap (`APP-H1`): no project is open, so this commit
             // CREATES the first one rather than adding a body to it. Decided
             // here, from native truth, so the shell has one Extrude and no
@@ -4749,7 +4931,11 @@ Java_com_forgeshape_app_NativeViewport_cadFeatureSelectionKind(JNIEnv*, jclass, 
         || !forgeshape::cadFeatureAt(body->state(), static_cast<uint32_t>(index), &view)) {
         return -1;
     }
-    return view.extrude->selection == forgeshape::CadSelectionKind::PlanarFaces ? 1 : 0;
+    const forgeshape::CadSelectionKind kind =
+            view.kind == forgeshape::CadFeatureKind::Revolve && view.revolve != nullptr
+                    ? view.revolve->selection
+                    : view.extrude->selection;
+    return kind == forgeshape::CadSelectionKind::PlanarFaces ? 1 : 0;
 }
 
 // What the extrusion does (`CAD-VERTICAL-SLICE-R1`): 0 New Body, 1 Add, 2 Cut.
@@ -4910,11 +5096,30 @@ bool resolveCadSketchWorldFrame(forgeshape::ConstructionScene& scene, forgeshape
 //   [35] leader end x (beside the tip)     [36] y
 //   [37] 1 when the SECOND side's leader projects; 38..41 meaningless otherwise
 //   [38] start x  [39] y  [40] end x  [41] y
+//
+// `CAD-FOUNDATION-C2` added the PRIMARY arrow's drawn point
+// (`cadExtrudeArrowPoint`), the one spot the drawing, the hit test and the
+// HUD agree the head ends at:
+//   [42] 1 when it projects; 43..44 meaningless otherwise
+//   [43] x  [44] y
+//
+// `CAD-V6-S2-OWNER-CORRECTION-E2E-R1` added the action DOCK
+// (`cadExtrudeDockFor`): a world rectangle on the axis past that point,
+// projected here so Android only draws into it. Whole or not at all:
+//   [45] 1 when the dock is drawn; 46..56 meaningless otherwise
+//   [46] its alpha, (0, 1] (the near-axis fade)
+//   [47] top-left x  [48] y   [49] top-right x  [50] y
+//   [51] bottom-right x  [52] y   [53] bottom-left x  [54] y
+//        (reading order: the badge's upright frame, never mirrored)
+//   [55] the projected centre x  [56] y
+//   [57] |sin| of the view against the axis at the arrow point (diagnostic)
+//   [58] why it is hidden: 0 shown, 1 no frame, 2 near the axis,
+//        3 behind the eye, 4 off the viewport (`CadExtrudeDockHidden`)
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                                                            jdoubleArray out) {
     constexpr jsize kLegacySlots = 21;
-    constexpr jsize kMaxSlots = 45;
+    constexpr jsize kMaxSlots = 59;
     if (out == nullptr || env->GetArrayLength(out) < kLegacySlots) {
         return;
     }
@@ -4984,6 +5189,22 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                     values[42] = 1.0;
                     values[43] = px;
                     values[44] = py;
+                }
+                // The dock, from the SAME anchors and control scale.
+                forgeshape::CadExtrudeDock dock;
+                values[58] = static_cast<double>(forgeshape::CadExtrudeDockHidden::NoFrame);
+                if (session.extrudeDock(g_camera.snapshot(), w, h, &dock)) {
+                    values[57] = dock.axisSine;
+                    values[58] = static_cast<double>(dock.hidden);
+                    if (dock.visible) {
+                        values[45] = 1.0;
+                        values[46] = dock.alpha;
+                        for (int c = 0; c < 8; ++c) {
+                            values[47 + c] = dock.screen[c];
+                        }
+                        values[55] = dock.screenCentre[0];
+                        values[56] = dock.screenCentre[1];
+                    }
                 }
                 forgeshape::CadExtrudeLeader leader;
                 if (view.leaderValid
@@ -5098,11 +5319,16 @@ Java_com_forgeshape_app_NativeViewport_cadFeatureCount(JNIEnv*, jclass, jlong bo
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_cadFeatureInfo(JNIEnv* env, jclass, jlong bodyId,
                                                       jint index, jdoubleArray out) {
-    constexpr jsize kSlots = 9;
-    if (out == nullptr || env->GetArrayLength(out) < kSlots || index < 0) {
+    // `CAD-V6-REVOLVE-NEWBODY-E2E-R1` added [9] the feature kind (0 Extrude,
+    // 1 Revolve), [10] a Revolve's angle in degrees and [11] its direction
+    // (0 Positive, 1 Negative); a 9-slot reader is untouched.
+    constexpr jsize kLegacySlots = 9;
+    constexpr jsize kMaxSlots = 12;
+    if (out == nullptr || env->GetArrayLength(out) < kLegacySlots || index < 0) {
         return JNI_FALSE;
     }
-    jdouble values[kSlots] = {0};
+    const jsize kSlots = std::min(env->GetArrayLength(out), kMaxSlots);
+    jdouble values[kMaxSlots] = {0};
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         const forgeshape::SceneObject* object =
@@ -5113,13 +5339,24 @@ Java_com_forgeshape_app_NativeViewport_cadFeatureInfo(JNIEnv* env, jclass, jlong
             || !forgeshape::cadFeatureAt(body->state(), static_cast<uint32_t>(index), &view)) {
             return JNI_FALSE;
         }
+        const bool revolve =
+                view.kind == forgeshape::CadFeatureKind::Revolve && view.revolve != nullptr;
+        // A Revolve's selection read through its carrier; its extent slots
+        // stay zero, because a Revolve has no extrusion to describe.
+        const forgeshape::ExtrudeFeature selection =
+                revolve ? forgeshape::revolveSelectionCarrier(*view.revolve) : *view.extrude;
         values[0] = view.featureId;
         values[1] = forgeshape::cadFeatureOperationIndex(view.operation);
-        values[2] = forgeshape::extrudeExtentModeIndex(view.extrude->extent);
-        values[3] = forgeshape::extrudePositiveDistance(*view.extrude);
-        values[4] = forgeshape::extrudeNegativeDistance(*view.extrude);
+        if (!revolve) {
+            values[2] = forgeshape::extrudeExtentModeIndex(view.extrude->extent);
+            values[3] = forgeshape::extrudePositiveDistance(*view.extrude);
+            values[4] = forgeshape::extrudeNegativeDistance(*view.extrude);
+        }
+        values[9] = forgeshape::cadFeatureKindIndex(view.kind);
+        values[10] = revolve ? view.revolve->angleDegrees : 0.0;
+        values[11] = revolve ? forgeshape::revolveDirectionIndex(view.revolve->direction) : 0.0;
         const std::vector<forgeshape::ProfileRegionRef> regions =
-            forgeshape::extrudeRegions(*view.extrude);
+            forgeshape::extrudeRegions(selection);
         values[5] = static_cast<double>(regions.size());
         size_t holes = 0;
         for (const forgeshape::ProfileRegionRef& region : regions) {
@@ -5131,6 +5368,853 @@ Java_com_forgeshape_app_NativeViewport_cadFeatureInfo(JNIEnv* env, jclass, jlong
     }
     env->SetDoubleArrayRegion(out, 0, kSlots, values);
     return JNI_TRUE;
+}
+
+// The Parametric History of a CAD body (`MODELING-FOUNDATIONS-R1` A): its
+// feature chain read as a timeline, DERIVED on every call and stored nowhere.
+//
+// `staged` asks for the chain an open edit session is staging over this body
+// -- the candidate state and its own latest-only evaluation, so the failing
+// downstream row is the one a commit would refuse by -- and falls back to the
+// committed body when no session edits it. `header` receives [0] the verdict
+// (a CadStatus code), [1] the first failing feature id or 0, [2] the feature
+// the staged edit changes or 0, [3] 1 when the verdict is a real evaluation
+// (0 while the staged sketch is still being drawn), [4] the row count. `rows`
+// receives up to its length / CAD_TIMELINE_ROW_SIZE rows of 27 slots: [0]
+// kind (0 sketch, 1 feature), [1] id, [2] sketch id, [3] the feature a tap
+// edits, [4] ordinal, [5] state (0 Ok, 1 Failed, 2 NotRegenerated, 3 Pending,
+// 4 Unused), [6] the failing status code, [7] editing, [8] entities, [9]
+// dimensions, [10] workplane, [11] on another body's face, [12] on a feature
+// face, [13] support feature, [14] feature kind, [15] operation, [16]
+// selection kind, [17] regions, [18] holes, [19] extent, [20] side, [21] +N
+// distance, [22] -N distance, [23] revolve angle, [24] revolve sense, [25]
+// axis entity, [26] axis edge. Returns the row count, or -1 for a body that is
+// not a CAD body.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_cadTimeline(JNIEnv* env, jclass, jlong bodyId,
+                                                   jboolean staged, jdoubleArray header,
+                                                   jdoubleArray rows) {
+    constexpr jsize kHeaderSlots = 5;
+    constexpr jsize kRowSlots = 27;
+    if (header == nullptr || env->GetArrayLength(header) < kHeaderSlots) {
+        return -1;
+    }
+    forgeshape::CadTimeline timeline;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
+        const forgeshape::SceneObject* object = forgeshape::constructionScene().findBody(id);
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        if (body == nullptr) {
+            return -1;
+        }
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        if (staged == JNI_TRUE && session.editingBodyId() == id) {
+            const bool ready = session.state() == forgeshape::SketchSessionState::Ready;
+            forgeshape::CadRegenerationReport report;
+            if (ready) {
+                const forgeshape::CadCandidateEvaluation& evaluation = session.evaluateCandidate();
+                report.status = evaluation.status;
+                report.failedFeatureId = evaluation.failedFeatureId;
+            }
+            timeline = forgeshape::buildCadTimeline(session.candidateState(), report, ready,
+                                                    session.editingFeatureId());
+        } else {
+            std::shared_ptr<const forgeshape::CadBodyMesh> mesh;
+            forgeshape::CadRegenerationReport report;
+            report.status = body->regenerated(&mesh);
+            timeline = forgeshape::buildCadTimeline(body->state(), report, true, 0);
+        }
+    }
+    const jdouble head[kHeaderSlots] = {
+            static_cast<jdouble>(cadCode(timeline.status)),
+            static_cast<jdouble>(timeline.failedFeatureId),
+            static_cast<jdouble>(timeline.editingFeatureId),
+            timeline.evaluated ? 1.0 : 0.0,
+            static_cast<jdouble>(timeline.rows.size())};
+    env->SetDoubleArrayRegion(header, 0, kHeaderSlots, head);
+    if (rows != nullptr) {
+        const jsize capacity = env->GetArrayLength(rows) / kRowSlots;
+        const jsize count = std::min(capacity, static_cast<jsize>(timeline.rows.size()));
+        std::vector<jdouble> values(static_cast<size_t>(count) * kRowSlots, 0.0);
+        for (jsize i = 0; i < count; ++i) {
+            const forgeshape::CadTimelineRow& row = timeline.rows[static_cast<size_t>(i)];
+            jdouble* v = &values[static_cast<size_t>(i) * kRowSlots];
+            v[0] = row.kind == forgeshape::CadTimelineRowKind::Feature ? 1.0 : 0.0;
+            v[1] = row.id;
+            v[2] = row.sketchId;
+            v[3] = row.editFeatureId;
+            v[4] = row.ordinal;
+            v[5] = static_cast<jdouble>(static_cast<int>(row.state));
+            v[6] = static_cast<jdouble>(cadCode(row.status));
+            v[7] = row.editing ? 1.0 : 0.0;
+            v[8] = row.entityCount;
+            v[9] = row.dimensionCount;
+            v[10] = forgeshape::workplaneIndex(row.plane);
+            v[11] = row.onBodyFace ? 1.0 : 0.0;
+            v[12] = row.onFeatureFace ? 1.0 : 0.0;
+            v[13] = row.supportFeatureId;
+            v[14] = forgeshape::cadFeatureKindIndex(row.featureKind);
+            v[15] = forgeshape::cadFeatureOperationIndex(row.operation);
+            v[16] = row.selection == forgeshape::CadSelectionKind::PlanarFaces ? 1.0 : 0.0;
+            v[17] = row.regionCount;
+            v[18] = row.holeCount;
+            v[19] = forgeshape::extrudeExtentModeIndex(row.extent);
+            v[20] = forgeshape::extrudeDirectionIndex(row.direction);
+            v[21] = row.positiveDistance;
+            v[22] = row.negativeDistance;
+            v[23] = row.angleDegrees;
+            v[24] = forgeshape::revolveDirectionIndex(row.revolveDirection);
+            v[25] = row.axis.entityId;
+            v[26] = row.axis.edgeLocalIndex;
+        }
+        if (count > 0) {
+            env->SetDoubleArrayRegion(rows, 0, count * kRowSlots, values.data());
+        }
+    }
+    return static_cast<jint>(timeline.rows.size());
+}
+
+// ===========================================================================
+// Freeform/SubD (`MODELING-FOUNDATIONS-R1` B)
+// ===========================================================================
+//
+// Status codes are `FreeformStatus` codes (NativeViewport.FREEFORM_*), plus two
+// transport refusals for the product modes a cage edit cannot run in. The
+// domain decides every rule; what is here is the lock, the mode guards and the
+// log line.
+
+constexpr jint kFreeformRefusedInSculpt = 100;
+constexpr jint kFreeformRefusedInSketch = 101;
+
+namespace {
+
+jint freeformModeRefusalLocked() {
+    if (forgeshape::sculptSession().inSculptMode()) return kFreeformRefusedInSculpt;
+    if (forgeshape::sketchSession().active() || forgeshape::supportChooser().active()) {
+        return kFreeformRefusedInSketch;
+    }
+    return 0;
+}
+
+jint freeformCode(forgeshape::FreeformStatus status) {
+    return static_cast<jint>(forgeshape::freeformStatusCode(status));
+}
+
+void logFreeformAct(const char* act, forgeshape::FreeformStatus status) {
+    if (status == forgeshape::FreeformStatus::Ok) {
+        FS_LOGI("FORGESHAPE_FREEFORM_%s undo=%d", act, (int)forgeshape::constructionHistory().undoDepth());
+    } else {
+        FS_LOGI("FORGESHAPE_FREEFORM_%s_REFUSED:%s", act, forgeshape::freeformStatusName(status));
+    }
+}
+
+// The cage of the ACTIVE body, when it is a Freeform body.
+const forgeshape::FreeformBody* activeFreeformLocked() {
+    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    if (!scene.hasProject()) return nullptr;
+    const forgeshape::SceneObject* body = scene.findBody(scene.activeBodyId());
+    return body != nullptr ? body->freeformOrNull() : nullptr;
+}
+
+}  // namespace
+
+// Creates a Freeform Box (0), Plane (1) or Cylinder (2) as ONE transaction and
+// makes it active. Inside the session-initialization bracket it seeds a new
+// project, recording nothing -- the Sculpt bootstrap's seam.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformCreateBody(JNIEnv*, jclass, jint form) {
+    forgeshape::ObjectId created = forgeshape::kNoObject;
+    forgeshape::FreeformStatus status = forgeshape::FreeformStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const jint refused = freeformModeRefusalLocked();
+        if (refused != 0) {
+            FS_LOGI("FORGESHAPE_FREEFORM_CREATE_REFUSED:%s",
+                    refused == kFreeformRefusedInSculpt ? "in_sculpt_mode" : "in_sketch");
+            return refused;
+        }
+        forgeshape::freeformEditSession().end();
+        status = forgeshape::createFreeformBody(forgeshape::constructionScene(),
+                                                forgeshape::constructionHistory(),
+                                                static_cast<int>(form), &created);
+    }
+    if (status == forgeshape::FreeformStatus::Ok) {
+        FS_LOGI("FORGESHAPE_FREEFORM_BODY_ADDED:%llu form=%d bodies=%d", (unsigned long long)created,
+                (int)form, (int)forgeshape::constructionScene().bodyCount());
+    } else {
+        FS_LOGI("FORGESHAPE_FREEFORM_CREATE_REFUSED:%s", forgeshape::freeformStatusName(status));
+    }
+    return freeformCode(status);
+}
+
+// Opens cage editing on the ACTIVE body. The placement gizmo stands down: the
+// cage has its own instrument.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformBeginEdit(JNIEnv*, jclass) {
+    forgeshape::FreeformStatus status = forgeshape::FreeformStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const jint refused = freeformModeRefusalLocked();
+        if (refused != 0) return refused;
+        const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        status = scene.hasProject() ? forgeshape::freeformEditSession().begin(scene.activeBodyId())
+                                    : forgeshape::FreeformStatus::NotFreeformBody;
+        if (status == forgeshape::FreeformStatus::Ok) {
+            forgeshape::gizmoSession().setActive(false);
+        }
+    }
+    logFreeformAct("EDIT_BEGIN", status);
+    return freeformCode(status);
+}
+
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_freeformEndEdit(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (forgeshape::freeformEditSession().active()) {
+        forgeshape::freeformEditSession().end();
+        FS_LOGI("FORGESHAPE_FREEFORM_EDIT_END");
+    }
+}
+
+// Vertex (0), Edge (1) or Face (2). Changing it clears the selection.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSetElement(JNIEnv*, jclass, jint element) {
+    if (element < 0 || element > 2) return freeformCode(forgeshape::FreeformStatus::OutOfRange);
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return freeformCode(forgeshape::freeformEditSession().setElement(
+            static_cast<forgeshape::FreeformElement>(element)));
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSetMultiSelect(JNIEnv*, jclass, jboolean multi) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::freeformEditSession().setMultiSelect(multi == JNI_TRUE);
+}
+
+// Move (0), Rotate (1) or Scale (2): the gizmo's own mode index.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSetTransformMode(JNIEnv*, jclass, jint mode) {
+    forgeshape::GizmoMode parsed;
+    if (!forgeshape::gizmoModeFromIndex(static_cast<int>(mode), &parsed)) {
+        return freeformCode(forgeshape::FreeformStatus::OutOfRange);
+    }
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return freeformCode(forgeshape::freeformEditSession().setTransformMode(parsed));
+}
+
+// Replaces the selection with ids of the current element kind.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSelect(JNIEnv* env, jclass, jintArray ids) {
+    std::vector<uint32_t> wanted;
+    if (ids != nullptr) {
+        const jsize n = env->GetArrayLength(ids);
+        if (n > static_cast<jsize>(forgeshape::kMaxFreeformEdges)) {
+            return freeformCode(forgeshape::FreeformStatus::OutOfRange);
+        }
+        std::vector<jint> buffer(static_cast<size_t>(n));
+        if (n > 0) env->GetIntArrayRegion(ids, 0, n, buffer.data());
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            return freeformCode(forgeshape::FreeformStatus::OutOfRange);
+        }
+        for (jint id : buffer) {
+            if (id <= 0) return freeformCode(forgeshape::FreeformStatus::IdInvalid);
+            wanted.push_back(static_cast<uint32_t>(id));
+        }
+    }
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return freeformCode(forgeshape::freeformEditSession().select(wanted));
+}
+
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_freeformClearSelection(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::freeformEditSession().clearSelection();
+}
+
+// The typed tools: each ONE transaction over the current selection.
+#define FORGESHAPE_FREEFORM_TOOL(Name, Act, Call)                                     \
+    std::lock_guard<std::mutex> lock(g_stateMutex);                                   \
+    const jint refused = freeformModeRefusalLocked();                                 \
+    if (refused != 0) return refused;                                                 \
+    const forgeshape::FreeformStatus status = forgeshape::freeformEditSession().Call; \
+    logFreeformAct(Act, status);                                                      \
+    return freeformCode(status);
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformPushPull(JNIEnv*, jclass, jdouble distance) {
+    FORGESHAPE_FREEFORM_TOOL(PushPull, "PUSH_PULL", pushPull(distance))
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformExtrude(JNIEnv*, jclass, jdouble distance) {
+    FORGESHAPE_FREEFORM_TOOL(Extrude, "EXTRUDE", extrude(distance))
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformInsertLoop(JNIEnv*, jclass, jdouble ratio) {
+    FORGESHAPE_FREEFORM_TOOL(InsertLoop, "INSERT_LOOP", insertLoop(ratio))
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSetCrease(JNIEnv*, jclass, jdouble weight) {
+    FORGESHAPE_FREEFORM_TOOL(SetCrease, "CREASE", setCrease(weight))
+}
+
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_freeformDeleteFaces(JNIEnv*, jclass) {
+    FORGESHAPE_FREEFORM_TOOL(DeleteFaces, "DELETE_FACES", deleteFaces())
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSetSymmetry(JNIEnv*, jclass, jint symmetry) {
+    if (symmetry < 0 || symmetry > 0xFF) return freeformCode(forgeshape::FreeformStatus::InvalidSymmetry);
+    FORGESHAPE_FREEFORM_TOOL(SetSymmetry, "SYMMETRY", setSymmetry(static_cast<uint8_t>(symmetry)))
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSetLevel(JNIEnv*, jclass, jint level) {
+    FORGESHAPE_FREEFORM_TOOL(SetLevel, "LEVEL", setLevel(static_cast<int>(level)))
+}
+
+#undef FORGESHAPE_FREEFORM_TOOL
+
+// The whole state in ONE locked read (NativeViewport.FREEFORM_STATE_*): the
+// session's presentation and the ACTIVE body's cage, so every slot describes
+// one instant. Returns the active body's representation-neutral verdict: 0 when
+// the active body is a Freeform body, NotFreeformBody otherwise.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformState(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr jsize kSlots = 24;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) {
+        return freeformCode(forgeshape::FreeformStatus::OutOfRange);
+    }
+    jdouble slots[kSlots] = {};
+    forgeshape::FreeformStatus verdict = forgeshape::FreeformStatus::NotFreeformBody;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::FreeformEditSession& session = forgeshape::freeformEditSession();
+        session.reconcile();
+        slots[0] = session.active() ? 1.0 : 0.0;
+        slots[1] = static_cast<double>(session.bodyId());
+        slots[2] = static_cast<double>(static_cast<int>(session.element()));
+        slots[3] = session.multiSelect() ? 1.0 : 0.0;
+        slots[4] = static_cast<double>(forgeshape::gizmoModeIndex(session.transformMode()));
+        slots[5] = static_cast<double>(session.selection().size());
+        slots[16] = session.capturing() ? 1.0 : 0.0;
+        slots[17] = static_cast<double>(forgeshape::freeformStatusCode(session.lastStatus()));
+        slots[22] = static_cast<double>(session.committedDragCount());
+        forgeshape::DVec3 centroid{0.0, 0.0, 0.0};
+        if (session.selectionCentroid(&centroid)) {
+            slots[18] = centroid.x;
+            slots[19] = centroid.y;
+            slots[20] = centroid.z;
+        }
+        if (const forgeshape::FreeformBody* body = activeFreeformLocked()) {
+            verdict = forgeshape::FreeformStatus::Ok;
+            const forgeshape::FreeformCage& cage = body->cage();
+            slots[6] = cage.subdivisionLevel;
+            slots[7] = cage.symmetry;
+            slots[8] = static_cast<double>(cage.vertices.size());
+            slots[9] = static_cast<double>(cage.edges.size());
+            slots[10] = static_cast<double>(cage.faces.size());
+            slots[11] = cage.nextVertexId;
+            slots[12] = cage.nextEdgeId;
+            slots[13] = cage.nextFaceId;
+            slots[14] = forgeshape::freeformCageHasBoundary(cage) ? 1.0 : 0.0;
+            slots[15] = static_cast<double>(static_cast<uint64_t>(cage.faces.size())
+                                            << (2u * cage.subdivisionLevel));
+            slots[21] = 1.0;
+            const forgeshape::SceneObject* object =
+                    forgeshape::constructionScene().findBody(forgeshape::constructionScene().activeBodyId());
+            slots[23] = object != nullptr && object->visible() && !object->locked() ? 1.0 : 0.0;
+        }
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, slots);
+    return freeformCode(verdict);
+}
+
+// The selection's ids, ascending; returns how many there are (the array may be
+// shorter, and only that many are written).
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformSelection(JNIEnv* env, jclass, jintArray out) {
+    std::vector<jint> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::freeformEditSession().reconcile();
+        for (uint32_t id : forgeshape::freeformEditSession().selection()) ids.push_back(static_cast<jint>(id));
+    }
+    if (out != nullptr) {
+        const jsize n = std::min(env->GetArrayLength(out), static_cast<jsize>(ids.size()));
+        if (n > 0) env->SetIntArrayRegion(out, 0, n, ids.data());
+    }
+    return static_cast<jint>(ids.size());
+}
+
+// One control vertex of the ACTIVE Freeform body, in body-local binary64.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformVertexPosition(JNIEnv* env, jclass, jint id,
+                                                              jdoubleArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 3 || id <= 0) return JNI_FALSE;
+    jdouble xyz[3];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::FreeformBody* body = activeFreeformLocked();
+        const forgeshape::FreeformVertex* v =
+                body != nullptr ? forgeshape::findFreeformVertex(body->cage(),
+                                                                 forgeshape::FreeformVertexId{
+                                                                         static_cast<uint32_t>(id)})
+                                : nullptr;
+        if (v == nullptr) return JNI_FALSE;
+        xyz[0] = v->position.x;
+        xyz[1] = v->position.y;
+        xyz[2] = v->position.z;
+    }
+    env->SetDoubleArrayRegion(out, 0, 3, xyz);
+    return JNI_TRUE;
+}
+
+// Where a cage element of the ACTIVE Freeform body stands on screen: a
+// vertex, an edge's midpoint, a face's centroid, projected through this
+// frame's camera. False -- nothing written -- when it does not project. What a
+// real-touch verification taps; never a stored coordinate.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformElementScreenPoint(JNIEnv* env, jclass, jint element,
+                                                                  jint id, jfloatArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 2 || element < 0 || element > 2 || id <= 0) {
+        return JNI_FALSE;
+    }
+    jfloat xy[2];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::FreeformBody* body = activeFreeformLocked();
+        forgeshape::DVec3 local;
+        forgeshape::Mat4 model;
+        if (body == nullptr
+            || !forgeshape::freeformSelectionCentroid(body->cage(),
+                                                      static_cast<forgeshape::FreeformElement>(element),
+                                                      {static_cast<uint32_t>(id)}, &local)
+            || !forgeshape::constructionScene().resolveWorldModel(body->objectId(), &model)) {
+            return JNI_FALSE;
+        }
+        const forgeshape::Vec3 world = forgeshape::mat4TransformPoint(model, forgeshape::vec3FromDVec3(local));
+        if (!forgeshape::projectWorldToScreen(g_camera.snapshot(), world, g_camera.viewportWidth(),
+                                              g_camera.viewportHeight(), &xy[0], &xy[1])) {
+            return JNI_FALSE;
+        }
+    }
+    env->SetFloatArrayRegion(out, 0, 2, xy);
+    return JNI_TRUE;
+}
+
+// Where a cage gizmo handle's grab point stands on screen (the gizmo's own
+// handle codes), or false when there is no instrument or it does not project.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformGizmoHandlePoint(JNIEnv* env, jclass, jint handleCode,
+                                                                jfloatArray out) {
+    forgeshape::GizmoHandle handle;
+    if (out == nullptr || env->GetArrayLength(out) < 2
+        || !forgeshape::gizmoHandleFromCode(static_cast<int>(handleCode), &handle)) {
+        return JNI_FALSE;
+    }
+    jfloat xy[2];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::CameraSnapshot camera = g_camera.snapshot();
+        const forgeshape::GizmoSnapshot state = forgeshape::freeformEditSession().gizmoSnapshot(
+                camera, g_camera.viewportWidth(), g_camera.viewportHeight());
+        forgeshape::Vec3 grab{};
+        if (!forgeshape::gizmoHandleGrabPoint(state, handle, &grab)
+            || !forgeshape::projectWorldToScreen(camera, grab, g_camera.viewportWidth(),
+                                                 g_camera.viewportHeight(), &xy[0], &xy[1])) {
+            return JNI_FALSE;
+        }
+    }
+    env->SetFloatArrayRegion(out, 0, 2, xy);
+    return JNI_TRUE;
+}
+
+// The ACTIVE Freeform body's derived-surface digest (FNV-1a 64 over positions
+// and quads), or 0. Equal surfaces, equal digests: determinism as a value.
+JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_freeformMeshDigest(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::FreeformBody* body = activeFreeformLocked();
+    std::shared_ptr<const forgeshape::FreeformMesh> mesh;
+    if (body == nullptr || body->derived(&mesh) != forgeshape::FreeformStatus::Ok) return 0;
+    return static_cast<jlong>(forgeshape::freeformMeshDigest(*mesh));
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_forgeshape_app_NativeViewport_freeformStatusToken(JNIEnv* env, jclass, jint code) {
+    if (code == kFreeformRefusedInSculpt) return env->NewStringUTF("RefusedInSculpt");
+    if (code == kFreeformRefusedInSketch) return env->NewStringUTF("RefusedInSketch");
+    if (code < 0 || code >= forgeshape::kFreeformStatusCount) return env->NewStringUTF("unknown");
+    return env->NewStringUTF(forgeshape::freeformStatusName(static_cast<forgeshape::FreeformStatus>(code)));
+}
+
+// ---------------------------------------------------------------------------
+// Surface (`MODELING-FOUNDATIONS-R1` C)
+// ---------------------------------------------------------------------------
+//
+// A Surface body's truth is its ordered feature list. The Java layer holds no
+// feature and no candidate: it asks what a Finish, a Stitch, a Thicken or a
+// typed value WOULD do (the whole chain regenerated, latest-only), draws the
+// controls that can succeed, and forwards the act. Codes are SurfaceStatus
+// codes; kSurfaceRefusedInSculpt is the one transport refusal.
+
+namespace {
+constexpr jint kSurfaceRefusedInSculpt = 100;
+
+jint surfaceCode(forgeshape::SurfaceStatus status) {
+    return static_cast<jint>(forgeshape::surfaceStatusCode(status));
+}
+
+const forgeshape::SurfaceBody* surfaceBodyLocked(jlong bodyId) {
+    const forgeshape::SceneObject* object =
+        forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(bodyId));
+    return object != nullptr ? object->surfaceOrNull() : nullptr;
+}
+
+// Fills `out` rather than returning it: this helper stands inside the JNI
+// file's C-linkage block, where a C++ return type draws -Wreturn-type-c-linkage.
+void fillSurfaceRequest(jint kind, jdouble value, jboolean keepInside, forgeshape::SurfaceCreateRequest* out) {
+    forgeshape::SurfaceCreateRequest request;
+    forgeshape::surfaceCreateKindFromCode(static_cast<int>(kind), &request.kind);
+    if (request.kind == forgeshape::SurfaceCreateKind::Extrude) request.distance = value;
+    if (request.kind == forgeshape::SurfaceCreateKind::Revolve) request.angleDegrees = value;
+    request.keepInside = keepInside == JNI_TRUE;
+    *out = request;
+}
+}  // namespace
+
+// Opens a sketch for a Surface feature on `planeIndex`, standing `offset`
+// metres along its normal; `bodyId` 0 makes a new body (or, with no project
+// open, the first project). Refused while sculpting, while an edit or a sketch
+// is open, and for a body that is not a Surface body.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceBeginSketch(JNIEnv*, jclass, jlong bodyId,
+                                                          jint planeIndex, jdouble offset) {
+    forgeshape::Workplane plane;
+    if (!forgeshape::workplaneFromIndex(static_cast<int>(planeIndex), &plane)) {
+        return surfaceCode(forgeshape::SurfaceStatus::SketchInvalid);
+    }
+    forgeshape::SurfaceStatus status = forgeshape::SurfaceStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
+        if (forgeshape::sculptSession().inSculptMode()) {
+            return kSurfaceRefusedInSculpt;
+        }
+        if (forgeshape::constructionHistory().editInProgress()) {
+            status = forgeshape::SurfaceStatus::EditInProgress;
+        } else if (id != forgeshape::kNoObject && surfaceBodyLocked(bodyId) == nullptr) {
+            status = forgeshape::SurfaceStatus::NotSurfaceBody;
+        } else if (forgeshape::sketchSession().begin(plane) != forgeshape::CadStatus::Ok) {
+            status = forgeshape::SurfaceStatus::NotSketching;
+        } else if (forgeshape::sketchSession().setPlaneOffset(offset) != forgeshape::CadStatus::Ok) {
+            forgeshape::sketchSession().cancel();
+            status = forgeshape::SurfaceStatus::OutOfRange;
+        }
+        if (status == forgeshape::SurfaceStatus::Ok) {
+            forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{true, id};
+            forgeshape::supportChooser().cancel();
+            forgeshape::gizmoSession().setActive(false);
+            g_selection.resetGesture();
+            g_camera.resetGesture();
+            beginSketchView();
+        }
+    }
+    FS_LOGI("FORGESHAPE_SURFACE_SKETCH_BEGIN %s body=%lld offset=%.6f",
+            forgeshape::surfaceStatusName(status), (long long)bodyId, (double)offset);
+    return surfaceCode(status);
+}
+
+// [0] a Surface sketch is open, [1] its body (0 for a new one), [2] its
+// offset, [3..8] what Finish as Patch, Extrude, Revolve, Loft, Trim and
+// Section would answer now (a SurfaceStatus code; 0 is a commit that would
+// succeed), evaluated with `distance`, `angle` and `keepInside`.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceSketchState(JNIEnv* env, jclass, jdouble distance,
+                                                          jdouble angle, jboolean keepInside,
+                                                          jdoubleArray out) {
+    constexpr jsize kSlots = 9;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) return JNI_FALSE;
+    jdouble v[kSlots] = {0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SurfaceSketchPurpose purpose = forgeshape::surfaceSketchPurpose();
+        forgeshape::SketchSession& sketch = forgeshape::sketchSession();
+        const bool active = purpose.active && sketch.active();
+        v[0] = active ? 1.0 : 0.0;
+        v[1] = static_cast<jdouble>(purpose.body);
+        v[2] = sketch.planeOffset();
+        const forgeshape::SurfaceBody* body = purpose.body != forgeshape::kNoObject
+                                                  ? surfaceBodyLocked(static_cast<jlong>(purpose.body))
+                                                  : nullptr;
+        for (int kind = 1; kind <= forgeshape::kSurfaceCreateKindCount; ++kind) {
+            forgeshape::SurfaceStatus why = forgeshape::SurfaceStatus::NotSketching;
+            if (active) {
+                const jdouble value = kind == 3 ? angle : distance;
+                forgeshape::SurfaceCreateRequest request;
+                fillSurfaceRequest(kind, value, keepInside, &request);
+                why = forgeshape::surfaceCandidateFromSketch(
+                    body != nullptr ? &body->state() : nullptr, sketch.sketch(), sketch.planeOffset(),
+                    forgeshape::surfaceChosenCurves(sketch), request, nullptr);
+            }
+            v[2 + kind] = surfaceCode(why);
+        }
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, v);
+    return JNI_TRUE;
+}
+
+// THE Finish of a Surface sketch as `kind` (1 Patch .. 6 Section) with its one
+// value (Extrude distance, Revolve angle). One transaction, or the first
+// project; on success the sketch is over and the view is the user's again.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceCommitSketch(JNIEnv*, jclass, jint kind, jdouble value,
+                                                           jboolean keepInside) {
+    forgeshape::SurfaceStatus status;
+    forgeshape::ObjectId body = forgeshape::kNoObject;
+    forgeshape::SurfaceRegenerationReport report;
+    bool firstProject = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (forgeshape::sculptSession().inSculptMode()) return kSurfaceRefusedInSculpt;
+        firstProject = !forgeshape::constructionScene().hasProject();
+        forgeshape::SurfaceCreateRequest request;
+        fillSurfaceRequest(kind, value, keepInside, &request);
+        status = forgeshape::surfaceCommitSketch(forgeshape::sketchSession(), forgeshape::constructionScene(),
+                                                 forgeshape::sculptSession(), forgeshape::constructionHistory(),
+                                                 request, &body, &report);
+        if (status == forgeshape::SurfaceStatus::Ok) {
+            forgeshape::supportChooser().cancel();
+            endSketchView();
+        }
+    }
+    if (status != forgeshape::SurfaceStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SURFACE_COMMIT_REFUSED:%s feature=%u", forgeshape::surfaceStatusName(status),
+                forgeshape::idOf(report.failedFeature));
+        return surfaceCode(status);
+    }
+    FS_LOGI("FORGESHAPE_SURFACE_COMMIT kind=%d objectId=%llu first=%d undo=%d", (int)kind,
+            (unsigned long long)body, firstProject ? 1 : 0,
+            (int)forgeshape::constructionHistory().undoDepth());
+    return surfaceCode(status);
+}
+
+// The features whose patches are live, ascending, into `out`; the count.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceLiveFeatures(JNIEnv* env, jclass, jlong bodyId,
+                                                           jlongArray out) {
+    std::vector<jlong> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SurfaceBody* body = surfaceBodyLocked(bodyId);
+        if (body == nullptr) return -1;
+        for (forgeshape::SurfaceFeatureId id : forgeshape::surfaceLiveFeatures(body->mesh())) {
+            ids.push_back(static_cast<jlong>(forgeshape::idOf(id)));
+        }
+    }
+    if (out != nullptr && !ids.empty()) {
+        const jsize n = std::min(env->GetArrayLength(out), static_cast<jsize>(ids.size()));
+        env->SetLongArrayRegion(out, 0, n, ids.data());
+    }
+    return static_cast<jint>(ids.size());
+}
+
+// What Stitch / Thicken WOULD answer (`commit` false) or the act itself.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceStitch(JNIEnv*, jclass, jlong bodyId, jboolean commit) {
+    forgeshape::SurfaceStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (forgeshape::sculptSession().inSculptMode()) return kSurfaceRefusedInSculpt;
+        if (forgeshape::sketchSession().active()) return surfaceCode(forgeshape::SurfaceStatus::EditInProgress);
+        const forgeshape::SurfaceBody* body = surfaceBodyLocked(bodyId);
+        if (body == nullptr) return surfaceCode(forgeshape::SurfaceStatus::NotSurfaceBody);
+        status = commit == JNI_TRUE
+                     ? forgeshape::surfaceStitch(forgeshape::constructionScene(), forgeshape::constructionHistory(),
+                                                 static_cast<forgeshape::ObjectId>(bodyId))
+                     : forgeshape::surfaceStitchCandidate(*body, nullptr);
+    }
+    if (commit == JNI_TRUE) {
+        FS_LOGI("FORGESHAPE_SURFACE_STITCH %s body=%lld", forgeshape::surfaceStatusName(status), (long long)bodyId);
+    }
+    return surfaceCode(status);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceThicken(JNIEnv*, jclass, jlong bodyId, jlong featureId,
+                                                      jdouble thickness, jboolean commit) {
+    forgeshape::SurfaceStatus status;
+    const forgeshape::SurfaceFeatureId source{static_cast<uint32_t>(featureId)};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (forgeshape::sculptSession().inSculptMode()) return kSurfaceRefusedInSculpt;
+        if (forgeshape::sketchSession().active()) return surfaceCode(forgeshape::SurfaceStatus::EditInProgress);
+        const forgeshape::SurfaceBody* body = surfaceBodyLocked(bodyId);
+        if (body == nullptr) return surfaceCode(forgeshape::SurfaceStatus::NotSurfaceBody);
+        status = commit == JNI_TRUE
+                     ? forgeshape::surfaceThicken(forgeshape::constructionScene(), forgeshape::constructionHistory(),
+                                                  static_cast<forgeshape::ObjectId>(bodyId), source, thickness)
+                     : forgeshape::surfaceThickenCandidate(*body, source, thickness, nullptr);
+    }
+    if (commit == JNI_TRUE) {
+        FS_LOGI("FORGESHAPE_SURFACE_THICKEN %s body=%lld feature=%lld thickness=%.6f",
+                forgeshape::surfaceStatusName(status), (long long)bodyId, (long long)featureId, (double)thickness);
+    }
+    return surfaceCode(status);
+}
+
+// One typed value: `target` 0 a feature (distance, angle or thickness), 1 a
+// sketch (its offset). One transaction, or the first failure named.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceApplyValue(JNIEnv*, jclass, jlong bodyId, jint target,
+                                                         jlong id, jdouble value) {
+    forgeshape::SurfaceStatus status;
+    forgeshape::SurfaceRegenerationReport report;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (forgeshape::sculptSession().inSculptMode()) return kSurfaceRefusedInSculpt;
+        if (forgeshape::sketchSession().active()) return surfaceCode(forgeshape::SurfaceStatus::EditInProgress);
+        status = forgeshape::surfaceApplyValue(
+            forgeshape::constructionScene(), forgeshape::constructionHistory(),
+            static_cast<forgeshape::ObjectId>(bodyId),
+            target == 1 ? forgeshape::SurfaceValueTarget::Sketch : forgeshape::SurfaceValueTarget::Feature,
+            static_cast<uint32_t>(id), value, &report);
+    }
+    FS_LOGI("FORGESHAPE_SURFACE_VALUE %s target=%d id=%lld value=%.6f failed=%u",
+            forgeshape::surfaceStatusName(status), (int)target, (long long)id, (double)value,
+            forgeshape::idOf(report.failedFeature));
+    return surfaceCode(status);
+}
+
+// The body's current value for a row (NaN when the row has none).
+JNIEXPORT jdouble JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceValue(JNIEnv*, jclass, jlong bodyId, jint target, jlong id) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::SurfaceBody* body = surfaceBodyLocked(bodyId);
+    double value = std::numeric_limits<double>::quiet_NaN();
+    if (body != nullptr) {
+        forgeshape::surfaceValueOf(body->state(),
+                                   target == 1 ? forgeshape::SurfaceValueTarget::Sketch
+                                               : forgeshape::SurfaceValueTarget::Feature,
+                                   static_cast<uint32_t>(id), &value);
+    }
+    return value;
+}
+
+// A Surface body's feature list as timeline rows, in the CAD timeline's
+// 27-slot row layout (NativeViewport.TIMELINE_*): [0] kind (0 sketch, 1
+// feature), [1] id, [2] sketch, [3] the id a tap edits (0: no value), [4]
+// ordinal, [5] state, [6] the failing SurfaceStatus code, [7] editing, [8]
+// entities, [10] workplane, [14] Surface feature kind (1..7), [21] the row's
+// value. With `editTarget` >= 0 the rows are the STAGED chain with `editId`'s
+// value replaced by `value` and its own evaluation -- the failing row is the
+// one an Apply would be refused by. Header as cadTimeline's. -1 for a body
+// that is not a Surface body.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceTimeline(JNIEnv* env, jclass, jlong bodyId, jint editTarget,
+                                                       jlong editId, jdouble value, jdoubleArray header,
+                                                       jdoubleArray rows) {
+    constexpr jsize kHeaderSlots = 5;
+    constexpr jsize kRowSlots = 27;
+    if (header == nullptr || env->GetArrayLength(header) < kHeaderSlots) return -1;
+    forgeshape::SurfaceTimeline timeline;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SurfaceBody* body = surfaceBodyLocked(bodyId);
+        if (body == nullptr) return -1;
+        const forgeshape::SurfaceValueTarget target =
+            editTarget == 1 ? forgeshape::SurfaceValueTarget::Sketch : forgeshape::SurfaceValueTarget::Feature;
+        forgeshape::SurfaceRegenerationReport report;
+        if (editTarget >= 0) {
+            forgeshape::SurfaceBodyState staged;
+            report.status = forgeshape::surfaceStateWithValue(body->state(), target, static_cast<uint32_t>(editId),
+                                                              value, &staged);
+            if (report.status == forgeshape::SurfaceStatus::Ok) {
+                forgeshape::regenerateSurfaceBody(staged, nullptr, &report);
+                timeline = forgeshape::buildSurfaceTimeline(staged, report, true, target,
+                                                            static_cast<uint32_t>(editId));
+            } else {
+                timeline = forgeshape::buildSurfaceTimeline(body->state(), report, true, target,
+                                                            static_cast<uint32_t>(editId));
+            }
+        } else {
+            timeline = forgeshape::buildSurfaceTimeline(body->state(), report);
+        }
+    }
+    const jdouble head[kHeaderSlots] = {static_cast<jdouble>(surfaceCode(timeline.status)),
+                                        static_cast<jdouble>(forgeshape::idOf(timeline.failedFeature)),
+                                        editTarget >= 0 ? static_cast<jdouble>(editId) : 0.0, 1.0,
+                                        static_cast<jdouble>(timeline.rows.size())};
+    env->SetDoubleArrayRegion(header, 0, kHeaderSlots, head);
+    if (rows != nullptr) {
+        const jsize capacity = env->GetArrayLength(rows) / kRowSlots;
+        const jsize count = std::min(capacity, static_cast<jsize>(timeline.rows.size()));
+        std::vector<jdouble> values(static_cast<size_t>(count) * kRowSlots, 0.0);
+        for (jsize i = 0; i < count; ++i) {
+            const forgeshape::SurfaceTimelineRow& row = timeline.rows[static_cast<size_t>(i)];
+            jdouble* v = &values[static_cast<size_t>(i) * kRowSlots];
+            v[0] = row.feature ? 1.0 : 0.0;
+            v[1] = row.id;
+            v[2] = row.sketchId;
+            v[3] = row.hasValue ? row.id : 0.0;
+            v[4] = row.ordinal;
+            v[5] = static_cast<jdouble>(static_cast<int>(row.state));
+            v[6] = static_cast<jdouble>(surfaceCode(row.status));
+            v[7] = row.editing ? 1.0 : 0.0;
+            v[8] = row.entityCount;
+            v[10] = forgeshape::workplaneIndex(row.plane);
+            v[14] = static_cast<jdouble>(static_cast<int>(row.kind));
+            v[21] = row.value;
+        }
+        if (count > 0) env->SetDoubleArrayRegion(rows, 0, count * kRowSlots, values.data());
+    }
+    return static_cast<jint>(timeline.rows.size());
+}
+
+// [0] features, [1] sketches, [2] live patches, [3] open boundary edges, [4]
+// stitched edge pairs, [5] solid triangles, [6] solid volume (m^3), [7] the
+// pending Loft section's sketch id (0: none), [8] drawn two-sided. False for a
+// body that is not a Surface body.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceState(JNIEnv* env, jclass, jlong bodyId, jdoubleArray out) {
+    constexpr jsize kSlots = 9;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) return JNI_FALSE;
+    jdouble v[kSlots] = {0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SurfaceBody* body = surfaceBodyLocked(bodyId);
+        if (body == nullptr) return JNI_FALSE;
+        const forgeshape::SurfaceBodyMesh& mesh = body->mesh();
+        v[0] = static_cast<jdouble>(body->state().features.size());
+        v[1] = static_cast<jdouble>(body->state().sketches.size());
+        v[2] = static_cast<jdouble>(mesh.patches.size());
+        v[3] = static_cast<jdouble>(mesh.openEdgeCount);
+        v[4] = static_cast<jdouble>(mesh.stitches.size());
+        v[5] = static_cast<jdouble>(mesh.solid.triangleCount());
+        v[6] = forgeshape::cadSolidVolume(mesh.solid);
+        v[7] = static_cast<jdouble>(forgeshape::surfacePendingSection(body->state()));
+        v[8] = mesh.render.renderBothSides ? 1.0 : 0.0;
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, v);
+    return JNI_TRUE;
+}
+
+// The derived geometry's digest: what a device test compares across a
+// regeneration, a save and a reopen.
+JNIEXPORT jlong JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceMeshDigest(JNIEnv*, jclass, jlong bodyId) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::SurfaceBody* body = surfaceBodyLocked(bodyId);
+    return body != nullptr ? static_cast<jlong>(forgeshape::surfaceMeshDigest(body->mesh())) : 0;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceStatusToken(JNIEnv* env, jclass, jint code) {
+    if (code == kSurfaceRefusedInSculpt) return env->NewStringUTF("RefusedInSculpt");
+    if (code < 0 || code >= forgeshape::kSurfaceStatusCount) return env->NewStringUTF("unknown");
+    return env->NewStringUTF(forgeshape::surfaceStatusName(static_cast<forgeshape::SurfaceStatus>(code)));
 }
 
 // A CAD body's regenerated solid, measured (`CAD-VERTICAL-SLICE-R1`): [0]
@@ -5278,6 +6362,174 @@ Java_com_forgeshape_app_NativeViewport_sketchFlipExtrudeDirection(JNIEnv*, jclas
     return cadCode(status);
 }
 
+// ---------------------------------------------------------------------------
+// Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`)
+// ---------------------------------------------------------------------------
+//
+// Acts, each one native call that returns a CadStatus code, and ONE locked
+// read of everything the chrome shows. The shell holds no axis, no angle and
+// no direction: it submits and re-reads.
+
+namespace {
+
+jint revolveAct(const char* name, forgeshape::CadStatus (*act)(forgeshape::SketchSession&)) {
+    forgeshape::CadStatus status;
+    double angle = 0.0;
+    int direction = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        status = act(session);
+        angle = session.revolveParameters().angleDegrees;
+        direction = forgeshape::revolveDirectionIndex(session.revolveParameters().direction);
+    }
+    if (status != forgeshape::CadStatus::Ok) {
+        FS_LOGI("FORGESHAPE_REVOLVE_REFUSED:%s:%s", name, forgeshape::cadStatusName(status));
+    } else {
+        FS_LOGI("FORGESHAPE_REVOLVE:%s angle=%.6f direction=%d", name, angle, direction);
+    }
+    return cadCode(status);
+}
+
+}  // namespace
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchBeginRevolve(JNIEnv*, jclass) {
+    return revolveAct("begin", [](forgeshape::SketchSession& s) {
+        const forgeshape::CadStatus why = s.beginRevolve();
+        if (why == forgeshape::CadStatus::Ok && !s.revolveAxisPicking()) {
+            beginRevolveFeatureView();  // an edit or a return holds its axis already
+        }
+        return why;
+    });
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchEndRevolve(JNIEnv*, jclass) {
+    return revolveAct("end", [](forgeshape::SketchSession& s) { return s.endRevolve(); });
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchBeginRevolveAxisPick(JNIEnv*, jclass) {
+    return revolveAct("axis_pick",
+                      [](forgeshape::SketchSession& s) { return s.beginRevolveAxisPick(); });
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchFlipRevolve(JNIEnv*, jclass) {
+    return revolveAct("flip", [](forgeshape::SketchSession& s) { return s.flipRevolveDirection(); });
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetRevolveAxis(JNIEnv*, jclass, jlong entityId,
+                                                            jint edgeIndex) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::RevolveAxisUnresolved;
+    if (entityId >= 0 && entityId <= 0xFFFFFFFFll && edgeIndex >= 0) {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().setRevolveAxis(forgeshape::CadSketchEdgeRef{
+                static_cast<forgeshape::SketchEntityId>(entityId), static_cast<uint32_t>(edgeIndex)});
+        if (status == forgeshape::CadStatus::Ok) {
+            beginRevolveFeatureView();
+        }
+    }
+    FS_LOGI("FORGESHAPE_REVOLVE_AXIS:%lld:%d %s", (long long)entityId, (int)edgeIndex,
+            forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetRevolveAngle(JNIEnv*, jclass, jdouble degrees) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().setRevolveAngle(degrees);
+    }
+    FS_LOGI("FORGESHAPE_REVOLVE_ANGLE:%.6f %s", (double)degrees, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// The Revolve chrome's whole state, in one locked read, into NativeViewport's
+// REVOLVE_* slots:
+//   [0]  1 while the session's Ready selection is being revolved
+//   [1]  1 while a tap picks the axis
+//   [2]  the axis entity id (0 none)     [3] its edge index
+//   [4]  the angle, degrees              [5] the direction (0 Positive, 1 Negative)
+//   [6]  the candidate's CadStatus code (0: what a commit would make)
+//   [7]  1 when the angle label projects; 8..9 meaningless otherwise
+//   [8]  label x  [9] label y
+//   [10] 1 when the ring handle projects; 11..12 meaningless otherwise
+//   [11] handle x [12] handle y
+//   [13] 1 when the axis projects; 14..17 meaningless otherwise
+//   [14] axis start x [15] y [16] axis end x [17] y
+//   [18] 1 while a handle drag is captured
+//   [19] 1 when Revolve can be chosen now (`revolveAvailable`)
+//   [20] 1 for a full turn
+//   [21] how many areas are chosen
+//   [22] 1 when the session edits a Revolve body (its kind is fixed)
+//   [23] the candidate revision the evaluation answered
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_cadRevolveToolState(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr jsize kSlots = 24;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) {
+        return;
+    }
+    double values[kSlots] = {0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        const bool revolve = session.state() == forgeshape::SketchSessionState::Ready
+                             && session.featureKind() == forgeshape::CadFeatureKind::Revolve;
+        const forgeshape::RevolveFeature& parameters = session.revolveParameters();
+        values[0] = revolve ? 1.0 : 0.0;
+        values[1] = session.revolveAxisPicking() ? 1.0 : 0.0;
+        values[2] = static_cast<double>(parameters.axis.entityId);
+        values[3] = static_cast<double>(parameters.axis.edgeLocalIndex);
+        values[4] = parameters.angleDegrees;
+        values[5] = forgeshape::revolveDirectionIndex(parameters.direction);
+        values[18] = session.revolveDragging() ? 1.0 : 0.0;
+        values[19] = session.revolveAvailable() ? 1.0 : 0.0;
+        values[20] = forgeshape::revolveIsFullTurn(parameters) ? 1.0 : 0.0;
+        values[21] = static_cast<double>(session.selectedAreaCount());
+        values[22] = session.editingFeatureId() == forgeshape::kCadFeatureId && revolve ? 1.0 : 0.0;
+        if (revolve) {
+            const forgeshape::CadCandidateEvaluation& evaluation = session.evaluateCandidate();
+            values[6] = forgeshape::cadStatusCode(evaluation.status);
+            values[23] = static_cast<double>(evaluation.revision);
+            forgeshape::SketchSession::RevolveRing ring;
+            if (session.revolveRing(&ring)) {
+                const forgeshape::CameraSnapshot camera = g_camera.snapshot();
+                const int w = g_camera.viewportWidth();
+                const int h = g_camera.viewportHeight();
+                float x = 0.0f;
+                float y = 0.0f;
+                float x2 = 0.0f;
+                float y2 = 0.0f;
+                if (forgeshape::projectWorldToScreen(camera, ring.label, w, h, &x, &y)
+                    && x >= 0.0f && y >= 0.0f && x <= w && y <= h) {
+                    values[7] = 1.0;
+                    values[8] = x;
+                    values[9] = y;
+                }
+                if (forgeshape::projectWorldToScreen(camera, ring.handle, w, h, &x, &y)
+                    && x >= 0.0f && y >= 0.0f && x <= w && y <= h) {
+                    values[10] = 1.0;
+                    values[11] = x;
+                    values[12] = y;
+                }
+                if (forgeshape::projectWorldToScreen(camera, ring.axisStart, w, h, &x, &y)
+                    && forgeshape::projectWorldToScreen(camera, ring.axisEnd, w, h, &x2, &y2)) {
+                    values[13] = 1.0;
+                    values[14] = x;
+                    values[15] = y;
+                    values[16] = x2;
+                    values[17] = y2;
+                }
+            }
+        }
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, values);
+}
+
 // Where a COMMITTED CAD body retained sketch is, on screen (`CAD-UX-S1` 4.7).
 //
 // The whole point of the retained-sketch access: a body made from a sketch
@@ -5412,10 +6664,8 @@ Java_com_forgeshape_app_NativeViewport_sketchSetViewFlipped(JNIEnv*, jclass, jbo
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         forgeshape::SketchSession& s = forgeshape::sketchSession();
-        if (!s.active()) {
-            status = forgeshape::CadStatus::NotSketching;
-        } else {
-            s.setViewFlipped(flipped == JNI_TRUE);
+        status = s.setViewFlipped(flipped == JNI_TRUE);
+        if (status == forgeshape::CadStatus::Ok) {
             beginSketchView();
         }
     }
@@ -5509,6 +6759,421 @@ Java_com_forgeshape_app_NativeViewport_sketchApplyLineLength(JNIEnv*, jclass, jl
 }
 
 // ---------------------------------------------------------------------------
+// Sketch drafting (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`)
+// ---------------------------------------------------------------------------
+//
+// The selection SET, the Construction role, the modify modes and the retained
+// dimensions. The Java layer holds none of it: every read below is derived on
+// the call from the one session, and every act is a native act that answers a
+// `CadStatus` code. Nothing here is project truth until the sketch's one commit.
+
+namespace {
+
+// The camera-derived scale the sketch overlay is BUILT with this frame (the
+// render loop's `gizmoWorldScale` at the world origin), so a label placed from
+// it stands exactly on the annotation the renderer drew.
+double sketchOverlayWorldPerUnit() {
+    float worldPerUnit = 0.0f;
+    forgeshape::gizmoWorldScale(g_camera.snapshot(), forgeshape::Vec3{0.0f, 0.0f, 0.0f},
+                                g_camera.viewportHeight(), &worldPerUnit);
+    return static_cast<double>(worldPerUnit);
+}
+
+}  // namespace
+
+// The whole selection, in the order it was made. Returns the count; writes at
+// most `out.length` ids.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSelection(JNIEnv* env, jclass, jlongArray out) {
+    std::vector<jlong> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        for (forgeshape::SketchEntityId id : forgeshape::sketchSession().selectedEntityIds()) {
+            ids.push_back(static_cast<jlong>(id));
+        }
+    }
+    if (out != nullptr && !ids.empty()) {
+        const jsize n = std::min<jsize>(env->GetArrayLength(out), static_cast<jsize>(ids.size()));
+        env->SetLongArrayRegion(out, 0, n, ids.data());
+    }
+    return static_cast<jint>(ids.size());
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetMultiSelect(JNIEnv*, jclass, jboolean on) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::sketchSession().setMultiSelect(on == JNI_TRUE);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchToggleSelectEntity(JNIEnv*, jclass, jlong entityId) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::sketchSession().toggleSelect(static_cast<forgeshape::SketchEntityId>(entityId))
+                   ? JNI_TRUE
+                   : JNI_FALSE;
+}
+
+// The ONE construction act for the selection (Make Construction when any
+// selected entity is Regular, else Make Regular).
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchToggleConstruction(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    forgeshape::SketchEntityRole applied = forgeshape::SketchEntityRole::Regular;
+    size_t count = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().toggleSelectionConstruction(&applied);
+        count = forgeshape::sketchSession().selectedEntityIds().size();
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_CONSTRUCTION %s role=%s selected=%d", forgeshape::cadStatusName(status),
+            forgeshape::sketchEntityRoleName(applied), (int)count);
+    return cadCode(status);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetModifyMode(JNIEnv*, jclass, jint mode) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::NotSketching;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (mode >= 0 && mode < forgeshape::kSketchModifyModeCount) {
+            status = forgeshape::sketchSession().setModifyMode(
+                    static_cast<forgeshape::SketchModifyMode>(mode));
+        }
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_MODIFY_MODE %d %s", (int)mode, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// The drafting state, in NativeViewport's SKETCH_DRAFT_* slots:
+//   [0] modify mode            [1] selection count      [2] multi-select (1/0)
+//   [3] construction target (0 Regular, 1 Construction) for the selection
+//   [4] dimension target entity  [5] its edge  [6] awaiting the angle's 2nd edge
+//   [7] offset source  [8] offset distance m  [9] offset preview status code
+//   [10] mirror axis set  [11] axis entity  [12] axis edge
+//   [13] dimension visibility (0 Selected, 1 All, 2 Off)  [14] dimension count
+//   [15] dimensions the last delete removed  [16] last trim converted a rectangle
+//   [17] last snap kind  [18] horizontal guide (1/0)  [19] vertical guide (1/0)
+//   [20] construction entity count  [21] the single selection's role (-1 none)
+//   [22] the tap-act serial (advances on every Trim or Extend that landed)
+//   [23] the single selection's entity kind (-1 none)
+//   [24] which tap act last landed (0 none, 1 Trim, 2 Extend)
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchDraftingState(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr jsize kSize = 25;
+    if (out == nullptr || env->GetArrayLength(out) < kSize) {
+        return;
+    }
+    jdouble v[kSize] = {};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SketchSession& s = forgeshape::sketchSession();
+        v[0] = static_cast<double>(static_cast<int>(s.modifyMode()));
+        v[1] = static_cast<double>(s.selectedEntityIds().size());
+        v[2] = s.multiSelect() ? 1.0 : 0.0;
+        v[3] = s.selectionConstructionTarget() == forgeshape::SketchEntityRole::Construction ? 1.0 : 0.0;
+        forgeshape::CadSketchEdgeRef target;
+        if (s.dimensionTarget(&target)) {
+            v[4] = static_cast<double>(target.entityId);
+            v[5] = static_cast<double>(target.edgeLocalIndex);
+        }
+        v[6] = s.dimensionAwaitingSecondEdge() ? 1.0 : 0.0;
+        v[7] = static_cast<double>(s.offsetSource());
+        v[8] = s.offsetDistance();
+        v[9] = static_cast<double>(forgeshape::cadStatusCode(s.offsetPreviewStatus()));
+        forgeshape::CadSketchEdgeRef axis;
+        if (s.mirrorAxis(&axis)) {
+            v[10] = 1.0;
+            v[11] = static_cast<double>(axis.entityId);
+            v[12] = static_cast<double>(axis.edgeLocalIndex);
+        }
+        v[13] = static_cast<double>(static_cast<int>(s.dimensionVisibility()));
+        v[14] = static_cast<double>(s.sketch().dimensions.size());
+        v[15] = static_cast<double>(s.lastDeletedDimensionCount());
+        v[16] = s.lastTrimConvertedRectangle() ? 1.0 : 0.0;
+        v[17] = static_cast<double>(static_cast<int>(s.lastSnapKind()));
+        v[18] = s.lastSnap().horizontalGuide ? 1.0 : 0.0;
+        v[19] = s.lastSnap().verticalGuide ? 1.0 : 0.0;
+        int construction = 0;
+        for (const forgeshape::SketchEntity& e : s.sketch().entities) {
+            construction += e.construction() ? 1 : 0;
+        }
+        v[20] = static_cast<double>(construction);
+        v[21] = -1.0;
+        v[23] = -1.0;
+        if (const forgeshape::SketchEntity* one =
+                    forgeshape::findSketchEntity(s.sketch(), s.selectedEntityId())) {
+            v[21] = one->construction() ? 1.0 : 0.0;
+            v[23] = static_cast<double>(static_cast<int>(one->kind()));
+        }
+        v[22] = static_cast<double>(s.tapActSerial());
+        v[24] = static_cast<double>(static_cast<int>(s.lastTapAct()));
+    }
+    env->SetDoubleArrayRegion(out, 0, kSize, v);
+}
+
+// The dimension kinds the Dimension mode's target supports, in enum order.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchDimensionTargetKinds(JNIEnv* env, jclass, jintArray out) {
+    std::vector<jint> kinds;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        for (forgeshape::SketchDimensionKind kind : forgeshape::sketchSession().dimensionTargetKinds()) {
+            kinds.push_back(static_cast<jint>(kind));
+        }
+    }
+    if (out != nullptr && !kinds.empty()) {
+        const jsize n = std::min<jsize>(env->GetArrayLength(out), static_cast<jsize>(kinds.size()));
+        env->SetIntArrayRegion(out, 0, n, kinds.data());
+    }
+    return static_cast<jint>(kinds.size());
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetDimensionTarget(JNIEnv*, jclass, jlong entityId,
+                                                                jint edge) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return cadCode(forgeshape::sketchSession().setDimensionTarget(forgeshape::CadSketchEdgeRef{
+            static_cast<forgeshape::SketchEntityId>(entityId), static_cast<uint32_t>(edge < 0 ? 0 : edge)}));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchBeginDimensionAngle(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return cadCode(forgeshape::sketchSession().beginDimensionAngle());
+}
+
+// Adds a dimension of `kind` (SketchDimensionKind index) and `mode` (0 Driving,
+// 1 Reference) on the Dimension mode's target.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchAddDimension(JNIEnv*, jclass, jint kind, jint mode) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::SketchDimensionInvalid;
+    forgeshape::SketchDimensionId id = forgeshape::kNoSketchDimension;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (kind >= 0 && kind < forgeshape::kSketchDimensionKindCount && (mode == 0 || mode == 1)) {
+            status = forgeshape::sketchSession().addDimension(
+                    static_cast<forgeshape::SketchDimensionKind>(kind),
+                    mode == 0 ? forgeshape::SketchDimensionMode::Driving
+                              : forgeshape::SketchDimensionMode::Reference,
+                    &id);
+        }
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_DIMENSION_ADD kind=%d mode=%d id=%u %s", (int)kind, (int)mode,
+            (unsigned)id, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchRemoveDimension(JNIEnv*, jclass, jlong id) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().removeDimension(static_cast<forgeshape::SketchDimensionId>(id));
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_DIMENSION_REMOVE id=%lld %s", (long long)id, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// THE Driving edit: metres for a length kind, degrees for an angle kind.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchApplyDimensionValue(JNIEnv*, jclass, jlong id,
+                                                                 jdouble value) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().applyDimensionValue(
+                static_cast<forgeshape::SketchDimensionId>(id), value);
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_DIMENSION_VALUE id=%lld value=%.6f %s", (long long)id, (double)value,
+            forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetDimensionVisibility(JNIEnv*, jclass, jint visibility) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (visibility >= 0 && visibility < forgeshape::kSketchDimensionVisibilityCount) {
+        forgeshape::sketchSession().setDimensionVisibility(
+                static_cast<forgeshape::SketchDimensionVisibility>(visibility));
+    }
+}
+
+// The labels of every dimension shown now, stride SKETCH_LABEL_STRIDE (10):
+//   [0] id  [1] kind  [2] mode (0 Driving, 1 Reference)  [3] value (m or deg)
+//   [4] screen x  [5] screen y  [6] 1 when the anchor projects  [7] first entity
+//   [8] attach screen x  [9] attach screen y -- the point on the measured
+//   geometry the label stands off from (the anchor itself when it does not
+//   project), so the chrome can keep the label's whole touch box clear of it.
+// Placed from the SAME scale the overlay was built with this frame. Returns the
+// number of labels; writes as many as fit.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchDimensionLabels(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr int kStride = 10;
+    std::vector<jdouble> values;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SketchSession& s = forgeshape::sketchSession();
+        for (const forgeshape::SketchDimensionAnnotation& a :
+             s.visibleDimensionAnnotations(sketchOverlayWorldPerUnit())) {
+            float x = 0.0f;
+            float y = 0.0f;
+            const bool projects = s.sketchToScreen(g_camera.snapshot(), a.label, g_camera.viewportWidth(),
+                                                   g_camera.viewportHeight(), &x, &y);
+            const forgeshape::SketchDimension* d = forgeshape::findSketchDimension(s.sketch(), a.id);
+            values.push_back(static_cast<double>(a.id));
+            values.push_back(static_cast<double>(static_cast<int>(a.kind)));
+            values.push_back(a.mode == forgeshape::SketchDimensionMode::Driving ? 0.0 : 1.0);
+            values.push_back(a.value);
+            values.push_back(static_cast<double>(x));
+            values.push_back(static_cast<double>(y));
+            values.push_back(projects ? 1.0 : 0.0);
+            values.push_back(d != nullptr ? static_cast<double>(d->first.entityId) : 0.0);
+            float ax = x;
+            float ay = y;
+            if (!s.sketchToScreen(g_camera.snapshot(), a.attach, g_camera.viewportWidth(),
+                                  g_camera.viewportHeight(), &ax, &ay)) {
+                ax = x;
+                ay = y;
+            }
+            values.push_back(static_cast<double>(ax));
+            values.push_back(static_cast<double>(ay));
+        }
+    }
+    const jint count = static_cast<jint>(values.size() / kStride);
+    if (out != nullptr && count > 0) {
+        const jsize fit = (env->GetArrayLength(out) / kStride) * kStride;
+        const jsize n = std::min<jsize>(fit, static_cast<jsize>(values.size()));
+        if (n > 0) env->SetDoubleArrayRegion(out, 0, n, values.data());
+    }
+    return count;
+}
+
+// Every retained dimension of the sketch, stride 8, for verification:
+//   [0] id [1] kind [2] mode [3] first entity [4] first edge [5] second entity
+//   [6] second edge [7] derived value
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchDimensions(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr int kStride = 8;
+    std::vector<jdouble> values;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::CadSketch& sketch = forgeshape::sketchSession().sketch();
+        for (const forgeshape::SketchDimension& d : sketch.dimensions) {
+            double value = NAN;
+            forgeshape::sketchDimensionValue(sketch, d, &value);
+            values.push_back(static_cast<double>(d.id));
+            values.push_back(static_cast<double>(static_cast<int>(d.kind)));
+            values.push_back(d.mode == forgeshape::SketchDimensionMode::Driving ? 0.0 : 1.0);
+            values.push_back(static_cast<double>(d.first.entityId));
+            values.push_back(static_cast<double>(d.first.edgeLocalIndex));
+            values.push_back(static_cast<double>(d.second.entityId));
+            values.push_back(static_cast<double>(d.second.edgeLocalIndex));
+            values.push_back(value);
+        }
+    }
+    const jint count = static_cast<jint>(values.size() / kStride);
+    if (out != nullptr && count > 0) {
+        const jsize fit = (env->GetArrayLength(out) / kStride) * kStride;
+        const jsize n = std::min<jsize>(fit, static_cast<jsize>(values.size()));
+        if (n > 0) env->SetDoubleArrayRegion(out, 0, n, values.data());
+    }
+    return count;
+}
+
+// Every entity id of the sketch in stored order. Returns the count.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchEntityIds(JNIEnv* env, jclass, jlongArray out) {
+    std::vector<jlong> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        for (const forgeshape::SketchEntity& e : forgeshape::sketchSession().sketch().entities) {
+            ids.push_back(static_cast<jlong>(e.id()));
+        }
+    }
+    if (out != nullptr && !ids.empty()) {
+        const jsize n = std::min<jsize>(env->GetArrayLength(out), static_cast<jsize>(ids.size()));
+        env->SetLongArrayRegion(out, 0, n, ids.data());
+    }
+    return static_cast<jint>(ids.size());
+}
+
+// One entity's values by id, in SKETCH_ENTITY_* slots plus [6] role (0/1),
+// [7] [8] an arc's through-point (or a polyline/spline's first point).
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchEntityValues(JNIEnv* env, jclass, jlong entityId,
+                                                          jdoubleArray out) {
+    constexpr jsize kSize = 9;
+    if (out == nullptr || env->GetArrayLength(out) < kSize) {
+        return JNI_FALSE;
+    }
+    jdouble v[kSize] = {};
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SketchEntity* e = forgeshape::findSketchEntity(
+                forgeshape::sketchSession().sketch(), static_cast<forgeshape::SketchEntityId>(entityId));
+        if (e != nullptr) {
+            found = true;
+            v[0] = static_cast<double>(e->id());
+            v[1] = static_cast<double>(static_cast<int>(e->kind()));
+            v[6] = e->construction() ? 1.0 : 0.0;
+            if (const forgeshape::SketchLine* line = e->line()) {
+                v[2] = line->start.u; v[3] = line->start.v; v[4] = line->end.u; v[5] = line->end.v;
+            } else if (const forgeshape::SketchRectangle* r = e->rectangle()) {
+                v[2] = r->center.u; v[3] = r->center.v; v[4] = r->width; v[5] = r->height;
+            } else if (const forgeshape::SketchCircle* c = e->circle()) {
+                v[2] = c->center.u; v[3] = c->center.v; v[4] = c->radius;
+            } else if (const forgeshape::SketchPolyline* p = e->polyline()) {
+                v[2] = static_cast<double>(p->vertices.size()); v[3] = p->closed ? 1.0 : 0.0;
+                v[4] = p->vertices.back().u; v[5] = p->vertices.back().v;
+                v[7] = p->vertices.front().u; v[8] = p->vertices.front().v;
+            } else if (const forgeshape::SketchArc* a = e->arc()) {
+                v[2] = a->start.u; v[3] = a->start.v; v[4] = a->end.u; v[5] = a->end.v;
+                v[7] = a->mid.u; v[8] = a->mid.v;
+            } else if (const forgeshape::SketchSpline* sp = e->spline()) {
+                v[2] = static_cast<double>(sp->points.size());
+                v[7] = sp->points.front().u; v[8] = sp->points.front().v;
+            }
+        }
+    }
+    if (!found) {
+        return JNI_FALSE;
+    }
+    env->SetDoubleArrayRegion(out, 0, kSize, v);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetOffsetDistance(JNIEnv*, jclass, jdouble meters) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return cadCode(forgeshape::sketchSession().setOffsetDistance(meters));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchConfirmOffset(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    std::vector<forgeshape::SketchEntityId> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().confirmOffset(&ids);
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_OFFSET %s created=%d", forgeshape::cadStatusName(status), (int)ids.size());
+    return cadCode(status);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchConfirmMirror(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    std::vector<forgeshape::SketchEntityId> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().confirmMirror(&ids);
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_MIRROR %s created=%d", forgeshape::cadStatusName(status), (int)ids.size());
+    return cadCode(status);
+}
+
+// ---------------------------------------------------------------------------
 // Edit Sketch (`SKETCH-UX-R1` F)
 // ---------------------------------------------------------------------------
 
@@ -5557,6 +7222,8 @@ Java_com_forgeshape_app_NativeViewport_sketchBeginEdit(JNIEnv*, jclass, jlong bo
                     frame = forgeshape::SketchFrame{forgeshape::Vec3{0, 0, 0}, wf.uAxis, wf.vAxis,
                                                     wf.normal};
                 }
+                // Every CAD begin ends any Surface purpose a dropped sketch left.
+                forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
                 status = forgeshape::sketchSession().beginEdit(id, body->state(), frame);
             }
         }
@@ -5605,6 +7272,8 @@ Java_com_forgeshape_app_NativeViewport_sketchBeginEditFeature(JNIEnv*, jclass, j
                                                     static_cast<uint32_t>(featureId), &frame)) {
                 status = forgeshape::CadStatus::ProfileNotFound;
             } else {
+                // Every CAD begin ends any Surface purpose a dropped sketch left.
+                forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
                 status = forgeshape::sketchSession().beginEditFeature(
                     id, body->state(), static_cast<uint32_t>(featureId), frame,
                     startReady == JNI_TRUE);
@@ -5672,6 +7341,354 @@ Java_com_forgeshape_app_NativeViewport_sketchCommitEdit(JNIEnv*, jclass) {
     return cadCode(status);
 }
 
+// ---------------------------------------------------------------------------
+// Retained sketches (`CAD-R2`)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Where retained sketch `sketchId` of CAD body `id` is authored in WORLD space:
+// its body-local placement (the ONE rule features read) through the body's
+// resolved world model. False when the sketch does not place.
+bool resolveRetainedSketchWorldFrame(forgeshape::ConstructionScene& scene, forgeshape::ObjectId id,
+                                const forgeshape::CadBody& body, forgeshape::CadSketchId sketchId,
+                                forgeshape::SketchFrame* out) {
+    forgeshape::CadFrame64 placement;
+    if (out == nullptr
+        || forgeshape::cadSketchPlacement(body.state(), sketchId, &placement)
+                   != forgeshape::CadStatus::Ok) {
+        return false;
+    }
+    forgeshape::Mat4 model = forgeshape::mat4Identity();
+    scene.resolveWorldModel(id, &model);
+    out->origin = forgeshape::mat4TransformPoint(model, forgeshape::vec3FromDVec3(placement.origin));
+    out->u = forgeshape::vec3Normalize(
+            forgeshape::mat4TransformDirection(model, forgeshape::vec3FromDVec3(placement.u)));
+    out->v = forgeshape::vec3Normalize(
+            forgeshape::mat4TransformDirection(model, forgeshape::vec3FromDVec3(placement.v)));
+    out->n = forgeshape::vec3Normalize(
+            forgeshape::mat4TransformDirection(model, forgeshape::vec3FromDVec3(placement.n)));
+    return true;
+}
+
+// The one guard every retained-sketch act shares: a project, no Sculpt, no
+// open sketch session, no open Construction edit. Caller holds the lock.
+forgeshape::CadStatus retainedSketchActRefusal() {
+    if (!forgeshape::constructionScene().hasProject() || forgeshape::sculptSession().inSculptMode()
+        || forgeshape::sketchSession().active()) {
+        return forgeshape::CadStatus::NotSketching;
+    }
+    if (forgeshape::constructionHistory().editInProgress()) {
+        return forgeshape::CadStatus::RefusedEditInProgress;
+    }
+    return forgeshape::CadStatus::Ok;
+}
+
+}  // namespace
+
+// The retained sketches of CAD body `bodyId`, DERIVED on every call from the
+// committed state and stored nowhere. `header` (>= 4) receives [0] the
+// regeneration verdict (a CAD_* code), [1] the row count, [2] the next sketch
+// id, [3] the first failing feature or 0. `rows` receives up to
+// length / 20 rows of 20 slots: [0] sketch id, [1] ordinal, [2] root,
+// [3] support kind (0 world plane, 1 another body's face, 2 a feature face),
+// [4] workplane, [5] support feature id, [6] support face kind code,
+// [7] entities, [8] dimensions, [9] consumer count, [10] first consumer,
+// [11] last consumer, [12] state (0 Ok, 1 Unused, 2 Failed, 3 NotRegenerated,
+// 4 SupportLost), [13] the row's status code, [14] acts (bit0 Edit, bit1
+// Delete, bit2 Reuse Add, bit3 Reuse Cut), [15] why Delete is not offered,
+// [16] why Reuse is not offered, [17..19] reserved 0. Returns the row count,
+// or -1 for a body that is not a CAD body or a header too short.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_cadSketchInventory(JNIEnv* env, jclass, jlong bodyId,
+                                                          jdoubleArray header, jdoubleArray rows) {
+    constexpr jsize kHeaderSlots = 4;
+    constexpr jsize kRowSlots = 20;
+    if (header == nullptr || env->GetArrayLength(header) < kHeaderSlots) {
+        return -1;
+    }
+    forgeshape::CadSketchInventory inventory;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SceneObject* object =
+                forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(bodyId));
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        if (body == nullptr) {
+            return -1;
+        }
+        std::shared_ptr<const forgeshape::CadBodyMesh> mesh;
+        forgeshape::CadRegenerationReport report;
+        report.status = body->regenerated(&mesh);
+        inventory = forgeshape::buildCadSketchInventory(body->state(), report);
+    }
+    const jdouble head[kHeaderSlots] = {
+            static_cast<jdouble>(cadCode(inventory.status)),
+            static_cast<jdouble>(inventory.rows.size()),
+            static_cast<jdouble>(inventory.nextSketchId),
+            static_cast<jdouble>(inventory.failedFeatureId)};
+    env->SetDoubleArrayRegion(header, 0, kHeaderSlots, head);
+    if (rows != nullptr) {
+        const jsize capacity = env->GetArrayLength(rows) / kRowSlots;
+        const jsize count = std::min(capacity, static_cast<jsize>(inventory.rows.size()));
+        std::vector<jdouble> values(static_cast<size_t>(count) * kRowSlots, 0.0);
+        for (jsize i = 0; i < count; ++i) {
+            const forgeshape::CadSketchInventoryRow& row = inventory.rows[static_cast<size_t>(i)];
+            jdouble* v = &values[static_cast<size_t>(i) * kRowSlots];
+            v[0] = row.sketchId;
+            v[1] = row.ordinal;
+            v[2] = row.root ? 1.0 : 0.0;
+            v[3] = static_cast<jdouble>(static_cast<int>(row.support));
+            v[4] = forgeshape::workplaneIndex(row.plane);
+            v[5] = row.supportFeatureId;
+            v[6] = static_cast<jdouble>(static_cast<int>(row.supportFace.kind));
+            v[7] = row.entityCount;
+            v[8] = row.dimensionCount;
+            v[9] = static_cast<jdouble>(row.consumers.size());
+            v[10] = row.consumers.empty() ? 0.0 : row.consumers.front();
+            v[11] = row.consumers.empty() ? 0.0 : row.consumers.back();
+            v[12] = static_cast<jdouble>(static_cast<int>(row.state));
+            v[13] = static_cast<jdouble>(cadCode(row.status));
+            v[14] = row.acts;
+            v[15] = static_cast<jdouble>(cadCode(row.deleteRefusal));
+            v[16] = static_cast<jdouble>(cadCode(row.reuseRefusal));
+        }
+        if (count > 0) {
+            env->SetDoubleArrayRegion(rows, 0, count * kRowSlots, values.data());
+        }
+    }
+    return static_cast<jint>(inventory.rows.size());
+}
+
+// Every feature that extrudes sketch `sketchId` of body `bodyId`, in chain
+// order, into `out` (as many as fit). Returns the full count, or -1 for a body
+// that is not a CAD body or a sketch it does not carry.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_cadSketchConsumers(JNIEnv* env, jclass, jlong bodyId,
+                                                          jlong sketchId, jlongArray out) {
+    std::vector<jlong> consumers;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SceneObject* object =
+                forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(bodyId));
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        if (body == nullptr || sketchId <= 0
+            || forgeshape::findCadSketchRecord(body->state(),
+                                               static_cast<forgeshape::CadSketchId>(sketchId))
+                       == nullptr) {
+            return -1;
+        }
+        forgeshape::CadFeatureView view;
+        for (uint32_t i = 0; forgeshape::cadFeatureAt(body->state(), i, &view); ++i) {
+            if (view.sketchId == static_cast<forgeshape::CadSketchId>(sketchId)) {
+                consumers.push_back(static_cast<jlong>(view.featureId));
+            }
+        }
+    }
+    if (out != nullptr && !consumers.empty()) {
+        const jsize n = std::min(env->GetArrayLength(out), static_cast<jsize>(consumers.size()));
+        if (n > 0) {
+            env->SetLongArrayRegion(out, 0, n, consumers.data());
+        }
+    }
+    return static_cast<jint>(consumers.size());
+}
+
+// Delete Sketch: removes an UNUSED, non-root retained sketch as one Undo.
+// Refused while sculpting, sketching or mid-edit, and by the domain's names
+// (SketchIsRoot, SketchInUse, SketchNotFound, NotCadBody).
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_cadDeleteSketch(JNIEnv*, jclass, jlong bodyId,
+                                                       jlong sketchId) {
+    forgeshape::CadStatus status;
+    size_t undoDepth = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = retainedSketchActRefusal();
+        if (status == forgeshape::CadStatus::Ok) {
+            status = sketchId <= 0 || sketchId > 0xFFFFFFFFll
+                             ? forgeshape::CadStatus::SketchNotFound
+                             : forgeshape::deleteCadSketch(
+                                       forgeshape::constructionScene(),
+                                       forgeshape::constructionHistory(),
+                                       static_cast<forgeshape::ObjectId>(bodyId),
+                                       static_cast<forgeshape::CadSketchId>(sketchId));
+        }
+        undoDepth = forgeshape::constructionHistory().undoDepth();
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_DELETE body=%lld sketch=%lld %s undo=%d", (long long)bodyId,
+            (long long)sketchId, forgeshape::cadStatusName(status), (int)undoDepth);
+    return cadCode(status);
+}
+
+// Opens a session that extrudes the EXISTING retained sketch `sketchId` of body
+// `bodyId` as a NEW later feature (`operation` 1 Add, 2 Cut), directly in Ready
+// and the feature-preview view. The ordinary Extrude commit applies it.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchBeginReuseSketch(JNIEnv*, jclass, jlong bodyId,
+                                                              jlong sketchId, jint operation) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = retainedSketchActRefusal();
+        forgeshape::CadFeatureOperation op = forgeshape::CadFeatureOperation::NewBody;
+        if (status == forgeshape::CadStatus::Ok
+            && !forgeshape::cadFeatureOperationFromIndex(static_cast<int>(operation), &op)) {
+            status = forgeshape::CadStatus::InvalidFeatureOperation;
+        }
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
+        const forgeshape::SceneObject* object = scene.findBody(id);
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        forgeshape::SketchFrame frame;
+        if (status == forgeshape::CadStatus::Ok && body == nullptr) {
+            status = forgeshape::CadStatus::NotCadBody;
+        } else if (status == forgeshape::CadStatus::Ok
+                   && (sketchId <= 0 || sketchId > 0xFFFFFFFFll
+                       || !resolveRetainedSketchWorldFrame(
+                               scene, id, *body, static_cast<forgeshape::CadSketchId>(sketchId),
+                               &frame))) {
+            status = forgeshape::CadStatus::SketchNotFound;
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
+            status = forgeshape::sketchSession().beginReuseSketch(
+                    id, body->state(), static_cast<forgeshape::CadSketchId>(sketchId), op, frame);
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            forgeshape::supportChooser().cancel();
+            forgeshape::gizmoSession().setActive(false);
+            g_selection.resetGesture();
+            g_camera.resetGesture();
+            beginSketchView();
+            g_featureViewPending = beginExtrudeFeatureView()
+                    == forgeshape::CadFeatureViewSource::Unavailable;
+        }
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_REUSE body=%lld sketch=%lld op=%d %s", (long long)bodyId,
+            (long long)sketchId, (int)operation, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// Opens a staged edit of retained sketch `sketchId` of body `bodyId`: through
+// its first consumer when a feature extrudes it, sketch-only otherwise. The
+// camera frames the sketch exactly as Edit Sketch always has.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchBeginEditSketch(JNIEnv*, jclass, jlong bodyId,
+                                                             jlong sketchId) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = retainedSketchActRefusal();
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
+        const forgeshape::SceneObject* object = scene.findBody(id);
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        forgeshape::SketchFrame frame;
+        if (status == forgeshape::CadStatus::Ok && body == nullptr) {
+            status = forgeshape::CadStatus::NotCadBody;
+        } else if (status == forgeshape::CadStatus::Ok
+                   && (sketchId <= 0 || sketchId > 0xFFFFFFFFll
+                       || !resolveRetainedSketchWorldFrame(
+                               scene, id, *body, static_cast<forgeshape::CadSketchId>(sketchId),
+                               &frame))) {
+            status = forgeshape::CadStatus::SketchNotFound;
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
+            status = forgeshape::sketchSession().beginEditSketch(
+                    id, body->state(), static_cast<forgeshape::CadSketchId>(sketchId), frame);
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            forgeshape::supportChooser().cancel();
+            forgeshape::gizmoSession().setActive(false);
+            g_selection.resetGesture();
+            g_camera.resetGesture();
+            beginSketchView();
+        }
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_EDIT_SKETCH body=%lld sketch=%lld %s", (long long)bodyId,
+            (long long)sketchId, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// Keep Sketch: commits the open session's sketch WITHOUT a feature (a new
+// sketch on one of its body's own faces, or a sketch-only edit), one Undo.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchCommitSketch(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    forgeshape::CadSketchId kept = forgeshape::kNoCadSketch;
+    size_t undoDepth = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (forgeshape::surfaceSketchPurpose().active) {
+            status = forgeshape::CadStatus::NotSketching;
+        } else {
+            status = forgeshape::sketchSession().commitSketch(forgeshape::constructionScene(),
+                                                              forgeshape::constructionHistory(),
+                                                              &kept);
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            endSketchView();
+        }
+        undoDepth = forgeshape::constructionHistory().undoDepth();
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_KEEP %s sketch=%u undo=%d", forgeshape::cadStatusName(status),
+            (unsigned)kept, (int)undoDepth);
+    return cadCode(status);
+}
+
+// Whether Keep Sketch can be offered now. Read on every chrome refresh.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchCanKeepSketch(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return !forgeshape::surfaceSketchPurpose().active && forgeshape::sketchSession().canKeepSketch()
+                   ? JNI_TRUE
+                   : JNI_FALSE;
+}
+
+// Whether the open session is a sketch-only edit (Finish Sketch withdrawn).
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchIsSketchOnly(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::sketchSession().sketchOnly() ? JNI_TRUE : JNI_FALSE;
+}
+
+// Clear / Select All of the Ready areas (`CAD-R2` P2.1), through the session's
+// own bounded rules; the candidate is re-evaluated like after a tap.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchClearAreaSelection(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().clearAreaSelection();
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_AREAS_CLEAR %s", forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSelectAllAreas(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    size_t chosen = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        status = session.selectAllAreas();
+        chosen = session.selectedAreaCount();
+        beginPendingExtrudeFeatureView();
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_AREAS_ALL %s chosen=%d", forgeshape::cadStatusName(status),
+            (int)chosen);
+    return cadCode(status);
+}
+
+// The retained sketch a reuse session extrudes, or 0.
+JNIEXPORT jlong JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchReuseSketchId(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jlong>(forgeshape::sketchSession().reuseSketchId());
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_forgeshape_app_NativeViewport_cadStatusToken(JNIEnv* env, jclass, jint code) {
     forgeshape::CadStatus status;
@@ -5683,8 +7700,8 @@ Java_com_forgeshape_app_NativeViewport_cadStatusToken(JNIEnv* env, jclass, jint 
 
 // --- the CAD Body ------------------------------------------------------------
 
-// Which representation a body has: 1 Construction, 2 Imported, 3 CAD. Zero for
-// an unknown id.
+// Which representation a body has: 1 Construction, 2 Imported, 3 CAD,
+// 4 Freeform. Zero for an unknown id.
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_sceneBodyRepresentation(JNIEnv*, jclass, jlong objectId) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
@@ -5701,8 +7718,10 @@ Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsCad(JNIEnv*, jclass) {
 }
 
 // Whether the active body is a FACE-SUPPORTED CAD body (`CAD-A3`): its placement
-// is derived from a producer and it cannot be moved independently. A
-// verification seam.
+// is derived from a producer and it cannot be moved independently. The
+// workspace asks it on every refresh to withdraw Transform, the gizmo and the
+// placement editor (`CAD-FACE-SUPPORTED-PLACEMENT-R1`); the guards below JNI
+// stay regardless.
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsFaceSupportedCad(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
@@ -5720,11 +7739,16 @@ Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsFaceSupportedCad(JNIEnv*
 // Returns false, writing nothing, when the active body is not a CAD Body.
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_cadState(JNIEnv* env, jclass, jdoubleArray out) {
-    constexpr jsize kSize = 9;
-    if (out == nullptr || env->GetArrayLength(out) < kSize) {
+    // `CAD-V6-REVOLVE-NEWBODY-E2E-R1` added [9] the base feature's kind (0
+    // Extrude, 1 Revolve) and [10] a Revolve's angle in degrees; a 9-slot
+    // reader is untouched.
+    constexpr jsize kLegacySize = 9;
+    constexpr jsize kMaxSize = 11;
+    if (out == nullptr || env->GetArrayLength(out) < kLegacySize) {
         return JNI_FALSE;
     }
-    jdouble values[kSize] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+    const jsize kSize = std::min(env->GetArrayLength(out), kMaxSize);
+    jdouble values[kMaxSize] = {0};
     bool found = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
@@ -5751,6 +7775,10 @@ Java_com_forgeshape_app_NativeViewport_cadState(JNIEnv* env, jclass, jdoubleArra
             values[6] = static_cast<double>(baseSketch.entities.size());
             values[8] = static_cast<double>(
                 forgeshape::extrudeExtentModeIndex(state.extrude.extent));
+            values[9] = forgeshape::cadFeatureKindIndex(state.baseKind);
+            values[10] = state.baseKind == forgeshape::CadFeatureKind::Revolve
+                                 ? state.revolve.angleDegrees
+                                 : 0.0;
             forgeshape::ProfileExtraction extraction;
             if (forgeshape::validateCadBodyState(state, &extraction) == forgeshape::CadStatus::Ok) {
                 const forgeshape::ClosedProfile* profile =
@@ -6610,16 +8638,18 @@ Java_com_forgeshape_app_NativeViewport_importGlbDurable(JNIEnv* env, jclass, jby
         // change between the question and the act. An import makes its first
         // body active and records a Construction step; in Sculpt that would
         // swap the sculpt target out from under the session and write the
-        // history Sculpt refuses. The control is withdrawn and the picker
-        // result is refused above JNI; this is the guard behind both, for a
-        // late callback or a direct call.
-        if (forgeshape::sculptSession().inSculptMode()) {
-            committed = forgeshape::ImportCommitStatus::RefusedInSculpt;
-        } else {
-            committed = forgeshape::commitImportedGlbScene(
-                    parsed, forgeshape::constructionScene(), forgeshape::constructionHistory(),
-                    &report);
-        }
+        // history Sculpt refuses, and under a live sketch (Editing or Ready,
+        // staged edits included) it would mutate the scene beneath the one
+        // authoring act and record a step the open sketch makes un-undoable
+        // (`CR-03`). The control is withdrawn and the picker result is refused
+        // above JNI; this is the guard behind both, for a late callback or a
+        // direct call. The parse above may be stale by now; these facts are not.
+        forgeshape::ImportModeFacts facts;
+        facts.sculpting = forgeshape::sculptSession().inSculptMode();
+        facts.sketchActive = forgeshape::sketchSession().active();
+        committed = forgeshape::commitImportedGlbSceneInMode(
+                parsed, forgeshape::constructionScene(), forgeshape::constructionHistory(), facts,
+                &report);
     }
     if (committed != forgeshape::ImportCommitStatus::Ok) {
         FS_LOGE("FORGESHAPE_IMPORT_FAIL:%s geometry=%s bytes=%d",
@@ -6641,7 +8671,7 @@ JNIEXPORT jstring JNICALL
 Java_com_forgeshape_app_NativeViewport_glbCommitStatusToken(JNIEnv* env, jclass, jint status) {
     const jint ordinal = status - kImportCommitStatusBase;
     if (ordinal < 0
-        || ordinal > static_cast<jint>(forgeshape::ImportCommitStatus::RefusedInSculpt)) {
+        || ordinal > static_cast<jint>(forgeshape::ImportCommitStatus::RefusedInSketch)) {
         return env->NewStringUTF("unknown");
     }
     return env->NewStringUTF(forgeshape::importCommitStatusName(
@@ -6664,11 +8694,12 @@ Java_com_forgeshape_app_NativeViewport_glbCommitStatusCategory(JNIEnv*, jclass, 
         case forgeshape::ImportCommitStatus::RejectedGeometry:
             return static_cast<jint>(forgeshape::GlbImportCategory::Inconsistent);
         default:
-            // NothingToImport, RefusedEditInProgress, RefusedInSculpt and
-            // anything out of range. None is reachable from the product's own
-            // controls — a menu cannot be opened mid-drag, and Import is
-            // withdrawn in Sculpt, where the workspace states its own sentence
-            // — so they are categorised rather than given a fourth one here.
+            // NothingToImport, RefusedEditInProgress, RefusedInSculpt,
+            // RefusedInSketch and anything out of range. None is reachable
+            // from the product's own controls — a menu cannot be opened
+            // mid-drag, and Import is withdrawn in Sculpt and under a live
+            // sketch, where the workspace states its own sentence for each —
+            // so they are categorised rather than given a fourth one here.
             return static_cast<jint>(forgeshape::GlbImportCategory::Unreadable);
     }
 }
@@ -7623,6 +9654,12 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
     // Gizmo reporting, gathered under the lock and logged outside it. `handled`
     // is the arbitration answer: true means this event belonged to a handle and
     // neither the camera nor the selection may see it.
+    // Freeform cage reporting, gathered under the lock and logged outside it.
+    bool freeformTapped = false;
+    bool freeformDragBegan = false;
+    bool freeformDragCommitted = false;
+    bool freeformDragCancelled = false;
+
     bool gizmoHandled = false;
     bool gizmoBegan = false;
     bool gizmoMoved = false;
@@ -7656,6 +9693,10 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
     forgeshape::MeshRevision grabMeshRevision = 0;
     forgeshape::Vec3 grabDisplacement{};
     bool sketchLogPending = false;
+    // A Ready tap candidate's diagnostic outcome, logged (debug only) after the
+    // lock: `FORGESHAPE_SKETCH_TAP:<reason>`.
+    forgeshape::SketchTapOutcome sketchTapOutcome = forgeshape::SketchTapOutcome::None;
+    size_t sketchTapSelected = 0;
 
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
@@ -7752,10 +9793,17 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
             forgeshape::SketchSession& sketch = forgeshape::sketchSession();
             if (sketch.active()) {
                 sketchOwned = true;
+                const uint32_t tapSerialBefore = sketch.tapOutcomeSerial();
+                const forgeshape::CadSketchEdgeRef axisBefore = sketch.revolveParameters().axis;
+                const bool pickingBefore = sketch.revolveAxisPicking();
                 const bool consumed = sketch.onTouch(translated,
                                                      static_cast<int32_t>(actionPointerId),
                                                      pointers, count, g_camera.snapshot(),
                                                      viewWidth, viewHeight);
+                if (sketch.tapOutcomeSerial() != tapSerialBefore) {
+                    sketchTapOutcome = sketch.lastTapOutcome();
+                    sketchTapSelected = sketch.selectedAreaCount();
+                }
                 // READY is the one state where an unclaimed single finger
                 // NAVIGATES (`CAD-UX-S1-C1`). While the sketch is being drawn a
                 // single pointer belongs to the drawing whether or not the
@@ -7768,7 +9816,14 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 // finger does everywhere else in the product.
                 const bool navigable =
                     sketch.state() == forgeshape::SketchSessionState::Ready;
-                if (consumed || (count <= 1 && !navigable)) {
+                // ...except while a Ready TAP is still armed
+                // (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): a finger inside the
+                // tap slop orbits nothing, and the camera's gesture is reset
+                // so the first event after the tap disarms re-anchors the
+                // orbit at the CURRENT point instead of jumping from the Down.
+                // `sketchEventReachesCamera` is the whole rule.
+                if (!forgeshape::sketchEventReachesCamera(sketch.state(), consumed, count,
+                                                          sketch.readyTapArmed())) {
                     g_camera.resetGesture();
                     g_selection.resetGesture();
                 } else {
@@ -7783,7 +9838,54 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 if (translated == forgeshape::TouchAction::Up && navigable) {
                     // A Ready tap may have chosen the first region.
                     beginPendingExtrudeFeatureView();
+                    // ...or, in a Revolve, the axis: the ring's view follows.
+                    if (pickingBefore && !sketch.revolveAxisPicking()
+                        && !forgeshape::sameCadSketchEdgeRef(axisBefore,
+                                                             sketch.revolveParameters().axis)) {
+                        beginRevolveFeatureView();
+#ifndef NDEBUG
+                        // Debug-only attribution, like the Ready-tap token.
+                        FS_LOGI("FORGESHAPE_REVOLVE_AXIS_TAP:%u:%u",
+                                sketch.revolveParameters().axis.entityId,
+                                sketch.revolveParameters().axis.edgeLocalIndex);
+#endif
+                    }
                 }
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // Freeform cage arbitration (`MODELING-FOUNDATIONS-R1` B)
+        // -------------------------------------------------------------------
+        //
+        // While a Freeform body's cage is being edited, a Down on the cage
+        // gizmo captures it, and any other single-finger Down arms a TAP that
+        // picks a cage element by id; a finger that travels past the slop
+        // disarms into ordinary navigation (the camera, reset while the tap
+        // was armed, re-anchors where the finger is), and two fingers always
+        // navigate. The session holds the rule; this only routes.
+        bool freeformOwned = false;
+        if (!chooserOwned && !sketchOwned) {
+            forgeshape::FreeformEditSession& freeform = forgeshape::freeformEditSession();
+            freeform.reconcile();
+            if (freeform.active()) {
+                freeformOwned = true;
+                const forgeshape::FreeformTouchResult result = freeform.onTouch(
+                        translated, static_cast<int32_t>(actionPointerId), count > 0 ? pointers : nullptr,
+                        count, g_camera.snapshot(), viewWidth, viewHeight);
+                if (result.consumed) {
+                    g_camera.resetGesture();
+                } else {
+                    g_camera.onTouch(translated, static_cast<int32_t>(actionPointerId),
+                                     count > 0 ? pointers : nullptr, count);
+                }
+                g_selection.resetGesture();
+                freeformTapped = result.tapResolved;
+                freeformDragBegan = result.dragBegan;
+                freeformDragCommitted = result.dragCommitted;
+                freeformDragCancelled = result.dragCancelled;
+                logState = !result.consumed && (translated == forgeshape::TouchAction::Up
+                                                || translated == forgeshape::TouchAction::Cancel);
             }
         }
 
@@ -7807,7 +9909,13 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
         // exactly where the first finger found it and records nothing. Trying to
         // do both at once is how a transform ends up half applied.
         forgeshape::GizmoSession& gizmo = forgeshape::gizmoSession();
-        if (gizmo.capturing() && !gizmo.active()) {
+        if (freeformOwned) {
+            // The cage has its own instrument; the placement gizmo stands down.
+            if (gizmo.capturing()) {
+                gizmo.cancelDrag();
+                gizmoCancelled = true;
+            }
+        } else if (gizmo.capturing() && !gizmo.active()) {
             // Defensive: setActive already cancels, so this cannot normally
             // happen. If it ever does, a captured handle with no gizmo behind it
             // is an open transaction the user cannot close.
@@ -7874,8 +9982,8 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 // must not be able to resolve a tap either.
                 g_selection.resetGesture();
             }
-        } else if (gizmo.active() && translated == forgeshape::TouchAction::Down && count == 1 &&
-                   viewWidth > 0 && viewHeight > 0) {
+        } else if (!freeformOwned && gizmo.active() && translated == forgeshape::TouchAction::Down
+                   && count == 1 && viewWidth > 0 && viewHeight > 0) {
             if (gizmo.beginDrag(pointers[0].id, g_camera.snapshot(), pointers[0].x, pointers[0].y,
                                 viewWidth, viewHeight)) {
                 gizmoBegan = true;
@@ -8062,7 +10170,7 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
         // The two conditions are separate because they are separate rules: one
         // is Sculpt's brush arbitration, the other is Construction's handle
         // arbitration, and they are mutually exclusive by product mode.
-        if (!grabHandled && !gizmoHandled && !sketchOwned && !chooserOwned) {
+        if (!grabHandled && !gizmoHandled && !sketchOwned && !chooserOwned && !freeformOwned) {
             g_camera.onTouch(translated, static_cast<int32_t>(actionPointerId),
                              count > 0 ? pointers : nullptr, count);
 
@@ -8151,6 +10259,18 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
     // COMMIT carries how many updates the drag applied AND whether a step was
     // recorded, which is exactly what makes "a drag of any length is one history
     // step, and a tap is none" a thing a captured run states rather than a claim.
+    if (freeformTapped) {
+        FS_LOGI("FORGESHAPE_FREEFORM_TAP selected=%d",
+                (int)forgeshape::freeformEditSession().selection().size());
+    }
+    if (freeformDragBegan) {
+        FS_LOGI("FORGESHAPE_FREEFORM_DRAG_BEGIN:%s",
+                forgeshape::gizmoModeName(forgeshape::freeformEditSession().transformMode()));
+    }
+    if (freeformDragCommitted || freeformDragCancelled) {
+        FS_LOGI("FORGESHAPE_FREEFORM_DRAG_%s undo=%d", freeformDragCommitted ? "COMMIT" : "CANCEL",
+                (int)forgeshape::constructionHistory().undoDepth());
+    }
     if (gizmoBegan) {
         FS_LOGI("FORGESHAPE_GIZMO_DRAG_BEGIN:%s axis=%s objectId=%llu",
                 forgeshape::gizmoModeName(forgeshape::gizmoSession().mode()), gizmoAxis,
@@ -8209,6 +10329,21 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 forgeshape::cadStatusName(sketch.lastStatus()), sketch.selectedEntityId(),
                 sketch.polylineInProgress() ? 1 : 0);
     }
+
+#ifndef NDEBUG
+    // Debug-only attribution of a Ready tap candidate
+    // (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): resolved, exterior, arrow_head,
+    // travel, ray_parallel, invalid_face or selection_cap, with the selection
+    // size it left. A release build carries neither the line nor its format.
+    if (sketchTapOutcome != forgeshape::SketchTapOutcome::None) {
+        FS_LOGI("FORGESHAPE_SKETCH_TAP:%s selected=%u",
+                forgeshape::sketchTapOutcomeName(sketchTapOutcome),
+                (unsigned)sketchTapSelected);
+    }
+#else
+    (void)sketchTapOutcome;
+    (void)sketchTapSelected;
+#endif
 
     if (tapRefusedInSculpt) {
         FS_LOGI("FORGESHAPE_SCENE_SELECT_REFUSED:in_sculpt_mode:viewport_tap");

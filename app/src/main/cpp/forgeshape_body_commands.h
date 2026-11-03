@@ -283,4 +283,45 @@ BodyCommandStatus mirrorSceneBody(ObjectId id, MirrorPlane plane, ConstructionSc
                                   ConstructionHistory& history,
                                   MirrorBodyReport* outReport = nullptr);
 
+// ---------------------------------------------------------------------------
+// The typed placement write (`CAD-FACE-SUPPORTED-PLACEMENT-R1`)
+// ---------------------------------------------------------------------------
+
+// Why a typed placement write did not reach the body's transform.
+//
+// Its own small enum rather than more `BodyCommandStatus` values: a placement
+// write is not an Objects-row command, and the JNI wrapper reports each of
+// these through the transform's own APPLY_* vocabulary.
+enum class BodyPlacementRefusal {
+    None,
+    // No body in the scene carries that id.
+    UnknownBody,
+    // The body is LOCKED (Stage 018A): a lock refuses being moved.
+    Locked,
+    // The body is a FACE-SUPPORTED CAD Body (`CAD-A3`). Its world placement is
+    // DERIVED from its producer's face (`ConstructionScene::resolveWorldModel`)
+    // and nothing that draws, picks or exports it reads its stored transform,
+    // so a write there would record a step, dirty the project and reach a
+    // `.forge` byte while changing nothing the user can see. Refused by name
+    // instead, with nothing written. The predicate is `isFaceSupportedCad`, the
+    // one Duplicate already uses; the producer and every independent body
+    // stay ordinary transformable bodies.
+    DerivedPlacement,
+};
+
+const char* bodyPlacementRefusalName(BodyPlacementRefusal refusal);
+
+// THE guarded typed placement write -- the exact-value placement editor's
+// door, reached through JNI `applyBoxTransform`.
+//
+// The refusals are asked BEFORE any edit is opened, so a refused write leaves
+// no transaction, no step, no fingerprint change and no byte behind. An
+// accepted write opens ONE `ScopedConstructionEdit` (joining one already open,
+// as the typed path always has) around ONE `applyTransformValues`, so one Apply
+// is one Undo. Publishes nothing: the transform is not geometry.
+TransformApplyResult applySceneBodyTransform(ObjectId id, const TransformValues& requested,
+                                             ConstructionScene& scene,
+                                             ConstructionHistory& history,
+                                             BodyPlacementRefusal* outRefusal = nullptr);
+
 }  // namespace forgeshape

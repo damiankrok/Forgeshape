@@ -63,6 +63,111 @@ const char* cadSelectionKindName(CadSelectionKind kind) {
     return "unknown";
 }
 
+const char* cadFeatureKindName(CadFeatureKind kind) {
+    switch (kind) {
+        case CadFeatureKind::Extrude: return "Extrude";
+        case CadFeatureKind::Revolve: return "Revolve";
+    }
+    return "unknown";
+}
+
+bool cadFeatureKindFromIndex(int index, CadFeatureKind* out) {
+    if (out == nullptr || index < 0 || index >= kCadFeatureKindCount) {
+        return false;
+    }
+    *out = static_cast<CadFeatureKind>(index);
+    return true;
+}
+
+int cadFeatureKindIndex(CadFeatureKind kind) { return static_cast<int>(kind); }
+
+const char* revolveDirectionName(RevolveDirection direction) {
+    switch (direction) {
+        case RevolveDirection::Positive: return "Positive";
+        case RevolveDirection::Negative: return "Negative";
+    }
+    return "unknown";
+}
+
+bool revolveDirectionFromIndex(int index, RevolveDirection* out) {
+    if (out == nullptr || index < 0 || index >= kRevolveDirectionCount) {
+        return false;
+    }
+    *out = static_cast<RevolveDirection>(index);
+    return true;
+}
+
+int revolveDirectionIndex(RevolveDirection direction) { return static_cast<int>(direction); }
+
+CadStatus resolveRevolveAxis(const CadSketch& sketch, const CadSketchEdgeRef& ref,
+                             RevolveAxis2D* out) {
+    if (ref.entityId == kNoSketchEntity) {
+        return CadStatus::RevolveNeedsAxis;
+    }
+    const SketchEntity* entity = findSketchEntity(sketch, ref.entityId);
+    if (entity == nullptr) {
+        return CadStatus::RevolveAxisUnresolved;
+    }
+    if (entity->circle() != nullptr || entity->arc() != nullptr || entity->spline() != nullptr) {
+        return CadStatus::RevolveAxisNotStraight;
+    }
+    for (const SketchStraightEdge& edge : sketchEntityStraightEdges(*entity)) {
+        if (edge.edgeLocalIndex != ref.edgeLocalIndex) {
+            continue;
+        }
+        const double du = edge.end.u - edge.start.u;
+        const double dv = edge.end.v - edge.start.v;
+        const double length = std::sqrt(du * du + dv * dv);
+        if (!std::isfinite(length) || length <= kSketchCoincidenceMeters) {
+            return CadStatus::RevolveAxisDegenerate;
+        }
+        if (out != nullptr) {
+            out->start = edge.start;
+            out->end = edge.end;
+            out->du = du / length;
+            out->dv = dv / length;
+            out->length = length;
+        }
+        return CadStatus::Ok;
+    }
+    return CadStatus::RevolveAxisUnresolved;
+}
+
+CadStatus validateRevolveParameters(const RevolveFeature& revolve) {
+    const int direction = revolveDirectionIndex(revolve.direction);
+    if (direction < 0 || direction >= kRevolveDirectionCount) {
+        return CadStatus::RevolveDirectionInvalid;
+    }
+    // Refused, never clamped: 400 degrees is not a full turn the user meant,
+    // and zero is not a thin one.
+    if (!std::isfinite(revolve.angleDegrees) || revolve.angleDegrees < kMinRevolveAngleDegrees
+        || revolve.angleDegrees > kMaxRevolveAngleDegrees) {
+        return CadStatus::RevolveAngleInvalid;
+    }
+    return CadStatus::Ok;
+}
+
+ExtrudeFeature revolveSelectionCarrier(const RevolveFeature& revolve) {
+    ExtrudeFeature carrier;
+    carrier.profileEntityId = revolve.profileEntityId;
+    carrier.profileHoleIds = revolve.profileHoleIds;
+    carrier.additionalRegions = revolve.additionalRegions;
+    carrier.selection = revolve.selection;
+    carrier.planarFaces = revolve.planarFaces;
+    return carrier;
+}
+
+void setRevolveSelectionFrom(RevolveFeature* revolve, const ExtrudeFeature& selection) {
+    if (revolve == nullptr) {
+        return;
+    }
+    revolve->profileEntityId = selection.profileEntityId;
+    revolve->profileHoleIds = selection.profileHoleIds;
+    revolve->additionalRegions = selection.additionalRegions;
+    revolve->selection = selection.selection;
+    revolve->planarFaces = selection.planarFaces;
+}
+
 // ---------------------------------------------------------------------------
 // The two durable distances
 // ---------------------------------------------------------------------------
@@ -323,6 +428,13 @@ bool sameExtrudeFeature(const ExtrudeFeature& a, const ExtrudeFeature& b) {
            && sameBits(a.secondDistance, b.secondDistance);
 }
 
+bool sameRevolveFeature(const RevolveFeature& a, const RevolveFeature& b) {
+    // The selection compared by the one rule an extrusion's is.
+    return sameExtrudeFeature(revolveSelectionCarrier(a), revolveSelectionCarrier(b))
+           && sameCadSketchEdgeRef(a.axis, b.axis) && sameBits(a.angleDegrees, b.angleDegrees)
+           && a.direction == b.direction;
+}
+
 bool sameCadSketchRecord(const CadSketchRecord& a, const CadSketchRecord& b) {
     return a.sketchId == b.sketchId && a.hasFeatureSupport == b.hasFeatureSupport
            && sameCadFeatureSupport(a.featureSupport, b.featureSupport)
@@ -410,6 +522,14 @@ CadBodyState makeCadBodyState(CadSketch sketch, ExtrudeFeature extrude) {
     return state;
 }
 
+CadBodyState makeCadRevolveBodyState(CadSketch sketch, RevolveFeature revolve) {
+    CadBodyState state;
+    state.sketches.front().sketch = std::move(sketch);
+    state.baseKind = CadFeatureKind::Revolve;
+    state.revolve = std::move(revolve);
+    return state;
+}
+
 CadSketchId addCadSketchRecord(CadBodyState* state, CadSketch sketch,
                                const CadFeatureSupport* support) {
     if (state == nullptr || state->sketches.size() >= kMaxCadSketches
@@ -472,7 +592,25 @@ uint32_t appendCadLaterFeatureWithSketch(CadBodyState* state, CadFeatureOperatio
     return featureId;
 }
 
+bool cadBodyStateUsesDrafting(const CadBodyState& state) {
+    for (const CadSketchRecord& record : state.sketches) {
+        if (cadSketchHasDraftingData(record.sketch)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
+    // A Revolve has no encoding below v7 (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`).
+    if (state.baseKind != CadFeatureKind::Extrude) {
+        return false;
+    }
+    // A Construction role or a sketch dimension has no encoding below v8
+    // (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`).
+    if (cadBodyStateUsesDrafting(state)) {
+        return false;
+    }
     const size_t later = state.laterFeatures.size();
     // A fragment side token (`CAD-V6-S2`) has no v1..v5 encoding: a body whose
     // base stands on one -- through a TopoRef to ANOTHER body's face-selected
@@ -524,7 +662,14 @@ bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
     return true;
 }
 
+bool cadBodyStateUsesRevolve(const CadBodyState& state) {
+    return state.baseKind == CadFeatureKind::Revolve;
+}
+
 bool cadBodyStateUsesPlanarFaces(const CadBodyState& state) {
+    if (state.baseKind == CadFeatureKind::Revolve) {
+        return state.revolve.selection == CadSelectionKind::PlanarFaces;
+    }
     if (state.extrude.selection == CadSelectionKind::PlanarFaces) {
         return true;
     }
@@ -549,10 +694,13 @@ bool cadFeatureAt(const CadBodyState& state, uint32_t index, CadFeatureView* out
     const ExtrudeFeature* extrude =
             index == 0 ? &state.extrude : &state.laterFeatures[index - 1u].extrude;
     const CadSketchRecord* record = findCadSketchRecord(state, sketchId);
+    const bool revolve = index == 0 && state.baseKind == CadFeatureKind::Revolve;
     *out = CadFeatureView{featureId,
                           operation,
                           sketchId,
                           record != nullptr ? &record->sketch : nullptr,
+                          revolve ? CadFeatureKind::Revolve : CadFeatureKind::Extrude,
+                          revolve ? &state.revolve : nullptr,
                           extrude,
                           record != nullptr && record->hasFeatureSupport ? &record->featureSupport
                                                                          : nullptr};
@@ -579,7 +727,8 @@ uint32_t nextCadFeatureId(const CadBodyState& state) { return state.nextFeatureI
 bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b) {
     if (a.sketches.size() != b.sketches.size() || a.nextSketchId != b.nextSketchId
         || a.baseSketchId != b.baseSketchId || a.nextFeatureId != b.nextFeatureId
-        || !sameExtrudeFeature(a.extrude, b.extrude)
+        || a.baseKind != b.baseKind || !sameExtrudeFeature(a.extrude, b.extrude)
+        || !sameRevolveFeature(a.revolve, b.revolve)
         || a.laterFeatures.size() != b.laterFeatures.size()) {
         return false;
     }
@@ -764,14 +913,24 @@ CadStatus resolvePlanarFaceSelection(const CadSketch& sketch, const ExtrudeFeatu
             return formWhy;
         }
     }
-    // A repeat anywhere is named as a repeat before the order is judged.
-    for (size_t i = 0; i < faces.size(); ++i) {
-        for (size_t j = i + 1; j < faces.size(); ++j) {
-            if (samePlanarFaceRef(faces[i], faces[j])) {
+    // A repeat anywhere is named as a repeat before the order is judged. A
+    // sorted copy puts every repeat beside its twin, so the same verdict costs
+    // O(n log n) rather than every pair -- a selection may hold thousands.
+    {
+        std::vector<const PlanarFaceRef*> sorted;
+        sorted.reserve(faces.size());
+        for (const PlanarFaceRef& face : faces) sorted.push_back(&face);
+        std::sort(sorted.begin(), sorted.end(), [](const PlanarFaceRef* a, const PlanarFaceRef* b) {
+            return comparePlanarFaceRef(*a, *b) < 0;
+        });
+        for (size_t i = 1; i < sorted.size(); ++i) {
+            if (samePlanarFaceRef(*sorted[i - 1], *sorted[i])) {
                 return CadStatus::DuplicatePlanarFace;
             }
         }
-        if (i > 0 && comparePlanarFaceRef(faces[i - 1], faces[i]) >= 0) {
+    }
+    for (size_t i = 1; i < faces.size(); ++i) {
+        if (comparePlanarFaceRef(faces[i - 1], faces[i]) >= 0) {
             return CadStatus::PlanarFaceRefNotCanonical;
         }
     }
@@ -927,6 +1086,26 @@ CadStatus validateCadFeatureGeometry(const CadSketch& sketch, const ExtrudeFeatu
     return CadStatus::Ok;
 }
 
+CadStatus validateRevolveFeatureGeometry(const CadSketch& sketch, const RevolveFeature& revolve,
+                                         SketchRegionExtraction* outRegions) {
+    const CadStatus sketchWhy = validateCadSketch(sketch);
+    if (sketchWhy != CadStatus::Ok) {
+        return sketchWhy;
+    }
+    const CadStatus parametersWhy = validateRevolveParameters(revolve);
+    if (parametersWhy != CadStatus::Ok) {
+        return parametersWhy;
+    }
+    const CadStatus axisWhy = resolveRevolveAxis(sketch, revolve.axis, nullptr);
+    if (axisWhy != CadStatus::Ok) {
+        return axisWhy;
+    }
+    // The selection, by exactly the rules an Extrude's is judged by: the
+    // carrier's default extent always passes, so every refusal here is about
+    // WHAT is selected.
+    return validateCadFeatureGeometry(sketch, revolveSelectionCarrier(revolve), outRegions);
+}
+
 namespace {
 
 // The table's own rules, before any geometry: ids, order, high-water marks,
@@ -994,12 +1173,50 @@ CadStatus validateCadSketchTable(const CadBodyState& state) {
 
 }  // namespace
 
+CadStatus validateCadSketchTableRules(const CadBodyState& state) {
+    return validateCadSketchTable(state);
+}
+
 CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* outProfiles) {
     const CadStatus tableWhy = validateCadSketchTable(state);
     if (tableWhy != CadStatus::Ok) {
         return tableWhy;
     }
+    const int kind = cadFeatureKindIndex(state.baseKind);
+    if (kind < 0 || kind >= kCadFeatureKindCount) {
+        return CadStatus::InvalidFeatureKind;
+    }
     SketchRegionExtraction baseRegions;
+    if (state.baseKind == CadFeatureKind::Revolve) {
+        // One encoding per body: the payload the kind does not use is the
+        // canonical empty one, and nothing else.
+        if (!sameExtrudeFeature(state.extrude, ExtrudeFeature{})) {
+            return CadStatus::RevolvePayloadMismatch;
+        }
+        if (!state.laterFeatures.empty()) {
+            return CadStatus::RevolveLaterFeatureUnsupported;
+        }
+        const CadStatus revolveWhy =
+                validateRevolveFeatureGeometry(cadBaseSketch(state), state.revolve, &baseRegions);
+        if (revolveWhy != CadStatus::Ok) {
+            return revolveWhy;
+        }
+        // Whether the area stays on one side of the axis, and whether its
+        // pieces would collide, is decided by deriving the feature -- no
+        // kernel -- so a file or a candidate with a crossing profile is
+        // refused here by name rather than at its first regeneration.
+        const CadStatus chainWhy = validateCadChain(state);
+        if (chainWhy != CadStatus::Ok) {
+            return chainWhy;
+        }
+        if (outProfiles != nullptr) {
+            *outProfiles = std::move(baseRegions.loops);
+        }
+        return CadStatus::Ok;
+    }
+    if (!sameRevolveFeature(state.revolve, RevolveFeature{})) {
+        return CadStatus::RevolvePayloadMismatch;
+    }
     const CadStatus baseWhy =
             validateCadFeatureGeometry(cadBaseSketch(state), state.extrude, &baseRegions);
     if (baseWhy != CadStatus::Ok) {
@@ -1192,7 +1409,8 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
     }
 
     // Every body any earlier version created: R0's path, bit for bit.
-    if (chain.size() == 1u && extrudeSelectsSingleSimpleProfile(base.extrude)) {
+    if (chain.size() == 1u && base.kind == CadFeatureKind::Extrude
+        && extrudeSelectsSingleSimpleProfile(base.extrude)) {
         const SketchRegion& region = base.regions.regions[base.chosen.front()];
         const ClosedProfile& profile = base.regions.loops.profiles[region.outerLoop];
         CadBodyMesh result;
@@ -1229,6 +1447,18 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
     }
     uint32_t components = base.componentCount();
     double volume = cadSolidVolume(body);
+    if (base.kind == CadFeatureKind::Revolve) {
+        // A revolved solid has no R0 path to be bit-identical to and is built
+        // by new code, so it is held to the production kernel's own validity
+        // answer -- closed, oriented 2-manifold, positive volume -- before it
+        // can be published, previewed or committed. Its measure is the kernel's.
+        CadSolidMeasure measure;
+        if (cadKernelValidateSolid(body, &measure) != CadKernelStatus::Ok) {
+            return finish(CadStatus::KernelFailed, kCadFeatureId);
+        }
+        components = measure.components;
+        volume = measure.volume;
+    }
     if (chain.size() > 1u) {
         const auto t0 = std::chrono::steady_clock::now();
         CadSolidMeasure measure;
@@ -1375,6 +1605,26 @@ CadStatus CadBody::applyState(const CadBodyState& requested, bool* outChanged) {
         || requested.nextSketchId < state_.nextSketchId) {
         ++rejectedUpdates_;
         return CadStatus::HighWaterInvalid;
+    }
+    // The same rule for each retained sketch's dimension ids
+    // (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`): a sketch the edit keeps may not
+    // hand a freed dimension id on along this branch.
+    for (const CadSketchRecord& current : state_.sketches) {
+        const CadSketchRecord* next = findCadSketchRecord(requested, current.sketchId);
+        if (next != nullptr && next->sketch.nextDimensionId < current.sketch.nextDimensionId) {
+            ++rejectedUpdates_;
+            return CadStatus::HighWaterInvalid;
+        }
+    }
+    // What regeneration does NOT judge, first (`CAD-R2`). Regeneration walks
+    // only the features, so a retained sketch no feature consumes -- whose face
+    // an upstream edit stripped -- or a table that breaks its own id rules
+    // would pass it and become a committed state the codec refuses to save.
+    // Regeneration below is the rest of `validateCadBodyState`'s rule.
+    const CadStatus valid = validateCadStateBeyondRegeneration(requested);
+    if (valid != CadStatus::Ok) {
+        ++rejectedUpdates_;
+        return valid;
     }
     // Regenerate ONCE into a scratch mesh: the only proof a state is usable is
     // that the whole path runs, and running it here is what makes the refusal

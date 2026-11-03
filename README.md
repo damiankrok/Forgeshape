@@ -413,7 +413,7 @@ emit several hundred lines in a few milliseconds and the default buffer silently
 drops the tail, which reads exactly like a self-test that stopped partway
 through. That is a logging limit, not an app failure.
 
-A clean debug launch emits **twenty-three** `*_SELFTEST_OK` tokens, in this order, then
+A clean debug launch emits **twenty-five** `*_SELFTEST_OK` tokens, in this order, then
 `FORGESHAPE_NATIVE_VIEWPORT_OK` once the first frame is presented:
 
 ```
@@ -440,9 +440,11 @@ FORGESHAPE_SKETCH_UX_SELFTEST_OK
 FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK
 FORGESHAPE_MIRROR_SELFTEST_OK
 FORGESHAPE_CAD_FEATURE_SELFTEST_OK
+FORGESHAPE_FREEFORM_SELFTEST_OK
+FORGESHAPE_SURFACE_SELFTEST_OK
 ```
 
-The same twenty-three suites run on the host, with no device and no Android
+The same twenty-five suites run on the host, with no device and no Android
 tooling beyond a C++17 compiler, through
 
 ```

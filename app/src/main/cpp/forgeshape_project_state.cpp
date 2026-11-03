@@ -1,5 +1,7 @@
 #include "forgeshape_project_state.h"
 
+#include "forgeshape_project_surface.h"
+
 #include <cstring>
 #include <memory>
 #include <utility>
@@ -75,6 +77,30 @@ const ProjectSculptBody* findSculptBody(const ProjectDocument& document, ObjectI
     return nullptr;
 }
 
+const ProjectFreeformBody* findFreeformBody(const ProjectDocument& document, ObjectId id) {
+    if (!document.hasFreeform) {
+        return nullptr;
+    }
+    for (const ProjectFreeformBody& body : document.freeform.bodies) {
+        if (body.objectId == id) {
+            return &body;
+        }
+    }
+    return nullptr;
+}
+
+const ProjectSurfaceBody* findSurfaceBody(const ProjectDocument& document, ObjectId id) {
+    if (!document.hasSurface) {
+        return nullptr;
+    }
+    for (const ProjectSurfaceBody& body : document.surface.bodies) {
+        if (body.objectId == id) {
+            return &body;
+        }
+    }
+    return nullptr;
+}
+
 const ProjectCadBody* findCadBody(const ProjectDocument& document, ObjectId id) {
     if (!document.hasCad) {
         return nullptr;
@@ -93,7 +119,9 @@ bool runtimeCanEvaluateProject(const ProjectDocument& document) {
     for (const ProjectBodyPlacement& placement : document.scene.bodies) {
         if (findConstructionBody(document, placement.objectId) == nullptr
             && findImportedBody(document, placement.objectId) == nullptr
-            && findCadBody(document, placement.objectId) == nullptr) {
+            && findCadBody(document, placement.objectId) == nullptr
+            && findFreeformBody(document, placement.objectId) == nullptr
+            && findSurfaceBody(document, placement.objectId) == nullptr) {
             return false;
         }
     }
@@ -168,6 +196,22 @@ ProjectDocument captureProjectDocument(const ConstructionScene& scene, ProjectKi
             record.state = cad->captureState();
             document.cad.bodies.push_back(std::move(record));
             document.hasCad = true;
+        } else if (const FreeformBody* freeform = body.freeformOrNull()) {
+            // The control cage and nothing derived: the smooth surface is
+            // regenerated from exactly this on load.
+            ProjectFreeformBody record;
+            record.objectId = body.objectId();
+            record.cage = freeform->cage();
+            document.freeform.bodies.push_back(std::move(record));
+            document.hasFreeform = true;
+        } else if (const SurfaceBody* surface = body.surfaceOrNull()) {
+            // The sketches and the feature list, nothing derived: patches and
+            // solids are regenerated from exactly this on load.
+            ProjectSurfaceBody record;
+            record.objectId = body.objectId();
+            record.state = surface->state();
+            document.surface.bodies.push_back(std::move(record));
+            document.hasSurface = true;
         }
 
         const FrozenSculpt& frozen = body.frozenSculpt();
@@ -232,10 +276,13 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
                 findConstructionBody(document, placement.objectId);
         const ProjectImportedBody* imported = findImportedBody(document, placement.objectId);
         const ProjectCadBody* cad = findCadBody(document, placement.objectId);
+        const ProjectFreeformBody* freeform = findFreeformBody(document, placement.objectId);
+        const ProjectSurfaceBody* surface = findSurfaceBody(document, placement.objectId);
 
         // Proven above by runtimeCanEvaluateProject; re-checked here because
         // the pointers are about to be dereferenced.
-        if (shape == nullptr && imported == nullptr && cad == nullptr) {
+        if (shape == nullptr && imported == nullptr && cad == nullptr && freeform == nullptr
+            && surface == nullptr) {
             return ProjectCodecStatus::MissingRequiredSection;
         }
 
@@ -247,6 +294,20 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
             // below regenerates the mesh through the one CAD path and is the
             // second proof.
             body.reset(new SceneObject(placement.objectId, cad->state));
+        } else if (freeform != nullptr) {
+            // validateProjectDocument has held the cage to the domain's own
+            // rule; the publish below derives its surface and is the second
+            // proof.
+            body.reset(new SceneObject(placement.objectId,
+                                       std::make_shared<const FreeformCage>(freeform->cage)));
+        } else if (surface != nullptr) {
+            // validateProjectDocument has regenerated the list once; this is
+            // the regeneration the body keeps, and the publish below the proof.
+            SurfaceBodyMesh mesh;
+            if (regenerateSurfaceBody(surface->state, &mesh) != SurfaceStatus::Ok) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            body.reset(new SceneObject(placement.objectId, surface->state, std::move(mesh)));
         } else if (imported != nullptr) {
             // Rebuilt through the same `ImportedMesh::build` an import goes
             // through, so a loaded object is exactly as validated as a freshly
@@ -614,6 +675,57 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
             mixSelection(hash, feature.extrude);
         }
     }
+    // `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`: every sketch's roles, dimension
+    // table and dimension high-water mark. Mixed only when some sketch carries
+    // drafting truth, so every project without any keeps exactly the
+    // fingerprint it always had -- and a Make Construction, a dimension added
+    // or removed and a Driving edit each move it.
+    if (cadBodyStateUsesDrafting(state)) {
+        mixU64(hash, 0x44524638ull);  // "DRF8"
+        for (const CadSketchRecord& record : state.sketches) {
+            mixU64(hash, record.sketchId);
+            for (const SketchEntity& entity : record.sketch.entities) {
+                mixU64(hash, entity.id());
+                mixU64(hash, static_cast<uint64_t>(entity.role()));
+            }
+            mixU64(hash, record.sketch.nextDimensionId);
+            mixU64(hash, record.sketch.dimensions.size());
+            for (const SketchDimension& dimension : record.sketch.dimensions) {
+                mixU64(hash, dimension.id);
+                mixU64(hash, static_cast<uint64_t>(dimension.kind));
+                mixU64(hash, static_cast<uint64_t>(dimension.mode));
+                mixU64(hash, dimension.first.entityId);
+                mixU64(hash, dimension.first.edgeLocalIndex);
+                mixU64(hash, dimension.second.entityId);
+                mixU64(hash, dimension.second.edgeLocalIndex);
+            }
+        }
+    }
+    // `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: a Revolve's whole authored truth -- its
+    // selection, its axis ref, the exact angle bits and the direction. Mixed
+    // only for a Revolve, so every Extrude project keeps the fingerprint it
+    // always had.
+    if (state.baseKind == CadFeatureKind::Revolve) {
+        mixU64(hash, 0x52455637ull);  // "REV7"
+        mixSelection(hash, revolveSelectionCarrier(state.revolve));
+        mixU64(hash, state.revolve.profileEntityId);
+        mixU64(hash, state.revolve.profileHoleIds.size());
+        for (SketchEntityId hole : state.revolve.profileHoleIds) {
+            mixU64(hash, hole);
+        }
+        mixU64(hash, state.revolve.additionalRegions.size());
+        for (const ProfileRegionRef& region : state.revolve.additionalRegions) {
+            mixU64(hash, region.outerAnchorId);
+            mixU64(hash, region.holeAnchorIds.size());
+            for (SketchEntityId hole : region.holeAnchorIds) {
+                mixU64(hash, hole);
+            }
+        }
+        mixU64(hash, state.revolve.axis.entityId);
+        mixU64(hash, state.revolve.axis.edgeLocalIndex);
+        mixDouble(hash, state.revolve.angleDegrees);
+        mixU64(hash, static_cast<uint64_t>(revolveDirectionIndex(state.revolve.direction)));
+    }
 }
 
 void mixTransform(uint64_t& hash, const TransformValues& values) {
@@ -669,6 +781,43 @@ uint64_t projectSemanticFingerprint(const ConstructionScene& scene, ProjectKind 
             }
         } else if (const CadBody* cad = body.cadOrNull()) {
             mixCad(hash, cad->state());
+        } else if (const FreeformBody* freeform = body.freeformOrNull()) {
+            // Every value the `FRFM` record carries, so a cage edit of any kind
+            // -- a moved vertex, a crease, a level, a symmetry plane -- moves
+            // the fingerprint and earns a checkpoint.
+            const FreeformCage& cage = freeform->cage();
+            mixU64(hash, 0x4652464Dull);  // "FRFM"
+            mixU64(hash, cage.subdivisionLevel);
+            mixU64(hash, cage.symmetry);
+            mixU64(hash, cage.nextVertexId);
+            mixU64(hash, cage.nextEdgeId);
+            mixU64(hash, cage.nextFaceId);
+            for (const FreeformVertex& v : cage.vertices) {
+                mixU64(hash, idOf(v.id));
+                mixDouble(hash, v.position.x);
+                mixDouble(hash, v.position.y);
+                mixDouble(hash, v.position.z);
+            }
+            for (const FreeformEdge& e : cage.edges) {
+                mixU64(hash, idOf(e.id));
+                mixU64(hash, idOf(e.v0));
+                mixU64(hash, idOf(e.v1));
+                mixDouble(hash, e.crease);
+            }
+            for (const FreeformFace& f : cage.faces) {
+                mixU64(hash, idOf(f.id));
+                for (FreeformVertexId v : f.loop) mixU64(hash, idOf(v));
+            }
+        } else if (const SurfaceBody* surface = body.surfaceOrNull()) {
+            // Every value the `SURF` record carries, mixed as the record's own
+            // bytes, so any feature or sketch edit moves the fingerprint.
+            ProjectSurfaceRecord record;
+            record.bodies.push_back(ProjectSurfaceBody{body.objectId(), surface->state()});
+            std::vector<uint8_t> bytes;
+            ByteWriter out(bytes);
+            writeSurfacePayload(out, record);
+            mixU64(hash, 0x53555246ull);  // "SURF"
+            mixBytes(hash, bytes.data(), bytes.size());
         }
         mixTransform(hash, body.transform().values());
         // Stage 018A. All three are project truth -- they reach `.forge` bytes

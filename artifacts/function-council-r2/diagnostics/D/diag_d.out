@@ -1,0 +1,76 @@
+INFO box vertices=8 edges=12 faces=6 level=2 valid=Ok
+INFO pushPull(nan) -> InvalidDistance
+INFO extrude(nan) -> InvalidDistance
+INFO pushPull(inf) -> InvalidDistance
+INFO extrude(inf) -> InvalidDistance
+INFO pushPull(0) -> InvalidDistance
+INFO extrude(0) -> InvalidDistance
+INFO pushPull(1e-07) -> InvalidDistance
+INFO extrude(1e-07) -> InvalidDistance
+INFO pushPull(-0.25) -> Ok
+INFO extrude(-0.25) -> Ok
+INFO pushPull(200000) -> InvalidDistance
+INFO extrude(200000) -> InvalidDistance
+INFO insertLoop(nan) -> InvalidRatio
+INFO insertLoop(0) -> InvalidRatio
+INFO insertLoop(1) -> InvalidRatio
+INFO insertLoop(-0.1) -> InvalidRatio
+INFO insertLoop(1e-12) -> FaceDegenerate
+INFO insertLoop(0.5) -> Ok
+INFO crease(nan) -> NonFinite
+INFO crease(-0.01) -> InvalidCrease
+INFO crease(1.01) -> InvalidCrease
+INFO crease(0) -> Ok
+INFO crease(1) -> Ok
+INFO crease(0.5) -> Ok
+INFO level(-1) -> InvalidSubdivisionLevel
+INFO level(5) -> InvalidSubdivisionLevel
+INFO level(255) -> InvalidSubdivisionLevel
+INFO level(0) -> Ok
+INFO level(4) -> Ok
+OBS_OK   FFD_delete_all_refused DeleteWouldEmpty
+OBS_OK   FFD_zero_scale_refused TransformDegenerate
+INFO transform(NaN translation) -> NonFinite
+OBS_OK   FFD_symmetry_x_on_box Ok
+OBS_OK   FFD_symmetry_partner_bitwise_mirror partner found bit-exact
+OBS_OK   FFD_symmetry_result_validates Ok
+INFO symmetric insertLoop(0.5) -> Ok ; (0.3) -> SymmetryRequiresMidpoint
+OBS_OK   FFD_on_plane_vertex_stays_on_plane status=Ok x=0 y=0.59999999999999998
+OBS_OK   FFD_create_body_one_step Ok
+OBS_OK   FFD_session_begin 
+OBS_OK   FFD_session_pushpull_one_step Ok
+OBS_OK   FFD_undo_restores_exact_cage 
+OBS_OK   FFD_session_survives_undo 
+OBS_OK   FFD_locked_body_refuses_tool NotEditing
+OBS_OK   FFD_not_a_sculpt_source 
+INFO surface extrude distance(nan) -> DistanceInvalid
+INFO surface extrude distance(inf) -> DistanceInvalid
+INFO surface extrude distance(-0.5) -> DistanceInvalid
+INFO surface extrude distance(0) -> DistanceInvalid
+INFO surface extrude distance(1e-09) -> DistanceInvalid
+INFO surface extrude distance(0.5) -> Ok
+INFO surface extrude distance(1e+07) -> DistanceInvalid
+INFO surface revolve angle(nan) -> AngleInvalid
+INFO surface revolve angle(-10) -> AngleInvalid
+INFO surface revolve angle(0) -> AngleInvalid
+INFO surface revolve angle(0.0005) -> AngleInvalid
+INFO surface revolve angle(0.001) -> Ok
+INFO surface revolve angle(359.9999) -> Ok
+INFO surface revolve angle(360) -> Ok
+INFO surface revolve angle(360.0000001) -> AngleInvalid
+INFO surface revolve angle(720) -> AngleInvalid
+INFO surface thicken patch(nan) -> ThickenInvalidThickness solidTris=0 open=-1
+INFO surface thicken patch(0) -> ThickenInvalidThickness solidTris=0 open=-1
+INFO surface thicken patch(-0.2) -> Ok solidTris=12 open=0
+INFO surface thicken patch(0.2) -> Ok solidTris=12 open=0
+INFO surface thicken patch(1e+09) -> ThickenInvalidThickness solidTris=0 open=-1
+OBS_OK   SFD_thicken_spline_extrude_refused_by_name ThickenUnsupportedForSurfaceType
+INFO stitch halfgap=0 -> Ok stitches=1 positionsUnchanged=1
+INFO stitch halfgap=7.5e-07 -> Ok stitches=1 positionsUnchanged=1
+INFO stitch halfgap=9.5e-07 -> Ok stitches=1 positionsUnchanged=1
+INFO stitch halfgap=1.1e-06 -> StitchGapTooLarge stitches=0 positionsUnchanged=0
+INFO stitch halfgap=1.5e-06 -> StitchGapTooLarge stitches=0 positionsUnchanged=0
+OBS_OK   SFD_not_a_sculpt_source Ok
+INFO sculpt_clear_mask side=280 froze=1 vertices=78400 masked=0 canClearMask=1 clearMask=ok maskedAfter=0 undo=1
+INFO sculpt_clear_mask side=300 froze=1 vertices=90000 masked=90000 canClearMask=1 clearMask=entry_too_large maskedAfter=90000 undo=0
+DIAG_D_DONE diffs=0

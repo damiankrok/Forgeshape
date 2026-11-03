@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "forgeshape_cad_face.h"
+#include "forgeshape_freeform_subdivision.h"
 
 namespace forgeshape {
 
@@ -163,6 +164,54 @@ std::unique_ptr<SceneObject> ConstructionScene::makeCadBody(ObjectId id,
     return std::unique_ptr<SceneObject>(new SceneObject(id, state));
 }
 
+std::unique_ptr<SceneObject> ConstructionScene::makeFreeformBody(
+        ObjectId id, std::shared_ptr<const FreeformCage> cage) {
+    if (id >= nextObjectId_) {
+        nextObjectId_ = id + 1;
+    }
+    return std::unique_ptr<SceneObject>(new SceneObject(id, std::move(cage)));
+}
+
+SceneObject* ConstructionScene::addFreeformBody(FreeformCage cage, FreeformStatus* outWhy) {
+    const FreeformStatus why = validateFreeformCage(cage);
+    if (outWhy != nullptr) {
+        *outWhy = why;
+    }
+    if (why != FreeformStatus::Ok) {
+        return nullptr;  // refused before an id is minted; the scene is untouched
+    }
+    const ObjectId id = nextObjectId_++;
+    bodies_.push_back(std::unique_ptr<SceneObject>(
+            new SceneObject(id, std::make_shared<const FreeformCage>(std::move(cage)))));
+    activeBodyId_ = id;
+    return bodies_.back().get();
+}
+
+std::unique_ptr<SceneObject> ConstructionScene::makeSurfaceBody(ObjectId id,
+                                                                const SurfaceBodyState& state) {
+    if (id >= nextObjectId_) {
+        nextObjectId_ = id + 1;
+    }
+    SurfaceBodyMesh mesh;
+    regenerateSurfaceBody(state, &mesh);
+    return std::unique_ptr<SceneObject>(new SceneObject(id, state, std::move(mesh)));
+}
+
+SceneObject* ConstructionScene::addSurfaceBody(SurfaceBodyState state, SurfaceStatus* outWhy) {
+    SurfaceBodyMesh mesh;
+    const SurfaceStatus why = regenerateSurfaceBody(state, &mesh);
+    if (outWhy != nullptr) {
+        *outWhy = why;
+    }
+    if (why != SurfaceStatus::Ok) {
+        return nullptr;  // refused before an id is minted; the scene is untouched
+    }
+    const ObjectId id = nextObjectId_++;
+    bodies_.push_back(std::unique_ptr<SceneObject>(new SceneObject(id, std::move(state), std::move(mesh))));
+    activeBodyId_ = id;
+    return bodies_.back().get();
+}
+
 CadStatus ConstructionScene::validateCadFaceSupport(const TopoRef& support) const {
     const SceneObject* producer = findBody(support.producerObjectId);
     if (producer == nullptr || producer->cadOrNull() == nullptr) {
@@ -182,6 +231,19 @@ CadStatus ConstructionScene::validateCadFaceSupport(const TopoRef& support) cons
     }
     if (!face.eligible) {
         return CadStatus::NotCadBody;  // a curved side is not a sketch support
+    }
+    // A Cut's face is a support only where it SURVIVED the chain
+    // (`MODELING-R1-OWNER-CORRECTION`): the pocket's floor and walls do, the
+    // cap the Cut started from was carved away. Asked of the body's own
+    // published regeneration, the mesh the user sees and picks.
+    CadFeatureView view;
+    if (findCadFeature(producer->cadOrNull()->state(), support.producerLocalFeatureId, &view)
+        && view.operation == CadFeatureOperation::Cut) {
+        std::shared_ptr<const CadBodyMesh> mesh;
+        if (producer->cadOrNull()->regenerated(&mesh) != CadStatus::Ok || mesh == nullptr
+            || !cadMeshCarriesFace(*mesh, face)) {
+            return CadStatus::SupportFaceLost;
+        }
     }
     return CadStatus::Ok;
 }
@@ -372,6 +434,8 @@ const char* bodyRepresentationName(BodyRepresentation representation) {
         case BodyRepresentation::Construction: return "Construction";
         case BodyRepresentation::Imported: return "Imported";
         case BodyRepresentation::Cad: return "Cad";
+        case BodyRepresentation::Freeform: return "Freeform";
+        case BodyRepresentation::Surface: return "Surface";
     }
     return "unknown";
 }
@@ -397,6 +461,38 @@ MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy) {
                                         mesh.indices.data(),
                                         static_cast<uint32_t>(mesh.indices.size()), outWhy,
                                         mesh.renderBothSides);
+    }
+    if (const FreeformBody* freeform = body.freeformOrNull()) {
+        // The smooth surface, derived NOW from the cage at its stored level.
+        // An open cage publishes two-sided, because it is a sheet.
+        std::shared_ptr<const FreeformMesh> mesh;
+        if (freeform->derived(&mesh) != FreeformStatus::Ok || mesh == nullptr) {
+            if (outWhy != nullptr) {
+                *outWhy = MeshValidation::EmptyVertices;
+            }
+            return kNoMeshRevision;
+        }
+        return body.meshStore().publish(mesh->render.vertices.data(),
+                                        static_cast<uint32_t>(mesh->render.vertices.size()),
+                                        mesh->render.indices.data(),
+                                        static_cast<uint32_t>(mesh->render.indices.size()), outWhy,
+                                        mesh->render.renderBothSides);
+    }
+    if (const SurfaceBody* surface = body.surfaceOrNull()) {
+        // The patches and the thickened solid, regenerated when the feature
+        // list was applied. Patches are sheets and publish two-sided.
+        const SurfaceBodyMesh& mesh = surface->mesh();
+        if (mesh.render.vertices.empty()) {
+            if (outWhy != nullptr) {
+                *outWhy = MeshValidation::EmptyVertices;
+            }
+            return kNoMeshRevision;
+        }
+        return body.meshStore().publish(mesh.render.vertices.data(),
+                                        static_cast<uint32_t>(mesh.render.vertices.size()),
+                                        mesh.render.indices.data(),
+                                        static_cast<uint32_t>(mesh.render.indices.size()), outWhy,
+                                        mesh.render.renderBothSides);
     }
     const ImportedMesh* imported = body.importedOrNull();
     if (imported == nullptr) {
@@ -435,6 +531,16 @@ bool buildSculptSourceMesh(const SceneObject& body, ConstructionMesh* out) {
     }
     if (body.cadOrNull() != nullptr) {
         // Deliberately unsupported in `CAD-R0-A1A2`; see the header.
+        return false;
+    }
+    if (body.surfaceOrNull() != nullptr) {
+        // Not this stage either: a Surface body's truth is its feature list.
+        return false;
+    }
+    if (body.freeformOrNull() != nullptr) {
+        // Not this stage (`MODELING-FOUNDATIONS-R1`): the cage stays the only
+        // truth of a Freeform body, and a sculpt copy of its derived surface
+        // would need a stale-source rule an owner has not decided.
         return false;
     }
     const ImportedMesh* imported = body.importedOrNull();

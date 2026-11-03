@@ -44,8 +44,21 @@ DVec3 cadFramePoint(const CadFrame64& frame, double a, double b, double c);
 // One planar face of one feature's own extrusion, in body-local binary64.
 struct CadFeatureFace {
     CadFaceToken token{};
+    // Material-OUTWARD: for an Add or a New Body that is the prism's own
+    // outward frame; for a Cut it is the reverse of the tool's, because what a
+    // Cut leaves behind is the inside of a pocket, facing into it.
     CadFrame64 frame;
+    // Whether a sketch may stand here: the face is FLAT (no curved piece) --
+    // decided per face, whatever the operation (`MODELING-R1-OWNER-CORRECTION`).
+    // Whether a Cut's face survived the boolean is the resolving site's
+    // question, asked of the regenerated solid (`cadSolidHasFaceOn`,
+    // `cadMeshCarriesFace`), never assumed here.
     bool eligible = true;
+    // The eligibility bit the lineage signature mixes (§7c): the FORMAT's
+    // frozen R1 rule -- flat, and never a face of a Cut or of a Revolve -- kept
+    // apart from `eligible` so widening where a sketch may stand moves no
+    // stored lineage token and no corpus byte.
+    bool lineageEligible = true;
 };
 
 // Everything derived about one feature of the chain.
@@ -54,6 +67,17 @@ struct CadFeatureGeometry {
     CadFeatureOperation operation = CadFeatureOperation::NewBody;
     // Copies, so the geometry never dangles into a state that changed.
     CadSketch sketch;
+    // Extrude or Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`). For a Revolve,
+    // `extrude` is the selection CARRIER (`revolveSelectionCarrier`: the
+    // revolve's selection over a default extrusion) through which the shared
+    // region and planar-face rules below read what is selected -- its extent is
+    // never used -- and `revolve` is the authored feature.
+    CadFeatureKind kind = CadFeatureKind::Extrude;
+    RevolveFeature revolve;
+    // A Revolve's axis, resolved against `sketch`, and per union component the
+    // side of the axis it lies on (+1 / -1) -- both derived at derivation.
+    RevolveAxis2D revolveAxis{};
+    std::vector<int> revolveSides;
     ExtrudeFeature extrude;
     SketchRegionExtraction regions;
     // Indices into `regions.regions`, in selection (ascending anchor) order.
@@ -122,6 +146,21 @@ CadStatus buildCadChainGeometry(const CadBodyState& state, std::vector<CadFeatur
 // selection it makes, and every UNCONSUMED sketch's own rule and support
 // against the whole chain.
 CadStatus validateCadChain(const CadBodyState& state, uint32_t* outFailedFeatureId = nullptr);
+
+// Where the retained sketch `sketchId` stands, in body-local binary64
+// (`CAD-R2`): the root sketch on its workplane, any other on its named face of
+// one of the body's features -- the ONE placement rule every feature that
+// extrudes it also reads, so a sketch no feature consumes is placed exactly as
+// a consumed one. Fails closed by the chain's own reason when an earlier
+// feature cannot be derived, `SketchNotFound` for an id the table lacks.
+CadStatus cadSketchPlacement(const CadBodyState& state, CadSketchId sketchId, CadFrame64* out);
+
+// What `regenerateCadBody` does not judge (`CAD-R2`): the sketch table's own
+// rules, and every retained sketch NO feature consumes -- its entities and its
+// placement against the chain. The chain is walked only when such a sketch
+// exists, so the common case costs the table check alone. Ok plus a successful
+// regeneration is exactly `validateCadBodyState`'s verdict.
+CadStatus validateCadStateBeyondRegeneration(const CadBodyState& state);
 
 // The geometry of the one feature named, and only what it needs before it.
 CadStatus buildCadFeatureGeometry(const CadBodyState& state, uint32_t featureId,

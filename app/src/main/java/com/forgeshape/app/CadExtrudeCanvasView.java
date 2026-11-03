@@ -5,9 +5,12 @@ import android.content.res.ColorStateList;
 import android.graphics.Paint;
 import android.text.InputType;
 import android.text.method.DigitsKeyListener;
+import android.content.pm.ApplicationInfo;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
@@ -32,24 +35,22 @@ import java.math.BigDecimal;
  * Flip that reverses which side the solid grows on. Those are chrome,
  * positioned over the viewport at the points native projects.
  *
- * <p><b>Two annotations</b> (`CAD-FOUNDATION-C2`). The exact VALUE stands ABOVE
- * its leader, rotated to it and kept upright
- * ({@link CadHudPresentation#layoutLeader}). The extent, the operation and, in
- * One Side, Flip are ONE ACTION PANEL: a rigid plate of glyphs built once at its
- * reference size and scaled as a unit by the camera-attached multiplier,
- * anchored just past the arrow's drawn point and shown WHOLE or not at all
- * ({@link CadHudPresentation#layoutPanel}). Its icons never drift apart, never
- * disappear one by one, and never shrink independently.
+ * <p><b>Two annotations</b> (`CAD-FOUNDATION-C2`, reshaped by
+ * `CAD-V6-S2-OWNER-CORRECTION-E2E-R1`). The exact VALUE stands ABOVE its
+ * leader, rotated to it and kept upright
+ * ({@link CadHudPresentation#layoutLeader}). The ACTION DOCK is ONE compact
+ * badge stating the operation, drawn into the quad native projected from a
+ * WORLD rectangle on the extrusion axis just past the arrow's drawn point
+ * ({@link CadExtrudeDockView}, {@link CadHud3dPresentation}): it foreshortens
+ * and turns with the arrow, it never slides, clamps or changes side at a
+ * screen edge, and native hides it whole when it cannot be drawn honestly
+ * (near the axis, behind the eye, or with a corner off the viewport).
  *
- * <p><b>What is drawn and what is touched are two facts.</b> The plate is a
- * drawing: it is not clickable and its {@code setScale} therefore scales
- * nothing a finger aims at. The panel's touch target is ONE invisible group
- * proxy — never scaled, at least 48 dp each way and covering the plate — which
- * opens the ACTION PALETTE: ordinary, readable screen chrome holding the extent
- * choices, the operations native offers now, and Flip, each a full 48 dp
- * target, with Tool Labels captions when that preference is on. Three 48 dp
- * proxies centred on three shrunken glyphs would overlap and make a touch
- * choose between icons by distance; one proxy never has to.
+ * <p><b>What is drawn and what is touched.</b> The dock is also its own ONE
+ * touch target, claiming only its projected quad and the 48 dp floor square on
+ * its centre. It opens the ACTION PALETTE: ordinary, readable screen chrome
+ * holding the extent choices, the operations native offers now, and Flip, each
+ * a full 48 dp target, with Tool Labels captions when that preference is on.
  *
  * <p><b>Holds no semantics.</b> The depth, the extent, the operation, which
  * operations can be chosen, whether the candidate would be refused, and every
@@ -62,7 +63,7 @@ import java.math.BigDecimal;
  * <p><b>Three operations, and only what can be chosen is offered.</b> The
  * palette's operation row holds exactly the operations native says are
  * available now, and is absent when there is nothing else to choose; the
- * panel's operation glyph always states the operation in force, in its colour
+ * dock's badge always states the operation in force, in its colour
  * AND its shape, and wears an error ring when the candidate would be refused.
  *
  * <p><b>Two states, and only one is ever shown.</b> While a sketch is in its
@@ -163,22 +164,14 @@ final class CadExtrudeCanvasView extends FrameLayout {
 
     /** The value text's gap above its leader, px. */
     private final float valueGapPx;
-    /** The glyph at scale 1.0, px: the panel's reference glyph and every palette glyph. */
+    /** The glyph at scale 1.0, px: every palette glyph. */
     private final int referenceGlyphPx;
 
     /** The primary value, above its leader. */
     private final TextView reading;
 
-    /**
-     * The action panel's plate: a DRAWING, built at its reference size and
-     * scaled as one unit. Not clickable, so its scale is never a hit area.
-     */
-    private final LinearLayout plate;
-    private final ImageView extentGlyph;
-    private final ImageView operationGlyph;
-    private final ImageView flipGlyph;
-    /** The panel's ONE touch target: invisible, unscaled, at least 48 dp each way. */
-    private final View panelProxy;
+    /** The action dock: the one badge, drawn into native's projected quad, and its touch target. */
+    private final CadExtrudeDockView dock;
 
     /** The action palette: the extent row, the operation row and Flip. */
     private final LinearLayout actionsPalette;
@@ -208,22 +201,21 @@ final class CadExtrudeCanvasView extends FrameLayout {
     private boolean paletteOpen;
     /** Whether palette controls draw their caption. Application preference; default off. */
     private boolean toolLabels;
-    /** How many glyphs the plate currently holds, or -1 before the first refresh. */
-    private int appliedPanelIcons = -1;
-    /** The operation glyph's applied tint and refusal ring, for change detection. */
-    private ColorStateList appliedOperationTint;
-    private boolean appliedOperationRefused;
-    /** The proxy size last applied, px. */
-    private int appliedHitWidth;
-    private int appliedHitHeight;
-    /** The panel glyph's drawn size last refresh, px. Verification. */
-    private int lastGlyphPx;
+    /**
+     * Whether a workspace surface that offers its own Edit Sketch is open over
+     * the viewport (the History surface). Read on every refresh, never cached,
+     * so the chip cannot outlive the surface it would stand on.
+     */
+    private java.util.function.BooleanSupplier retainedChipWithdrawn = () -> false;
+    /** The dock's box size last applied, px. */
+    private int appliedDockWidth;
+    private int appliedDockHeight;
     /** The value text size last applied, in sp. Verification and change detection. */
     private float lastValueTextSp;
     /** The primary leader's value layout at the last refresh. Verification. */
     private CadHudPresentation.LeaderLayout lastLayout = new CadHudPresentation.LeaderLayout();
-    /** The panel layout at the last refresh. Verification. */
-    private CadHudPresentation.PanelLayout lastPanel = new CadHudPresentation.PanelLayout();
+    /** The dock at the last refresh. Verification. */
+    private CadHud3dPresentation.Dock lastDock = new CadHud3dPresentation.Dock();
     /** Whether the whole annotation collapsed at the last refresh. Verification. */
     private boolean lastCollapsed;
 
@@ -238,6 +230,10 @@ final class CadExtrudeCanvasView extends FrameLayout {
     private float secondAnchorX;
     private float secondAnchorY;
 
+    /** Debug build: log which HUD surface consumed a Down. Never in release. */
+    private final boolean debugTouchAttribution;
+    private final android.graphics.Rect hitRect = new android.graphics.Rect();
+
     /** The refusal last described, so a steady one is not re-worded per frame. */
     private int describedStatus = NativeViewport.CAD_OK;
     private String describedReason = "";
@@ -250,6 +246,8 @@ final class CadExtrudeCanvasView extends FrameLayout {
         this.actions = actions;
         setId(R.id.cad_extrude_canvas);
         setVisibility(GONE);
+        debugTouchAttribution =
+                (context.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
 
         density = context.getResources().getDisplayMetrics().density;
         hitPx = CadHudPresentation.hitPx(density);
@@ -279,49 +277,20 @@ final class CadExtrudeCanvasView extends FrameLayout {
         });
         addView(reading, wrapParams());
 
-        // --- The action panel: one plate, one proxy -------------------------
-        // The plate is laid out ONCE at its reference size (glyphs, gaps and
-        // padding in fixed dp) and only ever scaled as a whole, about its
-        // top-left corner so the shared placement arithmetic centres the scaled
-        // box. Nothing inside it is ever re-laid out by zoom, so its internal
-        // spacing cannot drift.
-        plate = new LinearLayout(context);
-        plate.setId(R.id.cad_extrude_panel_plate);
-        plate.setOrientation(LinearLayout.HORIZONTAL);
-        plate.setGravity(Gravity.CENTER_VERTICAL);
-        plate.setBackgroundResource(R.drawable.bg_hud_panel);
-        final int platePad = Math.round(CadHudPresentation.PANEL_PAD_DP * density);
-        plate.setPadding(platePad, platePad, platePad, platePad);
-        plate.setClickable(false);
-        plate.setFocusable(false);
-        // The proxy is the one accessible thing; the plate is how it is drawn.
-        plate.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-        final int plateGap = Math.round(CadHudPresentation.PANEL_GAP_DP * density);
-        extentGlyph = plateGlyph(context, R.id.cad_extrude_extent,
-                CadHudPresentation.extentIcon(NativeViewport.EXTENT_ONE_SIDE), 0);
-        operationGlyph = plateGlyph(context, R.id.cad_extrude_operation,
-                CadHudPresentation.operationIcon(NativeViewport.OPERATION_NEW_BODY), plateGap);
-        flipGlyph = plateGlyph(context, R.id.cad_extrude_flip_glyph, R.drawable.ic_extrude_flip,
-                plateGap);
-        extentGlyph.setImageTintList(contentTint);
-        flipGlyph.setImageTintList(contentTint);
-        addView(plate, wrapParams());
-
-        panelProxy = new View(context);
-        panelProxy.setId(R.id.cad_extrude_panel);
-        panelProxy.setClickable(true);
-        panelProxy.setFocusable(true);
-        panelProxy.setOnClickListener(new OnClickListener() {
+        // --- The action dock: one badge, one touch target ------------------
+        dock = new CadExtrudeDockView(context, hitPx);
+        dock.setId(R.id.cad_extrude_panel);
+        dock.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
                 togglePalette();
             }
         });
-        addView(panelProxy, new LayoutParams(hitPx, hitPx));
+        addView(dock, new LayoutParams(hitPx, hitPx));
 
         // --- The action palette ---------------------------------------------
-        // Ordinary screen chrome, grown out of the panel that opens it, and
-        // added AFTER the panel so it draws over it where they meet. Three rows,
+        // Ordinary screen chrome, grown out of the dock that opens it, and
+        // added AFTER the dock so it draws over it where they meet. Three rows,
         // one per question: how far (extent), what to material (operation), and
         // which side (Flip, One Side only).
         actionsPalette = new LinearLayout(context);
@@ -493,25 +462,6 @@ final class CadExtrudeCanvasView extends FrameLayout {
     }
 
     /**
-     * One glyph on the plate at its REFERENCE size, with the reference gap
-     * before it. Only the plate's scale ever changes what it measures on screen.
-     */
-    private ImageView plateGlyph(Context context, int id, int iconRes, int leftMargin) {
-        final ImageView glyph = new ImageView(context);
-        glyph.setId(id);
-        glyph.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        glyph.setImageResource(iconRes);
-        final int inset = Math.round(referenceGlyphPx * 0.12f);
-        glyph.setPadding(inset, inset, inset, inset);
-        glyph.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-        final LinearLayout.LayoutParams params =
-                new LinearLayout.LayoutParams(referenceGlyphPx, referenceGlyphPx);
-        params.leftMargin = leftMargin;
-        plate.addView(glyph, params);
-        return glyph;
-    }
-
-    /**
      * Withdraws the palette while keeping it laid out.
      *
      * <p>{@code INVISIBLE} rather than {@code GONE}: a closed palette takes no
@@ -575,6 +525,60 @@ final class CadExtrudeCanvasView extends FrameLayout {
      * the text. A soft halo in the floating tone keeps the digits readable over
      * the model the way a drawing's dimension text is set clear of its lines.
      */
+    /**
+     * Debug-only attribution (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): when one of
+     * this HUD's views CONSUMES a Down -- which is a Down the viewport, and so
+     * a sketch cell, never sees -- the debug build logs which one. Dispatch is
+     * unchanged; nothing here claims or refuses a touch.
+     */
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        final boolean consumed = super.dispatchTouchEvent(event);
+        if (debugTouchAttribution && event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            final String token = CadHudTouchAttribution.token(consumed,
+                    hudSurfaceAt(event.getX(), event.getY()));
+            if (token != null) {
+                Log.i("ForgeShape", token);
+            }
+        }
+        return consumed;
+    }
+
+    /** The topmost visible HUD surface whose hit box holds (x, y). */
+    private int hudSurfaceAt(float x, float y) {
+        for (int i = getChildCount() - 1; i >= 0; i--) {
+            final View child = getChildAt(i);
+            if (child.getVisibility() != VISIBLE) {
+                continue;
+            }
+            child.getHitRect(hitRect);
+            if (!hitRect.contains((int) x, (int) y)) {
+                continue;
+            }
+            if (child == dock) {
+                // The dock claims its shape, not its box.
+                if (dock.claimsLocal(x - dock.getLeft() - dock.getTranslationX(),
+                        y - dock.getTop() - dock.getTranslationY())) {
+                    return CadHudTouchAttribution.DOCK;
+                }
+                continue;
+            }
+            if (child == reading || child == secondReading) {
+                return CadHudTouchAttribution.VALUE;
+            }
+            if (child == actionsPalette) {
+                return CadHudTouchAttribution.PALETTE;
+            }
+            if (child == editor || child == secondEditor) {
+                return CadHudTouchAttribution.EDITOR;
+            }
+            if (child == editSketch.view) {
+                return CadHudTouchAttribution.EDIT_SKETCH;
+            }
+        }
+        return CadHudTouchAttribution.NONE;
+    }
+
     private TextView valueText(Context context, int id) {
         final TextView text = new TextView(context);
         text.setId(id);
@@ -725,6 +729,17 @@ final class CadExtrudeCanvasView extends FrameLayout {
      * only to draw with it. The next refresh applies it, which the caller
      * triggers.
      */
+    /**
+     * Names the condition under which the retained-sketch chip steps aside.
+     * The chip is viewport chrome anchored at the body's projected sketch
+     * anchor; a surface grown over that point (History at a large font scale,
+     * found by `CAD-R2-C1` D17) would otherwise have the chip stand on one of
+     * its acts and take that act's tap.
+     */
+    void setRetainedChipWithdrawnWhen(java.util.function.BooleanSupplier withdrawn) {
+        retainedChipWithdrawn = withdrawn != null ? withdrawn : () -> false;
+    }
+
     void setToolLabelsVisible(boolean visible) {
         toolLabels = visible;
     }
@@ -743,7 +758,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
      * or neither.
      *
      * <p>Called on every state change and on every viewport gesture sample, so
-     * the value follows a live arrow drag, the panel follows an orbit and both
+     * the value follows a live arrow drag, the dock follows an orbit and both
      * follow the camera-attached scale.
      */
     void refreshFromNative() {
@@ -768,7 +783,6 @@ final class CadExtrudeCanvasView extends FrameLayout {
         final LengthUnit unit = host.uiState().displayUnit();
         final int extent = extentMode();
         final double scale = tool[NativeViewport.CAD_EXTRUDE_SCALE];
-        lastGlyphPx = CadHudPresentation.glyphPx(scale, density);
         applyValueTextSize(CadHudPresentation.valueTextSp(scale));
         // A live drag rewrites the value under the user; an editor or the
         // palette open over it would act on a state the arrow has already left.
@@ -778,8 +792,8 @@ final class CadExtrudeCanvasView extends FrameLayout {
             closePalette();
         }
 
-        final int iconCount = CadHudPresentation.panelIconCount(extent);
-        bindPanel(context, extent, iconCount);
+        final CadHud3dPresentation.Dock dockFrame = CadHud3dPresentation.fromToolState(tool, hitPx);
+        bindDock(context, extent, dockFrame);
 
         shownDepth = tool[NativeViewport.CAD_EXTRUDE_DEPTH];
         reading.setText(unit.formatWithUnit(shownDepth));
@@ -795,19 +809,17 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 NativeViewport.CAD_EXTRUDE_LEADER_ON_SCREEN,
                 NativeViewport.CAD_EXTRUDE_LEADER_START_X);
         lastLayout = layout;
-        final CadHudPresentation.PanelLayout panel = layoutPanel(scale);
-        // The whole annotation collapses together or not at all: the value
-        // never outlives the panel beside it, nor the panel the value.
+        // The value keeps its own collapse rule; the dock obeys native alone,
+        // which decided in world space whether it can be drawn honestly.
         lastCollapsed = CadHudPresentation.annotationCollapsed(
                 tool[NativeViewport.CAD_EXTRUDE_CLAMP] == NativeViewport.CAD_EXTRUDE_CLAMP_LOW,
                 layout.valueVisible ? layout.visibleLength : 0.0f,
                 reading.getPaint().measureText(reading.getText().toString()));
         if (lastCollapsed) {
-            panel.visible = false;
             layout.valueVisible = false;
         }
-        lastPanel = panel;
-        if (!layout.valueVisible && !panel.visible) {
+        lastDock = dockFrame;
+        if (!layout.valueVisible && !dockFrame.visible) {
             hide();
             return;
         }
@@ -826,7 +838,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
             if (layout.valueVisible) {
                 placeValue(reading, layout);
             }
-            placePanel(panel);
+            placeDock(dockFrame);
         }
 
         // The second value exists in Two Sides alone, above its OWN leader, and
@@ -891,79 +903,35 @@ final class CadExtrudeCanvasView extends FrameLayout {
     }
 
     /**
-     * The panel against the arrow's drawn point: its screen direction is from
-     * the shaft's middle (the label anchor) to that point — the line the panel
-     * stands on and turns with.
+     * Binds the dock and the palette's rows to what native says now: the
+     * operation in force on the dock (its glyph SHAPE and colour, with an error
+     * ring when the candidate would be refused, and an accessible name that
+     * says why), and in the palette the extent in force, exactly the
+     * operations that can be chosen, and Flip in One Side alone.
      */
-    private CadHudPresentation.PanelLayout layoutPanel(double scale) {
-        final boolean head = tool[NativeViewport.CAD_EXTRUDE_HEAD_ON_SCREEN] != 0.0;
-        final float headX = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_X];
-        final float headY = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_Y];
-        // The plate's OWN measured reference box (its glyph count already
-        // bound): per-child pixel rounding makes it differ from the dp sum by
-        // a pixel or two, and the proxy must cover what is actually drawn.
-        anchorSpace.measureUnderParent(plate);
-        return CadHudPresentation.layoutPanel(head, headX, headY,
-                headX - (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X],
-                headY - (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y],
-                plate.getMeasuredWidth(), plate.getMeasuredHeight(), scale, density,
-                anchorSpace.viewportWidth(), anchorSpace.viewportHeight());
-    }
-
-    /**
-     * Binds the panel's glyphs and the palette's rows to what native says now:
-     * the extent in force, the operation in force (colour AND shape, with an
-     * error ring when the candidate would be refused), Flip in One Side alone,
-     * and in the palette exactly the operations that can be chosen.
-     */
-    private void bindPanel(Context context, int extent, int iconCount) {
+    private void bindDock(Context context, int extent, CadHud3dPresentation.Dock frame) {
         final int current = (int) tool[NativeViewport.CAD_EXTRUDE_OPERATION];
         final int available = (int) tool[NativeViewport.CAD_EXTRUDE_OPERATIONS_AVAILABLE];
         final int status = (int) tool[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS];
         final boolean refused = status != NativeViewport.CAD_OK;
 
-        // The plate. Its glyph count is its only layout-changing fact.
-        if (appliedPanelIcons != iconCount) {
-            flipGlyph.setVisibility(iconCount == 3 ? VISIBLE : GONE);
-            appliedPanelIcons = iconCount;
-        }
         final int extentCaption = CadHudPresentation.extentCaption(extent);
-        extentGlyph.setImageResource(CadHudPresentation.extentIcon(extent));
-        extentGlyph.setContentDescription(context.getString(
-                R.string.cad_hud_extent_state_description, context.getString(extentCaption)));
         final int operationCaption = CadHudPresentation.operationCaption(current);
-        operationGlyph.setImageResource(CadHudPresentation.operationIcon(current));
-        final ColorStateList operationTint = operationTints[operationIndex(current)];
-        if (appliedOperationTint != operationTint) {
-            operationGlyph.setImageTintList(operationTint);
-            appliedOperationTint = operationTint;
-        }
-        if (appliedOperationRefused != refused) {
-            // Colour is never the only carrier: the ring is a SHAPE, and the
-            // accessible name says why.
-            if (refused) {
-                operationGlyph.setBackgroundResource(R.drawable.bg_hud_glyph_invalid);
-            } else {
-                operationGlyph.setBackground(null);
-            }
-            appliedOperationRefused = refused;
-        }
-        String operationDescription = context.getString(
-                R.string.cad_hud_operation_fixed_description, context.getString(operationCaption));
+        // Colour is never the only carrier: the glyph is a SHAPE, the refusal a
+        // ring, and the accessible name says both.
+        dock.bind(frame, CadHudPresentation.operationIcon(current),
+                operationTints[operationIndex(current)], refused);
+        dock.setActivated(paletteOpen);
+        String dockDescription = context.getString(R.string.cad_hud_panel_description,
+                context.getString(operationCaption), context.getString(extentCaption));
         if (refused) {
-            operationDescription = context.getString(R.string.cad_hud_operation_invalid_description,
-                    operationDescription, refusalReason(context, status));
+            dockDescription = context.getString(R.string.cad_hud_operation_invalid_description,
+                    dockDescription, refusalReason(context, status));
         }
-        operationGlyph.setContentDescription(operationDescription);
-        plate.setActivated(paletteOpen);
-        panelProxy.setActivated(paletteOpen);
-        String panelDescription = context.getString(R.string.cad_hud_panel_description,
-                context.getString(extentCaption), context.getString(operationCaption));
-        if (refused) {
-            panelDescription = context.getString(R.string.cad_hud_operation_invalid_description,
-                    panelDescription, refusalReason(context, status));
+        if (!dockDescription.contentEquals(dock.getContentDescription() == null ? ""
+                : dock.getContentDescription())) {
+            dock.setContentDescription(dockDescription);
         }
-        panelProxy.setContentDescription(panelDescription);
 
         // The palette.
         for (int i = 0; i < extentChoices.length; i++) {
@@ -1021,7 +989,15 @@ final class CadExtrudeCanvasView extends FrameLayout {
         // to nothing else. Every condition below is one `sketchBeginEdit` would
         // refuse, so the control is absent rather than shown and then refused.
         final long body = NativeViewport.sceneActiveBodyId();
-        if (body == NativeViewport.NO_OBJECT
+        // Nor while the spatial support chooser is up
+        // (`MODELING-R1-OWNER-CORRECTION`): the viewport then belongs to
+        // choosing a plane or a face, and a chip standing on the body's sketch
+        // anchor would take the very tap that chooses the face under it.
+        // Nor while the History surface is open (`CAD-R2-C1`): it lists Edit
+        // Sketch for every sketch itself, and at a large font scale it grows
+        // over the anchor, where the chip would take its acts' taps.
+        if (body == NativeViewport.NO_OBJECT || NativeViewport.supportChooserActive()
+                || retainedChipWithdrawn.getAsBoolean()
                 || !NativeViewport.cadBodySketchAnchor(body, bodyAnchor)) {
             hide();
             return;
@@ -1050,61 +1026,40 @@ final class CadExtrudeCanvasView extends FrameLayout {
     // -----------------------------------------------------------------------
 
     /**
-     * Stands the panel WHOLE where the layout says — the plate scaled as one
-     * unit, the proxy unscaled on the same centre — or withdraws both; then
-     * hangs the open palette, if any, from the panel.
+     * Stands the dock WHOLE over the box native's quad needs, or withdraws it;
+     * then hangs the open palette, if any, from that box. The box is never
+     * clamped: native already proved every corner is on the viewport, and a
+     * clamp would move the badge off the geometry it belongs to.
      */
-    private void placePanel(CadHudPresentation.PanelLayout panel) {
-        if (!panel.visible) {
-            plate.setVisibility(GONE);
-            panelProxy.setVisibility(GONE);
+    private void placeDock(CadHud3dPresentation.Dock frame) {
+        if (!frame.visible) {
+            dock.setVisibility(GONE);
             closePalette();
             return;
         }
-        plate.setVisibility(VISIBLE);
-        panelProxy.setVisibility(VISIBLE);
-        // Pivot at the plate's own centre: scale and rotation then both leave
-        // that centre where the unscaled box's centre is placed, so the drawn
-        // plate is centred on the layout's point at every scale and angle.
-        final float pivotX = plate.getMeasuredWidth() * 0.5f;
-        final float pivotY = plate.getMeasuredHeight() * 0.5f;
-        if (plate.getPivotX() != pivotX || plate.getPivotY() != pivotY) {
-            plate.setPivotX(pivotX);
-            plate.setPivotY(pivotY);
+        dock.setVisibility(VISIBLE);
+        final int width = (int) Math.ceil(frame.right - frame.left);
+        final int height = (int) Math.ceil(frame.bottom - frame.top);
+        if (width != appliedDockWidth || height != appliedDockHeight) {
+            final ViewGroup.LayoutParams params = dock.getLayoutParams();
+            params.width = width;
+            params.height = height;
+            dock.setLayoutParams(params);
+            appliedDockWidth = width;
+            appliedDockHeight = height;
         }
-        if (plate.getScaleX() != panel.scale) {
-            plate.setScaleX(panel.scale);
-            plate.setScaleY(panel.scale);
-        }
-        if (plate.getRotation() != panel.rotation) {
-            plate.setRotation(panel.rotation);
-        }
-        // Unclamped: the layout already proved the turned plate's covering box
-        // fits, and a clamp on the UNSCALED box would move a shrunken plate off
-        // the centre its proxy stands on.
-        anchorSpace.placeCentred(plate, panel.centreX, panel.centreY,
-                plate.getMeasuredWidth(), plate.getMeasuredHeight());
-        final int hitW = (int) panel.hitWidth;
-        final int hitH = (int) panel.hitHeight;
-        if (hitW != appliedHitWidth || hitH != appliedHitHeight) {
-            final ViewGroup.LayoutParams params = panelProxy.getLayoutParams();
-            params.width = hitW;
-            params.height = hitH;
-            panelProxy.setLayoutParams(params);
-            appliedHitWidth = hitW;
-            appliedHitHeight = hitH;
-        }
-        anchorSpace.place(panelProxy, panel.centreX, panel.centreY, hitW, hitH);
+        anchorSpace.placeCentred(dock, frame.left + width * 0.5f, frame.top + height * 0.5f,
+                width, height);
         if (!paletteOpen) {
             return;
         }
         anchorSpace.measureUnderParent(actionsPalette);
-        final float top = panel.centreY - panel.hitHeight * 0.5f;
-        final float centreY = CadHudPresentation.paletteCentreY(top, panel.hitHeight,
+        final float centreY = CadHudPresentation.paletteCentreY(frame.top, frame.bottom - frame.top,
                 actionsPalette.getMeasuredHeight(), paletteGap, anchorSpace.viewportHeight());
-        // Centred on the panel that opened it: an anchored surface grows out of
-        // its invoking control. The shared clamp keeps it on screen.
-        anchorSpace.place(actionsPalette, panel.centreX, centreY,
+        // Grown out of the dock that opened it: an anchored surface, kept on
+        // screen by the shared clamp because it is transient readable chrome
+        // and not the attached instrument.
+        anchorSpace.place(actionsPalette, frame.centreX, centreY,
                 actionsPalette.getMeasuredWidth(), actionsPalette.getMeasuredHeight());
     }
 
@@ -1118,11 +1073,10 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 value.getMeasuredHeight());
     }
 
-    /** Shows or withdraws the primary value and the panel. */
-    private void setAnnotationVisible(boolean value, boolean panel) {
+    /** Shows or withdraws the primary value and the dock. */
+    private void setAnnotationVisible(boolean value, boolean shown) {
         reading.setVisibility(value ? VISIBLE : GONE);
-        plate.setVisibility(panel ? VISIBLE : GONE);
-        panelProxy.setVisibility(panel ? VISIBLE : GONE);
+        dock.setVisibility(shown ? VISIBLE : GONE);
     }
 
     /** The primary leader's value layout at the last refresh; verification. */
@@ -1130,9 +1084,9 @@ final class CadExtrudeCanvasView extends FrameLayout {
         return lastLayout;
     }
 
-    /** The action panel's layout at the last refresh; verification. */
-    CadHudPresentation.PanelLayout lastPanelLayout() {
-        return lastPanel;
+    /** The dock native reported at the last refresh; verification. */
+    CadHud3dPresentation.Dock lastDock() {
+        return lastDock;
     }
 
     /** Whether the whole annotation collapsed at the last refresh; verification. */
@@ -1178,18 +1132,12 @@ final class CadExtrudeCanvasView extends FrameLayout {
         }
         paletteOpen = false;
         closedPalette(actionsPalette);
-        plate.setActivated(false);
-        panelProxy.setActivated(false);
+        dock.setActivated(false);
     }
 
     /** Whether the action palette is open; verification. */
     boolean actionPaletteOpen() {
         return paletteOpen;
-    }
-
-    /** The panel glyph's drawn size at the last refresh, in pixels; verification. */
-    int lastGlyphPx() {
-        return lastGlyphPx;
     }
 
     // -----------------------------------------------------------------------

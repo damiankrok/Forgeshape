@@ -1,0 +1,760 @@
+﻿2026-11-02T17:37:29.9739076Z Current runner version: '2.338.2'
+2026-11-02T17:37:29.9758904Z ##[group]Runner Image Provisioner
+2026-11-02T17:37:29.9759594Z Hosted Compute Agent
+2026-11-02T17:37:29.9759979Z Version: 20261021.618
+2026-11-02T17:37:29.9760391Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+2026-11-02T17:37:29.9760963Z Build Date: 2026-10-21T00:45:21Z
+2026-11-02T17:37:29.9761455Z Worker ID: {cf3b553a-fcea-4d47-9d6e-566590ca3052}
+2026-11-02T17:37:29.9761960Z Region: westus3
+2026-11-02T17:37:29.9762326Z Cloud: Azure
+2026-11-02T17:37:29.9762951Z ##[endgroup]
+2026-11-02T17:37:29.9763965Z ##[group]Operating System
+2026-11-02T17:37:29.9764361Z Ubuntu
+2026-11-02T17:37:29.9764735Z 24.04.5
+2026-11-02T17:37:29.9765092Z LTS
+2026-11-02T17:37:29.9765429Z ##[endgroup]
+2026-11-02T17:37:29.9765861Z ##[group]Runner Image
+2026-11-02T17:37:29.9766295Z Image: ubuntu-24.04
+2026-11-02T17:37:29.9766984Z Version: 20261025.353.1
+2026-11-02T17:37:29.9767843Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261025.353/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-02T17:37:29.9768878Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261025.353
+2026-11-02T17:37:29.9769472Z ##[endgroup]
+2026-11-02T17:37:29.9770195Z ##[group]GITHUB_TOKEN Permissions
+2026-11-02T17:37:29.9771650Z Contents: read
+2026-11-02T17:37:29.9772097Z Metadata: read
+2026-11-02T17:37:29.9772644Z ##[endgroup]
+2026-11-02T17:37:29.9774160Z Secret source: Actions
+2026-11-02T17:37:29.9774812Z Cache mode: write
+2026-11-02T17:37:29.9775294Z Prepare workflow directory
+2026-11-02T17:37:30.0037211Z Prepare all required actions
+2026-11-02T17:37:30.0071248Z Getting action download info
+2026-11-02T17:37:30.3111184Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-11-02T17:37:30.3869512Z Download action repository 'gradle/actions@v4' (SHA:ed408507eac070d1f99cc633dbcf757c94c7933a)
+2026-11-02T17:37:31.8516074Z Download action repository 'actions/setup-java@v4' (SHA:cf277c60eb25467037889841efdb72551f06f6c3)
+2026-11-02T17:37:32.6520643Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-11-02T17:37:32.8360526Z Complete job name: DEVICE (API 36 x86_64 emulator, focused instrumentation)
+2026-11-02T17:37:32.8874862Z ##[group]Run actions/checkout@v4
+2026-11-02T17:37:32.8875185Z with:
+2026-11-02T17:37:32.8875343Z   repository: damiankrok/Forgeshape
+2026-11-02T17:37:32.8936010Z   token: ***
+2026-11-02T17:37:32.8936179Z   ssh-strict: true
+2026-11-02T17:37:32.8936333Z   ssh-user: git
+2026-11-02T17:37:32.8936488Z   persist-credentials: true
+2026-11-02T17:37:32.8936660Z   clean: true
+2026-11-02T17:37:32.8936817Z   sparse-checkout-cone-mode: true
+2026-11-02T17:37:32.8936993Z   fetch-depth: 1
+2026-11-02T17:37:32.8937145Z   fetch-tags: false
+2026-11-02T17:37:32.8937310Z   show-progress: true
+2026-11-02T17:37:32.8937469Z   lfs: false
+2026-11-02T17:37:32.8937611Z   submodules: false
+2026-11-02T17:37:32.8937765Z   set-safe-directory: true
+2026-11-02T17:37:32.8937953Z   allow-unsafe-pr-checkout: false
+2026-11-02T17:37:32.8938505Z env:
+2026-11-02T17:37:32.8938652Z   ANDROID_PLATFORM: android-36
+2026-11-02T17:37:32.8938824Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T17:37:32.8939030Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T17:37:32.8939210Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T17:37:32.8939385Z   FORGESHAPE_CI_AVD: ForgeShape_CI_API36
+2026-11-02T17:37:32.8939572Z   FORGESHAPE_CI_PORT: 5580
+2026-11-02T17:37:32.8939793Z   FORGESHAPE_CI_SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+2026-11-02T17:37:32.8940050Z   FORGESHAPE_CI_DEVICE_PROFILE: medium_phone
+2026-11-02T17:37:32.8940246Z   FORGESHAPE_CI_GPU: swiftshader_indirect
+2026-11-02T17:37:32.8940438Z ##[endgroup]
+2026-11-02T17:37:33.1260546Z Syncing repository: damiankrok/Forgeshape
+2026-11-02T17:37:33.1261860Z ##[group]Getting Git version info
+2026-11-02T17:37:33.1262254Z Working directory is '/home/runner/work/Forgeshape/Forgeshape'
+2026-11-02T17:37:33.1263011Z [command]/usr/bin/git version
+2026-11-02T17:37:33.1342934Z git version 2.56.0
+2026-11-02T17:37:33.1362636Z ##[endgroup]
+2026-11-02T17:37:33.1370454Z Temporarily overriding HOME='/home/runner/work/_temp/42871fbc-230d-475a-9664-23f16b319636' before making global git config changes
+2026-11-02T17:37:33.1371219Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T17:37:33.1376829Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Forgeshape/Forgeshape
+2026-11-02T17:37:33.1434997Z Deleting the contents of '/home/runner/work/Forgeshape/Forgeshape'
+2026-11-02T17:37:33.1438622Z ##[group]Initializing the repository
+2026-11-02T17:37:33.1442960Z [command]/usr/bin/git init /home/runner/work/Forgeshape/Forgeshape
+2026-11-02T17:37:33.1550458Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-02T17:37:33.1551134Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-02T17:37:33.1551564Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-02T17:37:33.1551845Z hint: call:
+2026-11-02T17:37:33.1551982Z hint:
+2026-11-02T17:37:33.1552205Z hint: 	git config --global init.defaultBranch <name>
+2026-11-02T17:37:33.1552410Z hint:
+2026-11-02T17:37:33.1552818Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-02T17:37:33.1553120Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-02T17:37:33.1553351Z hint:
+2026-11-02T17:37:33.1553496Z hint: 	git branch -m <name>
+2026-11-02T17:37:33.1553701Z hint:
+2026-11-02T17:37:33.1553943Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-02T17:37:33.1568111Z Initialized empty Git repository in /home/runner/work/Forgeshape/Forgeshape/.git/
+2026-11-02T17:37:33.1579052Z [command]/usr/bin/git remote add origin https://github.com/damiankrok/Forgeshape
+2026-11-02T17:37:33.1624900Z ##[endgroup]
+2026-11-02T17:37:33.1625331Z ##[group]Disabling automatic garbage collection
+2026-11-02T17:37:33.1643129Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-02T17:37:33.1670396Z ##[endgroup]
+2026-11-02T17:37:33.1670812Z ##[group]Setting up auth
+2026-11-02T17:37:33.1679323Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T17:37:33.1714908Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T17:37:33.2050311Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T17:37:33.2098953Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T17:37:33.2297511Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T17:37:33.2335400Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T17:37:33.2530891Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-02T17:37:33.2575950Z ##[endgroup]
+2026-11-02T17:37:33.2576406Z ##[group]Fetching the repository
+2026-11-02T17:37:33.2585729Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +e33a1eeb41315e5347d19ee9912b2a85f6712df6:refs/remotes/origin/feature/import-glb-sketch-guard-r1
+2026-11-02T17:37:41.5937896Z From https://github.com/damiankrok/Forgeshape
+2026-11-02T17:37:41.5938505Z  * [new ref]         e33a1eeb41315e5347d19ee9912b2a85f6712df6 -> origin/feature/import-glb-sketch-guard-r1
+2026-11-02T17:37:41.5953659Z ##[endgroup]
+2026-11-02T17:37:41.5954037Z ##[group]Determining the checkout info
+2026-11-02T17:37:41.5954391Z ##[endgroup]
+2026-11-02T17:37:41.5954635Z [command]/usr/bin/git sparse-checkout disable
+2026-11-02T17:37:41.6003234Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-02T17:37:41.6039805Z ##[group]Checking out the ref
+2026-11-02T17:37:41.6043238Z [command]/usr/bin/git checkout --progress --force -B feature/import-glb-sketch-guard-r1 refs/remotes/origin/feature/import-glb-sketch-guard-r1
+2026-11-02T17:37:42.1651880Z Switched to a new branch 'feature/import-glb-sketch-guard-r1'
+2026-11-02T17:37:42.1656166Z branch 'feature/import-glb-sketch-guard-r1' set up to track 'origin/feature/import-glb-sketch-guard-r1'.
+2026-11-02T17:37:42.1687730Z ##[endgroup]
+2026-11-02T17:37:42.1738216Z [command]/usr/bin/git log -1 --format=%H
+2026-11-02T17:37:42.1769807Z e33a1eeb41315e5347d19ee9912b2a85f6712df6
+2026-11-02T17:37:42.1956158Z ##[group]Run gradle/actions/wrapper-validation@v4
+2026-11-02T17:37:42.1956386Z with:
+2026-11-02T17:37:42.1956504Z   min-wrapper-count: 1
+2026-11-02T17:37:42.1956633Z   allow-snapshots: false
+2026-11-02T17:37:42.1956761Z env:
+2026-11-02T17:37:42.1956887Z   ANDROID_PLATFORM: android-36
+2026-11-02T17:37:42.1957029Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T17:37:42.1957169Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T17:37:42.1957314Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T17:37:42.1957467Z   FORGESHAPE_CI_AVD: ForgeShape_CI_API36
+2026-11-02T17:37:42.1957618Z   FORGESHAPE_CI_PORT: 5580
+2026-11-02T17:37:42.1957800Z   FORGESHAPE_CI_SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+2026-11-02T17:37:42.1958022Z   FORGESHAPE_CI_DEVICE_PROFILE: medium_phone
+2026-11-02T17:37:42.1958185Z   FORGESHAPE_CI_GPU: swiftshader_indirect
+2026-11-02T17:37:42.1958337Z ##[endgroup]
+2026-11-02T17:37:42.3726058Z ✓ Found known Gradle Wrapper JAR files:
+2026-11-02T17:37:42.3727049Z   7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172 gradle/wrapper/gradle-wrapper.jar
+2026-11-02T17:37:42.3921947Z ##[group]Run actions/setup-java@v4
+2026-11-02T17:37:42.3922219Z with:
+2026-11-02T17:37:42.3922396Z   distribution: temurin
+2026-11-02T17:37:42.3922702Z   java-version: 17
+2026-11-02T17:37:42.3922911Z   java-package: jdk
+2026-11-02T17:37:42.3923092Z   check-latest: false
+2026-11-02T17:37:42.3923278Z   server-id: github
+2026-11-02T17:37:42.3923481Z   server-username: GITHUB_ACTOR
+2026-11-02T17:37:42.3923703Z   server-password: GITHUB_TOKEN
+2026-11-02T17:37:42.3923921Z   overwrite-settings: true
+2026-11-02T17:37:42.3924132Z   job-status: success
+2026-11-02T17:37:42.3926221Z   token: ***
+2026-11-02T17:37:42.3926398Z env:
+2026-11-02T17:37:42.3926584Z   ANDROID_PLATFORM: android-36
+2026-11-02T17:37:42.3926738Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T17:37:42.3926880Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T17:37:42.3927031Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T17:37:42.3927176Z   FORGESHAPE_CI_AVD: ForgeShape_CI_API36
+2026-11-02T17:37:42.3927407Z   FORGESHAPE_CI_PORT: 5580
+2026-11-02T17:37:42.3927692Z   FORGESHAPE_CI_SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+2026-11-02T17:37:42.3928008Z   FORGESHAPE_CI_DEVICE_PROFILE: medium_phone
+2026-11-02T17:37:42.3928197Z   FORGESHAPE_CI_GPU: swiftshader_indirect
+2026-11-02T17:37:42.3928380Z   GRADLE_ACTION_ID: gradle/actions/wrapper-validation
+2026-11-02T17:37:42.3928552Z ##[endgroup]
+2026-11-02T17:37:42.5085076Z ##[warning]setup-java v4 is deprecated and will no longer receive updates. Please migrate to actions/setup-java@v5.
+2026-11-02T17:37:42.5092194Z ##[group]Installed distributions
+2026-11-02T17:37:42.5128798Z Resolved Java 17.0.21+9 from tool-cache
+2026-11-02T17:37:42.5129093Z Setting Java 17.0.21+9 as the default
+2026-11-02T17:37:42.5135926Z (node:2120) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T17:37:42.5136538Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T17:37:42.5138334Z Creating toolchains.xml for JDK version 17 from temurin
+2026-11-02T17:37:42.5197979Z Writing to /home/runner/.m2/toolchains.xml
+2026-11-02T17:37:42.5198351Z 
+2026-11-02T17:37:42.5198689Z Java configuration:
+2026-11-02T17:37:42.5199187Z   Distribution: temurin
+2026-11-02T17:37:42.5199390Z   Version: 17.0.21+9
+2026-11-02T17:37:42.5199683Z   Path: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T17:37:42.5199940Z 
+2026-11-02T17:37:42.5200253Z ##[endgroup]
+2026-11-02T17:37:42.5218280Z Creating settings.xml with server-id: github
+2026-11-02T17:37:42.5218602Z Writing to /home/runner/.m2/settings.xml
+2026-11-02T17:37:42.5471654Z ##[group]Run gradle/actions/setup-gradle@v4
+2026-11-02T17:37:42.5499479Z with:
+2026-11-02T17:37:42.5499824Z   cache-disabled: false
+2026-11-02T17:37:42.5500038Z   cache-read-only: true
+2026-11-02T17:37:42.5500238Z   cache-write-only: false
+2026-11-02T17:37:42.5500454Z   cache-overwrite-existing: false
+2026-11-02T17:37:42.5500683Z   cache-cleanup: on-success
+2026-11-02T17:37:42.5500938Z   gradle-home-cache-includes: caches
+notifications
+
+2026-11-02T17:37:42.5501220Z   add-job-summary: always
+2026-11-02T17:37:42.5501442Z   add-job-summary-as-pr-comment: never
+2026-11-02T17:37:42.5501711Z   dependency-graph: disabled
+2026-11-02T17:37:42.5501985Z   dependency-graph-report-dir: dependency-graph-reports
+2026-11-02T17:37:42.5502310Z   dependency-graph-continue-on-failure: true
+2026-11-02T17:37:42.5502696Z   build-scan-publish: false
+2026-11-02T17:37:42.5502909Z   validate-wrappers: true
+2026-11-02T17:37:42.5503124Z   allow-snapshot-wrappers: false
+2026-11-02T17:37:42.5503417Z   gradle-home-cache-strict-match: false
+2026-11-02T17:37:42.5503663Z   workflow-job-context: null
+2026-11-02T17:37:42.5505746Z   github-token: ***
+2026-11-02T17:37:42.5505920Z env:
+2026-11-02T17:37:42.5506090Z   ANDROID_PLATFORM: android-36
+2026-11-02T17:37:42.5506289Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T17:37:42.5506490Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T17:37:42.5506708Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T17:37:42.5506916Z   FORGESHAPE_CI_AVD: ForgeShape_CI_API36
+2026-11-02T17:37:42.5507133Z   FORGESHAPE_CI_PORT: 5580
+2026-11-02T17:37:42.5507432Z   FORGESHAPE_CI_SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+2026-11-02T17:37:42.5507759Z   FORGESHAPE_CI_DEVICE_PROFILE: medium_phone
+2026-11-02T17:37:42.5507987Z   FORGESHAPE_CI_GPU: swiftshader_indirect
+2026-11-02T17:37:42.5508235Z   GRADLE_ACTION_ID: gradle/actions/wrapper-validation
+2026-11-02T17:37:42.5508552Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T17:37:42.5508921Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T17:37:42.5509222Z ##[endgroup]
+2026-11-02T17:37:42.8763831Z Merged default JDK locations into /home/runner/.m2/toolchains.xml
+2026-11-02T17:37:42.8765904Z ##[group]Restore Gradle state from cache
+2026-11-02T17:37:43.0923146Z Gradle User Home cache not found. Will initialize empty.
+2026-11-02T17:37:43.0923748Z ##[endgroup]
+2026-11-02T17:37:43.1319431Z ##[group]All Gradle Wrapper jars are valid
+2026-11-02T17:37:43.1320469Z ✓ Found known Gradle Wrapper JAR files:
+2026-11-02T17:37:43.1321058Z   7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172 gradle/wrapper/gradle-wrapper.jar
+2026-11-02T17:37:43.1321760Z ##[endgroup]
+2026-11-02T17:37:43.1484249Z ##[group]Run echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+2026-11-02T17:37:43.1484628Z [36;1mecho 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \[0m
+2026-11-02T17:37:43.1484919Z [36;1m  | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null[0m
+2026-11-02T17:37:43.1485137Z [36;1msudo udevadm control --reload-rules[0m
+2026-11-02T17:37:43.1485314Z [36;1msudo udevadm trigger --name-match=kvm[0m
+2026-11-02T17:37:43.1485481Z [36;1mls -l /dev/kvm[0m
+2026-11-02T17:37:43.1504154Z shell: /usr/bin/bash -e {0}
+2026-11-02T17:37:43.1504299Z env:
+2026-11-02T17:37:43.1504421Z   ANDROID_PLATFORM: android-36
+2026-11-02T17:37:43.1504564Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T17:37:43.1504704Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T17:37:43.1504852Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T17:37:43.1505002Z   FORGESHAPE_CI_AVD: ForgeShape_CI_API36
+2026-11-02T17:37:43.1505330Z   FORGESHAPE_CI_PORT: 5580
+2026-11-02T17:37:43.1505562Z   FORGESHAPE_CI_SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+2026-11-02T17:37:43.1505785Z   FORGESHAPE_CI_DEVICE_PROFILE: medium_phone
+2026-11-02T17:37:43.1505950Z   FORGESHAPE_CI_GPU: swiftshader_indirect
+2026-11-02T17:37:43.1506118Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T17:37:43.1506337Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T17:37:43.1506599Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T17:37:43.1506815Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T17:37:43.1506972Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T17:37:43.1507133Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T17:37:43.1507370Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T17:37:43.1507638Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T17:37:43.1507818Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T17:37:43.1507967Z ##[endgroup]
+2026-11-02T17:37:43.1867152Z crw-rw-rw- 1 root kvm 10, 232 Nov  2 17:37 /dev/kvm
+2026-11-02T17:37:43.1897086Z ##[group]Run set -euo pipefail
+2026-11-02T17:37:43.1897302Z [36;1mset -euo pipefail[0m
+2026-11-02T17:37:43.1897492Z [36;1mSDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"[0m
+2026-11-02T17:37:43.1897729Z [36;1myes | "$SDKMANAGER" --licenses > /dev/null || true[0m
+2026-11-02T17:37:43.1897912Z [36;1m"$SDKMANAGER" --install \[0m
+2026-11-02T17:37:43.1898059Z [36;1m  "platform-tools" \[0m
+2026-11-02T17:37:43.1898199Z [36;1m  "emulator" \[0m
+2026-11-02T17:37:43.1898336Z [36;1m  "platforms;$ANDROID_PLATFORM" \[0m
+2026-11-02T17:37:43.1898506Z [36;1m  "build-tools;$ANDROID_BUILD_TOOLS" \[0m
+2026-11-02T17:37:43.1898671Z [36;1m  "ndk;$ANDROID_NDK_VERSION" \[0m
+2026-11-02T17:37:43.1898824Z [36;1m  "cmake;$ANDROID_CMAKE_VERSION" \[0m
+2026-11-02T17:37:43.1898984Z [36;1m  "$FORGESHAPE_CI_SYSTEM_IMAGE" \[0m
+2026-11-02T17:37:43.1899208Z [36;1m  > "$RUNNER_TEMP/sdkmanager-install.log" 2>&1[0m
+2026-11-02T17:37:43.1899457Z [36;1mtr '\r' '\n' < "$RUNNER_TEMP/sdkmanager-install.log" | tail -n 5[0m
+2026-11-02T17:37:43.1899718Z [36;1m# No silent downgrade: the exact API 36 x86_64 image must be present.[0m
+2026-11-02T17:37:43.1899988Z [36;1mimage_dir="$ANDROID_HOME/system-images/android-36/google_apis/x86_64"[0m
+2026-11-02T17:37:43.1900220Z [36;1mtest -f "$image_dir/source.properties" || {[0m
+2026-11-02T17:37:43.1900470Z [36;1m  echo "::error::BLOCKED: $FORGESHAPE_CI_SYSTEM_IMAGE did not install"; exit 1; }[0m
+2026-11-02T17:37:43.1900843Z [36;1mgrep -E 'Pkg.Revision|AndroidVersion.ApiLevel|SystemImage.Abi|SystemImage.TagId' "$image_dir/source.properties"[0m
+2026-11-02T17:37:43.1901179Z [36;1mecho "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"[0m
+2026-11-02T17:37:43.1917748Z shell: /usr/bin/bash -e {0}
+2026-11-02T17:37:43.1917886Z env:
+2026-11-02T17:37:43.1918002Z   ANDROID_PLATFORM: android-36
+2026-11-02T17:37:43.1918149Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T17:37:43.1918286Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T17:37:43.1918438Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T17:37:43.1918585Z   FORGESHAPE_CI_AVD: ForgeShape_CI_API36
+2026-11-02T17:37:43.1918737Z   FORGESHAPE_CI_PORT: 5580
+2026-11-02T17:37:43.1918925Z   FORGESHAPE_CI_SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+2026-11-02T17:37:43.1919144Z   FORGESHAPE_CI_DEVICE_PROFILE: medium_phone
+2026-11-02T17:37:43.1919307Z   FORGESHAPE_CI_GPU: swiftshader_indirect
+2026-11-02T17:37:43.1919580Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T17:37:43.1919819Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T17:37:43.1920074Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T17:37:43.1920287Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T17:37:43.1920445Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T17:37:43.1920813Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T17:37:43.1921049Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T17:37:43.1921309Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T17:37:43.1921483Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T17:37:43.1921629Z ##[endgroup]
+2026-11-02T17:37:45.7299869Z yes: standard output: Broken pipe
+2026-11-02T17:38:57.7453211Z [=================================      ] 85% Unzipping... doc/ninja/LICENSE    
+2026-11-02T17:38:57.7453632Z [=================================      ] 85% Unzipping... share/cmake-3.22/Modu
+2026-11-02T17:38:57.7453955Z [=======================================] 100% Unzipping... share/cmake-3.22/Mod
+2026-11-02T17:38:57.7454378Z 
+2026-11-02T17:38:57.7454384Z 
+2026-11-02T17:38:57.7466389Z Pkg.Revision=7
+2026-11-02T17:38:57.7466618Z AndroidVersion.ApiLevel=36
+2026-11-02T17:38:57.7466838Z SystemImage.Abi=x86_64
+2026-11-02T17:38:57.7467050Z SystemImage.TagId=google_apis
+2026-11-02T17:38:57.7499765Z ##[group]Run bash ./gradlew --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest
+2026-11-02T17:38:57.7500132Z [36;1mbash ./gradlew --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest[0m
+2026-11-02T17:38:57.7517001Z shell: /usr/bin/bash -e {0}
+2026-11-02T17:38:57.7517140Z env:
+2026-11-02T17:38:57.7517258Z   ANDROID_PLATFORM: android-36
+2026-11-02T17:38:57.7517403Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T17:38:57.7517540Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T17:38:57.7517687Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T17:38:57.7517833Z   FORGESHAPE_CI_AVD: ForgeShape_CI_API36
+2026-11-02T17:38:57.7517986Z   FORGESHAPE_CI_PORT: 5580
+2026-11-02T17:38:57.7518179Z   FORGESHAPE_CI_SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+2026-11-02T17:38:57.7518405Z   FORGESHAPE_CI_DEVICE_PROFILE: medium_phone
+2026-11-02T17:38:57.7518577Z   FORGESHAPE_CI_GPU: swiftshader_indirect
+2026-11-02T17:38:57.7518747Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T17:38:57.7519006Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T17:38:57.7519268Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T17:38:57.7519483Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T17:38:57.7519639Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T17:38:57.7519801Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T17:38:57.7520041Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T17:38:57.7520304Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T17:38:57.7520481Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T17:38:57.7520628Z ##[endgroup]
+2026-11-02T17:38:57.8268079Z Downloading https://services.gradle.org/distributions/gradle-8.14.3-bin.zip
+2026-11-02T17:38:59.0747937Z .............10%.............20%.............30%.............40%.............50%.............60%.............70%.............80%.............90%..............100%
+2026-11-02T17:38:59.9463236Z 
+2026-11-02T17:38:59.9464215Z Welcome to Gradle 8.14.3!
+2026-11-02T17:38:59.9473031Z 
+2026-11-02T17:38:59.9474907Z Here are the highlights of this release:
+2026-11-02T17:38:59.9475346Z  - Java 24 support
+2026-11-02T17:38:59.9476506Z  - GraalVM Native Image toolchain selection
+2026-11-02T17:38:59.9476893Z  - Enhancements to test reporting
+2026-11-02T17:38:59.9477244Z  - Build Authoring improvements
+2026-11-02T17:38:59.9477461Z 
+2026-11-02T17:38:59.9477786Z For more details see https://docs.gradle.org/8.14.3/release-notes.html
+2026-11-02T17:38:59.9480504Z 
+2026-11-02T17:38:59.9480973Z Starting a Gradle Daemon (subsequent builds will be faster)
+2026-11-02T17:39:26.9479407Z > Task :app:preBuild UP-TO-DATE
+2026-11-02T17:39:27.0459450Z > Task :app:preDebugBuild UP-TO-DATE
+2026-11-02T17:39:27.0475122Z > Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+2026-11-02T17:39:27.0475721Z > Task :app:javaPreCompileDebug
+2026-11-02T17:39:27.1462765Z > Task :app:checkDebugAarMetadata
+2026-11-02T17:39:27.1487655Z > Task :app:processDebugNavigationResources
+2026-11-02T17:39:27.7456828Z > Task :app:compileDebugNavigationResources
+2026-11-02T17:39:27.7466486Z > Task :app:generateDebugResValues
+2026-11-02T17:39:27.7466903Z > Task :app:mapDebugSourceSetPaths
+2026-11-02T17:39:27.7467243Z > Task :app:generateDebugResources
+2026-11-02T17:39:28.2456110Z > Task :app:packageDebugResources
+2026-11-02T17:39:28.6463681Z > Task :app:mergeDebugResources
+2026-11-02T17:39:28.9473747Z > Task :app:createDebugCompatibleScreenManifests
+2026-11-02T17:39:28.9503431Z > Task :app:extractDeepLinksDebug
+2026-11-02T17:39:29.0456716Z > Task :app:processDebugMainManifest
+2026-11-02T17:39:29.1463632Z > Task :app:parseDebugLocalResources
+2026-11-02T17:39:29.3458413Z > Task :app:processDebugManifest
+2026-11-02T17:39:29.3483124Z > Task :app:mergeDebugShaders
+2026-11-02T17:39:29.3503147Z > Task :app:compileDebugShaders NO-SOURCE
+2026-11-02T17:39:29.3505756Z > Task :app:generateDebugAssets UP-TO-DATE
+2026-11-02T17:39:29.3533699Z > Task :app:processDebugManifestForPackage
+2026-11-02T17:39:29.3563339Z > Task :app:mergeDebugAssets
+2026-11-02T17:39:29.3573073Z > Task :app:desugarDebugFileDependencies
+2026-11-02T17:39:29.3576991Z > Task :app:compressDebugAssets
+2026-11-02T17:39:29.4473698Z > Task :app:processDebugJavaRes NO-SOURCE
+2026-11-02T17:39:29.4474443Z > Task :app:checkDebugDuplicateClasses
+2026-11-02T17:39:29.5467076Z > Task :app:mergeDebugJavaResource
+2026-11-02T17:39:29.5483384Z > Task :app:processDebugResources
+2026-11-02T17:39:34.8464169Z > Task :app:configureCMakeDebug[arm64-v8a]
+2026-11-02T17:39:38.3464164Z Note: Some input files use or override a deprecated API.
+2026-11-02T17:39:38.3464464Z 
+2026-11-02T17:39:38.3471726Z Note: Recompile with -Xlint:deprecation for details.
+2026-11-02T17:39:38.3485584Z > Task :app:compileDebugJavaWithJavac
+2026-11-02T17:39:41.8463141Z 
+2026-11-02T17:39:41.8506088Z > Task :app:dexBuilderDebug
+2026-11-02T17:39:41.9460075Z > Task :app:mergeDebugGlobalSynthetics
+2026-11-02T17:39:41.9460853Z > Task :app:mergeLibDexDebug
+2026-11-02T17:39:41.9461285Z > Task :app:mergeExtDexDebug
+2026-11-02T17:39:42.1456967Z > Task :app:mergeProjectDexDebug
+2026-11-02T17:40:11.9483571Z > Task :app:buildCMakeDebug[arm64-v8a]
+2026-11-02T17:40:23.9488419Z > Task :app:configureCMakeDebug[x86_64]
+2026-11-02T17:40:53.9483610Z > Task :app:buildCMakeDebug[x86_64]
+2026-11-02T17:41:00.7455925Z > Task :app:mergeDebugJniLibFolders
+2026-11-02T17:41:01.0455900Z > Task :app:mergeDebugNativeLibs
+2026-11-02T17:41:01.2481332Z > Task :app:validateSigningDebug
+2026-11-02T17:41:01.3455942Z > Task :app:writeDebugAppMetadata
+2026-11-02T17:41:01.3457179Z > Task :app:writeDebugSigningConfigVersions
+2026-11-02T17:41:01.3457669Z > Task :app:preDebugAndroidTestBuild SKIPPED
+2026-11-02T17:41:01.4467369Z > Task :app:javaPreCompileDebugAndroidTest
+2026-11-02T17:41:01.5455714Z > Task :app:bundleDebugClassesToCompileJar
+2026-11-02T17:41:01.6455948Z > Task :app:stripDebugDebugSymbols
+2026-11-02T17:41:03.5533201Z > Task :app:checkDebugAndroidTestAarMetadata
+2026-11-02T17:41:03.5553613Z > Task :app:processDebugAndroidTestNavigationResources
+2026-11-02T17:41:03.5554179Z > Task :app:compileDebugAndroidTestNavigationResources
+2026-11-02T17:41:03.5554634Z > Task :app:generateDebugAndroidTestResValues
+2026-11-02T17:41:03.5555018Z > Task :app:mapDebugAndroidTestSourceSetPaths
+2026-11-02T17:41:03.5555426Z > Task :app:generateDebugAndroidTestResources
+2026-11-02T17:41:03.6465185Z > Task :app:mergeDebugAndroidTestResources
+2026-11-02T17:41:03.6476414Z > Task :app:processDebugAndroidTestManifest
+2026-11-02T17:41:03.6495392Z > Task :app:packageDebug
+2026-11-02T17:41:03.6530502Z > Task :app:createDebugApkListingFileRedirect
+2026-11-02T17:41:03.6531058Z > Task :app:assembleDebug
+2026-11-02T17:41:03.7463765Z > Task :app:mergeDebugAndroidTestShaders
+2026-11-02T17:41:03.7483276Z > Task :app:compileDebugAndroidTestShaders NO-SOURCE
+2026-11-02T17:41:03.7484029Z > Task :app:generateDebugAndroidTestAssets UP-TO-DATE
+2026-11-02T17:41:03.8463584Z > Task :app:mergeDebugAndroidTestAssets
+2026-11-02T17:41:03.8493131Z > Task :app:processDebugAndroidTestResources
+2026-11-02T17:41:03.8522866Z > Task :app:compressDebugAndroidTestAssets
+2026-11-02T17:41:06.6457249Z Note: Some input files use or override a deprecated API.
+2026-11-02T17:41:06.6457549Z 
+2026-11-02T17:41:06.6458011Z Note: Recompile with -Xlint:deprecation for details.
+2026-11-02T17:41:06.6475051Z > Task :app:compileDebugAndroidTestJavaWithJavac
+2026-11-02T17:41:07.0473634Z 
+2026-11-02T17:41:07.0513511Z > Task :app:desugarDebugAndroidTestFileDependencies
+2026-11-02T17:41:09.7474199Z > Task :app:dexBuilderDebugAndroidTest
+2026-11-02T17:41:15.1455826Z > Task :app:mergeDebugAndroidTestGlobalSynthetics
+2026-11-02T17:41:15.1457142Z > Task :app:processDebugAndroidTestJavaRes NO-SOURCE
+2026-11-02T17:41:15.3492114Z > Task :app:checkDebugAndroidTestDuplicateClasses
+2026-11-02T17:41:15.3496826Z > Task :app:mergeDebugAndroidTestJniLibFolders
+2026-11-02T17:41:15.3497097Z > Task :app:mergeLibDexDebugAndroidTest
+2026-11-02T17:41:15.4470399Z > Task :app:mergeDebugAndroidTestNativeLibs NO-SOURCE
+2026-11-02T17:41:15.4471122Z > Task :app:stripDebugAndroidTestDebugSymbols NO-SOURCE
+2026-11-02T17:41:15.4471517Z > Task :app:validateSigningDebugAndroidTest
+2026-11-02T17:41:15.4471870Z > Task :app:mergeDebugAndroidTestJavaResource
+2026-11-02T17:41:15.4472198Z > Task :app:writeDebugAndroidTestSigningConfigVersions
+2026-11-02T17:41:16.0455929Z > Task :app:mergeProjectDexDebugAndroidTest
+2026-11-02T17:41:16.3456531Z > Task :app:mergeExtDexDebugAndroidTest
+2026-11-02T17:41:16.4463090Z > Task :app:packageDebugAndroidTest
+2026-11-02T17:41:16.4489522Z > Task :app:createDebugAndroidTestApkListingFileRedirect
+2026-11-02T17:41:16.4490130Z > Task :app:assembleDebugAndroidTest
+2026-11-02T17:41:16.4490776Z gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1793641143464.json
+2026-11-02T17:41:16.4491312Z 
+2026-11-02T17:41:16.4491864Z [Incubating] Problems report is available at: file:///home/runner/work/Forgeshape/Forgeshape/build/reports/problems/problems-report.html
+2026-11-02T17:41:16.4492909Z 
+2026-11-02T17:41:16.4493268Z Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+2026-11-02T17:41:16.4493936Z 
+2026-11-02T17:41:16.4494427Z You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+2026-11-02T17:41:16.4494998Z 
+2026-11-02T17:41:16.4495569Z For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+2026-11-02T17:41:16.4496220Z 
+2026-11-02T17:41:16.4496427Z BUILD SUCCESSFUL in 2m 18s
+2026-11-02T17:41:16.4496770Z 68 actionable tasks: 68 executed
+2026-11-02T17:41:16.8429781Z ##[group]Run bash scripts/ci-device-smoke.sh
+2026-11-02T17:41:16.8430126Z [36;1mbash scripts/ci-device-smoke.sh[0m
+2026-11-02T17:41:16.8451902Z shell: /usr/bin/bash -e {0}
+2026-11-02T17:41:16.8452142Z env:
+2026-11-02T17:41:16.8452357Z   ANDROID_PLATFORM: android-36
+2026-11-02T17:41:16.8452711Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T17:41:16.8452934Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T17:41:16.8453169Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T17:41:16.8453401Z   FORGESHAPE_CI_AVD: ForgeShape_CI_API36
+2026-11-02T17:41:16.8453657Z   FORGESHAPE_CI_PORT: 5580
+2026-11-02T17:41:16.8453972Z   FORGESHAPE_CI_SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+2026-11-02T17:41:16.8454332Z   FORGESHAPE_CI_DEVICE_PROFILE: medium_phone
+2026-11-02T17:41:16.8454609Z   FORGESHAPE_CI_GPU: swiftshader_indirect
+2026-11-02T17:41:16.8454882Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T17:41:16.8455271Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T17:41:16.8455698Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T17:41:16.8456036Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T17:41:16.8456288Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T17:41:16.8456777Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T17:41:16.8457158Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T17:41:16.8457580Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T17:41:16.8457862Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T17:41:16.8459250Z   FORGESHAPE_CI_TEST_CLASS: com.forgeshape.app.ImportGlbSketchGuardTest,com.forgeshape.app.ImportGlbSculptGuardTest,com.forgeshape.app.ImportedMeshDurableTest,com.forgeshape.app.SketchUxTest,com.forgeshape.app.SketchExtrudeTest,com.forgeshape.app.CadRetainedSketchOwnerTest
+2026-11-02T17:41:16.8460709Z   FORGESHAPE_CI_OUT: ci-device-evidence
+2026-11-02T17:41:16.8460951Z ##[endgroup]
+2026-11-02T17:41:18.2512768Z Emulator command: /usr/local/lib/android/sdk/emulator/emulator -avd ForgeShape_CI_API36 -port 5580 -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect -accel on -camera-back none -camera-front none -memory 4096 -cores 4
+2026-11-02T17:41:53.7512357Z Booted in 35s
+2026-11-02T17:41:55.1521812Z serial=emulator-5580
+2026-11-02T17:41:55.1553692Z avd=ForgeShape_CI_API36 (confirmed by emu avd name: ForgeShape_CI_API36)
+2026-11-02T17:41:55.1583535Z system_image=system-images;android-36;google_apis;x86_64
+2026-11-02T17:41:55.1614525Z device_profile=medium_phone
+2026-11-02T17:41:55.1634418Z gpu_mode=swiftshader_indirect
+2026-11-02T17:41:55.1671512Z emulator_version=INFO         | Android emulator version 37.2.13.0 (build_id 16740729) (CL:N/A)
+2026-11-02T17:41:55.1693164Z kvm=crw-rw-rw- 1 root kvm 10, 232 Nov  2 17:41 /dev/kvm
+2026-11-02T17:41:55.1703207Z accel_check=accel: 0 KVM (version 12) is installed and usable. accel 
+2026-11-02T17:41:55.1723611Z ro.build.fingerprint=google/sdk_gphone64_x86_64/emu64xa:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys
+2026-11-02T17:41:55.1762850Z ro.build.version.sdk=36
+2026-11-02T17:41:55.1783020Z ro.build.version.release=16
+2026-11-02T17:41:55.1792859Z ro.product.cpu.abi=x86_64
+2026-11-02T17:41:55.1822864Z ro.kernel.qemu=1
+2026-11-02T17:41:55.1843061Z ro.boot.qemu.gltransport.name=pipe
+2026-11-02T17:41:55.1852942Z ro.hardware.egl=emulation
+2026-11-02T17:41:55.1873429Z ro.hardware.vulkan=ranchu
+2026-11-02T17:41:55.1873860Z ro.opengles.version=196608
+2026-11-02T17:41:55.1874326Z ro.boot.hardware.vulkan=ranchu
+2026-11-02T17:41:55.1874613Z ro.boot.qemu.vsync=60
+2026-11-02T17:41:55.1880710Z ro.sf.lcd_density=
+2026-11-02T17:41:55.1880997Z wm_size=Physical size: 1080x2400 
+2026-11-02T17:41:55.1881385Z wm_density=Physical density: 420 
+2026-11-02T17:41:55.1881659Z vulkan_features:
+2026-11-02T17:41:55.1882024Z feature:android.hardware.vulkan.compute
+2026-11-02T17:41:55.1882343Z feature:android.hardware.vulkan.level=1
+2026-11-02T17:41:55.1883818Z feature:android.hardware.vulkan.version=4206592
+2026-11-02T17:41:55.1884147Z feature:android.software.vulkan.deqp.level=132711169
+2026-11-02T17:41:55.1884588Z emulator_boot_log_gpu_lines:
+2026-11-02T17:41:55.1884866Z INFO         | Graphics backend: gfxstream
+2026-11-02T17:41:55.1885388Z INFO         | Guest usage of host flag 'VulkanVirtualQueue' will be ignored.
+2026-11-02T17:41:55.1885999Z INFO         | emuglConfig_init: vulkan_mode_selected:swiftshader gles_mode_selected:swiftshader
+2026-11-02T17:41:55.1886584Z INFO         |   Checking: hasSufficientHwGpu
+2026-11-02T17:41:55.1886995Z INFO         |      Ok: Hardware GPU compatibility checks are not required
+2026-11-02T17:41:55.1887412Z INFO         | Initializing gfxstream backend
+2026-11-02T17:41:55.1887852Z INFO         | startOpenglesRendererImpl: gpu info
+2026-11-02T17:41:55.1888314Z INFO         | initIcdPaths: ICD set to 'swiftshader', using Swiftshader ICD
+2026-11-02T17:41:55.1888963Z INFO         | Setting ICD filenames for the loader = /usr/local/lib/android/sdk/emulator/lib64/vulkan/vk_swiftshader_icd.json
+2026-11-02T17:41:55.1889834Z INFO         | SharedLibrary::open for [/usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/lib64/vulkan/libvulkan.so]
+2026-11-02T17:41:55.1890866Z INFO         | SharedLibrary::open for [/usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/lib64/vulkan/libvulkan.so.1]
+2026-11-02T17:41:55.1891653Z INFO         | SharedLibrary::open for [/usr/local/lib/android/sdk/emulator/lib64/vulkan/libvulkan.so]
+2026-11-02T17:41:55.1892280Z INFO         | Added library: /usr/local/lib/android/sdk/emulator/lib64/vulkan/libvulkan.so
+2026-11-02T17:41:55.1893087Z INFO         | Selecting Vulkan device: SwiftShader Device (Subzero), Version: 1.3.0
+2026-11-02T17:41:55.1893600Z INFO         | Using Vulkan externalMemoryMode: OpaqueFd for VkEmulation
+2026-11-02T17:41:55.1933204Z INFO         |     useVulkanComposition: false
+2026-11-02T17:41:55.1933538Z INFO         |     useVulkanNativeSwapchain: false
+2026-11-02T17:41:55.1933848Z INFO         |     ASTC LDR emulation mode: Gpu
+2026-11-02T17:41:55.1934112Z INFO         |     guestVulkanOnly: false
+2026-11-02T17:41:55.1934388Z INFO         |     guestVulkanMaxApiVersion: 1.3.0
+2026-11-02T17:41:55.1934778Z INFO         | Graphics Adapter Android Emulator OpenGL ES Translator (Google SwiftShader)
+2026-11-02T17:41:55.1935252Z INFO         | Graphics API Version OpenGL ES 3.0 (OpenGL ES 3.0 SwiftShader 4.0.0.1)
+2026-11-02T17:41:55.1935639Z INFO         |   androidboot.debug.hwui.renderer=skiagl
+2026-11-02T17:41:55.1935949Z INFO         |   androidboot.hardware.vulkan=ranchu
+2026-11-02T17:41:55.1936255Z INFO         |   androidboot.qemu.cpuvulkan.version=4206592
+2026-11-02T17:45:00.4147867Z settled_seconds=181 load1=2.61 (target < 2.5)
+2026-11-02T17:45:20.0443908Z capture=1 tokens=25/25 in_order=true viewport_ok=true failure_lines=0 liblog_dropped=0 pid=5012 (15s)
+2026-11-02T17:45:20.0739915Z Startup evidence: capture 1 of 3 — 25/25 tokens in order, NATIVE_VIEWPORT_OK, 0 failure lines
+2026-11-02T17:45:20.8996806Z MODE=FOCUSED_SUBSET (not full-suite evidence): com.forgeshape.app.ImportGlbSketchGuardTest,com.forgeshape.app.ImportGlbSculptGuardTest,com.forgeshape.app.ImportedMeshDurableTest,com.forgeshape.app.SketchUxTest,com.forgeshape.app.SketchExtrudeTest,com.forgeshape.app.CadRetainedSketchOwnerTest on emulator-5580
+2026-11-02T18:08:38.2587410Z TEST_FACT native_Editing=[1006, 1006, 1006] RefusedInSketch
+2026-11-02T18:08:38.2588110Z TEST_FACT native_Ready=[1006, 1006, 1006] RefusedInSketch
+2026-11-02T18:08:38.2590178Z TEST_FACT late_picker_status=Import is not available while a sketch is open. Your project and your sketch are unchanged.
+2026-11-02T18:08:38.2590885Z TEST_FACT capture.sk02_late_picker_refused=sk02_late_picker_refused.png frames=6
+2026-11-02T18:08:38.2591283Z TEST_FACT import_row_offered_editing=false
+2026-11-02T18:08:38.2591625Z TEST_FACT import_row_offered_ready=false
+2026-11-02T18:08:38.2592086Z TEST_FACT native_staged_Edit_Sketch=[1006, 1006, 1006] RefusedInSketch
+2026-11-02T18:08:38.2593212Z TEST_FACT font_scale=1.0
+2026-11-02T18:08:38.2593542Z TEST_FACT capture.sk05_font_1_0_1=sk05_font_1_0_1.png frames=6
+2026-11-02T18:08:38.2593896Z TEST_FACT capture.sk05_font_1_0_0=sk05_font_1_0_0.png frames=6
+2026-11-02T18:08:38.2594210Z TEST_FACT font_scale=1.5
+2026-11-02T18:08:38.2594469Z TEST_FACT capture.sk05_font_1_5_1=sk05_font_1_5_1.png frames=6
+2026-11-02T18:08:38.2594812Z TEST_FACT capture.sk05_font_1_5_0=sk05_font_1_5_0.png frames=6
+2026-11-02T18:08:38.2595099Z TEST_FACT font_scale=1.0
+2026-11-02T18:08:38.2595565Z TEST_FACT d17.after_rotation=[Rect(1723, 287 - 2027, 413), Rect(2038, 287 - 2342, 413), Rect(1723, 424 - 2027, 550), Rect(2038, 424 - 2342, 550)]
+2026-11-02T18:08:38.2596098Z TEST_FACT rect=[1.0, 2.0, 0.5, -0.5, 0.6, 0.6]
+2026-11-02T18:08:38.2596385Z TEST_FACT seam.viewport_px=[636.88025, 1329.9037]
+2026-11-02T18:08:38.2596671Z TEST_FACT seam.viewport_px=[1243.5961, 598.45667]
+2026-11-02T18:08:38.2597183Z TEST_FACT d21.rotated_window=[1243.5961, 598.45667] kind=3 active=true owner=ForgeShapeSurfaceView viewport_surface projection=1
+2026-11-02T18:08:38.2597729Z TEST_FACT capture.d21_seam_landscape=d21_seam_landscape.png frames=6
+2026-11-02T18:08:38.2598046Z TEST_FACT seam.viewport_px=[1247.6868, 603.9418]
+2026-11-02T18:08:38.2598565Z TEST_FACT rect=[1.0, 2.0, 0.5, -0.5, 0.6, 0.6]
+2026-11-02T18:08:38.2598873Z TEST_FACT seam.viewport_px=[636.88025, 1329.9037]
+2026-11-02T18:08:38.2599140Z TEST_FACT d22.hover_kind=3
+2026-11-02T18:08:38.2599348Z TEST_FACT d10.undo_shown=true
+2026-11-02T18:08:38.2599587Z TEST_FACT d10.after_undo=[] state=0
+2026-11-02T18:08:38.2599854Z TEST_FACT d10.rotated_chooser=true
+2026-11-02T18:08:38.2600114Z TEST_FACT origin=[1200.0, 540.0] world=[1200.0, 540.0]
+2026-11-02T18:08:38.2600292Z TEST_FACT d09.cells=24
+2026-11-02T18:08:38.2600478Z TEST_FACT pan=(-2.5,-1.5) [-93.677155, 1580.2062] -> [256.3228, 1230.2063]
+2026-11-02T18:08:38.2600725Z TEST_FACT pan=(-0.5,-1.5) [989.7467, 1381.6143] -> [583.7655, 1031.7578]
+2026-11-02T18:08:38.2600966Z TEST_FACT pan=(-0.5,1.5) [594.9441, 17.013145] -> [514.93304, 526.6905]
+2026-11-02T18:08:38.2601199Z TEST_FACT pan=(1.5,-1.5) [1051.6099, 1699.1985] -> [568.32947, 1215.9182]
+2026-11-02T18:08:38.2601434Z TEST_FACT pan=(1.5,1.5) [577.3834, 5.0743103] -> [509.26666, 642.8088]
+2026-11-02T18:08:38.2601696Z TEST_FACT capture.d09_selection=d09_selection.png frames=7
+2026-11-02T18:08:38.2601894Z TEST_FACT d09.preview=[22.0, 1.0]
+2026-11-02T18:08:38.2602088Z TEST_FACT rect=[1.0, 2.0, 0.6000000000000001, 0.6000000000000001, 0.3, 0.3]
+2026-11-02T18:08:38.2602925Z TEST_FACT d08.issue=Extrude 2 · Cut can no longer be rebuilt
+2026-11-02T18:08:38.2603135Z TEST_FACT capture.d08_issue=d08_issue.png frames=6
+2026-11-02T18:08:38.2603327Z TEST_FACT circle=[1.0, 3.0, -0.4, 0.0, 0.3, 0.0]
+2026-11-02T18:08:38.2603503Z TEST_FACT d16.after_wall=kind=-1 state=0
+2026-11-02T18:08:38.2603682Z TEST_FACT origin=[540.0, 1200.0] world=[540.0, 1200.0]
+2026-11-02T18:08:38.2603890Z TEST_FACT d05.centre=[0.10000000000000003, -0.10000000000000003]
+2026-11-02T18:08:38.2604104Z TEST_FACT rect=[1.0, 2.0, 0.8, 0.0, 0.8, 0.6]
+2026-11-02T18:08:38.2604278Z TEST_FACT circle=[1.0, 3.0, -0.4, 0.0, 0.3, 0.0]
+2026-11-02T18:08:38.2604533Z TEST_FACT d04.floor=[4.0, 4.0, 0.0, 2.0, 0.0, 2.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+2026-11-02T18:08:38.2604925Z TEST_FACT d04.wall=[5.0, 5.0, 0.0, 2.0, 0.0, 2.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+2026-11-02T18:08:38.2605213Z TEST_FACT d04.curved_kind=-1
+2026-11-02T18:08:38.2605406Z TEST_FACT d04.curved_after_second_tap=state=0 kind=-1
+2026-11-02T18:08:38.2605656Z TEST_FACT capture.d04_curved_wall_refused=d04_curved_wall_refused.png frames=6
+2026-11-02T18:08:38.2605939Z TEST_FACT d02.rows=[●  Sketch 1
+2026-11-02T18:08:38.2606293Z TEST_FACT Used by Extrude 1 · New Body · on the XY plane · 1 entities, ○  Sketch 2
+2026-11-02T18:08:38.2606620Z TEST_FACT Unused · on a face of Extrude 1 · New Body · 1 entities]
+2026-11-02T18:08:38.2611475Z TEST_FACT capture.d02_unused_sketch=d02_unused_sketch.png frames=6
+2026-11-02T18:08:38.2612239Z TEST_FACT d15.kind=2 at=[388.20728, 944.7268]
+2026-11-02T18:08:38.2613182Z TEST_FACT capture.d15_plane_aimed=d15_plane_aimed.png frames=6
+2026-11-02T18:08:38.2613666Z TEST_FACT d15.view=[1.0, 2.0, 0.0, 0.0, 0.0, 1.0]
+2026-11-02T18:08:38.2632809Z TEST_FACT d14.preview=[4.0, 1.0]
+2026-11-02T18:08:38.2633243Z TEST_FACT capture.d14_cleared=d14_cleared.png frames=6
+2026-11-02T18:08:38.2633838Z TEST_FACT d07.features=[●  Extrude 1 · New Body
+2026-11-02T18:08:38.2634174Z TEST_FACT One Side 1 m, ●  Extrude 2 · Cut
+2026-11-02T18:08:38.2634413Z TEST_FACT One Side 0.4 m]
+2026-11-02T18:08:38.2634653Z TEST_FACT d07.measure=[3.9099999999999997, 1.0, 28.0, -1.0, -1.0, 0.0, 1.0, 1.0, 1.0]
+2026-11-02T18:08:38.2635024Z TEST_FACT d12.chips.0=[Rect(1723, 287 - 2027, 413), Rect(2038, 287 - 2342, 413), Rect(1723, 424 - 2027, 550), Rect(2038, 424 - 2342, 550)]
+2026-11-02T18:08:38.2635355Z TEST_FACT capture.d12_acts_0=d12_acts_0.png frames=6
+2026-11-02T18:08:38.2635761Z TEST_FACT d12.chips.1=[Rect(403, 1415 - 707, 1541), Rect(718, 1415 - 1022, 1541), Rect(403, 1552 - 707, 1678), Rect(718, 1552 - 1022, 1678)]
+2026-11-02T18:08:38.2636221Z TEST_FACT capture.d12_acts_1=d12_acts_1.png frames=6
+2026-11-02T18:08:38.2637075Z TEST_FACT rect=[1.0, 2.0, 0.5, -0.5, 0.6, 0.6]
+2026-11-02T18:08:38.2637330Z TEST_FACT rect=[1.0, 2.0, 0.5, 0.5, 0.3, 0.3]
+2026-11-02T18:08:38.2637575Z TEST_FACT d20.outside_kind=0
+2026-11-02T18:08:38.2637791Z TEST_FACT d20.hole_kind=0
+2026-11-02T18:08:38.2638050Z TEST_FACT capture.d20_hole_plane=d20_hole_plane.png frames=6
+2026-11-02T18:08:38.2638412Z TEST_FACT capture.d06_after_delete=d06_after_delete.png frames=6
+2026-11-02T18:08:38.2638704Z TEST_FACT d01.rows=[●  Sketch 1
+2026-11-02T18:08:38.2638953Z TEST_FACT Used by Extrude 1 · New Body · on the XY plane · 1 entities]
+2026-11-02T18:08:38.2639225Z TEST_FACT d01.detail=Dependencies: Extrude 1 · New Body
+2026-11-02T18:08:38.2639512Z TEST_FACT Not deletable: The body's first sketch says where the body is and can't be removed.
+2026-11-02T18:08:38.2639813Z TEST_FACT capture.d01_sketch_browser=d01_sketch_browser.png frames=6
+2026-11-02T18:08:38.2640020Z TEST_FACT font_scale=1.0
+2026-11-02T18:08:38.2640301Z TEST_FACT d17.font_1.0_orientation_1_tabs=[Rect(403, 1495 - 602, 1621), Rect(613, 1495 - 812, 1621), Rect(823, 1495 - 1022, 1621)]
+2026-11-02T18:08:38.2640852Z TEST_FACT d17.font_1.0_orientation_1_unused_sketch=[Rect(403, 1415 - 707, 1541), Rect(718, 1415 - 1022, 1541), Rect(403, 1552 - 707, 1678), Rect(718, 1552 - 1022, 1678)]
+2026-11-02T18:08:38.2641397Z TEST_FACT d17.font_1.0_orientation_1_feature=[Rect(403, 1669 - 707, 1795), Rect(718, 1669 - 1022, 1795)]
+2026-11-02T18:08:38.2641837Z TEST_FACT capture.d17_font_1_0_1=d17_font_1_0_1.png frames=6
+2026-11-02T18:08:38.2642338Z TEST_FACT d17.font_1.0_orientation_0_tabs=[Rect(1723, 175 - 1922, 301), Rect(1933, 175 - 2132, 301), Rect(2143, 175 - 2342, 301)]
+2026-11-02T18:08:38.2643211Z TEST_FACT d17.font_1.0_orientation_0_unused_sketch=[Rect(1723, 287 - 2027, 413), Rect(2038, 287 - 2342, 413), Rect(1723, 424 - 2027, 550), Rect(2038, 424 - 2342, 550)]
+2026-11-02T18:08:38.2643942Z TEST_FACT d17.font_1.0_orientation_0_feature=[Rect(1723, 349 - 2027, 475), Rect(2038, 349 - 2342, 475)]
+2026-11-02T18:08:38.2644578Z TEST_FACT capture.d17_font_1_0_0=d17_font_1_0_0.png frames=6
+2026-11-02T18:08:38.2645023Z TEST_FACT font_scale=1.3
+2026-11-02T18:08:38.2645358Z TEST_FACT d17.font_1.3_orientation_1_tabs=[Rect(403, 1472 - 602, 1598), Rect(613, 1472 - 812, 1598), Rect(823, 1472 - 1022, 1598)]
+2026-11-02T18:08:38.2645829Z TEST_FACT d17.font_1.3_orientation_1_unused_sketch=[Rect(403, 1237 - 707, 1363), Rect(718, 1237 - 1022, 1363), Rect(403, 1374 - 707, 1500), Rect(718, 1374 - 1022, 1500)]
+2026-11-02T18:08:38.2646268Z TEST_FACT d17.font_1.3_orientation_1_feature=[Rect(403, 1567 - 707, 1693), Rect(718, 1567 - 1022, 1693)]
+2026-11-02T18:08:38.2646552Z TEST_FACT capture.d17_font_1_3_1=d17_font_1_3_1.png frames=6
+2026-11-02T18:08:38.2647013Z TEST_FACT d17.font_1.3_orientation_0_tabs=[Rect(1723, 163 - 1922, 289), Rect(1933, 163 - 2132, 289), Rect(2143, 163 - 2342, 289)]
+2026-11-02T18:08:38.2647477Z TEST_FACT d17.font_1.3_orientation_0_unused_sketch=[Rect(1723, 300 - 2027, 426), Rect(2038, 300 - 2342, 426), Rect(1723, 437 - 2027, 563), Rect(2038, 437 - 2342, 563)]
+2026-11-02T18:08:38.2647920Z TEST_FACT d17.font_1.3_orientation_0_feature=[Rect(1723, 300 - 2027, 426), Rect(2038, 300 - 2342, 426)]
+2026-11-02T18:08:38.2648205Z TEST_FACT capture.d17_font_1_3_0=d17_font_1_3_0.png frames=6
+2026-11-02T18:08:38.2648394Z TEST_FACT font_scale=1.5
+2026-11-02T18:08:38.2648659Z TEST_FACT d17.font_1.5_orientation_1_tabs=[Rect(403, 1321 - 602, 1447), Rect(613, 1321 - 812, 1447), Rect(823, 1321 - 1022, 1447)]
+2026-11-02T18:08:38.2649132Z TEST_FACT d17.font_1.5_orientation_1_unused_sketch=[Rect(403, 1139 - 707, 1265), Rect(718, 1139 - 1022, 1265), Rect(403, 1276 - 707, 1402), Rect(718, 1276 - 1022, 1402)]
+2026-11-02T18:08:38.2649572Z TEST_FACT d17.font_1.5_orientation_1_feature=[Rect(403, 1441 - 707, 1567), Rect(718, 1441 - 1022, 1567)]
+2026-11-02T18:08:38.2649859Z TEST_FACT capture.d17_font_1_5_1=d17_font_1_5_1.png frames=6
+2026-11-02T18:08:38.2650178Z TEST_FACT d17.font_1.5_orientation_0_tabs=[Rect(1723, 169 - 1922, 295), Rect(1933, 169 - 2132, 295), Rect(2143, 169 - 2342, 295)]
+2026-11-02T18:08:38.2650745Z TEST_FACT d17.font_1.5_orientation_0_unused_sketch=[Rect(1723, 306 - 2027, 432), Rect(2038, 306 - 2342, 432), Rect(1723, 443 - 2027, 569), Rect(2038, 443 - 2342, 569)]
+2026-11-02T18:08:38.2651180Z TEST_FACT d17.font_1.5_orientation_0_feature=[Rect(1723, 306 - 2027, 432), Rect(2038, 306 - 2342, 432)]
+2026-11-02T18:08:38.2651463Z TEST_FACT capture.d17_font_1_5_0=d17_font_1_5_0.png frames=6
+2026-11-02T18:08:38.2651714Z TEST_FACT capture.d17_journeys_font_1_5=d17_journeys_font_1_5.png frames=6
+2026-11-02T18:08:38.2651931Z TEST_FACT font_scale=1.0
+2026-11-02T18:08:38.2652081Z TEST_FACT rect=[1.0, 2.0, 0.5, -0.5, 0.6, 0.6]
+2026-11-02T18:08:38.2652268Z TEST_FACT seam.viewport_px=[636.88025, 1329.9037]
+2026-11-02T18:08:38.2652586Z TEST_FACT d19.kind=3
+2026-11-02T18:08:38.2652834Z TEST_FACT capture.d19_seam_aimed=d19_seam_aimed.png frames=6
+2026-11-02T18:08:38.2653117Z TEST_FACT d19.kept=[3.0, 3.0, 0.0, 2.0, 0.0, 2.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+2026-11-02T18:08:38.2653431Z Instrumentation: run=65 failed=0 final_code=-1 exit=0 (1395s)
+2026-11-02T18:08:38.2653626Z OK (65 tests)
+2026-11-02T18:08:38.4999343Z ---- summary.json ----
+2026-11-02T18:08:38.5011725Z {
+2026-11-02T18:08:38.5012001Z   "result": "PASS",
+2026-11-02T18:08:38.5014094Z   "detail": "25/25 startup tokens in order, NATIVE_VIEWPORT_OK, 0 failure tokens; com.forgeshape.app.ImportGlbSketchGuardTest,com.forgeshape.app.ImportGlbSculptGuardTest,com.forgeshape.app.ImportedMeshDurableTest,com.forgeshape.app.SketchUxTest,com.forgeshape.app.SketchExtrudeTest,com.forgeshape.app.CadRetainedSketchOwnerTest OK (65 tests)",
+2026-11-02T18:08:38.5016304Z   "phase": "done",
+2026-11-02T18:08:38.5016593Z   "serial": "emulator-5580",
+2026-11-02T18:08:38.5016877Z   "avd": "ForgeShape_CI_API36",
+2026-11-02T18:08:38.5017164Z   "avd_name_confirmed": "ForgeShape_CI_API36",
+2026-11-02T18:08:38.5017529Z   "system_image": "system-images;android-36;google_apis;x86_64",
+2026-11-02T18:08:38.5017878Z   "device_profile": "medium_phone",
+2026-11-02T18:08:38.5018129Z   "gpu_mode": "swiftshader_indirect",
+2026-11-02T18:08:38.5018369Z   "boot_seconds": "35",
+2026-11-02T18:08:38.5018592Z   "startup_seconds": "15",
+2026-11-02T18:08:38.5018798Z   "startup_capture_used": "1",
+2026-11-02T18:08:38.5018978Z   "selftest_tokens_expected": 25,
+2026-11-02T18:08:38.5019234Z   "selftest_tokens_found": 25,
+2026-11-02T18:08:38.5019419Z   "selftest_tokens_in_order": true,
+2026-11-02T18:08:38.5019602Z   "native_viewport_ok": true,
+2026-11-02T18:08:38.5019767Z   "failure_token_lines": 0,
+2026-11-02T18:08:38.5021193Z   "test_class": "com.forgeshape.app.ImportGlbSketchGuardTest,com.forgeshape.app.ImportGlbSculptGuardTest,com.forgeshape.app.ImportedMeshDurableTest,com.forgeshape.app.SketchUxTest,com.forgeshape.app.SketchExtrudeTest,com.forgeshape.app.CadRetainedSketchOwnerTest",
+2026-11-02T18:08:38.5022941Z   "tests_run": 65,
+2026-11-02T18:08:38.5023125Z   "tests_failed": 0,
+2026-11-02T18:08:38.5023309Z   "test_seconds": "1395"
+2026-11-02T18:08:38.5023511Z }
+2026-11-02T18:08:38.5023702Z FORGESHAPE_CI_DEVICE_RESULT=PASS
+2026-11-02T18:08:38.5077094Z ##[group]Run {
+2026-11-02T18:08:38.5077274Z [36;1m{[0m
+2026-11-02T18:08:38.5077396Z [36;1m  echo "## CI DEVICE"[0m
+2026-11-02T18:08:38.5077546Z [36;1m  echo '```json'[0m
+2026-11-02T18:08:38.5077812Z [36;1m  cat ci-device-evidence/summary.json 2>/dev/null || echo '{"result": "NO_SUMMARY"}'[0m
+2026-11-02T18:08:38.5078089Z [36;1m  echo '```'[0m
+2026-11-02T18:08:38.5078214Z [36;1m  echo '```'[0m
+2026-11-02T18:08:38.5078514Z [36;1m  cat ci-device-evidence/environment-manifest.txt 2>/dev/null || echo '(no environment manifest: the run stopped before it)'[0m
+2026-11-02T18:08:38.5078831Z [36;1m  echo '```'[0m
+2026-11-02T18:08:38.5078972Z [36;1m} >> "$GITHUB_STEP_SUMMARY"[0m
+2026-11-02T18:08:38.5122740Z shell: /usr/bin/bash -e {0}
+2026-11-02T18:08:38.5122905Z env:
+2026-11-02T18:08:38.5123038Z   ANDROID_PLATFORM: android-36
+2026-11-02T18:08:38.5123193Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T18:08:38.5123500Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T18:08:38.5123714Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T18:08:38.5123893Z   FORGESHAPE_CI_AVD: ForgeShape_CI_API36
+2026-11-02T18:08:38.5124059Z   FORGESHAPE_CI_PORT: 5580
+2026-11-02T18:08:38.5124271Z   FORGESHAPE_CI_SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+2026-11-02T18:08:38.5124527Z   FORGESHAPE_CI_DEVICE_PROFILE: medium_phone
+2026-11-02T18:08:38.5124706Z   FORGESHAPE_CI_GPU: swiftshader_indirect
+2026-11-02T18:08:38.5124884Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T18:08:38.5125115Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T18:08:38.5125398Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T18:08:38.5125633Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T18:08:38.5125800Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T18:08:38.5125970Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T18:08:38.5126228Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T18:08:38.5126521Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T18:08:38.5126721Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T18:08:38.5126881Z ##[endgroup]
+2026-11-02T18:08:38.5263612Z ##[group]Run actions/upload-artifact@v4
+2026-11-02T18:08:38.5263800Z with:
+2026-11-02T18:08:38.5263926Z   name: ci-device-evidence
+2026-11-02T18:08:38.5264068Z   retention-days: 14
+2026-11-02T18:08:38.5264200Z   if-no-files-found: warn
+2026-11-02T18:08:38.5264344Z   path: ci-device-evidence/
+2026-11-02T18:08:38.5264486Z   compression-level: 6
+2026-11-02T18:08:38.5264614Z   overwrite: false
+2026-11-02T18:08:38.5264741Z   include-hidden-files: false
+2026-11-02T18:08:38.5264881Z env:
+2026-11-02T18:08:38.5265000Z   ANDROID_PLATFORM: android-36
+2026-11-02T18:08:38.5265150Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-11-02T18:08:38.5265298Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-11-02T18:08:38.5265459Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-11-02T18:08:38.5265633Z   FORGESHAPE_CI_AVD: ForgeShape_CI_API36
+2026-11-02T18:08:38.5265796Z   FORGESHAPE_CI_PORT: 5580
+2026-11-02T18:08:38.5265996Z   FORGESHAPE_CI_SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+2026-11-02T18:08:38.5266294Z   FORGESHAPE_CI_DEVICE_PROFILE: medium_phone
+2026-11-02T18:08:38.5266471Z   FORGESHAPE_CI_GPU: swiftshader_indirect
+2026-11-02T18:08:38.5266650Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-02T18:08:38.5266886Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T18:08:38.5267177Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-11-02T18:08:38.5267418Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-02T18:08:38.5267592Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-02T18:08:38.5267768Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-02T18:08:38.5268029Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-02T18:08:38.5268380Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-02T18:08:38.5268665Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-02T18:08:38.5268846Z ##[endgroup]
+2026-11-02T18:08:38.6640140Z (node:5097) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T18:08:38.6640633Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T18:08:38.6769795Z With the provided path, there will be 84 files uploaded
+2026-11-02T18:08:38.6774429Z Artifact name is valid!
+2026-11-02T18:08:38.6774790Z Root directory input is valid!
+2026-11-02T18:08:39.0293483Z Beginning upload of artifact content to blob storage
+2026-11-02T18:08:39.4446237Z (node:5097) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-11-02T18:08:40.1564902Z Uploaded bytes 8088662
+2026-11-02T18:08:40.2148483Z Finished uploading artifact content to blob storage!
+2026-11-02T18:08:40.2149408Z SHA256 digest of uploaded artifact zip is 02b77f961eaedb2d196c6221b4a5ca3c73fac0508d79cfafe5eab2d9a757c737
+2026-11-02T18:08:40.2150311Z Finalizing artifact upload
+2026-11-02T18:08:40.7136688Z Artifact ci-device-evidence.zip successfully finalized. Artifact ID 13166114773
+2026-11-02T18:08:40.7137404Z Artifact ci-device-evidence has been successfully uploaded! Final size is 8088662 bytes. Artifact ID is 13166114773
+2026-11-02T18:08:40.7140469Z Artifact download URL: https://github.com/damiankrok/Forgeshape/actions/runs/41492901369/artifacts/13166114773
+2026-11-02T18:08:40.7398339Z Post job cleanup.
+2026-11-02T18:08:40.9163951Z In post-action step
+2026-11-02T18:08:40.9170704Z Cache is read-only: will not save state for use in subsequent builds.
+2026-11-02T18:08:40.9176017Z Generating Job Summary
+2026-11-02T18:08:40.9189508Z Completed post-action step
+2026-11-02T18:08:40.9412308Z Post job cleanup.
+2026-11-02T18:08:41.0454094Z (node:5126) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-02T18:08:41.0454777Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-02T18:08:41.0641240Z Post job cleanup.
+2026-11-02T18:08:41.1307045Z [command]/usr/bin/git version
+2026-11-02T18:08:41.1355465Z git version 2.56.0
+2026-11-02T18:08:41.1387287Z Temporarily overriding HOME='/home/runner/work/_temp/41ec5a19-88d2-4c56-bf4e-d33f23dd168b' before making global git config changes
+2026-11-02T18:08:41.1393661Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-02T18:08:41.1394520Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Forgeshape/Forgeshape
+2026-11-02T18:08:41.1459212Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-02T18:08:41.1500301Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-02T18:08:41.1852206Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-02T18:08:41.1885242Z http.https://github.com/.extraheader
+2026-11-02T18:08:41.1901433Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-11-02T18:08:41.1957443Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-02T18:08:41.2226370Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-02T18:08:41.2275234Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-02T18:08:41.2677544Z Cleaning up orphan processes
+2026-11-02T18:08:41.2944383Z Terminate orphan process: pid (2402) (java)
+2026-11-02T18:08:41.2993214Z Terminate orphan process: pid (3392) (adb)
+2026-11-02T18:08:41.3130593Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-java@v4, actions/upload-artifact@v4, gradle/actions/setup-gradle@v4, gradle/actions/wrapper-validation@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

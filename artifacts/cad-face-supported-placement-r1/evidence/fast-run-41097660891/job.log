@@ -1,0 +1,1469 @@
+﻿2026-10-30T17:18:33.4546307Z Current runner version: '2.338.2'
+2026-10-30T17:18:33.4572763Z ##[group]Runner Image Provisioner
+2026-10-30T17:18:33.4573633Z Hosted Compute Agent
+2026-10-30T17:18:33.4574351Z Version: 20261021.618
+2026-10-30T17:18:33.4574993Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+2026-10-30T17:18:33.4575735Z Build Date: 2026-10-21T00:45:21Z
+2026-10-30T17:18:33.4576532Z Worker ID: {f009d309-20e7-47f0-a964-1cc072a87152}
+2026-10-30T17:18:33.4577645Z Region: westcentralus
+2026-10-30T17:18:33.4578309Z Cloud: Azure
+2026-10-30T17:18:33.4578886Z ##[endgroup]
+2026-10-30T17:18:33.4580408Z ##[group]Operating System
+2026-10-30T17:18:33.4581568Z Ubuntu
+2026-10-30T17:18:33.4582095Z 24.04.5
+2026-10-30T17:18:33.4582673Z LTS
+2026-10-30T17:18:33.4583209Z ##[endgroup]
+2026-10-30T17:18:33.4583827Z ##[group]Runner Image
+2026-10-30T17:18:33.4584524Z Image: ubuntu-24.04
+2026-10-30T17:18:33.4585095Z Version: 20261025.353.1
+2026-10-30T17:18:33.4586417Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261025.353/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-30T17:18:33.4588451Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261025.353
+2026-10-30T17:18:33.4589502Z ##[endgroup]
+2026-10-30T17:18:33.4590617Z ##[group]GITHUB_TOKEN Permissions
+2026-10-30T17:18:33.4592833Z Contents: read
+2026-10-30T17:18:33.4593436Z Metadata: read
+2026-10-30T17:18:33.4594018Z ##[endgroup]
+2026-10-30T17:18:33.4596232Z Secret source: Actions
+2026-10-30T17:18:33.4597589Z Cache mode: write
+2026-10-30T17:18:33.4598774Z Prepare workflow directory
+2026-10-30T17:18:33.5002746Z Prepare all required actions
+2026-10-30T17:18:33.5051633Z Getting action download info
+2026-10-30T17:18:33.8365332Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-10-30T17:18:33.9440809Z Download action repository 'gradle/actions@v4' (SHA:ed408507eac070d1f99cc633dbcf757c94c7933a)
+2026-10-30T17:18:34.9714418Z Download action repository 'actions/setup-java@v4' (SHA:cf277c60eb25467037889841efdb72551f06f6c3)
+2026-10-30T17:18:35.6850132Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-10-30T17:18:35.9166254Z Complete job name: FAST (build, unit, guards, corpus)
+2026-10-30T17:18:36.0151629Z ##[group]Run actions/checkout@v4
+2026-10-30T17:18:36.0152345Z with:
+2026-10-30T17:18:36.0152619Z   fetch-depth: 0
+2026-10-30T17:18:36.0152919Z   repository: damiankrok/Forgeshape
+2026-10-30T17:18:36.0155554Z   token: ***
+2026-10-30T17:18:36.0155827Z   ssh-strict: true
+2026-10-30T17:18:36.0156092Z   ssh-user: git
+2026-10-30T17:18:36.0156365Z   persist-credentials: true
+2026-10-30T17:18:36.0156670Z   clean: true
+2026-10-30T17:18:36.0157162Z   sparse-checkout-cone-mode: true
+2026-10-30T17:18:36.0157495Z   fetch-tags: false
+2026-10-30T17:18:36.0157771Z   show-progress: true
+2026-10-30T17:18:36.0158048Z   lfs: false
+2026-10-30T17:18:36.0158298Z   submodules: false
+2026-10-30T17:18:36.0158573Z   set-safe-directory: true
+2026-10-30T17:18:36.0158900Z   allow-unsafe-pr-checkout: false
+2026-10-30T17:18:36.0159499Z env:
+2026-10-30T17:18:36.0159782Z   ANDROID_PLATFORM: android-36
+2026-10-30T17:18:36.0160128Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-10-30T17:18:36.0160494Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-10-30T17:18:36.0160824Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-10-30T17:18:36.0161120Z ##[endgroup]
+2026-10-30T17:18:36.4780684Z Syncing repository: damiankrok/Forgeshape
+2026-10-30T17:18:36.4782246Z ##[group]Getting Git version info
+2026-10-30T17:18:36.4782680Z Working directory is '/home/runner/work/Forgeshape/Forgeshape'
+2026-10-30T17:18:36.4783281Z [command]/usr/bin/git version
+2026-10-30T17:18:36.4939032Z git version 2.56.0
+2026-10-30T17:18:36.4949595Z ##[endgroup]
+2026-10-30T17:18:36.4961406Z Temporarily overriding HOME='/home/runner/work/_temp/d39c4284-f38b-4ed3-a3c6-7ae156708259' before making global git config changes
+2026-10-30T17:18:36.4962915Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-30T17:18:36.4969693Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Forgeshape/Forgeshape
+2026-10-30T17:18:36.5057891Z Deleting the contents of '/home/runner/work/Forgeshape/Forgeshape'
+2026-10-30T17:18:36.5061874Z ##[group]Initializing the repository
+2026-10-30T17:18:36.5068635Z [command]/usr/bin/git init /home/runner/work/Forgeshape/Forgeshape
+2026-10-30T17:18:36.5240019Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-30T17:18:36.5241483Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-30T17:18:36.5243392Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-30T17:18:36.5244356Z hint: call:
+2026-10-30T17:18:36.5244793Z hint:
+2026-10-30T17:18:36.5245778Z hint: 	git config --global init.defaultBranch <name>
+2026-10-30T17:18:36.5248152Z hint:
+2026-10-30T17:18:36.5249433Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-30T17:18:36.5251564Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-30T17:18:36.5252515Z hint:
+2026-10-30T17:18:36.5253106Z hint: 	git branch -m <name>
+2026-10-30T17:18:36.5253756Z hint:
+2026-10-30T17:18:36.5254784Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-30T17:18:36.5273060Z Initialized empty Git repository in /home/runner/work/Forgeshape/Forgeshape/.git/
+2026-10-30T17:18:36.5294153Z [command]/usr/bin/git remote add origin https://github.com/damiankrok/Forgeshape
+2026-10-30T17:18:36.5361874Z ##[endgroup]
+2026-10-30T17:18:36.5362757Z ##[group]Disabling automatic garbage collection
+2026-10-30T17:18:36.5370300Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-30T17:18:36.5418203Z ##[endgroup]
+2026-10-30T17:18:36.5418996Z ##[group]Setting up auth
+2026-10-30T17:18:36.5430772Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-30T17:18:36.5484525Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-30T17:18:36.5954309Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-30T17:18:36.5998502Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-30T17:18:36.6247525Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-30T17:18:36.6292589Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-30T17:18:36.6543353Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-30T17:18:36.6592864Z ##[endgroup]
+2026-10-30T17:18:36.6593467Z ##[group]Fetching the repository
+2026-10-30T17:18:36.6606567Z [command]/usr/bin/git -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+2026-10-30T17:18:40.1214521Z From https://github.com/damiankrok/Forgeshape
+2026-10-30T17:18:40.1215657Z  * [new branch]      audit/function-council-r2-closeout-r1 -> origin/audit/function-council-r2-closeout-r1
+2026-10-30T17:18:40.1217395Z  * [new branch]      audit/function-council-r2-full-product-ux-platform-r1 -> origin/audit/function-council-r2-full-product-ux-platform-r1
+2026-10-30T17:18:40.1218299Z  * [new branch]      claude/new-session-g87rge -> origin/claude/new-session-g87rge
+2026-10-30T17:18:40.1218990Z  * [new branch]      feature/cad-face-supported-placement-r1 -> origin/feature/cad-face-supported-placement-r1
+2026-10-30T17:18:40.1219762Z  * [new branch]      feature/cad-foundation-c1-union-hud-r1 -> origin/feature/cad-foundation-c1-union-hud-r1
+2026-10-30T17:18:40.1220597Z  * [new branch]      feature/cad-foundation-c2-owner-correction-r1 -> origin/feature/cad-foundation-c2-owner-correction-r1
+2026-10-30T17:18:40.1221958Z  * [new branch]      feature/cad-planar-face-pf-s1-arrangement-r1 -> origin/feature/cad-planar-face-pf-s1-arrangement-r1
+2026-10-30T17:18:40.1223409Z  * [new branch]      feature/cad-r2-c1-quality-gate-r1 -> origin/feature/cad-r2-c1-quality-gate-r1
+2026-10-30T17:18:40.1224490Z  * [new branch]      feature/cad-r2-c2-picking-seam-r1 -> origin/feature/cad-r2-c2-picking-seam-r1
+2026-10-30T17:18:40.1225885Z  * [new branch]      feature/cad-r2-retained-sketch-parametric-ux-r1 -> origin/feature/cad-r2-retained-sketch-parametric-ux-r1
+2026-10-30T17:18:40.1227797Z  * [new branch]      feature/cad-v6-revolve-newbody-r1 -> origin/feature/cad-v6-revolve-newbody-r1
+2026-10-30T17:18:40.1229104Z  * [new branch]      feature/cad-v6-s2-fill-pick-r2 -> origin/feature/cad-v6-s2-fill-pick-r2
+2026-10-30T17:18:40.1230654Z  * [new branch]      feature/cad-v6-s2-owner-correction-e2e-r1 -> origin/feature/cad-v6-s2-owner-correction-e2e-r1
+2026-10-30T17:18:40.1232194Z  * [new branch]      feature/cad-v6-s2-owner-feedback-multiface-r1 -> origin/feature/cad-v6-s2-owner-feedback-multiface-r1
+2026-10-30T17:18:40.1233598Z  * [new branch]      feature/cad-v6-sketch-face-r1 -> origin/feature/cad-v6-sketch-face-r1
+2026-10-30T17:18:40.1234868Z  * [new branch]      feature/cad-v8-sketch-drafting-toolkit-r1 -> origin/feature/cad-v8-sketch-drafting-toolkit-r1
+2026-10-30T17:18:40.1236230Z  * [new branch]      feature/cad-vertical-slice-r1 -> origin/feature/cad-vertical-slice-r1
+2026-10-30T17:18:40.1242544Z  * [new branch]      feature/modeling-r1-owner-shell-sketch-fix-r1 -> origin/feature/modeling-r1-owner-shell-sketch-fix-r1
+2026-10-30T17:18:40.1244400Z  * [new branch]      feature/modeling-v9-parametric-freeform-surface-r1 -> origin/feature/modeling-v9-parametric-freeform-surface-r1
+2026-10-30T17:18:40.1246163Z  * [new branch]      feature/stage027-sculpt-isolate-r1 -> origin/feature/stage027-sculpt-isolate-r1
+2026-10-30T17:18:40.1248039Z  * [new branch]      fix/function-council-d1-import-sculpt-guard-r1 -> origin/fix/function-council-d1-import-sculpt-guard-r1
+2026-10-30T17:18:40.1249432Z  * [new branch]      infra/ci-cloud-r1 -> origin/infra/ci-cloud-r1
+2026-10-30T17:18:40.1250714Z  * [new branch]      main              -> origin/main
+2026-10-30T17:18:40.1252696Z [command]/usr/bin/git branch --list --remote origin/feature/cad-face-supported-placement-r1
+2026-10-30T17:18:40.1272312Z   origin/feature/cad-face-supported-placement-r1
+2026-10-30T17:18:40.1283833Z [command]/usr/bin/git rev-parse refs/remotes/origin/feature/cad-face-supported-placement-r1
+2026-10-30T17:18:40.1323103Z ce1a375f59b256ab1e74c97d4e28284ae1dca535
+2026-10-30T17:18:40.1329101Z ##[endgroup]
+2026-10-30T17:18:40.1329949Z ##[group]Determining the checkout info
+2026-10-30T17:18:40.1330995Z ##[endgroup]
+2026-10-30T17:18:40.1336040Z [command]/usr/bin/git sparse-checkout disable
+2026-10-30T17:18:40.1398988Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-30T17:18:40.1439934Z ##[group]Checking out the ref
+2026-10-30T17:18:40.1445310Z [command]/usr/bin/git checkout --progress --force -B feature/cad-face-supported-placement-r1 refs/remotes/origin/feature/cad-face-supported-placement-r1
+2026-10-30T17:18:40.9251359Z Switched to a new branch 'feature/cad-face-supported-placement-r1'
+2026-10-30T17:18:40.9263060Z branch 'feature/cad-face-supported-placement-r1' set up to track 'origin/feature/cad-face-supported-placement-r1'.
+2026-10-30T17:18:40.9305894Z ##[endgroup]
+2026-10-30T17:18:40.9362072Z [command]/usr/bin/git log -1 --format=%H
+2026-10-30T17:18:40.9398179Z ce1a375f59b256ab1e74c97d4e28284ae1dca535
+2026-10-30T17:18:40.9625503Z ##[group]Run gradle/actions/wrapper-validation@v4
+2026-10-30T17:18:40.9625852Z with:
+2026-10-30T17:18:40.9626054Z   min-wrapper-count: 1
+2026-10-30T17:18:40.9626289Z   allow-snapshots: false
+2026-10-30T17:18:40.9626512Z env:
+2026-10-30T17:18:40.9626705Z   ANDROID_PLATFORM: android-36
+2026-10-30T17:18:40.9627266Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-10-30T17:18:40.9627525Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-10-30T17:18:40.9627989Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-10-30T17:18:40.9628229Z ##[endgroup]
+2026-10-30T17:18:41.2334603Z ✓ Found known Gradle Wrapper JAR files:
+2026-10-30T17:18:41.2337922Z   7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172 gradle/wrapper/gradle-wrapper.jar
+2026-10-30T17:18:41.2617465Z ##[group]Run actions/setup-java@v4
+2026-10-30T17:18:41.2618022Z with:
+2026-10-30T17:18:41.2618288Z   distribution: temurin
+2026-10-30T17:18:41.2618517Z   java-version: 17
+2026-10-30T17:18:41.2618733Z   java-package: jdk
+2026-10-30T17:18:41.2619093Z   check-latest: false
+2026-10-30T17:18:41.2619523Z   server-id: github
+2026-10-30T17:18:41.2619909Z   server-username: GITHUB_ACTOR
+2026-10-30T17:18:41.2620442Z   server-password: GITHUB_TOKEN
+2026-10-30T17:18:41.2620905Z   overwrite-settings: true
+2026-10-30T17:18:41.2621354Z   job-status: success
+2026-10-30T17:18:41.2626545Z   token: ***
+2026-10-30T17:18:41.2627150Z env:
+2026-10-30T17:18:41.2627617Z   ANDROID_PLATFORM: android-36
+2026-10-30T17:18:41.2628088Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-10-30T17:18:41.2628496Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-10-30T17:18:41.2628999Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-10-30T17:18:41.2629494Z   GRADLE_ACTION_ID: gradle/actions/wrapper-validation
+2026-10-30T17:18:41.2629935Z ##[endgroup]
+2026-10-30T17:18:41.4441738Z ##[warning]setup-java v4 is deprecated and will no longer receive updates. Please migrate to actions/setup-java@v5.
+2026-10-30T17:18:41.4449208Z ##[group]Installed distributions
+2026-10-30T17:18:41.4492365Z Resolved Java 17.0.21+9 from tool-cache
+2026-10-30T17:18:41.4492891Z Setting Java 17.0.21+9 as the default
+2026-10-30T17:18:41.4503694Z (node:2395) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-30T17:18:41.4504727Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-30T17:18:41.4507658Z Creating toolchains.xml for JDK version 17 from temurin
+2026-10-30T17:18:41.4585876Z Writing to /home/runner/.m2/toolchains.xml
+2026-10-30T17:18:41.4586317Z 
+2026-10-30T17:18:41.4586600Z Java configuration:
+2026-10-30T17:18:41.4587219Z   Distribution: temurin
+2026-10-30T17:18:41.4587674Z   Version: 17.0.21+9
+2026-10-30T17:18:41.4588338Z   Path: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:41.4588918Z 
+2026-10-30T17:18:41.4589456Z ##[endgroup]
+2026-10-30T17:18:41.4607300Z Creating settings.xml with server-id: github
+2026-10-30T17:18:41.4656581Z Writing to /home/runner/.m2/settings.xml
+2026-10-30T17:18:41.5055091Z ##[group]Run gradle/actions/setup-gradle@v4
+2026-10-30T17:18:41.5055620Z with:
+2026-10-30T17:18:41.5055960Z   cache-disabled: false
+2026-10-30T17:18:41.5056204Z   cache-read-only: true
+2026-10-30T17:18:41.5056627Z   cache-write-only: false
+2026-10-30T17:18:41.5057206Z   cache-overwrite-existing: false
+2026-10-30T17:18:41.5057495Z   cache-cleanup: on-success
+2026-10-30T17:18:41.5058058Z   gradle-home-cache-includes: caches
+notifications
+
+2026-10-30T17:18:41.5058640Z   add-job-summary: always
+2026-10-30T17:18:41.5059098Z   add-job-summary-as-pr-comment: never
+2026-10-30T17:18:41.5059625Z   dependency-graph: disabled
+2026-10-30T17:18:41.5060160Z   dependency-graph-report-dir: dependency-graph-reports
+2026-10-30T17:18:41.5060795Z   dependency-graph-continue-on-failure: true
+2026-10-30T17:18:41.5061367Z   build-scan-publish: false
+2026-10-30T17:18:41.5061785Z   validate-wrappers: true
+2026-10-30T17:18:41.5062200Z   allow-snapshot-wrappers: false
+2026-10-30T17:18:41.5062760Z   gradle-home-cache-strict-match: false
+2026-10-30T17:18:41.5063247Z   workflow-job-context: null
+2026-10-30T17:18:41.5069682Z   github-token: ***
+2026-10-30T17:18:41.5070223Z env:
+2026-10-30T17:18:41.5070586Z   ANDROID_PLATFORM: android-36
+2026-10-30T17:18:41.5071016Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-10-30T17:18:41.5071436Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-10-30T17:18:41.5071886Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-10-30T17:18:41.5072389Z   GRADLE_ACTION_ID: gradle/actions/wrapper-validation
+2026-10-30T17:18:41.5073397Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:41.5074249Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:41.5074914Z ##[endgroup]
+2026-10-30T17:18:41.9873227Z Merged default JDK locations into /home/runner/.m2/toolchains.xml
+2026-10-30T17:18:41.9876550Z ##[group]Restore Gradle state from cache
+2026-10-30T17:18:42.1823103Z Gradle User Home cache not found. Will initialize empty.
+2026-10-30T17:18:42.1824051Z ##[endgroup]
+2026-10-30T17:18:42.2274205Z ##[group]All Gradle Wrapper jars are valid
+2026-10-30T17:18:42.2275290Z ✓ Found known Gradle Wrapper JAR files:
+2026-10-30T17:18:42.2276009Z   7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172 gradle/wrapper/gradle-wrapper.jar
+2026-10-30T17:18:42.2277217Z ##[endgroup]
+2026-10-30T17:18:42.2431032Z ##[group]Run set -euo pipefail
+2026-10-30T17:18:42.2431397Z [36;1mset -euo pipefail[0m
+2026-10-30T17:18:42.2431784Z [36;1mSDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"[0m
+2026-10-30T17:18:42.2432242Z [36;1myes | "$SDKMANAGER" --licenses > /dev/null || true[0m
+2026-10-30T17:18:42.2432574Z [36;1m"$SDKMANAGER" --install \[0m
+2026-10-30T17:18:42.2432843Z [36;1m  "platform-tools" \[0m
+2026-10-30T17:18:42.2433123Z [36;1m  "platforms;$ANDROID_PLATFORM" \[0m
+2026-10-30T17:18:42.2433437Z [36;1m  "build-tools;$ANDROID_BUILD_TOOLS" \[0m
+2026-10-30T17:18:42.2433737Z [36;1m  "ndk;$ANDROID_NDK_VERSION" \[0m
+2026-10-30T17:18:42.2434024Z [36;1m  "cmake;$ANDROID_CMAKE_VERSION" \[0m
+2026-10-30T17:18:42.2434420Z [36;1m  > "$RUNNER_TEMP/sdkmanager-install.log" 2>&1[0m
+2026-10-30T17:18:42.2434823Z [36;1mtr '\r' '\n' < "$RUNNER_TEMP/sdkmanager-install.log" | tail -n 5[0m
+2026-10-30T17:18:42.2435323Z [36;1mtest -f "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/source.properties"[0m
+2026-10-30T17:18:42.2435785Z [36;1mtest -x "$ANDROID_HOME/cmake/$ANDROID_CMAKE_VERSION/bin/cmake"[0m
+2026-10-30T17:18:42.2459090Z shell: /usr/bin/bash -e {0}
+2026-10-30T17:18:42.2459348Z env:
+2026-10-30T17:18:42.2459552Z   ANDROID_PLATFORM: android-36
+2026-10-30T17:18:42.2459815Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-10-30T17:18:42.2460061Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-10-30T17:18:42.2460331Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-10-30T17:18:42.2460616Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-10-30T17:18:42.2461043Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:42.2461560Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:42.2461978Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-10-30T17:18:42.2462270Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-10-30T17:18:42.2462568Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-10-30T17:18:42.2463015Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-10-30T17:18:42.2463505Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-10-30T17:18:42.2463827Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-10-30T17:18:42.2464088Z ##[endgroup]
+2026-10-30T17:18:46.2744144Z yes: standard output: Broken pipe
+2026-10-30T17:18:50.5645318Z [=====================                  ] 54% Unzipping... share/cmake-3.22/Modu
+2026-10-30T17:18:50.5646089Z [=====================                  ] 55% Unzipping... share/cmake-3.22/Modu
+2026-10-30T17:18:50.5649193Z [=======================================] 100% Unzipping... share/cmake-3.22/Mod
+2026-10-30T17:18:50.5649670Z 
+2026-10-30T17:18:50.5649830Z 
+2026-10-30T17:18:50.5691017Z ##[group]Run set -uo pipefail
+2026-10-30T17:18:50.5691370Z [36;1mset -uo pipefail[0m
+2026-10-30T17:18:50.5691635Z [36;1mmkdir -p ci-fast-evidence[0m
+2026-10-30T17:18:50.5691911Z [36;1m{[0m
+2026-10-30T17:18:50.5692223Z [36;1m  echo "runner_image=${ImageOS:-unknown} ${ImageVersion:-unknown}"[0m
+2026-10-30T17:18:50.5692664Z [36;1m  echo "runner_os=$(lsb_release -ds 2>/dev/null)"[0m
+2026-10-30T17:18:50.5692983Z [36;1m  echo "commit=$GITHUB_SHA"[0m
+2026-10-30T17:18:50.5693433Z [36;1m  echo "ref=$GITHUB_REF"[0m
+2026-10-30T17:18:50.5693701Z [36;1m  echo "event=$GITHUB_EVENT_NAME"[0m
+2026-10-30T17:18:50.5694024Z [36;1m  echo "java=$(java -version 2>&1 | head -n 1)"[0m
+2026-10-30T17:18:50.5694353Z [36;1m  echo "java_home=$JAVA_HOME"[0m
+2026-10-30T17:18:50.5694637Z [36;1m  echo "android_home=$ANDROID_HOME"[0m
+2026-10-30T17:18:50.5695125Z [36;1m  echo "ndk=$(grep Pkg.Revision "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/source.properties")"[0m
+2026-10-30T17:18:50.5695836Z [36;1m  echo "cmake=$("$ANDROID_HOME/cmake/$ANDROID_CMAKE_VERSION/bin/cmake" --version | head -n 1)"[0m
+2026-10-30T17:18:50.5696555Z [36;1m  echo "build_tools=$(grep Pkg.Revision "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS/source.properties")"[0m
+2026-10-30T17:18:50.5697491Z [36;1m  echo "platform=$(grep Pkg.Revision "$ANDROID_HOME/platforms/$ANDROID_PLATFORM/source.properties")"[0m
+2026-10-30T17:18:50.5698190Z [36;1m  echo "pwsh=$(pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>&1)"[0m
+2026-10-30T17:18:50.5698863Z [36;1m  echo "gradle_wrapper=$(grep distributionUrl gradle/wrapper/gradle-wrapper.properties)"[0m
+2026-10-30T17:18:50.5699467Z [36;1m  bash ./gradlew --version 2>&1 | grep -E '^(Gradle|Kotlin|Groovy|JVM|OS)'[0m
+2026-10-30T17:18:50.5699941Z [36;1m} | tee ci-fast-evidence/toolchain-manifest.txt[0m
+2026-10-30T17:18:50.5719971Z shell: /usr/bin/bash -e {0}
+2026-10-30T17:18:50.5720220Z env:
+2026-10-30T17:18:50.5720425Z   ANDROID_PLATFORM: android-36
+2026-10-30T17:18:50.5720695Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-10-30T17:18:50.5720937Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-10-30T17:18:50.5721197Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-10-30T17:18:50.5721482Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-10-30T17:18:50.5721900Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:50.5722390Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:50.5722799Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-10-30T17:18:50.5723083Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-10-30T17:18:50.5723381Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-10-30T17:18:50.5723823Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-10-30T17:18:50.5724313Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-10-30T17:18:50.5724636Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-10-30T17:18:50.5724912Z ##[endgroup]
+2026-10-30T17:18:50.5791951Z runner_image=ubuntu24 20261026.354.1
+2026-10-30T17:18:50.5872307Z runner_os=Ubuntu 24.04.5 LTS
+2026-10-30T17:18:50.5872689Z commit=ce1a375f59b256ab1e74c97d4e28284ae1dca535
+2026-10-30T17:18:50.5873142Z ref=refs/heads/feature/cad-face-supported-placement-r1
+2026-10-30T17:18:50.5873540Z event=workflow_dispatch
+2026-10-30T17:18:50.6223908Z java=openjdk version "17.0.21" 2026-10-20
+2026-10-30T17:18:50.6224823Z java_home=/opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:50.6228445Z android_home=/usr/local/lib/android/sdk
+2026-10-30T17:18:50.6450701Z ndk=Pkg.Revision = 29.0.14206865
+2026-10-30T17:18:50.6477737Z cmake=cmake version 3.22.1-g37088a8
+2026-10-30T17:18:50.6493324Z build_tools=Pkg.Revision=36.1.0
+2026-10-30T17:18:50.6493703Z #Pkg.Revision=36.1.0 rc1
+2026-10-30T17:18:50.6508849Z platform=Pkg.Revision=2
+2026-10-30T17:18:51.1570388Z pwsh=7.6.9
+2026-10-30T17:18:51.1589032Z gradle_wrapper=distributionUrl=https\://services.gradle.org/distributions/gradle-8.14.3-bin.zip
+2026-10-30T17:18:54.2979563Z Gradle 8.14.3
+2026-10-30T17:18:54.2980057Z Kotlin:        2.0.21
+2026-10-30T17:18:54.2980480Z Groovy:        3.0.24
+2026-10-30T17:18:54.2980910Z OS:            Linux 7.0.0-1017-azure amd64
+2026-10-30T17:18:54.3028396Z ##[group]Run set -euo pipefail
+2026-10-30T17:18:54.3028728Z [36;1mset -euo pipefail[0m
+2026-10-30T17:18:54.3028966Z [36;1mbase=""[0m
+2026-10-30T17:18:54.3029176Z [36;1mcase "$EVENT" in[0m
+2026-10-30T17:18:54.3029448Z [36;1m  pull_request) base="$PR_BASE" ;;[0m
+2026-10-30T17:18:54.3029919Z [36;1m  push) base="$PUSH_BEFORE" ;;[0m
+2026-10-30T17:18:54.3030187Z [36;1mesac[0m
+2026-10-30T17:18:54.3030514Z [36;1m# A new branch (all-zero "before"), a dispatch, or a base that is not[0m
+2026-10-30T17:18:54.3031000Z [36;1m# in the clone falls back to where HEAD left origin/main, or HEAD~1.[0m
+2026-10-30T17:18:54.3031467Z [36;1mif [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \[0m
+2026-10-30T17:18:54.3031901Z [36;1m    || ! git cat-file -e "$base^{commit}" 2>/dev/null; then[0m
+2026-10-30T17:18:54.3032323Z [36;1m  base="$(git merge-base HEAD origin/main 2>/dev/null || true)"[0m
+2026-10-30T17:18:54.3032818Z [36;1m  if [ -z "$base" ] || [ "$base" = "$(git rev-parse HEAD)" ]; then[0m
+2026-10-30T17:18:54.3033193Z [36;1m    base="$(git rev-parse HEAD~1)"[0m
+2026-10-30T17:18:54.3033464Z [36;1m  fi[0m
+2026-10-30T17:18:54.3033651Z [36;1mfi[0m
+2026-10-30T17:18:54.3033858Z [36;1mecho "git diff --check $base HEAD"[0m
+2026-10-30T17:18:54.3034147Z [36;1mgit diff --check "$base" HEAD[0m
+2026-10-30T17:18:54.3054071Z shell: /usr/bin/bash -e {0}
+2026-10-30T17:18:54.3054318Z env:
+2026-10-30T17:18:54.3054524Z   ANDROID_PLATFORM: android-36
+2026-10-30T17:18:54.3054779Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-10-30T17:18:54.3055018Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-10-30T17:18:54.3055282Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-10-30T17:18:54.3055576Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-10-30T17:18:54.3055992Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:54.3056484Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:54.3057439Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-10-30T17:18:54.3057764Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-10-30T17:18:54.3058064Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-10-30T17:18:54.3058502Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-10-30T17:18:54.3059021Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-10-30T17:18:54.3059361Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-10-30T17:18:54.3059643Z   EVENT: workflow_dispatch
+2026-10-30T17:18:54.3059880Z   PR_BASE: 
+2026-10-30T17:18:54.3060065Z   PUSH_BEFORE: 
+2026-10-30T17:18:54.3060264Z ##[endgroup]
+2026-10-30T17:18:54.3169573Z git diff --check 6c9f156c1df91fe1a55445aed6186105a075ab31 HEAD
+2026-10-30T17:18:54.4012420Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:168: trailing whitespace.
+2026-10-30T17:18:54.4013767Z +2026-10-30T15:11:14.0917267Z 
+2026-10-30T17:18:54.4014966Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:173: trailing whitespace.
+2026-10-30T17:18:54.4016205Z +2026-10-30T15:11:14.0919847Z 
+2026-10-30T17:18:54.4017598Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:290: trailing whitespace.
+2026-10-30T17:18:54.4018895Z +2026-10-30T15:11:54.0512249Z [=================================      ] 85% Unzipping... doc/ninja/LICENSE    
+2026-10-30T17:18:54.4019912Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:293: trailing whitespace.
+2026-10-30T17:18:54.4020690Z +2026-10-30T15:11:54.0516713Z 
+2026-10-30T17:18:54.4021393Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:294: trailing whitespace.
+2026-10-30T17:18:54.4022145Z +2026-10-30T15:11:54.0517668Z 
+2026-10-30T17:18:54.4022833Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:324: trailing whitespace.
+2026-10-30T17:18:54.4023579Z +2026-10-30T15:11:56.8874377Z 
+2026-10-30T17:18:54.4024756Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:326: trailing whitespace.
+2026-10-30T17:18:54.4025535Z +2026-10-30T15:11:56.8877227Z 
+2026-10-30T17:18:54.4026237Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:332: trailing whitespace.
+2026-10-30T17:18:54.4027495Z +2026-10-30T15:11:56.8894070Z 
+2026-10-30T17:18:54.4028209Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:334: trailing whitespace.
+2026-10-30T17:18:54.4028908Z +2026-10-30T15:11:56.8926421Z 
+2026-10-30T17:18:54.4029398Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:367: trailing whitespace.
+2026-10-30T17:18:54.4029911Z +2026-10-30T15:12:43.5893696Z 
+2026-10-30T17:18:54.4030384Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:369: trailing whitespace.
+2026-10-30T17:18:54.4030890Z +2026-10-30T15:12:49.8866516Z 
+2026-10-30T17:18:54.4031361Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:408: trailing whitespace.
+2026-10-30T17:18:54.4031870Z +2026-10-30T15:15:13.7873274Z 
+2026-10-30T17:18:54.4032330Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:411: trailing whitespace.
+2026-10-30T17:18:54.4032823Z +2026-10-30T15:15:19.7870106Z 
+2026-10-30T17:18:54.4033282Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:427: trailing whitespace.
+2026-10-30T17:18:54.4033776Z +2026-10-30T15:15:31.2874187Z 
+2026-10-30T17:18:54.4034227Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:429: trailing whitespace.
+2026-10-30T17:18:54.4034720Z +2026-10-30T15:15:31.2933733Z 
+2026-10-30T17:18:54.4035172Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:431: trailing whitespace.
+2026-10-30T17:18:54.4035669Z +2026-10-30T15:15:31.2961756Z 
+2026-10-30T17:18:54.4036121Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:433: trailing whitespace.
+2026-10-30T17:18:54.4036619Z +2026-10-30T15:15:31.2964352Z 
+2026-10-30T17:18:54.4037326Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:435: trailing whitespace.
+2026-10-30T17:18:54.4037829Z +2026-10-30T15:15:31.2967012Z 
+2026-10-30T17:18:54.4038287Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:472: trailing whitespace.
+2026-10-30T17:18:54.4039000Z +2026-10-30T15:16:31.6103653Z accel_check=accel: 0 KVM (version 12) is installed and usable. accel 
+2026-10-30T17:18:54.4039693Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:485: trailing whitespace.
+2026-10-30T17:18:54.4040290Z +2026-10-30T15:16:31.6541748Z wm_size=Physical size: 1080x2400 
+2026-10-30T17:18:54.4040874Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41078310302/job.log:486: trailing whitespace.
+2026-10-30T17:18:54.4041460Z +2026-10-30T15:16:31.6571727Z wm_density=Physical density: 420 
+2026-10-30T17:18:54.4042049Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:168: trailing whitespace.
+2026-10-30T17:18:54.4042584Z +2026-10-30T15:53:33.2114442Z 
+2026-10-30T17:18:54.4043069Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:173: trailing whitespace.
+2026-10-30T17:18:54.4043660Z +2026-10-30T15:53:33.2117099Z 
+2026-10-30T17:18:54.4044150Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:290: trailing whitespace.
+2026-10-30T17:18:54.4044819Z +2026-10-30T15:54:13.4332565Z [=================================      ] 85% Unzipping... doc/ninja/LICENSE    
+2026-10-30T17:18:54.4045481Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:293: trailing whitespace.
+2026-10-30T17:18:54.4045993Z +2026-10-30T15:54:13.4336554Z 
+2026-10-30T17:18:54.4046473Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:294: trailing whitespace.
+2026-10-30T17:18:54.4047222Z +2026-10-30T15:54:13.4355395Z 
+2026-10-30T17:18:54.4047906Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:324: trailing whitespace.
+2026-10-30T17:18:54.4048419Z +2026-10-30T15:54:16.2485692Z 
+2026-10-30T17:18:54.4188976Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:326: trailing whitespace.
+2026-10-30T17:18:54.4207786Z +2026-10-30T15:54:16.2487675Z 
+2026-10-30T17:18:54.4208679Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:332: trailing whitespace.
+2026-10-30T17:18:54.4209438Z +2026-10-30T15:54:16.2490242Z 
+2026-10-30T17:18:54.4210300Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:334: trailing whitespace.
+2026-10-30T17:18:54.4211276Z +2026-10-30T15:54:16.2491128Z 
+2026-10-30T17:18:54.4212117Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:368: trailing whitespace.
+2026-10-30T17:18:54.4213023Z +2026-10-30T15:55:06.7472803Z 
+2026-10-30T17:18:54.4213889Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:371: trailing whitespace.
+2026-10-30T17:18:54.4214799Z +2026-10-30T15:55:12.9465514Z 
+2026-10-30T17:18:54.4215316Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:407: trailing whitespace.
+2026-10-30T17:18:54.4215837Z +2026-10-30T15:57:35.1463858Z 
+2026-10-30T17:18:54.4216314Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:411: trailing whitespace.
+2026-10-30T17:18:54.4217265Z +2026-10-30T15:57:41.1469526Z 
+2026-10-30T17:18:54.4217886Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:427: trailing whitespace.
+2026-10-30T17:18:54.4218438Z +2026-10-30T15:57:52.5499028Z 
+2026-10-30T17:18:54.4218951Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:429: trailing whitespace.
+2026-10-30T17:18:54.4219482Z +2026-10-30T15:57:52.5515772Z 
+2026-10-30T17:18:54.4219970Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:431: trailing whitespace.
+2026-10-30T17:18:54.4220540Z +2026-10-30T15:57:52.5518043Z 
+2026-10-30T17:18:54.4221017Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:433: trailing whitespace.
+2026-10-30T17:18:54.4221519Z +2026-10-30T15:57:52.5520707Z 
+2026-10-30T17:18:54.4221992Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:435: trailing whitespace.
+2026-10-30T17:18:54.4222493Z +2026-10-30T15:57:52.5523293Z 
+2026-10-30T17:18:54.4222951Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:472: trailing whitespace.
+2026-10-30T17:18:54.4223631Z +2026-10-30T15:58:47.7786282Z accel_check=accel: 0 KVM (version 12) is installed and usable. accel 
+2026-10-30T17:18:54.4224311Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:485: trailing whitespace.
+2026-10-30T17:18:54.4224880Z +2026-10-30T15:58:47.7839806Z wm_size=Physical size: 1080x2400 
+2026-10-30T17:18:54.4225455Z artifacts/cad-face-supported-placement-r1/evidence/device-run-41084823234/job.log:486: trailing whitespace.
+2026-10-30T17:18:54.4226029Z +2026-10-30T15:58:47.7840384Z wm_density=Physical density: 420 
+2026-10-30T17:18:54.4226595Z artifacts/function-council-r2-closeout/diagnostics/CR-05/transcription_check.out:9: trailing whitespace.
+2026-10-30T17:18:54.4228139Z +  1020	
+2026-10-30T17:18:54.4228859Z artifacts/function-council-r2-closeout/diagnostics/CR-05/transcription_check.out:27: trailing whitespace.
+2026-10-30T17:18:54.4229780Z +  2603	
+2026-10-30T17:18:54.4230554Z artifacts/function-council-r2-closeout/diagnostics/CR-05/transcription_check.out:33: trailing whitespace.
+2026-10-30T17:18:54.4231482Z +  2609	
+2026-10-30T17:18:54.4232283Z artifacts/function-council-r2-closeout/diagnostics/CR-05/transcription_check.out:50: trailing whitespace.
+2026-10-30T17:18:54.4232859Z +  2633	
+2026-10-30T17:18:54.4233283Z artifacts/function-council-r2-closeout/diagnostics/CR-05/transcription_check.out:80: trailing whitespace.
+2026-10-30T17:18:54.4234642Z +  2663	
+2026-10-30T17:18:54.4235096Z artifacts/function-council-r2-closeout/diagnostics/CR-05/transcription_check.out:96: trailing whitespace.
+2026-10-30T17:18:54.4235578Z +  2679	
+2026-10-30T17:18:54.4235995Z artifacts/function-council-r2-closeout/diagnostics/CR-05/transcription_check.out:183: trailing whitespace.
+2026-10-30T17:18:54.4236616Z +  5604	
+2026-10-30T17:18:54.4237400Z artifacts/function-council-r2-closeout/diagnostics/CR-05/transcription_check.out:188: trailing whitespace.
+2026-10-30T17:18:54.4237920Z +  5655	
+2026-10-30T17:18:54.4238327Z artifacts/function-council-r2-closeout/diagnostics/CR-05/transcription_check.out:220: trailing whitespace.
+2026-10-30T17:18:54.4238804Z +  5687	
+2026-10-30T17:18:54.4239207Z artifacts/function-council-r2-closeout/diagnostics/CR-05/transcription_check.out:256: trailing whitespace.
+2026-10-30T17:18:54.4239683Z +  5779	
+2026-10-30T17:18:54.4240090Z artifacts/function-council-r2-closeout/diagnostics/CR-05/transcription_check.out:261: trailing whitespace.
+2026-10-30T17:18:54.4240568Z +  5784	
+2026-10-30T17:18:54.4240956Z artifacts/function-council-r2-closeout/diagnostics/desktop/boundary.out:6: trailing whitespace.
+2026-10-30T17:18:54.4241745Z +B2b Java files declaring a native method (regex '^\s*(public |private |protected )?(static )?native '): NativeViewport.java 
+2026-10-30T17:18:54.4242510Z artifacts/function-council-r2-closeout/diagnostics/desktop/boundary.out:7: trailing whitespace.
+2026-10-30T17:18:54.4243240Z +B1e names defined twice (preprocessor variants): Java_com_forgeshape_app_NativeViewport_debugInjectDeviceLoss 
+2026-10-30T17:18:54.4243960Z artifacts/function-council-r2-closeout/diagnostics/desktop/boundary.out:56: trailing whitespace.
+2026-10-30T17:18:54.4246254Z +AppPreferences.java AppTheme.java CadHud3dPresentation.java CadHudPresentation.java CadHudTouchAttribution.java CadRevolvePresentation.java DiagnosticLog.java EditorUiState.java ExactExpression.java FeatureHistoryPresentation.java FreeformPresentation.java GizmoStrokeWeight.java Handedness.java InspectorHost.java LengthUnit.java ProjectDrawerPolicy.java SketchBrowserPresentation.java SketchChromePolicy.java SketchDraftingPresentation.java SurfacePresentation.java ToolbarRowBudget.java WorkspaceLayoutMode.java 
+2026-10-30T17:18:54.4248976Z artifacts/function-council-r2-closeout/diagnostics/desktop/boundary.out:80: trailing whitespace.
+2026-10-30T17:18:54.4249529Z +B13 manifold include sites: forgeshape_cad_kernel.cpp 
+2026-10-30T17:18:54.4250117Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:1: trailing whitespace.
+2026-10-30T17:18:54.4250662Z +forgeshape_body_commands.h rc=0 
+2026-10-30T17:18:54.4251166Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:2: trailing whitespace.
+2026-10-30T17:18:54.4251692Z +forgeshape_body_delete.h rc=0 
+2026-10-30T17:18:54.4252185Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:3: trailing whitespace.
+2026-10-30T17:18:54.4252735Z +forgeshape_body_dimension_overlay.h rc=0 
+2026-10-30T17:18:54.4253261Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:4: trailing whitespace.
+2026-10-30T17:18:54.4253784Z +forgeshape_body_dimensions.h rc=0 
+2026-10-30T17:18:54.4254290Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:5: trailing whitespace.
+2026-10-30T17:18:54.4254833Z +forgeshape_body_dimensions_selftest.h rc=0 
+2026-10-30T17:18:54.4255357Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:6: trailing whitespace.
+2026-10-30T17:18:54.4268531Z +forgeshape_body_mirror.h rc=0 
+2026-10-30T17:18:54.4269415Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:7: trailing whitespace.
+2026-10-30T17:18:54.4270014Z +forgeshape_cad_a3_selftest.h rc=0 
+2026-10-30T17:18:54.4270560Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:8: trailing whitespace.
+2026-10-30T17:18:54.4271313Z +forgeshape_cad_body.h rc=0 
+2026-10-30T17:18:54.4271828Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:9: trailing whitespace.
+2026-10-30T17:18:54.4272365Z +forgeshape_cad_extrude_tool.h rc=0 
+2026-10-30T17:18:54.4273002Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:10: trailing whitespace.
+2026-10-30T17:18:54.4273558Z +forgeshape_cad_face.h rc=0 
+2026-10-30T17:18:54.4274059Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:11: trailing whitespace.
+2026-10-30T17:18:54.4274605Z +forgeshape_cad_feature.h rc=0 
+2026-10-30T17:18:54.4275106Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:12: trailing whitespace.
+2026-10-30T17:18:54.4275648Z +forgeshape_cad_feature_selftest.h rc=0 
+2026-10-30T17:18:54.4276172Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:13: trailing whitespace.
+2026-10-30T17:18:54.4276704Z +forgeshape_cad_kernel.h rc=0 
+2026-10-30T17:18:54.4277465Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:14: trailing whitespace.
+2026-10-30T17:18:54.4278007Z +forgeshape_cad_multiface_selftest.h rc=0 
+2026-10-30T17:18:54.4278544Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:15: trailing whitespace.
+2026-10-30T17:18:54.4279073Z +forgeshape_cad_oracle_selftest.h rc=0 
+2026-10-30T17:18:54.4279589Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:16: trailing whitespace.
+2026-10-30T17:18:54.4280110Z +forgeshape_cad_r2_selftest.h rc=0 
+2026-10-30T17:18:54.4280609Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:17: trailing whitespace.
+2026-10-30T17:18:54.4281132Z +forgeshape_cad_revolve.h rc=0 
+2026-10-30T17:18:54.4281614Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:18: trailing whitespace.
+2026-10-30T17:18:54.4282151Z +forgeshape_cad_revolve_selftest.h rc=0 
+2026-10-30T17:18:54.4282662Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:19: trailing whitespace.
+2026-10-30T17:18:54.4283187Z +forgeshape_cad_selftest.h rc=0 
+2026-10-30T17:18:54.4283691Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:20: trailing whitespace.
+2026-10-30T17:18:54.4284215Z +forgeshape_cad_sketch_inventory.h rc=0 
+2026-10-30T17:18:54.4284723Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:21: trailing whitespace.
+2026-10-30T17:18:54.4285247Z +forgeshape_cad_timeline.h rc=0 
+2026-10-30T17:18:54.4285732Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:22: trailing whitespace.
+2026-10-30T17:18:54.4286257Z +forgeshape_cad_timeline_selftest.h rc=0 
+2026-10-30T17:18:54.4286772Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:23: trailing whitespace.
+2026-10-30T17:18:54.4287638Z +forgeshape_cad_v6_selftest.h rc=0 
+2026-10-30T17:18:54.4288162Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:24: trailing whitespace.
+2026-10-30T17:18:54.4288684Z +forgeshape_camera.h rc=0 
+2026-10-30T17:18:54.4289163Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:25: trailing whitespace.
+2026-10-30T17:18:54.4289684Z +forgeshape_camera_selftest.h rc=0 
+2026-10-30T17:18:54.4290179Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:26: trailing whitespace.
+2026-10-30T17:18:54.4290714Z +forgeshape_cone_capsule_selftest.h rc=0 
+2026-10-30T17:18:54.4291239Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:27: trailing whitespace.
+2026-10-30T17:18:54.4291765Z +forgeshape_construction.h rc=0 
+2026-10-30T17:18:54.4292270Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:28: trailing whitespace.
+2026-10-30T17:18:54.4292949Z +forgeshape_construction_selftest.h rc=0 
+2026-10-30T17:18:54.4293468Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:29: trailing whitespace.
+2026-10-30T17:18:54.4293989Z +forgeshape_demo_mesh.h rc=0 
+2026-10-30T17:18:54.4294665Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:30: trailing whitespace.
+2026-10-30T17:18:54.4295401Z +forgeshape_display.h rc=0 
+2026-10-30T17:18:54.4295879Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:31: trailing whitespace.
+2026-10-30T17:18:54.4296394Z +forgeshape_freeform.h rc=0 
+2026-10-30T17:18:54.4297114Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:32: trailing whitespace.
+2026-10-30T17:18:54.4297919Z +forgeshape_freeform_selftest.h rc=0 
+2026-10-30T17:18:54.4298474Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:33: trailing whitespace.
+2026-10-30T17:18:54.4299018Z +forgeshape_freeform_session.h rc=0 
+2026-10-30T17:18:54.4299523Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:34: trailing whitespace.
+2026-10-30T17:18:54.4300051Z +forgeshape_freeform_subdivision.h rc=0 
+2026-10-30T17:18:54.4300568Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:35: trailing whitespace.
+2026-10-30T17:18:54.4301086Z +forgeshape_gizmo.h rc=0 
+2026-10-30T17:18:54.4301557Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:36: trailing whitespace.
+2026-10-30T17:18:54.4302081Z +forgeshape_gizmo_selftest.h rc=0 
+2026-10-30T17:18:54.4302581Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:37: trailing whitespace.
+2026-10-30T17:18:54.4303114Z +forgeshape_glb_import_fixture.h rc=0 
+2026-10-30T17:18:54.4303624Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:38: trailing whitespace.
+2026-10-30T17:18:54.4304149Z +forgeshape_glb_roundtrip.h rc=0 
+2026-10-30T17:18:54.4304640Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:39: trailing whitespace.
+2026-10-30T17:18:54.4305160Z +forgeshape_gltf_export.h rc=0 
+2026-10-30T17:18:54.4305647Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:40: trailing whitespace.
+2026-10-30T17:18:54.4306179Z +forgeshape_gltf_export_selftest.h rc=0 
+2026-10-30T17:18:54.4306691Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:41: trailing whitespace.
+2026-10-30T17:18:54.4307561Z +forgeshape_gltf_import.h rc=0 
+2026-10-30T17:18:54.4308057Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:42: trailing whitespace.
+2026-10-30T17:18:54.4308590Z +forgeshape_gltf_import_selftest.h rc=0 
+2026-10-30T17:18:54.4309101Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:43: trailing whitespace.
+2026-10-30T17:18:54.4309623Z +forgeshape_grid.h rc=0 
+2026-10-30T17:18:54.4310098Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:44: trailing whitespace.
+2026-10-30T17:18:54.4310618Z +forgeshape_history.h rc=0 
+2026-10-30T17:18:54.4311091Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:45: trailing whitespace.
+2026-10-30T17:18:54.4311627Z +forgeshape_history_selftest.h rc=0 
+2026-10-30T17:18:54.4312129Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:46: trailing whitespace.
+2026-10-30T17:18:54.4312651Z +forgeshape_import_commit.h rc=0 
+2026-10-30T17:18:54.4313143Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:47: trailing whitespace.
+2026-10-30T17:18:54.4313663Z +forgeshape_import_preview.h rc=0 
+2026-10-30T17:18:54.4314162Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:48: trailing whitespace.
+2026-10-30T17:18:54.4314847Z +forgeshape_imported_mesh.h rc=0 
+2026-10-30T17:18:54.4315346Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:49: trailing whitespace.
+2026-10-30T17:18:54.4315885Z +forgeshape_input.h rc=0 
+2026-10-30T17:18:54.4316365Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:50: trailing whitespace.
+2026-10-30T17:18:54.4317236Z +forgeshape_json.h rc=0 
+2026-10-30T17:18:54.4317957Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:51: trailing whitespace.
+2026-10-30T17:18:54.4318885Z +forgeshape_matcap.h rc=0 
+2026-10-30T17:18:54.4319753Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:52: trailing whitespace.
+2026-10-30T17:18:54.4320489Z +forgeshape_math.h rc=0 
+2026-10-30T17:18:54.4320973Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:53: trailing whitespace.
+2026-10-30T17:18:54.4321498Z +forgeshape_mesh.h rc=0 
+2026-10-30T17:18:54.4321979Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:54: trailing whitespace.
+2026-10-30T17:18:54.4322506Z +forgeshape_mesh_fixtures.h rc=0 
+2026-10-30T17:18:54.4323004Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:55: trailing whitespace.
+2026-10-30T17:18:54.4323530Z +forgeshape_mesh_selftest.h rc=0 
+2026-10-30T17:18:54.4324023Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:56: trailing whitespace.
+2026-10-30T17:18:54.4324550Z +forgeshape_mirror_selftest.h rc=0 
+2026-10-30T17:18:54.4325054Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:57: trailing whitespace.
+2026-10-30T17:18:54.4325585Z +forgeshape_object_id.h rc=0 
+2026-10-30T17:18:54.4326086Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:58: trailing whitespace.
+2026-10-30T17:18:54.4326635Z +forgeshape_owner_shell_selftest.h rc=0 
+2026-10-30T17:18:54.4327496Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:59: trailing whitespace.
+2026-10-30T17:18:54.4328035Z +forgeshape_picking.h rc=0 
+2026-10-30T17:18:54.4328528Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:60: trailing whitespace.
+2026-10-30T17:18:54.4329066Z +forgeshape_picking_selftest.h rc=0 
+2026-10-30T17:18:54.4329577Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:61: trailing whitespace.
+2026-10-30T17:18:54.4330117Z +forgeshape_primitive_selftest.h rc=0 
+2026-10-30T17:18:54.4330628Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:62: trailing whitespace.
+2026-10-30T17:18:54.4331156Z +forgeshape_project_bootstrap.h rc=0 
+2026-10-30T17:18:54.4331659Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:63: trailing whitespace.
+2026-10-30T17:18:54.4332186Z +forgeshape_project_bytes.h rc=0 
+2026-10-30T17:18:54.4332682Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:64: trailing whitespace.
+2026-10-30T17:18:54.4333208Z +forgeshape_project_document.h rc=0 
+2026-10-30T17:18:54.4333711Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:65: trailing whitespace.
+2026-10-30T17:18:54.4334243Z +forgeshape_project_freeform.h rc=0 
+2026-10-30T17:18:54.4334742Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:66: trailing whitespace.
+2026-10-30T17:18:54.4335261Z +forgeshape_project_selftest.h rc=0 
+2026-10-30T17:18:54.4335782Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:67: trailing whitespace.
+2026-10-30T17:18:54.4336319Z +forgeshape_project_state.h rc=0 
+2026-10-30T17:18:54.4337038Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:68: trailing whitespace.
+2026-10-30T17:18:54.4337657Z +forgeshape_project_surface.h rc=0 
+2026-10-30T17:18:54.4338324Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:69: trailing whitespace.
+2026-10-30T17:18:54.4338868Z +forgeshape_render_mesh.h rc=0 
+2026-10-30T17:18:54.4339365Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:70: trailing whitespace.
+2026-10-30T17:18:54.4340012Z +forgeshape_render_mesh_selftest.h rc=0 
+2026-10-30T17:18:54.4340531Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:71: trailing whitespace.
+2026-10-30T17:18:54.4341060Z +forgeshape_render_recovery.h rc=0 
+2026-10-30T17:18:54.4341556Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:72: trailing whitespace.
+2026-10-30T17:18:54.4342099Z +forgeshape_render_recovery_selftest.h rc=0 
+2026-10-30T17:18:54.4342630Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:74: trailing whitespace.
+2026-10-30T17:18:54.4343152Z +forgeshape_scene.h rc=0 
+2026-10-30T17:18:54.4343626Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:75: trailing whitespace.
+2026-10-30T17:18:54.4344153Z +forgeshape_scene_selftest.h rc=0 
+2026-10-30T17:18:54.4344651Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:76: trailing whitespace.
+2026-10-30T17:18:54.4345178Z +forgeshape_sculpt.h rc=0 
+2026-10-30T17:18:54.4345653Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:77: trailing whitespace.
+2026-10-30T17:18:54.4346178Z +forgeshape_sculpt_history.h rc=0 
+2026-10-30T17:18:54.4346672Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:78: trailing whitespace.
+2026-10-30T17:18:54.4347435Z +forgeshape_sculpt_selftest.h rc=0 
+2026-10-30T17:18:54.4347935Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:79: trailing whitespace.
+2026-10-30T17:18:54.4348456Z +forgeshape_selection.h rc=0 
+2026-10-30T17:18:54.4348950Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:80: trailing whitespace.
+2026-10-30T17:18:54.4349475Z +forgeshape_selection_outline.h rc=0 
+2026-10-30T17:18:54.4349982Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:81: trailing whitespace.
+2026-10-30T17:18:54.4350512Z +forgeshape_selection_pulse.h rc=0 
+2026-10-30T17:18:54.4351008Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:82: trailing whitespace.
+2026-10-30T17:18:54.4351535Z +forgeshape_sketch.h rc=0 
+2026-10-30T17:18:54.4352004Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:83: trailing whitespace.
+2026-10-30T17:18:54.4352535Z +forgeshape_sketch_arrangement.h rc=0 
+2026-10-30T17:18:54.4353049Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:84: trailing whitespace.
+2026-10-30T17:18:54.4353600Z +forgeshape_sketch_arrangement_selftest.h rc=0 
+2026-10-30T17:18:54.4354144Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:85: trailing whitespace.
+2026-10-30T17:18:54.4354669Z +forgeshape_sketch_dimension.h rc=0 
+2026-10-30T17:18:54.4355170Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:86: trailing whitespace.
+2026-10-30T17:18:54.4355702Z +forgeshape_sketch_drafting.h rc=0 
+2026-10-30T17:18:54.4356201Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:87: trailing whitespace.
+2026-10-30T17:18:54.4356739Z +forgeshape_sketch_drafting_selftest.h rc=0 
+2026-10-30T17:18:54.4357835Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:88: trailing whitespace.
+2026-10-30T17:18:54.4358398Z +forgeshape_sketch_fill_selftest.h rc=0 
+2026-10-30T17:18:54.4358927Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:89: trailing whitespace.
+2026-10-30T17:18:54.4359460Z +forgeshape_sketch_overlay.h rc=0 
+2026-10-30T17:18:54.4360194Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:90: trailing whitespace.
+2026-10-30T17:18:54.4360731Z +forgeshape_sketch_region.h rc=0 
+2026-10-30T17:18:54.4361227Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:91: trailing whitespace.
+2026-10-30T17:18:54.4361875Z +forgeshape_sketch_session.h rc=0 
+2026-10-30T17:18:54.4362394Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:92: trailing whitespace.
+2026-10-30T17:18:54.4362968Z +forgeshape_sketch_snap.h rc=0 
+2026-10-30T17:18:54.4363489Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:93: trailing whitespace.
+2026-10-30T17:18:54.4364038Z +forgeshape_sketch_ux_selftest.h rc=0 
+2026-10-30T17:18:54.4364558Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:94: trailing whitespace.
+2026-10-30T17:18:54.4365097Z +forgeshape_sphere_selftest.h rc=0 
+2026-10-30T17:18:54.4365612Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:95: trailing whitespace.
+2026-10-30T17:18:54.4366159Z +forgeshape_support_chooser.h rc=0 
+2026-10-30T17:18:54.4366681Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:96: trailing whitespace.
+2026-10-30T17:18:54.4367546Z +forgeshape_surface.h rc=0 
+2026-10-30T17:18:54.4368044Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:97: trailing whitespace.
+2026-10-30T17:18:54.4368588Z +forgeshape_surface_authoring.h rc=0 
+2026-10-30T17:18:54.4369118Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:98: trailing whitespace.
+2026-10-30T17:18:54.4369649Z +forgeshape_surface_selftest.h rc=0 
+2026-10-30T17:18:54.4370158Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:99: trailing whitespace.
+2026-10-30T17:18:54.4370689Z +forgeshape_transform.h rc=0 
+2026-10-30T17:18:54.4371202Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:100: trailing whitespace.
+2026-10-30T17:18:54.4371742Z +forgeshape_transform_selftest.h rc=0 
+2026-10-30T17:18:54.4372259Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_clang++.txt:101: trailing whitespace.
+2026-10-30T17:18:54.4372791Z +forgeshape_workplane.h rc=0 
+2026-10-30T17:18:54.4373271Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:1: trailing whitespace.
+2026-10-30T17:18:54.4373786Z +forgeshape_body_commands.h rc=0 
+2026-10-30T17:18:54.4374276Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:2: trailing whitespace.
+2026-10-30T17:18:54.4374788Z +forgeshape_body_delete.h rc=0 
+2026-10-30T17:18:54.4375272Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:3: trailing whitespace.
+2026-10-30T17:18:54.4375798Z +forgeshape_body_dimension_overlay.h rc=0 
+2026-10-30T17:18:54.4376315Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:4: trailing whitespace.
+2026-10-30T17:18:54.4377021Z +forgeshape_body_dimensions.h rc=0 
+2026-10-30T17:18:54.4377654Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:5: trailing whitespace.
+2026-10-30T17:18:54.4378195Z +forgeshape_body_dimensions_selftest.h rc=0 
+2026-10-30T17:18:54.4378709Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:6: trailing whitespace.
+2026-10-30T17:18:54.4379216Z +forgeshape_body_mirror.h rc=0 
+2026-10-30T17:18:54.4379696Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:7: trailing whitespace.
+2026-10-30T17:18:54.4380205Z +forgeshape_cad_a3_selftest.h rc=0 
+2026-10-30T17:18:54.4380691Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:8: trailing whitespace.
+2026-10-30T17:18:54.4381197Z +forgeshape_cad_body.h rc=0 
+2026-10-30T17:18:54.4381810Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:9: trailing whitespace.
+2026-10-30T17:18:54.4382327Z +forgeshape_cad_extrude_tool.h rc=0 
+2026-10-30T17:18:54.4382827Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:10: trailing whitespace.
+2026-10-30T17:18:54.4383462Z +forgeshape_cad_face.h rc=0 
+2026-10-30T17:18:54.4383948Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:11: trailing whitespace.
+2026-10-30T17:18:54.4384461Z +forgeshape_cad_feature.h rc=0 
+2026-10-30T17:18:54.4384938Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:12: trailing whitespace.
+2026-10-30T17:18:54.4385462Z +forgeshape_cad_feature_selftest.h rc=0 
+2026-10-30T17:18:54.4385976Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:13: trailing whitespace.
+2026-10-30T17:18:54.4386494Z +forgeshape_cad_kernel.h rc=0 
+2026-10-30T17:18:54.4387316Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:14: trailing whitespace.
+2026-10-30T17:18:54.4388169Z +forgeshape_cad_multiface_selftest.h rc=0 
+2026-10-30T17:18:54.4388771Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:15: trailing whitespace.
+2026-10-30T17:18:54.4389294Z +forgeshape_cad_oracle_selftest.h rc=0 
+2026-10-30T17:18:54.4389808Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:16: trailing whitespace.
+2026-10-30T17:18:54.4390332Z +forgeshape_cad_r2_selftest.h rc=0 
+2026-10-30T17:18:54.4390820Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:17: trailing whitespace.
+2026-10-30T17:18:54.4391328Z +forgeshape_cad_revolve.h rc=0 
+2026-10-30T17:18:54.4391802Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:18: trailing whitespace.
+2026-10-30T17:18:54.4392321Z +forgeshape_cad_revolve_selftest.h rc=0 
+2026-10-30T17:18:54.4392836Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:19: trailing whitespace.
+2026-10-30T17:18:54.4393349Z +forgeshape_cad_selftest.h rc=0 
+2026-10-30T17:18:54.4393829Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:20: trailing whitespace.
+2026-10-30T17:18:54.4394348Z +forgeshape_cad_sketch_inventory.h rc=0 
+2026-10-30T17:18:54.4394857Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:21: trailing whitespace.
+2026-10-30T17:18:54.4395369Z +forgeshape_cad_timeline.h rc=0 
+2026-10-30T17:18:54.4395849Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:22: trailing whitespace.
+2026-10-30T17:18:54.4396370Z +forgeshape_cad_timeline_selftest.h rc=0 
+2026-10-30T17:18:54.4397184Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:23: trailing whitespace.
+2026-10-30T17:18:54.4397778Z +forgeshape_cad_v6_selftest.h rc=0 
+2026-10-30T17:18:54.4398304Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:24: trailing whitespace.
+2026-10-30T17:18:54.4398828Z +forgeshape_camera.h rc=0 
+2026-10-30T17:18:54.4399308Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:25: trailing whitespace.
+2026-10-30T17:18:54.4399834Z +forgeshape_camera_selftest.h rc=0 
+2026-10-30T17:18:54.4400334Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:26: trailing whitespace.
+2026-10-30T17:18:54.4400861Z +forgeshape_cone_capsule_selftest.h rc=0 
+2026-10-30T17:18:54.4401404Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:27: trailing whitespace.
+2026-10-30T17:18:54.4401929Z +forgeshape_construction.h rc=0 
+2026-10-30T17:18:54.4402416Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:28: trailing whitespace.
+2026-10-30T17:18:54.4402942Z +forgeshape_construction_selftest.h rc=0 
+2026-10-30T17:18:54.4403457Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:29: trailing whitespace.
+2026-10-30T17:18:54.4404130Z +forgeshape_demo_mesh.h rc=0 
+2026-10-30T17:18:54.4404621Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:30: trailing whitespace.
+2026-10-30T17:18:54.4405132Z +forgeshape_display.h rc=0 
+2026-10-30T17:18:54.4405610Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:31: trailing whitespace.
+2026-10-30T17:18:54.4406234Z +forgeshape_freeform.h rc=0 
+2026-10-30T17:18:54.4406704Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:32: trailing whitespace.
+2026-10-30T17:18:54.4407525Z +forgeshape_freeform_selftest.h rc=0 
+2026-10-30T17:18:54.4408045Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:33: trailing whitespace.
+2026-10-30T17:18:54.4408569Z +forgeshape_freeform_session.h rc=0 
+2026-10-30T17:18:54.4409077Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:34: trailing whitespace.
+2026-10-30T17:18:54.4409611Z +forgeshape_freeform_subdivision.h rc=0 
+2026-10-30T17:18:54.4410130Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:35: trailing whitespace.
+2026-10-30T17:18:54.4410645Z +forgeshape_gizmo.h rc=0 
+2026-10-30T17:18:54.4411114Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:36: trailing whitespace.
+2026-10-30T17:18:54.4411636Z +forgeshape_gizmo_selftest.h rc=0 
+2026-10-30T17:18:54.4412129Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:37: trailing whitespace.
+2026-10-30T17:18:54.4412650Z +forgeshape_glb_import_fixture.h rc=0 
+2026-10-30T17:18:54.4413153Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:38: trailing whitespace.
+2026-10-30T17:18:54.4413669Z +forgeshape_glb_roundtrip.h rc=0 
+2026-10-30T17:18:54.4414161Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:39: trailing whitespace.
+2026-10-30T17:18:54.4414673Z +forgeshape_gltf_export.h rc=0 
+2026-10-30T17:18:54.4415162Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:40: trailing whitespace.
+2026-10-30T17:18:54.4415684Z +forgeshape_gltf_export_selftest.h rc=0 
+2026-10-30T17:18:54.4416188Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:41: trailing whitespace.
+2026-10-30T17:18:54.4416704Z +forgeshape_gltf_import.h rc=0 
+2026-10-30T17:18:54.4417396Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:42: trailing whitespace.
+2026-10-30T17:18:54.4417919Z +forgeshape_gltf_import_selftest.h rc=0 
+2026-10-30T17:18:54.4418429Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:43: trailing whitespace.
+2026-10-30T17:18:54.4418934Z +forgeshape_grid.h rc=0 
+2026-10-30T17:18:54.4419393Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:44: trailing whitespace.
+2026-10-30T17:18:54.4419901Z +forgeshape_history.h rc=0 
+2026-10-30T17:18:54.4420376Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:45: trailing whitespace.
+2026-10-30T17:18:54.4420897Z +forgeshape_history_selftest.h rc=0 
+2026-10-30T17:18:54.4421386Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:46: trailing whitespace.
+2026-10-30T17:18:54.4421904Z +forgeshape_import_commit.h rc=0 
+2026-10-30T17:18:54.4422395Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:47: trailing whitespace.
+2026-10-30T17:18:54.4422913Z +forgeshape_import_preview.h rc=0 
+2026-10-30T17:18:54.4423403Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:48: trailing whitespace.
+2026-10-30T17:18:54.4423937Z +forgeshape_imported_mesh.h rc=0 
+2026-10-30T17:18:54.4424429Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:49: trailing whitespace.
+2026-10-30T17:18:54.4424949Z +forgeshape_input.h rc=0 
+2026-10-30T17:18:54.4425571Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:50: trailing whitespace.
+2026-10-30T17:18:54.4426095Z +forgeshape_json.h rc=0 
+2026-10-30T17:18:54.4426563Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:51: trailing whitespace.
+2026-10-30T17:18:54.4427328Z +forgeshape_matcap.h rc=0 
+2026-10-30T17:18:54.4427938Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:52: trailing whitespace.
+2026-10-30T17:18:54.4428450Z +forgeshape_math.h rc=0 
+2026-10-30T17:18:54.4428914Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:53: trailing whitespace.
+2026-10-30T17:18:54.4429423Z +forgeshape_mesh.h rc=0 
+2026-10-30T17:18:54.4429878Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:54: trailing whitespace.
+2026-10-30T17:18:54.4430400Z +forgeshape_mesh_fixtures.h rc=0 
+2026-10-30T17:18:54.4430887Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:55: trailing whitespace.
+2026-10-30T17:18:54.4431417Z +forgeshape_mesh_selftest.h rc=0 
+2026-10-30T17:18:54.4431902Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:56: trailing whitespace.
+2026-10-30T17:18:54.4432421Z +forgeshape_mirror_selftest.h rc=0 
+2026-10-30T17:18:54.4432921Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:57: trailing whitespace.
+2026-10-30T17:18:54.4433436Z +forgeshape_object_id.h rc=0 
+2026-10-30T17:18:54.4433911Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:58: trailing whitespace.
+2026-10-30T17:18:54.4434493Z +forgeshape_owner_shell_selftest.h rc=0 
+2026-10-30T17:18:54.4435005Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:59: trailing whitespace.
+2026-10-30T17:18:54.4435523Z +forgeshape_picking.h rc=0 
+2026-10-30T17:18:54.4435990Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:60: trailing whitespace.
+2026-10-30T17:18:54.4436510Z +forgeshape_picking_selftest.h rc=0 
+2026-10-30T17:18:54.4437400Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:61: trailing whitespace.
+2026-10-30T17:18:54.4438119Z +forgeshape_primitive_selftest.h rc=0 
+2026-10-30T17:18:54.4438631Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:62: trailing whitespace.
+2026-10-30T17:18:54.4439174Z +forgeshape_project_bootstrap.h rc=0 
+2026-10-30T17:18:54.4439681Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:63: trailing whitespace.
+2026-10-30T17:18:54.4440199Z +forgeshape_project_bytes.h rc=0 
+2026-10-30T17:18:54.4440694Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:64: trailing whitespace.
+2026-10-30T17:18:54.4441222Z +forgeshape_project_document.h rc=0 
+2026-10-30T17:18:54.4441726Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:65: trailing whitespace.
+2026-10-30T17:18:54.4442254Z +forgeshape_project_freeform.h rc=0 
+2026-10-30T17:18:54.4442751Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:66: trailing whitespace.
+2026-10-30T17:18:54.4443273Z +forgeshape_project_selftest.h rc=0 
+2026-10-30T17:18:54.4443763Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:67: trailing whitespace.
+2026-10-30T17:18:54.4444285Z +forgeshape_project_state.h rc=0 
+2026-10-30T17:18:54.4444767Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:68: trailing whitespace.
+2026-10-30T17:18:54.4445286Z +forgeshape_project_surface.h rc=0 
+2026-10-30T17:18:54.4445778Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:69: trailing whitespace.
+2026-10-30T17:18:54.4446295Z +forgeshape_render_mesh.h rc=0 
+2026-10-30T17:18:54.4446775Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:70: trailing whitespace.
+2026-10-30T17:18:54.4447719Z +forgeshape_render_mesh_selftest.h rc=0 
+2026-10-30T17:18:54.4448778Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:71: trailing whitespace.
+2026-10-30T17:18:54.4449644Z +forgeshape_render_recovery.h rc=0 
+2026-10-30T17:18:54.4450149Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:72: trailing whitespace.
+2026-10-30T17:18:54.4450821Z +forgeshape_render_recovery_selftest.h rc=0 
+2026-10-30T17:18:54.4451354Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:74: trailing whitespace.
+2026-10-30T17:18:54.4451877Z +forgeshape_scene.h rc=0 
+2026-10-30T17:18:54.4452350Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:75: trailing whitespace.
+2026-10-30T17:18:54.4452880Z +forgeshape_scene_selftest.h rc=0 
+2026-10-30T17:18:54.4453369Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:76: trailing whitespace.
+2026-10-30T17:18:54.4453882Z +forgeshape_sculpt.h rc=0 
+2026-10-30T17:18:54.4454357Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:77: trailing whitespace.
+2026-10-30T17:18:54.4454879Z +forgeshape_sculpt_history.h rc=0 
+2026-10-30T17:18:54.4455367Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:78: trailing whitespace.
+2026-10-30T17:18:54.4455892Z +forgeshape_sculpt_selftest.h rc=0 
+2026-10-30T17:18:54.4456384Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:79: trailing whitespace.
+2026-10-30T17:18:54.4457216Z +forgeshape_selection.h rc=0 
+2026-10-30T17:18:54.4457714Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:80: trailing whitespace.
+2026-10-30T17:18:54.4458238Z +forgeshape_selection_outline.h rc=0 
+2026-10-30T17:18:54.4458740Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:81: trailing whitespace.
+2026-10-30T17:18:54.4459274Z +forgeshape_selection_pulse.h rc=0 
+2026-10-30T17:18:54.4459784Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:82: trailing whitespace.
+2026-10-30T17:18:54.4460302Z +forgeshape_sketch.h rc=0 
+2026-10-30T17:18:54.4460779Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:83: trailing whitespace.
+2026-10-30T17:18:54.4461317Z +forgeshape_sketch_arrangement.h rc=0 
+2026-10-30T17:18:54.4461822Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:84: trailing whitespace.
+2026-10-30T17:18:54.4462852Z +forgeshape_sketch_arrangement_selftest.h rc=0 
+2026-10-30T17:18:54.4463555Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:85: trailing whitespace.
+2026-10-30T17:18:54.4464080Z +forgeshape_sketch_dimension.h rc=0 
+2026-10-30T17:18:54.4464579Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:86: trailing whitespace.
+2026-10-30T17:18:54.4465094Z +forgeshape_sketch_drafting.h rc=0 
+2026-10-30T17:18:54.4465591Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:87: trailing whitespace.
+2026-10-30T17:18:54.4466130Z +forgeshape_sketch_drafting_selftest.h rc=0 
+2026-10-30T17:18:54.4466648Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:88: trailing whitespace.
+2026-10-30T17:18:54.4467648Z +forgeshape_sketch_fill_selftest.h rc=0 
+2026-10-30T17:18:54.4468169Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:89: trailing whitespace.
+2026-10-30T17:18:54.4468692Z +forgeshape_sketch_overlay.h rc=0 
+2026-10-30T17:18:54.4469191Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:90: trailing whitespace.
+2026-10-30T17:18:54.4469707Z +forgeshape_sketch_region.h rc=0 
+2026-10-30T17:18:54.4470195Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:91: trailing whitespace.
+2026-10-30T17:18:54.4470715Z +forgeshape_sketch_session.h rc=0 
+2026-10-30T17:18:54.4471348Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:92: trailing whitespace.
+2026-10-30T17:18:54.4471871Z +forgeshape_sketch_snap.h rc=0 
+2026-10-30T17:18:54.4472358Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:93: trailing whitespace.
+2026-10-30T17:18:54.4472997Z +forgeshape_sketch_ux_selftest.h rc=0 
+2026-10-30T17:18:54.4473499Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:94: trailing whitespace.
+2026-10-30T17:18:54.4474018Z +forgeshape_sphere_selftest.h rc=0 
+2026-10-30T17:18:54.4474512Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:95: trailing whitespace.
+2026-10-30T17:18:54.4475038Z +forgeshape_support_chooser.h rc=0 
+2026-10-30T17:18:54.4475532Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:96: trailing whitespace.
+2026-10-30T17:18:54.4476048Z +forgeshape_surface.h rc=0 
+2026-10-30T17:18:54.4476596Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:97: trailing whitespace.
+2026-10-30T17:18:54.4477390Z +forgeshape_surface_authoring.h rc=0 
+2026-10-30T17:18:54.4477890Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:98: trailing whitespace.
+2026-10-30T17:18:54.4478406Z +forgeshape_surface_selftest.h rc=0 
+2026-10-30T17:18:54.4478906Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:99: trailing whitespace.
+2026-10-30T17:18:54.4479422Z +forgeshape_transform.h rc=0 
+2026-10-30T17:18:54.4480100Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:100: trailing whitespace.
+2026-10-30T17:18:54.4480685Z +forgeshape_transform_selftest.h rc=0 
+2026-10-30T17:18:54.4481196Z artifacts/function-council-r2-closeout/diagnostics/desktop/results/p3_hdr_g++.txt:101: trailing whitespace.
+2026-10-30T17:18:54.4481717Z +forgeshape_workplane.h rc=0 
+2026-10-30T17:18:54.4482267Z artifacts/function-council-r2-closeout/evidence/device-run-40979514270/environment-manifest.txt:8: trailing whitespace.
+2026-10-30T17:18:54.4482938Z +accel_check=accel: 0 KVM (version 12) is installed and usable. accel 
+2026-10-30T17:18:54.4483612Z artifacts/function-council-r2-closeout/evidence/device-run-40979514270/environment-manifest.txt:21: trailing whitespace.
+2026-10-30T17:18:54.4484199Z +wm_size=Physical size: 1080x2400 
+2026-10-30T17:18:54.4484753Z artifacts/function-council-r2-closeout/evidence/device-run-40979514270/environment-manifest.txt:22: trailing whitespace.
+2026-10-30T17:18:54.4485334Z +wm_density=Physical density: 420 
+2026-10-30T17:18:54.4485880Z artifacts/function-council-r2-closeout/evidence/device-run-40983965648/environment-manifest.txt:8: trailing whitespace.
+2026-10-30T17:18:54.4486528Z +accel_check=accel: 0 KVM (version 12) is installed and usable. accel 
+2026-10-30T17:18:54.4487473Z artifacts/function-council-r2-closeout/evidence/device-run-40983965648/environment-manifest.txt:21: trailing whitespace.
+2026-10-30T17:18:54.4488047Z +wm_size=Physical size: 1080x2400 
+2026-10-30T17:18:54.4488601Z artifacts/function-council-r2-closeout/evidence/device-run-40983965648/environment-manifest.txt:22: trailing whitespace.
+2026-10-30T17:18:54.4489168Z +wm_density=Physical density: 420 
+2026-10-30T17:18:54.4489652Z artifacts/function-council-r2-closeout/sources/FORGESHAPE_MASTER_PLAN_v4.1.0.md:3: trailing whitespace.
+2026-10-30T17:18:54.4490166Z +**Docs revision:** 4.1.0  
+2026-10-30T17:18:54.4490623Z artifacts/function-council-r2-closeout/sources/FORGESHAPE_MASTER_PLAN_v4.1.0.md:4: trailing whitespace.
+2026-10-30T17:18:54.4491117Z +**As of:** 2026-09-07  
+2026-10-30T17:18:54.4491562Z artifacts/function-council-r2-closeout/sources/FORGESHAPE_MASTER_PLAN_v4.1.0.md:5: trailing whitespace.
+2026-10-30T17:18:54.4492821Z +**Migration source:** `FORGESHAPE_MASTER_PLAN_v4.0.58.md` + `FORGESHAPE_PROJECT_STATE_v4.0.58.md` + `FORGESHAPE_MASTER_PLAN_HISTORY_v4.0.58.md` + current SCULPT-H1 prompt + available `FORGESHAPE_OWNER_DECISIONS_v4.0.54.md` + owner audit instruction `PROMPT_D_FORGESHAPE.md`.  
+2026-10-30T17:18:54.4494252Z artifacts/function-council-r2-closeout/sources/FORGESHAPE_MASTER_PLAN_v4.1.0.md:6: trailing whitespace.
+2026-10-30T17:18:54.4494795Z +**Product code changed by this revision:** no.  
+2026-10-30T17:18:54.4495318Z artifacts/function-council-r2-closeout/sources/FORGESHAPE_MASTER_PLAN_v4.1.0.md:7: trailing whitespace.
+2026-10-30T17:18:54.4496500Z +**Repository baseline:** accepted-from-report only; MIRROR-01 ended at short commit `3283089`, clean. The full 40-character commit was not supplied and remains to be resolved by the next coding preflight.  
+2026-10-30T17:18:54.4497827Z artifacts/function-council-r2-closeout/sources/FORGESHAPE_PROJECT_STATE_v4.1.66.md:128: trailing whitespace.
+2026-10-30T17:18:54.4498516Z +**Data:** 2026-10-28 | **Koordynator:** ChatGPT | **Repo:** `damiankrok/Forgeshape`  
+2026-10-30T17:18:54.4499159Z artifacts/function-council-r2-closeout/sources/FORGESHAPE_PROJECT_STATE_v4.1.66.md:129: trailing whitespace.
+2026-10-30T17:18:54.4500597Z +**Status obowiązujący:** `CAD-R2-C1 TECH PASS / OWNER PHYSICAL REVIEW REQUIRED / A2 WORLD-PLANE DESIGN HOLD / NO MERGE`.  
+2026-10-30T17:18:54.4501306Z artifacts/function-council-r2/diagnostics/D/diag_d.out:40: trailing whitespace.
+2026-10-30T17:18:54.4501741Z +OBS_OK   FFD_session_begin 
+2026-10-30T17:18:54.4502131Z artifacts/function-council-r2/diagnostics/D/diag_d.out:42: trailing whitespace.
+2026-10-30T17:18:54.4502551Z +OBS_OK   FFD_undo_restores_exact_cage 
+2026-10-30T17:18:54.4502962Z artifacts/function-council-r2/diagnostics/D/diag_d.out:43: trailing whitespace.
+2026-10-30T17:18:54.4503394Z +OBS_OK   FFD_session_survives_undo 
+2026-10-30T17:18:54.4503792Z artifacts/function-council-r2/diagnostics/D/diag_d.out:45: trailing whitespace.
+2026-10-30T17:18:54.4504216Z +OBS_OK   FFD_not_a_sculpt_source 
+2026-10-30T17:18:54.4504631Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:1: trailing whitespace.
+2026-10-30T17:18:54.4505085Z +forgeshape_body_dimension_overlay.h rc=0 
+2026-10-30T17:18:54.4505529Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:2: trailing whitespace.
+2026-10-30T17:18:54.4505970Z +forgeshape_body_dimensions.h rc=0 
+2026-10-30T17:18:54.4506379Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:3: trailing whitespace.
+2026-10-30T17:18:54.4506814Z +forgeshape_body_commands.h rc=0 
+2026-10-30T17:18:54.4507387Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:4: trailing whitespace.
+2026-10-30T17:18:54.4507840Z +forgeshape_body_dimensions_selftest.h rc=0 
+2026-10-30T17:18:54.4508277Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:5: trailing whitespace.
+2026-10-30T17:18:54.4508713Z +forgeshape_cad_a3_selftest.h rc=0 
+2026-10-30T17:18:54.4509117Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:6: trailing whitespace.
+2026-10-30T17:18:54.4509545Z +forgeshape_body_delete.h rc=0 
+2026-10-30T17:18:54.4509942Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:7: trailing whitespace.
+2026-10-30T17:18:54.4510371Z +forgeshape_cad_body.h rc=0 
+2026-10-30T17:18:54.4510765Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:8: trailing whitespace.
+2026-10-30T17:18:54.4511193Z +forgeshape_cad_face.h rc=0 
+2026-10-30T17:18:54.4511577Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:9: trailing whitespace.
+2026-10-30T17:18:54.4512021Z +forgeshape_cad_feature_selftest.h rc=0 
+2026-10-30T17:18:54.4512448Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:10: trailing whitespace.
+2026-10-30T17:18:54.4512882Z +forgeshape_body_mirror.h rc=0 
+2026-10-30T17:18:54.4513278Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:11: trailing whitespace.
+2026-10-30T17:18:54.4513713Z +forgeshape_cad_extrude_tool.h rc=0 
+2026-10-30T17:18:54.4514130Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:12: trailing whitespace.
+2026-10-30T17:18:54.4514576Z +forgeshape_cad_kernel.h rc=0 
+2026-10-30T17:18:54.4514984Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:13: trailing whitespace.
+2026-10-30T17:18:54.4515574Z +forgeshape_cad_oracle_selftest.h rc=0 
+2026-10-30T17:18:54.4516009Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:14: trailing whitespace.
+2026-10-30T17:18:54.4516455Z +forgeshape_cad_multiface_selftest.h rc=0 
+2026-10-30T17:18:54.4517011Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:15: trailing whitespace.
+2026-10-30T17:18:54.4517571Z +forgeshape_cad_r2_selftest.h rc=0 
+2026-10-30T17:18:54.4517981Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:16: trailing whitespace.
+2026-10-30T17:18:54.4518415Z +forgeshape_cad_selftest.h rc=0 
+2026-10-30T17:18:54.4518819Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:17: trailing whitespace.
+2026-10-30T17:18:54.4519245Z +forgeshape_cad_feature.h rc=0 
+2026-10-30T17:18:54.4519637Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:18: trailing whitespace.
+2026-10-30T17:18:54.4520077Z +forgeshape_cad_revolve_selftest.h rc=0 
+2026-10-30T17:18:54.4520501Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:19: trailing whitespace.
+2026-10-30T17:18:54.4520939Z +forgeshape_cad_timeline_selftest.h rc=0 
+2026-10-30T17:18:54.4521364Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:20: trailing whitespace.
+2026-10-30T17:18:54.4521793Z +forgeshape_cad_revolve.h rc=0 
+2026-10-30T17:18:54.4522198Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:21: trailing whitespace.
+2026-10-30T17:18:54.4522630Z +forgeshape_cad_v6_selftest.h rc=0 
+2026-10-30T17:18:54.4523036Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:22: trailing whitespace.
+2026-10-30T17:18:54.4523469Z +forgeshape_camera_selftest.h rc=0 
+2026-10-30T17:18:54.4523875Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:23: trailing whitespace.
+2026-10-30T17:18:54.4524322Z +forgeshape_cone_capsule_selftest.h rc=0 
+2026-10-30T17:18:54.4524746Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:24: trailing whitespace.
+2026-10-30T17:18:54.4525172Z +forgeshape_camera.h rc=0 
+2026-10-30T17:18:54.4525554Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:25: trailing whitespace.
+2026-10-30T17:18:54.4525989Z +forgeshape_cad_timeline.h rc=0 
+2026-10-30T17:18:54.4526389Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:26: trailing whitespace.
+2026-10-30T17:18:54.4527019Z +forgeshape_construction_selftest.h rc=0 
+2026-10-30T17:18:54.4527504Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:27: trailing whitespace.
+2026-10-30T17:18:54.4527942Z +forgeshape_cad_sketch_inventory.h rc=0 
+2026-10-30T17:18:54.4528366Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:28: trailing whitespace.
+2026-10-30T17:18:54.4528793Z +forgeshape_construction.h rc=0 
+2026-10-30T17:18:54.4529186Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:29: trailing whitespace.
+2026-10-30T17:18:54.4529630Z +forgeshape_freeform_selftest.h rc=0 
+2026-10-30T17:18:54.4530041Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:30: trailing whitespace.
+2026-10-30T17:18:54.4530466Z +forgeshape_display.h rc=0 
+2026-10-30T17:18:54.4530857Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:31: trailing whitespace.
+2026-10-30T17:18:54.4531293Z +forgeshape_demo_mesh.h rc=0 
+2026-10-30T17:18:54.4531690Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:32: trailing whitespace.
+2026-10-30T17:18:54.4532125Z +forgeshape_freeform.h rc=0 
+2026-10-30T17:18:54.4532512Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:33: trailing whitespace.
+2026-10-30T17:18:54.4532944Z +forgeshape_gizmo_selftest.h rc=0 
+2026-10-30T17:18:54.4533358Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:34: trailing whitespace.
+2026-10-30T17:18:54.4533796Z +forgeshape_glb_import_fixture.h rc=0 
+2026-10-30T17:18:54.4534216Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:35: trailing whitespace.
+2026-10-30T17:18:54.4534659Z +forgeshape_freeform_subdivision.h rc=0 
+2026-10-30T17:18:54.4535078Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:36: trailing whitespace.
+2026-10-30T17:18:54.4535694Z +forgeshape_freeform_session.h rc=0 
+2026-10-30T17:18:54.4536113Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:37: trailing whitespace.
+2026-10-30T17:18:54.4536551Z +forgeshape_gltf_export_selftest.h rc=0 
+2026-10-30T17:18:54.4537208Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:38: trailing whitespace.
+2026-10-30T17:18:54.4537804Z +forgeshape_gizmo.h rc=0 
+2026-10-30T17:18:54.4538189Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:39: trailing whitespace.
+2026-10-30T17:18:54.4538635Z +forgeshape_gltf_import_selftest.h rc=0 
+2026-10-30T17:18:54.4539053Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:40: trailing whitespace.
+2026-10-30T17:18:54.4539479Z +forgeshape_gltf_import.h rc=0 
+2026-10-30T17:18:54.4539872Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:41: trailing whitespace.
+2026-10-30T17:18:54.4540297Z +forgeshape_gltf_export.h rc=0 
+2026-10-30T17:18:54.4540688Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:42: trailing whitespace.
+2026-10-30T17:18:54.4541130Z +forgeshape_history_selftest.h rc=0 
+2026-10-30T17:18:54.4541535Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:43: trailing whitespace.
+2026-10-30T17:18:54.4541970Z +forgeshape_glb_roundtrip.h rc=0 
+2026-10-30T17:18:54.4542376Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:44: trailing whitespace.
+2026-10-30T17:18:54.4542804Z +forgeshape_grid.h rc=0 
+2026-10-30T17:18:54.4543179Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:45: trailing whitespace.
+2026-10-30T17:18:54.4543608Z +forgeshape_imported_mesh.h rc=0 
+2026-10-30T17:18:54.4544007Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:46: trailing whitespace.
+2026-10-30T17:18:54.4544433Z +forgeshape_input.h rc=0 
+2026-10-30T17:18:54.4544820Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:47: trailing whitespace.
+2026-10-30T17:18:54.4545240Z +forgeshape_json.h rc=0 
+2026-10-30T17:18:54.4545618Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:48: trailing whitespace.
+2026-10-30T17:18:54.4546046Z +forgeshape_history.h rc=0 
+2026-10-30T17:18:54.4546423Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:49: trailing whitespace.
+2026-10-30T17:18:54.4546981Z +forgeshape_matcap.h rc=0 
+2026-10-30T17:18:54.4547365Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:50: trailing whitespace.
+2026-10-30T17:18:54.4547779Z +forgeshape_math.h rc=0 
+2026-10-30T17:18:54.4548145Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:51: trailing whitespace.
+2026-10-30T17:18:54.4548579Z +forgeshape_import_preview.h rc=0 
+2026-10-30T17:18:54.4548977Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:52: trailing whitespace.
+2026-10-30T17:18:54.4549403Z +forgeshape_import_commit.h rc=0 
+2026-10-30T17:18:54.4549794Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:53: trailing whitespace.
+2026-10-30T17:18:54.4550222Z +forgeshape_mesh_selftest.h rc=0 
+2026-10-30T17:18:54.4550617Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:54: trailing whitespace.
+2026-10-30T17:18:54.4551054Z +forgeshape_mirror_selftest.h rc=0 
+2026-10-30T17:18:54.4551463Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:55: trailing whitespace.
+2026-10-30T17:18:54.4551893Z +forgeshape_object_id.h rc=0 
+2026-10-30T17:18:54.4552290Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:56: trailing whitespace.
+2026-10-30T17:18:54.4552718Z +forgeshape_picking.h rc=0 
+2026-10-30T17:18:54.4553095Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:57: trailing whitespace.
+2026-10-30T17:18:54.4553516Z +forgeshape_mesh.h rc=0 
+2026-10-30T17:18:54.4553885Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:58: trailing whitespace.
+2026-10-30T17:18:54.4554338Z +forgeshape_picking_selftest.h rc=0 
+2026-10-30T17:18:54.4554759Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:59: trailing whitespace.
+2026-10-30T17:18:54.4555199Z +forgeshape_primitive_selftest.h rc=0 
+2026-10-30T17:18:54.4555740Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:60: trailing whitespace.
+2026-10-30T17:18:54.4556185Z +forgeshape_owner_shell_selftest.h rc=0 
+2026-10-30T17:18:54.4556606Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:61: trailing whitespace.
+2026-10-30T17:18:54.4557273Z +forgeshape_mesh_fixtures.h rc=0 
+2026-10-30T17:18:54.4557672Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:62: trailing whitespace.
+2026-10-30T17:18:54.4558101Z +forgeshape_project_bytes.h rc=0 
+2026-10-30T17:18:54.4558497Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:63: trailing whitespace.
+2026-10-30T17:18:54.4558926Z +forgeshape_project_selftest.h rc=0 
+2026-10-30T17:18:54.4559333Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:64: trailing whitespace.
+2026-10-30T17:18:54.4559770Z +forgeshape_project_document.h rc=0 
+2026-10-30T17:18:54.4560176Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:65: trailing whitespace.
+2026-10-30T17:18:54.4560611Z +forgeshape_project_freeform.h rc=0 
+2026-10-30T17:18:54.4561019Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:66: trailing whitespace.
+2026-10-30T17:18:54.4561457Z +forgeshape_project_bootstrap.h rc=0 
+2026-10-30T17:18:54.4561866Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:67: trailing whitespace.
+2026-10-30T17:18:54.4562311Z +forgeshape_render_mesh_selftest.h rc=0 
+2026-10-30T17:18:54.4562727Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:68: trailing whitespace.
+2026-10-30T17:18:54.4563160Z +forgeshape_render_recovery.h rc=0 
+2026-10-30T17:18:54.4563569Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:69: trailing whitespace.
+2026-10-30T17:18:54.4564011Z +forgeshape_render_recovery_selftest.h rc=0 
+2026-10-30T17:18:54.4564441Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:70: trailing whitespace.
+2026-10-30T17:18:54.4564867Z +forgeshape_render_mesh.h rc=0 
+2026-10-30T17:18:54.4565262Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:72: trailing whitespace.
+2026-10-30T17:18:54.4565690Z +forgeshape_scene_selftest.h rc=0 
+2026-10-30T17:18:54.4566090Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:73: trailing whitespace.
+2026-10-30T17:18:54.4566518Z +forgeshape_project_surface.h rc=0 
+2026-10-30T17:18:54.4567256Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:74: trailing whitespace.
+2026-10-30T17:18:54.4567693Z +forgeshape_project_state.h rc=0 
+2026-10-30T17:18:54.4568092Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:75: trailing whitespace.
+2026-10-30T17:18:54.4568524Z +forgeshape_sculpt_selftest.h rc=0 
+2026-10-30T17:18:54.4568924Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:76: trailing whitespace.
+2026-10-30T17:18:54.4569355Z +forgeshape_sculpt_history.h rc=0 
+2026-10-30T17:18:54.4569752Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:77: trailing whitespace.
+2026-10-30T17:18:54.4570222Z +forgeshape_sculpt.h rc=0 
+2026-10-30T17:18:54.4570614Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:78: trailing whitespace.
+2026-10-30T17:18:54.4571049Z +forgeshape_selection_pulse.h rc=0 
+2026-10-30T17:18:54.4571450Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:79: trailing whitespace.
+2026-10-30T17:18:54.4571889Z +forgeshape_selection_outline.h rc=0 
+2026-10-30T17:18:54.4572304Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:80: trailing whitespace.
+2026-10-30T17:18:54.4572727Z +forgeshape_scene.h rc=0 
+2026-10-30T17:18:54.4573104Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:81: trailing whitespace.
+2026-10-30T17:18:54.4573559Z +forgeshape_sketch_arrangement_selftest.h rc=0 
+2026-10-30T17:18:54.4574004Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:82: trailing whitespace.
+2026-10-30T17:18:54.4574434Z +forgeshape_sketch.h rc=0 
+2026-10-30T17:18:54.4574814Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:83: trailing whitespace.
+2026-10-30T17:18:54.4575249Z +forgeshape_sketch_arrangement.h rc=0 
+2026-10-30T17:18:54.4575803Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:84: trailing whitespace.
+2026-10-30T17:18:54.4576233Z +forgeshape_selection.h rc=0 
+2026-10-30T17:18:54.4576621Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:85: trailing whitespace.
+2026-10-30T17:18:54.4577432Z +forgeshape_sketch_drafting_selftest.h rc=0 
+2026-10-30T17:18:54.4577880Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:86: trailing whitespace.
+2026-10-30T17:18:54.4578317Z +forgeshape_sketch_dimension.h rc=0 
+2026-10-30T17:18:54.4578735Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:87: trailing whitespace.
+2026-10-30T17:18:54.4579176Z +forgeshape_sketch_fill_selftest.h rc=0 
+2026-10-30T17:18:54.4579597Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:88: trailing whitespace.
+2026-10-30T17:18:54.4580032Z +forgeshape_sketch_drafting.h rc=0 
+2026-10-30T17:18:54.4580438Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:89: trailing whitespace.
+2026-10-30T17:18:54.4580878Z +forgeshape_sketch_region.h rc=0 
+2026-10-30T17:18:54.4581278Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:90: trailing whitespace.
+2026-10-30T17:18:54.4581715Z +forgeshape_sketch_ux_selftest.h rc=0 
+2026-10-30T17:18:54.4582125Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:91: trailing whitespace.
+2026-10-30T17:18:54.4582568Z +forgeshape_sphere_selftest.h rc=0 
+2026-10-30T17:18:54.4582972Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:92: trailing whitespace.
+2026-10-30T17:18:54.4583398Z +forgeshape_sketch_snap.h rc=0 
+2026-10-30T17:18:54.4583792Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:93: trailing whitespace.
+2026-10-30T17:18:54.4584223Z +forgeshape_sketch_overlay.h rc=0 
+2026-10-30T17:18:54.4584632Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:94: trailing whitespace.
+2026-10-30T17:18:54.4585066Z +forgeshape_sketch_session.h rc=0 
+2026-10-30T17:18:54.4585470Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:95: trailing whitespace.
+2026-10-30T17:18:54.4585907Z +forgeshape_surface_selftest.h rc=0 
+2026-10-30T17:18:54.4586320Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:96: trailing whitespace.
+2026-10-30T17:18:54.4586758Z +forgeshape_transform.h rc=0 
+2026-10-30T17:18:54.4587282Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:97: trailing whitespace.
+2026-10-30T17:18:54.4587721Z +forgeshape_transform_selftest.h rc=0 
+2026-10-30T17:18:54.4588136Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:98: trailing whitespace.
+2026-10-30T17:18:54.4588566Z +forgeshape_surface.h rc=0 
+2026-10-30T17:18:54.4588950Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:99: trailing whitespace.
+2026-10-30T17:18:54.4589382Z +forgeshape_support_chooser.h rc=0 
+2026-10-30T17:18:54.4589799Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:100: trailing whitespace.
+2026-10-30T17:18:54.4590231Z +forgeshape_workplane.h rc=0 
+2026-10-30T17:18:54.4590627Z artifacts/function-council-r2/diagnostics/G/hdr_results.txt:101: trailing whitespace.
+2026-10-30T17:18:54.4591070Z +forgeshape_surface_authoring.h rc=0 
+2026-10-30T17:18:54.4591539Z artifacts/function-council-r2/diagnostics/I-vs-B/edit_tsv.py:41: trailing whitespace.
+2026-10-30T17:18:54.4591961Z +def new(vals): 
+2026-10-30T17:18:54.4592337Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:1: trailing whitespace.
+2026-10-30T17:18:54.4592804Z + WorkspaceLayoutModeTest (JVM)    15 
+2026-10-30T17:18:54.4593236Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:2: trailing whitespace.
+2026-10-30T17:18:54.4593695Z + EditorUiStateTest (JVM)    10 
+2026-10-30T17:18:54.4594111Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:3: trailing whitespace.
+2026-10-30T17:18:54.4594555Z + LengthUnitTest (JVM)    5 
+2026-10-30T17:18:54.4594957Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:4: trailing whitespace.
+2026-10-30T17:18:54.4595750Z + AppThemeTest (JVM)    10 
+2026-10-30T17:18:54.4596403Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:5: trailing whitespace.
+2026-10-30T17:18:54.4597116Z + AppPreferencesTest (JVM)    10 
+2026-10-30T17:18:54.4597787Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:6: trailing whitespace.
+2026-10-30T17:18:54.4598518Z + ChromeMotionTest (JVM)    8 
+2026-10-30T17:18:54.4599071Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:7: trailing whitespace.
+2026-10-30T17:18:54.4599660Z + DisplaySettingsContractTest (JVM)    6 
+2026-10-30T17:18:54.4600251Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:8: trailing whitespace.
+2026-10-30T17:18:54.4600897Z + EditorWorkspaceControlsTest    23 
+2026-10-30T17:18:54.4601436Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:9: trailing whitespace.
+2026-10-30T17:18:54.4602024Z + EditorWorkspaceLayoutTest    10 
+2026-10-30T17:18:54.4602583Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:10: trailing whitespace.
+2026-10-30T17:18:54.4603188Z + EditorWorkspaceGestureTest    6 
+2026-10-30T17:18:54.4603768Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:11: trailing whitespace.
+2026-10-30T17:18:54.4604333Z + EditorWorkspaceLifecycleTest    3 
+2026-10-30T17:18:54.4616554Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:12: trailing whitespace.
+2026-10-30T17:18:54.4617468Z + EditorWorkspaceDisplayTest    17 
+2026-10-30T17:18:54.4617948Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:13: trailing whitespace.
+2026-10-30T17:18:54.4618431Z + EditorWorkspaceObjectsTest    10 
+2026-10-30T17:18:54.4618870Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:14: trailing whitespace.
+2026-10-30T17:18:54.4619321Z + HomeFlowTest    12 
+2026-10-30T17:18:54.4619708Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:15: trailing whitespace.
+2026-10-30T17:18:54.4620160Z + CadA3VisualEvidenceTest    1 
+2026-10-30T17:18:54.4620956Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:16: trailing whitespace.
+2026-10-30T17:18:54.4621767Z + SpatialSketchTest    8 
+2026-10-30T17:18:54.4622429Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:17: trailing whitespace.
+2026-10-30T17:18:54.4622905Z + EditorWorkspaceFoundationTest    8 
+2026-10-30T17:18:54.4623348Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:18: trailing whitespace.
+2026-10-30T17:18:54.4623798Z + EditorWorkspaceThemeTest    19 
+2026-10-30T17:18:54.4624219Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:19: trailing whitespace.
+2026-10-30T17:18:54.4624679Z + SettingsPreferencesTest    15 
+2026-10-30T17:18:54.4625106Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:20: trailing whitespace.
+2026-10-30T17:18:54.4625558Z + UiPrefVisualEvidenceTest    1 
+2026-10-30T17:18:54.4625973Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:21: trailing whitespace.
+2026-10-30T17:18:54.4626427Z + SelectionOutlineTest    19 
+2026-10-30T17:18:54.4627056Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:22: trailing whitespace.
+2026-10-30T17:18:54.4627604Z + SelectionOutlineVisualEvidenceTest    1 
+2026-10-30T17:18:54.4628071Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:23: trailing whitespace.
+2026-10-30T17:18:54.4628529Z + EditorWorkspaceMotionTest    10 
+2026-10-30T17:18:54.4628977Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:24: trailing whitespace.
+2026-10-30T17:18:54.4629429Z + PointerSemanticsTest (JVM)    6 
+2026-10-30T17:18:54.4629853Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:25: trailing whitespace.
+2026-10-30T17:18:54.4630300Z + EditorWorkspacePointerTest    13 
+2026-10-30T17:18:54.4630724Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:26: trailing whitespace.
+2026-10-30T17:18:54.4631180Z + EditorWorkspaceCompositionTest    10 
+2026-10-30T17:18:54.4631810Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:27: trailing whitespace.
+2026-10-30T17:18:54.4632273Z + SketchExtrudeTest    9 
+2026-10-30T17:18:54.4632668Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:28: trailing whitespace.
+2026-10-30T17:18:54.4633108Z + CadCanvasExtrudeTest    9 
+2026-10-30T17:18:54.4633637Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:29: trailing whitespace.
+2026-10-30T17:18:54.4634091Z + EditorWorkspaceMobileTest    15 
+2026-10-30T17:18:54.4634509Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:30: trailing whitespace.
+2026-10-30T17:18:54.4634973Z + EditorWorkspaceSculptRetentionTest    2 
+2026-10-30T17:18:54.4635421Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:31: trailing whitespace.
+2026-10-30T17:18:54.4635874Z + EditorWorkspaceCorrectionTest    36 
+2026-10-30T17:18:54.4636304Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:32: trailing whitespace.
+2026-10-30T17:18:54.4636778Z + EditorWorkspaceChromeCompositionTest    12 
+2026-10-30T17:18:54.4637400Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:33: trailing whitespace.
+2026-10-30T17:18:54.4637869Z + EditorWorkspaceArchitectureTest    12 
+2026-10-30T17:18:54.4638310Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:34: trailing whitespace.
+2026-10-30T17:18:54.4638766Z + EditorWorkspaceHistoryTest    20 
+2026-10-30T17:18:54.4639193Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:35: trailing whitespace.
+2026-10-30T17:18:54.4639649Z + EditorWorkspaceGizmoTest    46 
+2026-10-30T17:18:54.4640066Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:36: trailing whitespace.
+2026-10-30T17:18:54.4640522Z + EditorWorkspaceLegibilityTest    20 
+2026-10-30T17:18:54.4640958Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:37: trailing whitespace.
+2026-10-30T17:18:54.4641428Z + EditorWorkspaceProjectActionsTest    7 
+2026-10-30T17:18:54.4641878Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:38: trailing whitespace.
+2026-10-30T17:18:54.4642324Z + GlbImportExternalR1Test    14 
+2026-10-30T17:18:54.4642789Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:39: trailing whitespace.
+2026-10-30T17:18:54.4643242Z + ProjectAutosaveRecoveryTest    14 
+2026-10-30T17:18:54.4643673Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:40: trailing whitespace.
+2026-10-30T17:18:54.4644124Z + ImportedMeshDurableTest    12 
+2026-10-30T17:18:54.4644534Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:41: trailing whitespace.
+2026-10-30T17:18:54.4644979Z + ImportedMeshSculptTest    9 
+2026-10-30T17:18:54.4645384Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:42: trailing whitespace.
+2026-10-30T17:18:54.4645822Z + ObjectsDeleteTest    8 
+2026-10-30T17:18:54.4646210Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:43: trailing whitespace.
+2026-10-30T17:18:54.4646641Z + ObjectCommandsTest    1 
+2026-10-30T17:18:54.4647325Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:44: trailing whitespace.
+2026-10-30T17:18:54.4647777Z + BodyDimensionsSmokeTest    1 
+2026-10-30T17:18:54.4648187Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:45: trailing whitespace.
+2026-10-30T17:18:54.4648617Z + MirrorSmokeTest    1 
+2026-10-30T17:18:54.4649000Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:46: trailing whitespace.
+2026-10-30T17:18:54.4649437Z + Ui3dStateAuditTest    9 
+2026-10-30T17:18:54.4649826Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:47: trailing whitespace.
+2026-10-30T17:18:54.4650272Z + Ui3dDimensionVisibilityTest    2 
+2026-10-30T17:18:54.4650697Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:48: trailing whitespace.
+2026-10-30T17:18:54.4651148Z + SculptHistoryNavigatorTest    9 
+2026-10-30T17:18:54.4651567Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:49: trailing whitespace.
+2026-10-30T17:18:54.4652012Z + ProjectTransferTest    13 
+2026-10-30T17:18:54.4652550Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:50: trailing whitespace.
+2026-10-30T17:18:54.4653012Z + DiagnosticsAndRendererLossTest    9 
+2026-10-30T17:18:54.4653447Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:51: trailing whitespace.
+2026-10-30T17:18:54.4653995Z + DiagnosticLogTest (JVM)    11 
+2026-10-30T17:18:54.4654404Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:52: trailing whitespace.
+2026-10-30T17:18:54.4654850Z + ProjectProcessDeathTest    8 
+2026-10-30T17:18:54.4655257Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:53: trailing whitespace.
+2026-10-30T17:18:54.4655734Z + EditorWorkspaceUnifiedRightHostTest    18 
+2026-10-30T17:18:54.4656190Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:54: trailing whitespace.
+2026-10-30T17:18:54.4656670Z + EditorWorkspaceRightHostPlacementTest    12 
+2026-10-30T17:18:54.4657386Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:55: trailing whitespace.
+2026-10-30T17:18:54.4657820Z + GlbExportTest    24 
+2026-10-30T17:18:54.4658199Z artifacts/function-council-r2/diagnostics/I/status_ui_counts.txt:56: trailing whitespace.
+2026-10-30T17:18:54.4658642Z + GlbImportPreviewTest    23 
+2026-10-30T17:18:54.4659044Z artifacts/function-council-r2/diagnostics/seatB/diag_math.cpp:28: trailing whitespace.
+2026-10-30T17:18:54.4659682Z +        ConstructionTransform ts; ts.setValues(s); ConstructionTransform tm; TransformValidation why; 
+2026-10-30T17:18:54.4660411Z artifacts/function-council-r2/evidence/device-run-40797031704/environment-manifest.txt:8: trailing whitespace.
+2026-10-30T17:18:54.4661031Z +accel_check=accel: 0 KVM (version 12) is installed and usable. accel 
+2026-10-30T17:18:54.4661653Z artifacts/function-council-r2/evidence/device-run-40797031704/environment-manifest.txt:21: trailing whitespace.
+2026-10-30T17:18:54.4662193Z +wm_size=Physical size: 1080x2400 
+2026-10-30T17:18:54.4662709Z artifacts/function-council-r2/evidence/device-run-40797031704/environment-manifest.txt:22: trailing whitespace.
+2026-10-30T17:18:54.4663253Z +wm_density=Physical density: 420 
+2026-10-30T17:18:54.4663821Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/cad-a3-c2-sketch-ux-r1/facts.txt:97: new blank line at EOF.
+2026-10-30T17:18:54.4664689Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/sel-out-r1/facts.txt:343: new blank line at EOF.
+2026-10-30T17:18:54.4665579Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:2: trailing whitespace.
+2026-10-30T17:18:54.4666462Z +UI3D-04	dimensions_open	S19 body_dimension_label_x	WORLD_ANCHORED	610.98	1307.76	611.00	1308.00	0.24	0.09	PASS	
+2026-10-30T17:18:54.4667444Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:3: trailing whitespace.
+2026-10-30T17:18:54.4668279Z +UI3D-04	dimensions_open	S19 body_dimension_label_y	WORLD_ANCHORED	397.68	1076.05	398.00	1076.00	0.32	0.12	PASS	
+2026-10-30T17:18:54.4669107Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:4: trailing whitespace.
+2026-10-30T17:18:54.4669934Z +UI3D-04	dimensions_open	S19 body_dimension_label_z	WORLD_ANCHORED	330.04	1257.37	330.50	1257.00	0.59	0.23	PASS	
+2026-10-30T17:18:54.4670765Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:5: trailing whitespace.
+2026-10-30T17:18:54.4671584Z +UI3D-04	after_move	S19 body_dimension_label_x	WORLD_ANCHORED	1024.13	1208.72	1023.00	1209.00	1.17	0.44	CLAMPED	
+2026-10-30T17:18:54.4672419Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:6: trailing whitespace.
+2026-10-30T17:18:54.4673230Z +UI3D-04	after_move	S19 body_dimension_label_y	WORLD_ANCHORED	782.92	968.31	783.00	968.00	0.32	0.12	PASS	
+2026-10-30T17:18:54.4674183Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:7: trailing whitespace.
+2026-10-30T17:18:54.4675018Z +UI3D-04	after_move	S19 body_dimension_label_z	WORLD_ANCHORED	710.30	1159.83	710.50	1160.00	0.26	0.10	PASS	
+2026-10-30T17:18:54.4675831Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:8: trailing whitespace.
+2026-10-30T17:18:54.4676751Z +UI3D-04	after_rotate	S19 body_dimension_label_x	WORLD_ANCHORED	965.97	1141.31	966.00	1141.00	0.31	0.12	PASS	
+2026-10-30T17:18:54.4677701Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:9: trailing whitespace.
+2026-10-30T17:18:54.4678513Z +UI3D-04	after_rotate	S19 body_dimension_label_y	WORLD_ANCHORED	647.91	1065.99	648.00	1066.00	0.09	0.03	PASS	
+2026-10-30T17:18:54.4679326Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:10: trailing whitespace.
+2026-10-30T17:18:54.4680155Z +UI3D-04	after_rotate	S19 body_dimension_label_z	WORLD_ANCHORED	687.42	1275.57	687.50	1276.00	0.43	0.17	PASS	
+2026-10-30T17:18:54.4680971Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:11: trailing whitespace.
+2026-10-30T17:18:54.4681785Z +UI3D-04	after_scale	S19 body_dimension_label_x	WORLD_ANCHORED	948.85	1067.35	948.50	1067.00	0.49	0.19	PASS	
+2026-10-30T17:18:54.4682599Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:12: trailing whitespace.
+2026-10-30T17:18:54.4683406Z +UI3D-04	after_scale	S19 body_dimension_label_y	WORLD_ANCHORED	446.45	1055.34	446.50	1055.00	0.34	0.13	PASS	
+2026-10-30T17:18:54.4684210Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:13: trailing whitespace.
+2026-10-30T17:18:54.4685030Z +UI3D-04	after_scale	S19 body_dimension_label_z	WORLD_ANCHORED	484.26	1285.84	484.50	1286.00	0.29	0.11	PASS	
+2026-10-30T17:18:54.4685839Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:14: trailing whitespace.
+2026-10-30T17:18:54.4686688Z +UI3D-04	after_typed_dimension	S19 body_dimension_label_x	WORLD_ANCHORED	936.91	1069.58	936.50	1070.00	0.59	0.23	PASS	
+2026-10-30T17:18:54.4687815Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:15: trailing whitespace.
+2026-10-30T17:18:54.4688666Z +UI3D-04	after_typed_dimension	S19 body_dimension_label_y	WORLD_ANCHORED	446.45	1055.34	446.50	1055.00	0.34	0.13	PASS	
+2026-10-30T17:18:54.4689520Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:16: trailing whitespace.
+2026-10-30T17:18:54.4690372Z +UI3D-04	after_typed_dimension	S19 body_dimension_label_z	WORLD_ANCHORED	484.26	1285.84	484.50	1286.00	0.29	0.11	PASS	
+2026-10-30T17:18:54.4691241Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:17: trailing whitespace.
+2026-10-30T17:18:54.4692067Z +UI3D-04	after_undo	S19 body_dimension_label_x	WORLD_ANCHORED	948.85	1067.35	948.50	1067.00	0.49	0.19	PASS	
+2026-10-30T17:18:54.4692878Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:18: trailing whitespace.
+2026-10-30T17:18:54.4693683Z +UI3D-04	after_undo	S19 body_dimension_label_y	WORLD_ANCHORED	446.45	1055.34	446.50	1055.00	0.34	0.13	PASS	
+2026-10-30T17:18:54.4694492Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:19: trailing whitespace.
+2026-10-30T17:18:54.4695302Z +UI3D-04	after_undo	S19 body_dimension_label_z	WORLD_ANCHORED	484.26	1285.84	484.50	1286.00	0.29	0.11	PASS	
+2026-10-30T17:18:54.4696238Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:36: trailing whitespace.
+2026-10-30T17:18:54.4697321Z +UI3D-05	before_camera	S19 body_dimension_label_x	WORLD_ANCHORED	610.98	1307.76	611.00	1308.00	0.24	0.09	PASS	
+2026-10-30T17:18:54.4698214Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:37: trailing whitespace.
+2026-10-30T17:18:54.4699208Z +UI3D-05	before_camera	S19 body_dimension_label_y	WORLD_ANCHORED	397.68	1076.05	398.00	1076.00	0.32	0.12	PASS	
+2026-10-30T17:18:54.4700055Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:38: trailing whitespace.
+2026-10-30T17:18:54.4700906Z +UI3D-05	before_camera	S19 body_dimension_label_z	WORLD_ANCHORED	330.04	1257.37	330.50	1257.00	0.59	0.23	PASS	
+2026-10-30T17:18:54.4701732Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:39: trailing whitespace.
+2026-10-30T17:18:54.4702554Z +UI3D-05	after_orbit	S19 body_dimension_label_x	WORLD_ANCHORED	488.16	1190.58	488.00	1191.00	0.45	0.17	PASS	
+2026-10-30T17:18:54.4703372Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:40: trailing whitespace.
+2026-10-30T17:18:54.4704180Z +UI3D-05	after_orbit	S19 body_dimension_label_y	WORLD_ANCHORED	208.45	1239.36	208.00	1239.00	0.57	0.22	PASS	
+2026-10-30T17:18:54.4704997Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:41: trailing whitespace.
+2026-10-30T17:18:54.4705803Z +UI3D-05	after_orbit	S19 body_dimension_label_z	WORLD_ANCHORED	280.59	1405.41	280.50	1405.00	0.42	0.16	PASS	
+2026-10-30T17:18:54.4706621Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:42: trailing whitespace.
+2026-10-30T17:18:54.4707804Z +UI3D-05	after_orbit_then_chrome_sync	S19 body_dimension_label_x	WORLD_ANCHORED	488.16	1190.58	488.00	1191.00	0.45	0.17	PASS	
+2026-10-30T17:18:54.4708691Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:43: trailing whitespace.
+2026-10-30T17:18:54.4709564Z +UI3D-05	after_orbit_then_chrome_sync	S19 body_dimension_label_y	WORLD_ANCHORED	208.45	1239.36	208.00	1239.00	0.57	0.22	PASS	
+2026-10-30T17:18:54.4710435Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:44: trailing whitespace.
+2026-10-30T17:18:54.4711306Z +UI3D-05	after_orbit_then_chrome_sync	S19 body_dimension_label_z	WORLD_ANCHORED	280.59	1405.41	280.50	1405.00	0.42	0.16	PASS	
+2026-10-30T17:18:54.4712173Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:45: trailing whitespace.
+2026-10-30T17:18:54.4712980Z +UI3D-05	after_pan	S19 body_dimension_label_x	WORLD_ANCHORED	575.35	1248.71	575.00	1249.00	0.45	0.17	PASS	
+2026-10-30T17:18:54.4713789Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:46: trailing whitespace.
+2026-10-30T17:18:54.4714594Z +UI3D-05	after_pan	S19 body_dimension_label_y	WORLD_ANCHORED	305.37	1303.97	305.00	1304.00	0.38	0.14	PASS	
+2026-10-30T17:18:54.4715397Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:47: trailing whitespace.
+2026-10-30T17:18:54.4716201Z +UI3D-05	after_pan	S19 body_dimension_label_z	WORLD_ANCHORED	372.38	1466.61	372.50	1467.00	0.41	0.16	PASS	
+2026-10-30T17:18:54.4717137Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:48: trailing whitespace.
+2026-10-30T17:18:54.4718007Z +UI3D-05	after_pan_then_chrome_sync	S19 body_dimension_label_x	WORLD_ANCHORED	575.35	1248.71	575.00	1249.00	0.45	0.17	PASS	
+2026-10-30T17:18:54.4718874Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:49: trailing whitespace.
+2026-10-30T17:18:54.4719937Z +UI3D-05	after_pan_then_chrome_sync	S19 body_dimension_label_y	WORLD_ANCHORED	305.37	1303.97	305.00	1304.00	0.38	0.14	PASS	
+2026-10-30T17:18:54.4720803Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:50: trailing whitespace.
+2026-10-30T17:18:54.4721774Z +UI3D-05	after_pan_then_chrome_sync	S19 body_dimension_label_z	WORLD_ANCHORED	372.38	1466.61	372.50	1467.00	0.41	0.16	PASS	
+2026-10-30T17:18:54.4722640Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:51: trailing whitespace.
+2026-10-30T17:18:54.4723463Z +UI3D-05	after_zoom_out	S19 body_dimension_label_x	WORLD_ANCHORED	527.96	1197.26	528.00	1197.00	0.26	0.10	PASS	
+2026-10-30T17:18:54.4724289Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:52: trailing whitespace.
+2026-10-30T17:18:54.4725197Z +UI3D-05	after_zoom_out	S19 body_dimension_label_y	WORLD_ANCHORED	431.01	1206.54	431.00	1207.00	0.46	0.17	PASS	
+2026-10-30T17:18:54.4726019Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:53: trailing whitespace.
+2026-10-30T17:18:54.4727028Z +UI3D-05	after_zoom_out	S19 body_dimension_label_z	WORLD_ANCHORED	465.81	1296.01	465.50	1296.00	0.31	0.12	PASS	
+2026-10-30T17:18:54.5223673Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:54: trailing whitespace.
+2026-10-30T17:18:54.5225232Z +UI3D-05	after_zoom_in	S19 body_dimension_label_x	WORLD_ANCHORED	575.35	1248.71	575.00	1249.00	0.45	0.17	PASS	
+2026-10-30T17:18:54.5226572Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:55: trailing whitespace.
+2026-10-30T17:18:54.5228299Z +UI3D-05	after_zoom_in	S19 body_dimension_label_y	WORLD_ANCHORED	305.37	1303.97	305.00	1304.00	0.38	0.14	PASS	
+2026-10-30T17:18:54.5229615Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:56: trailing whitespace.
+2026-10-30T17:18:54.5230897Z +UI3D-05	after_zoom_in	S19 body_dimension_label_z	WORLD_ANCHORED	372.38	1466.61	372.50	1467.00	0.41	0.16	PASS	
+2026-10-30T17:18:54.5232173Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:57: trailing whitespace.
+2026-10-30T17:18:54.5233524Z +UI3D-05	after_zoom_then_chrome_sync	S19 body_dimension_label_x	WORLD_ANCHORED	575.35	1248.71	575.00	1249.00	0.45	0.17	PASS	
+2026-10-30T17:18:54.5234871Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:58: trailing whitespace.
+2026-10-30T17:18:54.5236210Z +UI3D-05	after_zoom_then_chrome_sync	S19 body_dimension_label_y	WORLD_ANCHORED	305.37	1303.97	305.00	1304.00	0.38	0.14	PASS	
+2026-10-30T17:18:54.5237750Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:59: trailing whitespace.
+2026-10-30T17:18:54.5239077Z +UI3D-05	after_zoom_then_chrome_sync	S19 body_dimension_label_z	WORLD_ANCHORED	372.38	1466.61	372.50	1467.00	0.41	0.16	PASS	
+2026-10-30T17:18:54.5240387Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:68: trailing whitespace.
+2026-10-30T17:18:54.5241698Z +UI3D-06	dimensions_on_body_B	S19 body_dimension_label_x	WORLD_ANCHORED	1196.14	1612.42	1023.00	1612.00	173.14	65.96	CLAMPED	
+2026-10-30T17:18:54.5242789Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:69: trailing whitespace.
+2026-10-30T17:18:54.5243720Z +UI3D-06	dimensions_on_body_B	S19 body_dimension_label_y	WORLD_ANCHORED	1036.69	1370.12	1023.00	1370.00	13.69	5.21	CLAMPED	
+2026-10-30T17:18:54.5244636Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:70: trailing whitespace.
+2026-10-30T17:18:54.5245890Z +UI3D-06	dimensions_on_body_B	S19 body_dimension_label_z	WORLD_ANCHORED	913.93	1628.60	914.00	1629.00	0.41	0.16	PASS	
+2026-10-30T17:18:54.5246787Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:71: trailing whitespace.
+2026-10-30T17:18:54.5247954Z +UI3D-06	switched_to_body_A	S19 body_dimension_label_x	WORLD_ANCHORED	594.73	1386.23	595.00	1386.00	0.35	0.13	PASS	
+2026-10-30T17:18:54.5248838Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:72: trailing whitespace.
+2026-10-30T17:18:54.5249717Z +UI3D-06	switched_to_body_A	S19 body_dimension_label_y	WORLD_ANCHORED	375.52	1145.11	376.00	1145.00	0.49	0.19	PASS	
+2026-10-30T17:18:54.5250589Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-3d-state-audit-r1/SPATIAL_ATTACHMENTS.tsv:73: trailing whitespace.
+2026-10-30T17:18:54.5251458Z +UI3D-06	switched_to_body_A	S19 body_dimension_label_z	WORLD_ANCHORED	306.75	1330.50	306.50	1331.00	0.56	0.21	PASS	
+2026-10-30T17:18:54.5252225Z artifacts/function-council-r2/evidence/device-run-40797031704/screens/ui-pref-r1/facts.txt:338: new blank line at EOF.
+2026-10-30T17:18:54.5253022Z artifacts/function-council-r2/evidence/device-run-40800569636/environment-manifest.txt:8: trailing whitespace.
+2026-10-30T17:18:54.5253646Z +accel_check=accel: 0 KVM (version 12) is installed and usable. accel 
+2026-10-30T17:18:54.5254259Z artifacts/function-council-r2/evidence/device-run-40800569636/environment-manifest.txt:21: trailing whitespace.
+2026-10-30T17:18:54.5254796Z +wm_size=Physical size: 1080x2400 
+2026-10-30T17:18:54.5255308Z artifacts/function-council-r2/evidence/device-run-40800569636/environment-manifest.txt:22: trailing whitespace.
+2026-10-30T17:18:54.5255850Z +wm_density=Physical density: 420 
+2026-10-30T17:18:54.5256367Z artifacts/function-council-r2/evidence/device-run-40805804385/environment-manifest.txt:8: trailing whitespace.
+2026-10-30T17:18:54.5257286Z +accel_check=accel: 0 KVM (version 12) is installed and usable. accel 
+2026-10-30T17:18:54.5257929Z artifacts/function-council-r2/evidence/device-run-40805804385/environment-manifest.txt:21: trailing whitespace.
+2026-10-30T17:18:54.5258469Z +wm_size=Physical size: 1080x2400 
+2026-10-30T17:18:54.5258973Z artifacts/function-council-r2/evidence/device-run-40805804385/environment-manifest.txt:22: trailing whitespace.
+2026-10-30T17:18:54.5283909Z +wm_density=Physical density: 420 
+2026-10-30T17:18:54.5319641Z ##[error]Process completed with exit code 2.
+2026-10-30T17:18:54.5369668Z ##[group]Run {
+2026-10-30T17:18:54.5369932Z [36;1m{[0m
+2026-10-30T17:18:54.5370134Z [36;1m  echo "## CI FAST"[0m
+2026-10-30T17:18:54.5370368Z [36;1m  echo '```'[0m
+2026-10-30T17:18:54.5370712Z [36;1m  cat ci-fast-evidence/toolchain-manifest.txt 2>/dev/null || true[0m
+2026-10-30T17:18:54.5371106Z [36;1m  echo '```'[0m
+2026-10-30T17:18:54.5371352Z [36;1m  echo "### Release self-test guard"[0m
+2026-10-30T17:18:54.5371754Z [36;1m  cat ci-fast-evidence/release-selftest-guard.md 2>/dev/null || true[0m
+2026-10-30T17:18:54.5372177Z [36;1m  echo "### .forge corpus parity"[0m
+2026-10-30T17:18:54.5372444Z [36;1m  echo '```'[0m
+2026-10-30T17:18:54.5372770Z [36;1m  cat ci-fast-evidence/forge-corpus-parity.txt 2>/dev/null || true[0m
+2026-10-30T17:18:54.5373167Z [36;1m  echo '```'[0m
+2026-10-30T17:18:54.5373399Z [36;1m} >> "$GITHUB_STEP_SUMMARY"[0m
+2026-10-30T17:18:54.5393546Z shell: /usr/bin/bash -e {0}
+2026-10-30T17:18:54.5393807Z env:
+2026-10-30T17:18:54.5394039Z   ANDROID_PLATFORM: android-36
+2026-10-30T17:18:54.5394308Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-10-30T17:18:54.5394556Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-10-30T17:18:54.5394820Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-10-30T17:18:54.5395123Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-10-30T17:18:54.5395531Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:54.5396015Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:54.5396411Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-10-30T17:18:54.5396525Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-10-30T17:18:54.5396629Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-10-30T17:18:54.5397300Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-10-30T17:18:54.5397428Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-10-30T17:18:54.5397531Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-10-30T17:18:54.5397608Z ##[endgroup]
+2026-10-30T17:18:54.5541023Z ##[group]Run actions/upload-artifact@v4
+2026-10-30T17:18:54.5541133Z with:
+2026-10-30T17:18:54.5541250Z   name: ci-fast-evidence
+2026-10-30T17:18:54.5541340Z   retention-days: 14
+2026-10-30T17:18:54.5541429Z   if-no-files-found: warn
+2026-10-30T17:18:54.5542249Z   path: ci-fast-evidence/
+app/build/reports/tests/
+app/build/test-results/
+app/build/outputs/apk/debug/app-debug.apk
+app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+app/build/outputs/apk/release/app-release-unsigned.apk
+
+2026-10-30T17:18:54.5542340Z   compression-level: 6
+2026-10-30T17:18:54.5542427Z   overwrite: false
+2026-10-30T17:18:54.5542527Z   include-hidden-files: false
+2026-10-30T17:18:54.5542603Z env:
+2026-10-30T17:18:54.5542720Z   ANDROID_PLATFORM: android-36
+2026-10-30T17:18:54.5542805Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-10-30T17:18:54.5542899Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-10-30T17:18:54.5542987Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-10-30T17:18:54.5543143Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-10-30T17:18:54.5543343Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:54.5543550Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:54.5543649Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-10-30T17:18:54.5543758Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-10-30T17:18:54.5543860Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-10-30T17:18:54.5544109Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-10-30T17:18:54.5544243Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-10-30T17:18:54.5544344Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-10-30T17:18:54.5544433Z ##[endgroup]
+2026-10-30T17:18:54.7371707Z (node:2722) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-30T17:18:54.7373096Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-30T17:18:54.7457089Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-10-30T17:18:54.7470012Z The least common ancestor is /home/runner/work/Forgeshape/Forgeshape. This will be the root directory of the artifact
+2026-10-30T17:18:54.7471393Z With the provided path, there will be 1 file uploaded
+2026-10-30T17:18:54.7472715Z Artifact name is valid!
+2026-10-30T17:18:54.7473195Z Root directory input is valid!
+2026-10-30T17:18:55.0863486Z Beginning upload of artifact content to blob storage
+2026-10-30T17:18:55.1069023Z (node:2722) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-30T17:18:55.3103332Z Uploaded bytes 643
+2026-10-30T17:18:55.3714106Z Finished uploading artifact content to blob storage!
+2026-10-30T17:18:55.3715217Z SHA256 digest of uploaded artifact zip is 684d937e2d50ca46de58ecb4d539208d2bf25f03fbf4cc7382a77c138cc54060
+2026-10-30T17:18:55.3717827Z Finalizing artifact upload
+2026-10-30T17:18:55.8564014Z Artifact ci-fast-evidence.zip successfully finalized. Artifact ID 12995889634
+2026-10-30T17:18:55.8565756Z Artifact ci-fast-evidence has been successfully uploaded! Final size is 643 bytes. Artifact ID is 12995889634
+2026-10-30T17:18:55.8573903Z Artifact download URL: https://github.com/damiankrok/Forgeshape/actions/runs/41097660891/artifacts/12995889634
+2026-10-30T17:18:55.8756120Z ##[group]Run actions/upload-artifact@v4
+2026-10-30T17:18:55.8756448Z with:
+2026-10-30T17:18:55.8756664Z   name: ci-fast-failure-reports
+2026-10-30T17:18:55.8757242Z   retention-days: 14
+2026-10-30T17:18:55.8757478Z   if-no-files-found: ignore
+2026-10-30T17:18:55.8758081Z   path: build/reports/
+app/build/reports/
+app/.cxx/**/*.log
+
+2026-10-30T17:18:55.8758438Z   compression-level: 6
+2026-10-30T17:18:55.8758672Z   overwrite: false
+2026-10-30T17:18:55.8758894Z   include-hidden-files: false
+2026-10-30T17:18:55.8759134Z env:
+2026-10-30T17:18:55.8759331Z   ANDROID_PLATFORM: android-36
+2026-10-30T17:18:55.8759585Z   ANDROID_BUILD_TOOLS: 36.1.0
+2026-10-30T17:18:55.8759827Z   ANDROID_NDK_VERSION: 29.0.14206865
+2026-10-30T17:18:55.8760089Z   ANDROID_CMAKE_VERSION: 3.22.1
+2026-10-30T17:18:55.8760369Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-10-30T17:18:55.8760787Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:55.8761334Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64
+2026-10-30T17:18:55.8761745Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-10-30T17:18:55.8762044Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-10-30T17:18:55.8762345Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-10-30T17:18:55.8762805Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-10-30T17:18:55.8763290Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-10-30T17:18:55.8763613Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-10-30T17:18:55.8763882Z ##[endgroup]
+2026-10-30T17:18:56.0607609Z (node:2734) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-30T17:18:56.0608653Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-30T17:18:56.0660569Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-10-30T17:18:56.0671005Z The least common ancestor is /home/runner/work/Forgeshape/Forgeshape. This will be the root directory of the artifact
+2026-10-30T17:18:56.0672224Z No files were found with the provided path: build/reports/
+2026-10-30T17:18:56.0672967Z app/build/reports/
+2026-10-30T17:18:56.0673473Z app/.cxx/**/*.log. No artifacts will be uploaded.
+2026-10-30T17:18:56.0942542Z Post job cleanup.
+2026-10-30T17:18:56.3671195Z In post-action step
+2026-10-30T17:18:56.3679976Z Cache is read-only: will not save state for use in subsequent builds.
+2026-10-30T17:18:56.3686338Z Generating Job Summary
+2026-10-30T17:18:56.3718740Z Completed post-action step
+2026-10-30T17:18:56.4014146Z Post job cleanup.
+2026-10-30T17:18:56.5719294Z (node:2758) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-30T17:18:56.5720374Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-30T17:18:56.5962281Z Post job cleanup.
+2026-10-30T17:18:56.6926037Z [command]/usr/bin/git version
+2026-10-30T17:18:56.6977516Z git version 2.56.0
+2026-10-30T17:18:56.7025113Z Temporarily overriding HOME='/home/runner/work/_temp/5691fde2-4139-45cd-a408-bb3e9c8056a3' before making global git config changes
+2026-10-30T17:18:56.7026581Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-30T17:18:56.7032500Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Forgeshape/Forgeshape
+2026-10-30T17:18:56.7080466Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-30T17:18:56.7158763Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-30T17:18:56.7424914Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-30T17:18:56.7457309Z http.https://github.com/.extraheader
+2026-10-30T17:18:56.7471777Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-10-30T17:18:56.7515175Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-30T17:18:56.7825013Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-30T17:18:56.7864597Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-30T17:18:56.8315774Z Cleaning up orphan processes
+2026-10-30T17:18:56.8724779Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-java@v4, actions/upload-artifact@v4, gradle/actions/setup-gradle@v4, gradle/actions/wrapper-validation@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
