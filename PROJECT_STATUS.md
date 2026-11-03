@@ -39,8 +39,9 @@ the best possible touch UX; free hand to plan and execute. The staged plan is
   `PatternTest`: run `41591022428` attempt 1 DEVICE_STARTUP_UNRESOLVED
   (liblog drops, no test ran), attempt 2 1/2 — the test assumed 2 seeded
   copies where native seeded 3 for the drawn boss (test fixed to assert the
-  seed applies untouched); rerun on `3057098` is run `41593350801` (result
-  recorded on completion). Physical-device
+  seed applies untouched); on `3057098` run `41593350801` **success** (2/2:
+  Pattern applies its seed as one Undo; Mirror reflects, History deletes).
+  Physical-device
   behaviour UNVERIFIED.
 - **Not this stage:** patterns of a Revolve, a finish or the base; along a
   sketch edge or a curve; a pattern of a pattern; per-instance suppression;
