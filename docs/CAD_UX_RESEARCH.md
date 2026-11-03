@@ -94,7 +94,18 @@ i **„zaznaczenie podpowiada akcję”**. Pierwsza połowa jest zrobiona w tym 
 
 Każdy punkt to osobny etap (jeden etap = jedna rzecz, zgodnie z `CLAUDE.md`).
 
-### Etap A — Chamfer i Fillet prostych krawędzi (najwyższy priorytet)
+### Etap A — Chamfer i Fillet prostych krawędzi — **ZROBIONE w `CAD-EDGE-FINISH-R1`**
+
+Stan po wdrożeniu: dotknięcie obok prostej krawędzi bryły CAD pokazuje
+**Fillet / Chamfer**; dotknięcie środka płaskiej ścianki pokazuje obok „Sketch
+here” również **Round edges / Bevel edges** (wszystkie krawędzie ścianki naraz,
+jedno Cofnij). Wartość jest podpowiadana (1/2/5 × 10^k, zawsze mieści się),
+a wykończenie widać i edytuje się w Historii (z przyciskiem Usuń). Zapis w
+`.forge` to `CADB` v9. Ograniczenia R1 są nazwane w komunikatach: tylko
+krawędzie proste, wypukłe, między płaskimi ściankami wyciągnięcia New Body/Add.
+
+Pierwotny plan (zachowany dla kontekstu):
+
 
 To jest „bevel”, o który pytasz, i najczęściej używana cecha w każdym CAD.
 Jak to zrobić **bez łamania zasad projektu**:

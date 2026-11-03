@@ -1353,6 +1353,50 @@ read the sketch's REGULAR entities only, so adding, removing or toggling
 Construction geometry moves no face token and no region. It may still be the
 Revolve axis (§7h) — the axis is resolved over every entity of the sketch.
 
+## 7l. `CADB` v9 — Chamfer and Fillet (`CAD-EDGE-FINISH-R1`)
+
+Version 9 records one fact of a BODY that no earlier version can: its edge
+finishes. v9 is v8's layout (§7i) with exactly one addition, at the END of
+every body record, after its feature list:
+
+```
+u32  finishCount                1 .. 16 (0 is a second encoding of a v8 body:
+                                ImpossibleCount)
+repeat finishCount times, strictly ascending finishId:
+  u32  finishId                 != 0, below nextFeatureId, and no feature's id
+  u8   kindCode                 1 Chamfer, 2 Fillet (any other: InvalidSemanticValue)
+  f64  distance                 metres: the Chamfer's setback on each face, the
+                                Fillet's radius; finite, 1e-5 .. 100
+  u32  edgeCount                1 .. 32
+  repeat edgeCount times:
+    u32  featureId              the feature whose OWN extrusion has the edge
+    FACE faceA                  §7g's face token (9 bytes whole-edge, or a
+    FACE faceB                  fragment token), faceA strictly before faceB in
+                                the token order: kind, entity, local index,
+                                then the fragment cuts
+```
+
+An edge is NAMED, never stored as geometry: its line, its two faces' normals,
+its interior angle and the room on each face are derived on load from the named
+feature's own prism. Load refuses by name, through `validateCadBodyState`, an
+edge that does not resolve (`EdgeNotFound`), one that is curved, concave,
+between a curved and a flat face or sharper than 15° (`EdgeNotEligible`), one
+of a Cut or a Revolve (`EdgeFinishTargetUnsupported`), a setback that does not
+fit inside both faces (`EdgeFinishTooLarge`), and a non-canonical, duplicated
+or empty edge list or an out-of-range distance (`EdgeFinishInvalid`). Nothing
+is retargeted. Finishes apply in order AFTER every extrusion of the chain, one
+kernel Difference per edge.
+
+### When v9 is written, and what an older reader does
+
+v9 is written exactly when some body carries a finish; every other project
+keeps whichever of v1..v8 it already used, byte for byte, and its fingerprint
+(the finish block is mixed into the fingerprint only when present). A reader
+built before v9 meets a required `CADB` section at an unknown version and
+refuses the whole file, rather than opening the body with its rounds silently
+sharpened. No v9 corpus fixture exists yet: the round trip and the refusals
+are host evidence (`EF_11_*` in the CAD-feature suite).
+
 ## 7j. `FRFM` v1 — the Freeform bodies (`MODELING-FOUNDATIONS-R1` B)
 
 A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is

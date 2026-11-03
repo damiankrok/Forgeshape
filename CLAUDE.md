@@ -211,10 +211,11 @@ on the host, with no device, and is the fast native loop.
   engine (`extractClosedProfiles`) **fails closed by name** — open, forked,
   crossing, zero-area and duplicate-edge loops are refused, never repaired —
   and a loop cleanly inside another is no longer refused: it is a HOLE of the
-  region around it (see the region rule below). There is no fillet, no
-  chamfer, no shell, no taper and no constraint solver, and a revolve is a
+  region around it (see the region rule below). Chamfer and Fillet are
+  edge FINISHES applied after the chain (see the edge-finish rule below);
+  there is no shell, no taper and no constraint solver, and a revolve is a
   first feature only (see the Revolve rule below); the only
-  booleans are a later feature's Add and Cut; a rectangle is parametric (centre, width,
+  booleans are a later feature's Add and Cut and a finish's edge cut; a rectangle is parametric (centre, width,
   height, axis-aligned in sketch space) and a circle is centre and radius, and
   both are editable later. R0 had no arc and no spline either; `SKETCH-UX-R1`
   adds both as AUTHORED-point entities — see the curve rule below — and they
@@ -796,6 +797,45 @@ on the host, with no device, and is the fast native loop.
   `cad_bad_feature_kind_v7`). **Not this stage:** a Revolve Add or Cut, a
   later Revolve feature, a sketch on a revolved face, an axis that is not a
   sketch edge, a two-sided or symmetric sweep, and a constraint solver.
+- **A Chamfer or a Fillet is a NAMED edge plus a distance, applied after the
+  chain** (`CAD-EDGE-FINISH-R1`, `forgeshape_cad_edge_finish.{h,cpp}`).
+  `CadBodyState::edgeFinishes` is the authored truth: per finish an id minted
+  from `nextFeatureId` (never a feature's, never minted again on the branch),
+  a kind, a distance (the Chamfer's setback on each face, the Fillet's radius,
+  1e-5..100 m, refused never clamped) and 1..32 `CadEdgeRef`s — the feature
+  whose OWN extrusion has the edge and its two face tokens in canonical order.
+  The edge's line, normals, interior angle and the room on each face are
+  DERIVED from that feature's prism in binary64 (`enumerateCadFeatureEdges`:
+  two prism triangles of different tags on one mesh edge put it on that
+  semantic edge), never read off a boolean result or a triangle index, and a
+  ref that does not resolve is refused by name (`EdgeNotFound`), never
+  retargeted. R1 finishes STRAIGHT, CONVEX edges between two FLAT faces of a
+  New Body or Add Extrude, interior angle at least 15° (`EdgeNotEligible`,
+  `EdgeFinishTargetUnsupported` for a Cut or a Revolve), with a setback that
+  fits inside both faces (`EdgeFinishTooLarge`). Regeneration applies every
+  finish in order AFTER every extrusion, one kernel `Difference` per edge with
+  a tool derived from the edge alone — a prism whose section is the corner the
+  finish removes, widened outside the material, its Fillet arc at the circle
+  density (32 per turn) — that runs on past an end where the material ends and
+  stops flush where it continues (`cadSolidContainsPoint`); a finish that
+  removes nothing is `EdgeFinishNoEffect` and names the finish, so a later
+  Add or Cut that consumes a finished edge refuses rather than silently
+  sharpening it. Finish triangles carry their own INELIGIBLE face-table entry,
+  so a bevel is never a sketch support. **The offer is presentation**: a
+  Construction tap beside a straight edge (36 px on screen AND within 35 % of
+  the narrower face's room in the world, so a back edge is never chosen)
+  offers Fillet / Chamfer of that edge, and a tap on a face offers to round or
+  bevel every finishable edge of it in ONE finish beside Sketch here; the
+  offered edges are highlighted in the sketch-overlay slot, the editor is
+  seeded with a 1/2/5 value that fits, and Apply, an edit and a Delete are each
+  ONE `ScopedConstructionEdit` through `CadBody::applyState`. The History lists
+  finishes after the features and reopens one in the canvas editor with
+  Delete. **`CADB` gains version 9** (§7l), written ONLY when a body carries a
+  finish; every v1..v8 project keeps its bytes and its fingerprint. **Not this
+  stage:** curved or concave edges, Cut and Revolve edges, edges between two
+  features, variable or asymmetric chamfers, a rolling-ball corner blend where
+  three filleted edges meet (R1 leaves the intersection of the cuts), a drag
+  handle, Shell, Draft and a Hole feature.
 - **A body's History is a VIEW of its feature chain, and an edit of an earlier
   step is STAGED** (`MODELING-FOUNDATIONS-R1` A). The History control in the
   history capsule is drawn exactly when the active body is a CAD or a Surface
@@ -1656,6 +1696,9 @@ coincident edges / making a closed solid of one),
   "Asymmetric"),
   *Flip* (reversing which side of the sketch the solid grows on; a One Side
   control, a direction and never a negative depth, and never an A/B swap),
+  *Fillet* / *Chamfer* (rounding a body's edge to an arc / cutting it back to
+  a flat bevel; never "bevel" alone for the round), *Round edges* / *Bevel
+  edges* (the same over every edge of a tapped face),
   *New Body* (the operation that makes a new body; the only one a world-plane
   sketch offers), *Add* (a later feature that unions material into the SAME
   body; never "Join" in the UI), *Cut* (a later feature that removes material
