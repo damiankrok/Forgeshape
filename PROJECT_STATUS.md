@@ -1,7 +1,50 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.107.0
-**Updated:** 2026-11-02
+**Status Version:** 0.108.0
+**Updated:** 2026-11-03
+**Latest stage:** **`STARTUP-FACE-ICONS-R1` — fast launch, a direct
+Sketch-on-face path, a new mark and launcher icon** (2026-11-03). **CI
+PENDING / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`claude/new-session-g87rge` (the `SKETCH-NAVIGATOR-OUTCOME-R1` head `df8f0a1`
+merged in, no history rewritten). OWNER request: icons are not intuitive, a
+new logo, the launch is slow, a face of an extruded body cannot be tapped to
+start a new sketch, and research into Shapr3D / Inventor / FreeCAD.
+
+- **Slow launch, root cause.** All 25 debug self-test suites (~4500 checks,
+  Manifold booleans and timed performance runs among them) ran synchronously
+  in `ForgeShapeActivity.onCreate` → `NativeViewport.start()` on the UI thread,
+  in an unoptimised debug build: `CI DEVICE` recorded `startup_seconds` 15–21
+  on every recent run. They now run only when `debug.forgeshape.selftests=1`
+  (`adb shell setprop`); an ordinary launch logs
+  `FORGESHAPE_DEBUG_SUITES_NOT_REQUESTED` and reaches Home at once.
+  `scripts/ci-device-smoke.sh` sets the property (and reads it back) before
+  its startup capture and keeps it for the instrumentation, so CI runs exactly
+  what it ran before. Release builds are unchanged (they compiled no suite).
+- **Face sketch.** Before: a sketch on a face was reachable only through the
+  mark → drawer → New Sketch → tap the face twice. Now an ordinary
+  Construction tap on an eligible planar face of a CAD body offers a captioned
+  **Sketch here** chip above the touched point, and one tap on it opens the
+  sketch on that face through the chooser's own confirm
+  (`resolveFaceSupportFromHit` extracted from the chooser and shared;
+  `faceSketchOfferPoint` / `faceSketchOfferBegin` / `faceSketchOfferDismiss`;
+  session presentation only — no format, fixture, history or fingerprint
+  change). Host: three `CADA3_27_*` checks (one mutation-tested);
+  `HOST_SELFTESTS_OK (4475 checks, 0 failed)`. Device test
+  `FaceSketchOfferTest` (real window touches) added.
+- **Icons and mark.** First launcher icon (adaptive, with an Android 13
+  monochrome layer); the mark is a notched isometric block with a filled cut
+  floor; fifteen glyphs redrawn so no two different acts share a picture
+  (Transform ≠ Move, New Body ≠ Box ≠ Shape) and menu-like or ambiguous
+  glyphs read as what they do. Resource names unchanged.
+- **Research.** `docs/CAD_UX_RESEARCH.md` (Polish, OWNER-facing): the shared
+  feature-based workflow, Shapr3D / Inventor / FreeCAD specifics, a gap table,
+  and a proposed order of later stages (straight-edge Chamfer/Fillet first).
+  Proposal only; nothing in it is authorised.
+- **Not verified yet.** No Android SDK in the authoring container: the APK,
+  JVM tests, release guard and the device test are verified only by the CI runs
+  recorded below. Launch time on a physical device is UNVERIFIED.
+
+**Previous stage:** `SKETCH-NAVIGATOR-OUTCOME-R1` (record below, unchanged).
 **Latest stage:** **`SKETCH-NAVIGATOR-OUTCOME-R1` —
 `PASS-SKETCH-NAVIGATOR-OUTCOME-R1`** (2026-11-02). **TECH PASS (emulator) /
 OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
@@ -4953,7 +4996,17 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: OWNER physical-device review of the
-`SKETCH-NAVIGATOR-OUTCOME-R1` APK** (`ci-fast-evidence` artifact `13179561711`
+`STARTUP-FACE-ICONS-R1` APK** (the `CI FAST` `app-debug.apk` of
+`claude/new-session-g87rge`, recorded in the latest-stage block once green): the
+app starts straight to Home; after an extrusion, tap a flat face → *Sketch
+here* → the sketch opens on that face; the new launcher icon and glyphs read as
+what they do. It carries everything below, so that one review also covers the
+earlier pending checklists. If the OWNER then wants modelling depth, the first
+proposed stage in `docs/CAD_UX_RESEARCH.md` §6 (straight-edge Chamfer and
+Fillet as a feature) needs explicit authorisation — it is NOT authorised here.
+
+The earlier review it subsumes: the
+`SKETCH-NAVIGATOR-OUTCOME-R1` APK (`ci-fast-evidence` artifact `13179561711`
 of `CI FAST` `41524092732`, `app-debug.apk` SHA-256
 `f8cbb67de8e1b0541ebf4d5cbd79d203eb82689d6456c195fc93022c0aaf4194`; it carries the
 `CAD-R2-C2` product, `CAD-FACE-SUPPORTED-PLACEMENT-R1`,
