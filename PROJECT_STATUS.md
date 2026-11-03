@@ -3,8 +3,8 @@
 **Status Version:** 0.108.0
 **Updated:** 2026-11-03
 **Latest stage:** **`STARTUP-FACE-ICONS-R1` — fast launch, a direct
-Sketch-on-face path, a new mark and launcher icon** (2026-11-03). **CI
-PENDING / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+Sketch-on-face path, a new mark and launcher icon** (2026-11-03). **TECH PASS
+(emulator) / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
 `claude/new-session-g87rge` (the `SKETCH-NAVIGATOR-OUTCOME-R1` head `df8f0a1`
 merged in, no history rewritten). OWNER request: icons are not intuitive, a
 new logo, the launch is slow, a face of an extruded body cannot be tapped to
@@ -40,9 +40,19 @@ start a new sketch, and research into Shapr3D / Inventor / FreeCAD.
   feature-based workflow, Shapr3D / Inventor / FreeCAD specifics, a gap table,
   and a proposed order of later stages (straight-edge Chamfer/Fillet first).
   Proposal only; nothing in it is authorised.
-- **Not verified yet.** No Android SDK in the authoring container: the APK,
-  JVM tests, release guard and the device test are verified only by the CI runs
-  recorded below. Launch time on a physical device is UNVERIFIED.
+- **Evidence (product and tests at `3e04ae0`).** `CI FAST` `41559577989`
+  success (debug/androidTest/release build, JVM tests, release self-test guard,
+  corpus 72/72, device guards; artifact `ci-fast-evidence` `13196542612` holds
+  `app-debug.apk`). `CI DEVICE` `41559581403`: attempt 1
+  `DEVICE_STARTUP_UNRESOLVED` — three captures of 24/24/21 of 25 tokens, zero
+  failure lines, `liblog_dropped` 6/35/325 (the known log-drop infrastructure
+  mode, seen on the unchanged product on 2026-10-30); the one allowed re-run,
+  attempt 2, **PASS**: 25/25 tokens in order, `NATIVE_VIEWPORT_OK`, 0 failure
+  tokens, `FaceSketchOfferTest` OK (1/1). Its startup log measures the cost
+  the change removes from an ordinary launch: the suites ran on the UI thread
+  from 01:42:59.768 to 01:43:14.770 (**15.0 s**), and the first frame followed
+  at 01:43:16.527. Launch time on a physical device is UNVERIFIED (emulator
+  evidence closes no physical-device gate).
 
 **Previous stage:** `SKETCH-NAVIGATOR-OUTCOME-R1` (record below, unchanged).
 **Latest stage:** **`SKETCH-NAVIGATOR-OUTCOME-R1` —
@@ -4996,8 +5006,8 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: OWNER physical-device review of the
-`STARTUP-FACE-ICONS-R1` APK** (the `CI FAST` `app-debug.apk` of
-`claude/new-session-g87rge`, recorded in the latest-stage block once green): the
+`STARTUP-FACE-ICONS-R1` APK** (`app-debug.apk` in artifact `13196542612` of
+`CI FAST` `41559577989`, branch `claude/new-session-g87rge`): the
 app starts straight to Home; after an extrusion, tap a flat face → *Sketch
 here* → the sketch opens on that face; the new launcher icon and glyphs read as
 what they do. It carries everything below, so that one review also covers the
