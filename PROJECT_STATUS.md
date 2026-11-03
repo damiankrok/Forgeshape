@@ -1,7 +1,52 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.110.0
+**Status Version:** 0.111.0
 **Updated:** 2026-11-03
+**Latest stage:** **`CAD-PATTERN-R1` — Pattern (Linear, Circular) and Mirror
+of features** (2026-11-03). **TECH PASS (emulator) / OWNER PHYSICAL REVIEW
+REQUIRED / NOT MERGED.** Branch `claude/new-session-g87rge`, product at
+`3057098`. OWNER request: the Android app should reach desktop-CAD parity with
+the best possible touch UX; free hand to plan and execute. The staged plan is
+`docs/FEATURE_PARITY_PLAN.md`; this is its stage 4.
+
+- **Model.** `CadBodyState::patterns`: per pattern an id from `nextFeatureId`,
+  a kind (Linear with an optional second direction, Circular about a body-local
+  axis through a point, Mirror across a body-local plane), 1..8 later Add/Cut
+  features by id, and its numbers in one canonical form per kind. Instances are
+  the named feature's own tool solid moved by a derived rigid transform (a
+  reflection flips the winding), one kernel boolean each, applied in the chain
+  by id; instance faces carry the pattern's ineligible face entry. Refusals:
+  `PatternInvalid`, `PatternFeatureNotFound`, `PatternTargetUnsupported`,
+  `PatternInstanceNoEffect`, `TooManyPatterns` (CadStatus 100..104).
+- **Fix found on the way.** `kCadStatusCount` was 93 while the enum held 100
+  values, so `cadStatusFromCode` rejected the seven edge-finish codes; it now
+  counts all 105 and the static_assert checks the last enumerator.
+- **Format.** `CADB` v10 (DATA_PACKAGE_SPEC.md §7m), written only when a body
+  carries a pattern; every v1..v9 project keeps its bytes and fingerprint. No
+  corpus fixture yet (72 unchanged); round trip and refusals are host checks.
+- **UX.** A tap on a face of a later Add/Cut offers Pattern and Mirror in the
+  face bar; `PatternEditorPanel` draws only the rows its kind uses and opens on
+  native seeds — an in-face Linear axis, a spacing that clears the feature and
+  the run that keeps every copy on the part, the Circular axis through the
+  base's centre, the Mirror plane through the part's centre. Apply / edit /
+  Delete are one Undo each; the History lists and reopens patterns.
+- **Evidence.** Host `HOST_SELFTESTS_OK (4598 checks, 0 failed)` with 50
+  `PT_*` checks (transforms, 16 refusals, exact volumes of rows, grids, rings,
+  mirrors and bosses, no-effect refusals, chain order, ineligible instance
+  faces, v10 round trip and bad bytes, acts and Undo, History rows, seeds;
+  mutation-tested: 2, 1 and 17 failures for the three mutants). JVM
+  `PatternPresentationTest`. `CI FAST` `41590176541` success. `CI DEVICE`
+  `PatternTest`: run `41591022428` attempt 1 DEVICE_STARTUP_UNRESOLVED
+  (liblog drops, no test ran), attempt 2 1/2 — the test assumed 2 seeded
+  copies where native seeded 3 for the drawn boss (test fixed to assert the
+  seed applies untouched); rerun on `3057098` is run `41593350801` (result
+  recorded on completion). Physical-device
+  behaviour UNVERIFIED.
+- **Not this stage:** patterns of a Revolve, a finish or the base; along a
+  sketch edge or a curve; a pattern of a pattern; per-instance suppression;
+  an arbitrary mirror plane; body-to-body patterns; live preview while typing.
+
+**Previous stage:** `SKETCH-KNIFE-UNDO-R1` (record below, unchanged).
 **Latest stage:** **`SKETCH-KNIFE-UNDO-R1` — Undo in the sketch, the knife,
 and pushing a face sketch into a Cut** (2026-11-03). **TECH PASS (emulator) /
 OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
@@ -2296,9 +2341,10 @@ lives in Git history; only what still constrains the code is kept here.
 `SCULPT-UNDO-R0` (`ARCH-OWNER-12` — a dedicated bounded volatile per-body Sculpt
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
-**Next Stage:** the OWNER physical-device review of the
-`SKETCH-KNIFE-UNDO-R1` APK (sketch Undo/Redo, the knife, push-through to Cut,
-with the earlier `CAD-EDGE-FINISH-R1` and drafting-toolkit work); the Delete → Undo → Redo owner
+**Next Stage:** `CAD-HOLE-R1` — Hole and Through All (stage 5 of
+`docs/FEATURE_PARITY_PLAN.md`), after the OWNER physical-device review of the
+`CAD-PATTERN-R1` APK (patterns, sketch Undo/Redo, the knife, push-through to
+Cut, Fillet/Chamfer); the Delete → Undo → Redo owner
 verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See *Next Stage*.
 
 ## Current state

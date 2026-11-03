@@ -911,6 +911,30 @@ stays a useful size, and a value you type is never nudged to it.
 Not yet: sketching on an imported or sculpted surface; a curved face as a
 sketch support; and moving a face-attached body on its own.
 
+## Repeating a feature: Pattern and Mirror
+
+Tap a face of a boss or a pocket (a later Add or Cut) and, beside **Sketch
+here**, the bar under your finger offers **Pattern** and **Mirror**.
+
+- **Pattern** opens a small editor at the model: *Linear*, *Circular* or
+  *Mirror*; the part's axis (X, Y or Z) and *Reverse*; how many *Copies*
+  (the original counts); and the *Spacing*, the *Angle* or where the mirror
+  *Plane* stands. A Linear pattern can add *Rows along* a second axis for a
+  grid. It opens already filled in so the first **Apply** works: a direction
+  in the feature's own face, a spacing that clears the feature, and as many
+  copies as fit on the part, running toward the side with room.
+- **Mirror** opens the same editor on Mirror, across the plane through the
+  middle of the part.
+- **Apply** is one Undo step. If a copy would change nothing (it misses the
+  part, or lands on another copy) the editor stays open with your values and
+  the status line says so.
+- The **History** lists each pattern after the feature it repeats; tapping it
+  reopens the editor with **Delete**.
+
+Verified on the emulator (`PatternTest`): a boss's Pattern applies its seeded
+values as one Undo and Undo takes it back; Mirror reflects it; the History
+reopens and deletes it.
+
 ## Drafting inside a sketch
 
 **Undo and Redo while drawing.** While a sketch is being drawn, the Undo and
