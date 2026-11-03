@@ -1633,6 +1633,22 @@ fingerprint mixes a `PLN0` block (each such sketch's id and the exact offset
 and angle bits) only then. No v14 corpus fixture exists yet: the round trip
 and the version rule are host evidence (`PL_04_*` in the CAD-feature suite).
 
+## 7r. `CADB` v15 — a later Revolve Add or Cut (`CAD-REVOLVE-FEATURE-R1`)
+
+Version 15 is v14's layout (§7q) byte for byte, in which a LATER feature's
+kind byte (§7h) may be **2, Revolve**, followed by exactly the payload a base
+Revolve carries (operation, sketch id, axis entity and edge, angle, direction,
+selection) — with an operation of Add or Cut; New Body there is
+`InvalidSemanticValue`. Below v15 a later Revolve is refused the same way. A
+later Revolve carries no extrusion and a later Extrude no revolve
+(`RevolvePayloadMismatch`); a body whose FIRST feature revolves still carries
+no later feature (`RevolveLaterFeatureUnsupported`), and a pattern of a
+Revolve is `PatternTargetUnsupported`. v15 is written exactly when some later
+feature revolves; a v15 section without one is refused. The fingerprint mixes
+an `RVL1` block (each later Revolve's id, selection, axis, exact angle bits and
+direction) only then. No v15 corpus fixture exists yet: the round trip and the
+version rule are host evidence (`RV_03_*`).
+
 ## 7j. `FRFM` v1 — the Freeform bodies (`MODELING-FOUNDATIONS-R1` B)
 
 A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is

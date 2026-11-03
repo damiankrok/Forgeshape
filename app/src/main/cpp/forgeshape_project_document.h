@@ -249,6 +249,12 @@ constexpr uint16_t kCadSectionVersionV13 = 13;
 // offset and tilt. Written ONLY when a sketch stands off its face, so every
 // v1..v13 project keeps its bytes.
 constexpr uint16_t kCadSectionVersionV14 = 14;
+// v15 (`CAD-REVOLVE-FEATURE-R1`, DATA_PACKAGE_SPEC.md §7r): the v14 layout --
+// in which every feature-face sketch record carries its plane -- where a LATER
+// feature's kind byte may be 2, a Revolve Add or Cut, in the base Revolve's own
+// payload layout. Written ONLY when a later feature revolves, so every
+// v1..v14 project keeps its bytes.
+constexpr uint16_t kCadSectionVersionV15 = 15;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.

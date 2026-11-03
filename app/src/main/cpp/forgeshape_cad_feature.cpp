@@ -659,6 +659,19 @@ CadStatus walkCadChain(const CadBodyState& state, std::vector<CadFeatureGeometry
         if (placed != CadStatus::Ok) {
             return refuse(placed, view.featureId);
         }
+        // One payload per feature (`CAD-REVOLVE-FEATURE-R1`): a later Revolve
+        // carries no extrusion, and a later Extrude no revolve.
+        if (!base) {
+            const CadFeature& raw = state.laterFeatures[index - 1u];
+            const bool revolve = raw.kind == CadFeatureKind::Revolve;
+            if (revolve ? !sameExtrudeFeature(raw.extrude, ExtrudeFeature{})
+                        : !sameRevolveFeature(raw.revolve, RevolveFeature{})) {
+                return refuse(CadStatus::RevolvePayloadMismatch, view.featureId);
+            }
+            if (static_cast<int>(raw.kind) >= kCadFeatureKindCount) {
+                return refuse(CadStatus::InvalidFeatureKind, view.featureId);
+            }
+        }
         CadFeatureGeometry g;
         CadStatus why = CadStatus::Ok;
         if (view.kind == CadFeatureKind::Revolve && view.revolve != nullptr) {

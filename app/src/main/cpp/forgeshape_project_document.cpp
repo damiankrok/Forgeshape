@@ -531,6 +531,17 @@ bool cadDocumentNeedsV8(const ProjectDocument& document) {
     return false;
 }
 
+// Whether any CAD body needs the v15 section (`CAD-REVOLVE-FEATURE-R1`): a
+// later Revolve Add or Cut.
+bool cadDocumentNeedsV15(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (cadBodyStateUsesLaterRevolve(body.state)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Whether any CAD body needs the v14 section (`CAD-PLANE-R1`): a sketch on a
 // construction plane off its face.
 bool cadDocumentNeedsV14(const ProjectDocument& document) {
@@ -1707,7 +1718,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
 
     // The section is written at the LOWEST version that can carry it, so every
     // project that predates a feature keeps the bytes it always had.
-    const bool cadV14 = document.hasCad && cadDocumentNeedsV14(document);
+    const bool cadV15 = document.hasCad && cadDocumentNeedsV15(document);
+    const bool cadV14 = document.hasCad && (cadV15 || cadDocumentNeedsV14(document));
     const bool cadV13 = document.hasCad && (cadV14 || cadDocumentNeedsV13(document));
     const bool cadV12 = document.hasCad && (cadV13 || cadDocumentNeedsV12(document));
     const bool cadV11 = document.hasCad && (cadV12 || cadDocumentNeedsV11(document));
@@ -1884,7 +1896,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
         appendSection(file, kSectionTagCad,
-                      cadV14  ? kCadSectionVersionV14
+                      cadV15  ? kCadSectionVersionV15
+                      : cadV14 ? kCadSectionVersionV14
                       : cadV13 ? kCadSectionVersionV13
                       : cadV12 ? kCadSectionVersionV12
                       : cadV11 ? kCadSectionVersionV11
@@ -2572,7 +2585,7 @@ ProjectCodecStatus readCadSelectionV6(ByteReader& in, ExtrudeFeature* extrude) {
 // ids, order, references, placements, selections -- is `validateCadBodyState`'s.
 ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool featureKinds,
                                    bool drafting, bool finishes, bool patterns, bool holes,
-                                   bool toFace, bool planes) {
+                                   bool toFace, bool planes, bool laterRevolve) {
     CadBodyState& state = body->state;
     uint32_t sketchCount = 0;
     if (!in.u64(&body->objectId) || !in.u32(&state.nextSketchId)
@@ -2700,9 +2713,14 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
                 return ProjectCodecStatus::Truncated;
             }
             CadFeatureOperation operation = CadFeatureOperation::NewBody;
+            // The first feature revolves as a New Body (§7h); from v15 a LATER
+            // one may revolve as an Add or a Cut (§7r). Anything else is
+            // refused rather than renumbered or re-read.
+            const bool laterOk = laterRevolve && f != 0;
             if (!cadFeatureOperationFromFileCode(operationCode, &operation)
-                || operation != CadFeatureOperation::NewBody || f != 0
-                || featureId != kCadFeatureId
+                || (f == 0 && (operation != CadFeatureOperation::NewBody
+                               || featureId != kCadFeatureId))
+                || (f != 0 && (!laterOk || operation == CadFeatureOperation::NewBody))
                 || !revolveDirectionFromFileCode(directionCode, &revolve.direction)) {
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
@@ -2712,6 +2730,15 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
                 return selected;
             }
             setRevolveSelectionFrom(&revolve, selection);
+            if (f != 0) {
+                CadFeature& feature = state.laterFeatures[f - 1u];
+                feature.featureId = featureId;
+                feature.operation = operation;
+                feature.sketchId = sketchId;
+                feature.kind = CadFeatureKind::Revolve;
+                feature.revolve = std::move(revolve);
+                continue;
+            }
             state.baseSketchId = sketchId;
             state.baseKind = CadFeatureKind::Revolve;
             state.revolve = std::move(revolve);
@@ -2936,7 +2963,7 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         || version == kCadSectionVersionV8 || version == kCadSectionVersionV9
         || version == kCadSectionVersionV10 || version == kCadSectionVersionV11
         || version == kCadSectionVersionV12 || version == kCadSectionVersionV13
-        || version == kCadSectionVersionV14) {
+        || version == kCadSectionVersionV14 || version == kCadSectionVersionV15) {
         uint32_t bodyCount = 0;
         if (!in.u32(&bodyCount)) {
             return ProjectCodecStatus::Truncated;
@@ -2960,7 +2987,8 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
                                     /*patterns=*/version >= kCadSectionVersionV10,
                                     /*holes=*/version >= kCadSectionVersionV11,
                                     /*toFace=*/version >= kCadSectionVersionV13,
-                                    /*planes=*/version >= kCadSectionVersionV14);
+                                    /*planes=*/version >= kCadSectionVersionV14,
+                                    /*laterRevolve=*/version >= kCadSectionVersionV15);
             if (why != ProjectCodecStatus::Ok) {
                 return why;
             }
@@ -2985,6 +3013,16 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         if ((anyThroughAll && version < kCadSectionVersionV12)
             || (!anyThroughAll && version == kCadSectionVersionV12)) {
             return ProjectCodecStatus::InvalidSemanticValue;
+        }
+        // A v15 section exists only for a later Revolve (`CAD-REVOLVE-FEATURE-R1`).
+        if (version == kCadSectionVersionV15) {
+            bool anyLaterRevolve = false;
+            for (const ProjectCadBody& body : record->bodies) {
+                anyLaterRevolve = anyLaterRevolve || cadBodyStateUsesLaterRevolve(body.state);
+            }
+            if (!anyLaterRevolve) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
         }
         // A v14 section exists only for a sketch off its face (`CAD-PLANE-R1`).
         if (version == kCadSectionVersionV14) {
@@ -3313,7 +3351,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
                         || sectionVersion == kCadSectionVersionV11
                         || sectionVersion == kCadSectionVersionV12
                         || sectionVersion == kCadSectionVersionV13
-                        || sectionVersion == kCadSectionVersionV14;
+                        || sectionVersion == kCadSectionVersionV14
+                        || sectionVersion == kCadSectionVersionV15;
         } else if (isScene) {
             // SCNE became the second multi-version section at Stage 018A: v1 as
             // every build before it wrote, and v2 carrying per-body visibility,

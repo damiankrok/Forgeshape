@@ -846,6 +846,21 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
             mixDouble(hash, record.planeAngleDegrees);
         }
     }
+    // `CAD-REVOLVE-FEATURE-R1`: every later Revolve Add or Cut -- its id, the
+    // axis, the exact angle bits, the direction and its selection. Mixed only
+    // when the body has one.
+    if (cadBodyStateUsesLaterRevolve(state)) {
+        mixU64(hash, 0x52564C31ull);  // "RVL1"
+        for (const CadFeature& feature : state.laterFeatures) {
+            if (feature.kind != CadFeatureKind::Revolve) continue;
+            mixU64(hash, feature.featureId);
+            mixSelection(hash, revolveSelectionCarrier(feature.revolve));
+            mixU64(hash, feature.revolve.axis.entityId);
+            mixU64(hash, feature.revolve.axis.edgeLocalIndex);
+            mixDouble(hash, feature.revolve.angleDegrees);
+            mixU64(hash, static_cast<uint64_t>(revolveDirectionIndex(feature.revolve.direction)));
+        }
+    }
     // `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: a Revolve's whole authored truth -- its
     // selection, its axis ref, the exact angle bits and the direction. Mixed
     // only for a Revolve, so every Extrude project keeps the fingerprint it

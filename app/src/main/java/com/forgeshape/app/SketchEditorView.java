@@ -705,9 +705,12 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
 
     /**
      * The Revolve rows (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`), from the one revolve
-     * state read: the extrusion's rows and the operation choice are withdrawn
-     * while the selection is revolved (a Revolve is a New Body), and "Revolve…"
-     * is drawn only where native could revolve the chosen areas.
+     * state read: the extrusion's rows are withdrawn while the selection is
+     * revolved, and "Revolve…" is drawn only where native could revolve the
+     * chosen areas. The operation choice stays exactly as native offers it:
+     * New Body alone on a world plane, and on a part's face Add and Cut too
+     * (`CAD-REVOLVE-FEATURE-R1`) -- `refreshOperations` draws the row only
+     * when there is a choice.
      */
     private void refreshRevolve(boolean revolving) {
         final Context context = getContext();
@@ -717,7 +720,6 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         if (!revolving) {
             return;
         }
-        operationRow.setVisibility(GONE);
         final long axisEntity = (long) nativeRevolve[NativeViewport.REVOLVE_AXIS_ENTITY];
         if (axisEntity == 0 || CadRevolvePresentation.axisPicking(nativeRevolve)) {
             revolveAxisSummary.setText(axisEntity == 0

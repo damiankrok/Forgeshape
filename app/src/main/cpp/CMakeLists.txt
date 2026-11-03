@@ -140,6 +140,7 @@ set(FORGESHAPE_SELFTEST_SOURCES
     forgeshape_cad_through_all_selftest.cpp
     forgeshape_cad_to_face_selftest.cpp
     forgeshape_cad_plane_selftest.cpp
+    forgeshape_cad_revolve_feature_selftest.cpp
     forgeshape_cad_timeline_selftest.cpp
     forgeshape_cad_r2_selftest.cpp
     forgeshape_cad_oracle_selftest.cpp

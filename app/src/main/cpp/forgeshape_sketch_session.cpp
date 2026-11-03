@@ -3431,7 +3431,12 @@ CadBodyState SketchSession::candidateState() const {
         for (CadFeature& existing : state.laterFeatures) {
             if (existing.featureId == editingFeatureId_) {
                 existing.operation = operation_;
-                existing.extrude = extrude_;
+                if (existing.kind == CadFeatureKind::Revolve) {
+                    existing.revolve = candidateRevolve();
+                    existing.extrude = ExtrudeFeature{};
+                } else {
+                    existing.extrude = extrude_;
+                }
             }
         }
         return state;
@@ -3449,7 +3454,10 @@ CadBodyState SketchSession::candidateState() const {
     support.face = sketch_.faceSupport.face;
     support.lineageToken = sketch_.faceSupport.lineageToken;
     const uint32_t appended =
-            appendCadLaterFeatureWithSketch(&state, operation_, support, std::move(sketch), extrude_);
+            revolve ? appendCadLaterRevolveWithSketch(&state, operation_, support, std::move(sketch),
+                                                      candidateRevolve())
+                    : appendCadLaterFeatureWithSketch(&state, operation_, support, std::move(sketch),
+                                                      extrude_);
     if (appended != 0) {
         stampFacePlane(cadFeatureSketchRecord(state, appended));
     }
@@ -3471,9 +3479,24 @@ bool SketchSession::operationAvailable(CadFeatureOperation operation) const {
     if (!active()) {
         return false;
     }
-    // A Revolve is a New Body in R1: Add and Cut are not offered for one.
+    // A Revolve (`CAD-REVOLVE-FEATURE-R1`): a body's first feature is a New
+    // Body; a revolve on a face of an Extrude part may also be an Add or a Cut
+    // of it, and an edit of a later one stays an Add or a Cut. A revolved part
+    // carries no later feature, so nothing is offered over one.
     if (featureKind_ == CadFeatureKind::Revolve) {
-        return operation == CadFeatureOperation::NewBody;
+        const bool laterRevolveOk = hasTargetState_ && sketch_.hasFaceSupport
+                                    && targetBaseState_.baseKind == CadFeatureKind::Extrude
+                                    && cadFeatureCount(targetBaseState_) < kMaxCadFeatures;
+        if (editingFeatureId_ == kCadFeatureId) {
+            return operation == CadFeatureOperation::NewBody;
+        }
+        if (editingFeatureId_ > kCadFeatureId) {
+            return operation != CadFeatureOperation::NewBody;
+        }
+        if (operation == CadFeatureOperation::NewBody) {
+            return true;
+        }
+        return laterRevolveOk;
     }
     const bool addOrCut = operation == CadFeatureOperation::Add
                           || operation == CadFeatureOperation::Cut;
@@ -3780,8 +3803,14 @@ bool SketchSession::revolveAvailable() const {
         // An edit keeps the body's own kind: a Revolve body revolves.
         return hasTargetState_ && targetBaseState_.baseKind == CadFeatureKind::Revolve;
     }
-    // A new body only; an edit of a later feature is an Add or a Cut.
-    return editingFeatureId_ == 0;
+    if (editingFeatureId_ > kCadFeatureId) {
+        // So does a later feature (`CAD-REVOLVE-FEATURE-R1`).
+        CadFeatureView view;
+        return hasTargetState_ && findCadFeature(targetBaseState_, editingFeatureId_, &view)
+               && view.kind == CadFeatureKind::Revolve;
+    }
+    // A new feature: a new body, or -- on a face of a part -- an Add or a Cut.
+    return true;
 }
 
 CadStatus SketchSession::beginRevolve() {
@@ -3798,8 +3827,11 @@ CadStatus SketchSession::beginRevolve() {
     regionTapArmed_ = false;
     regionTapOnHead_ = false;
     featureKind_ = CadFeatureKind::Revolve;
-    // A Revolve makes a NEW body in R1, whatever the sketch stands on.
-    operation_ = CadFeatureOperation::NewBody;
+    // A new body first, as for an extrusion; on a face of a part the
+    // operation palette offers Add and Cut too (`CAD-REVOLVE-FEATURE-R1`).
+    if (editingFeatureId_ == 0 && operationAvailable(CadFeatureOperation::NewBody)) {
+        operation_ = CadFeatureOperation::NewBody;
+    }
     // The axis is chosen next unless one is already held (Back to Sketch and
     // Finish again keep it, and so does an edit).
     axisPicking_ = revolve_.axis.entityId == kNoSketchEntity
@@ -3815,8 +3847,8 @@ CadStatus SketchSession::endRevolve() {
     if (featureKind_ != CadFeatureKind::Revolve) {
         return fail(CadStatus::Ok);
     }
-    if (editingFeatureId_ == kCadFeatureId) {
-        return fail(CadStatus::InvalidFeatureKind);
+    if (editingFeatureId_ != 0) {
+        return fail(CadStatus::InvalidFeatureKind);  // an edit keeps its kind
     }
     cancelRevolveDrag();
     regionTapArmed_ = false;

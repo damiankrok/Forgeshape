@@ -528,7 +528,8 @@ bool sameCadSketchRecord(const CadSketchRecord& a, const CadSketchRecord& b) {
 
 bool sameCadFeature(const CadFeature& a, const CadFeature& b) {
     return a.featureId == b.featureId && a.operation == b.operation && a.sketchId == b.sketchId
-           && sameExtrudeFeature(a.extrude, b.extrude);
+           && sameExtrudeFeature(a.extrude, b.extrude) && a.kind == b.kind
+           && sameRevolveFeature(a.revolve, b.revolve);
 }
 
 // ---------------------------------------------------------------------------
@@ -943,8 +944,9 @@ bool cadBodyStateUsesDrafting(const CadBodyState& state) {
 }
 
 bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
-    // A Revolve has no encoding below v7 (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`).
-    if (state.baseKind != CadFeatureKind::Extrude) {
+    // A Revolve has no encoding below v7 (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`),
+    // and a later one none below v15 (`CAD-REVOLVE-FEATURE-R1`).
+    if (state.baseKind != CadFeatureKind::Extrude || cadBodyStateUsesLaterRevolve(state)) {
         return false;
     }
     // A Chamfer or a Fillet has no encoding below v9 (`CAD-EDGE-FINISH-R1`).
@@ -1018,7 +1020,33 @@ bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
 }
 
 bool cadBodyStateUsesRevolve(const CadBodyState& state) {
-    return state.baseKind == CadFeatureKind::Revolve;
+    return state.baseKind == CadFeatureKind::Revolve || cadBodyStateUsesLaterRevolve(state);
+}
+
+bool cadBodyStateUsesLaterRevolve(const CadBodyState& state) {
+    for (const CadFeature& feature : state.laterFeatures) {
+        if (feature.kind == CadFeatureKind::Revolve) return true;
+    }
+    return false;
+}
+
+uint32_t appendCadLaterRevolveWithSketch(CadBodyState* state, CadFeatureOperation operation,
+                                         const CadFeatureSupport& support, CadSketch sketch,
+                                         RevolveFeature revolve) {
+    if (state == nullptr) {
+        return 0;
+    }
+    CadBodyState candidate = *state;
+    const uint32_t featureId = appendCadLaterFeatureWithSketch(
+            &candidate, operation, support, std::move(sketch), ExtrudeFeature{});
+    if (featureId == 0) {
+        return 0;
+    }
+    CadFeature& feature = candidate.laterFeatures.back();
+    feature.kind = CadFeatureKind::Revolve;
+    feature.revolve = std::move(revolve);
+    *state = std::move(candidate);
+    return featureId;
 }
 
 bool cadBodyStateUsesPlanarFaces(const CadBodyState& state) {
@@ -1049,13 +1077,17 @@ bool cadFeatureAt(const CadBodyState& state, uint32_t index, CadFeatureView* out
     const ExtrudeFeature* extrude =
             index == 0 ? &state.extrude : &state.laterFeatures[index - 1u].extrude;
     const CadSketchRecord* record = findCadSketchRecord(state, sketchId);
-    const bool revolve = index == 0 && state.baseKind == CadFeatureKind::Revolve;
+    const bool revolve = index == 0
+                                 ? state.baseKind == CadFeatureKind::Revolve
+                                 : state.laterFeatures[index - 1u].kind == CadFeatureKind::Revolve;
+    const RevolveFeature* revolvePayload =
+            index == 0 ? &state.revolve : &state.laterFeatures[index - 1u].revolve;
     *out = CadFeatureView{featureId,
                           operation,
                           sketchId,
                           record != nullptr ? &record->sketch : nullptr,
                           revolve ? CadFeatureKind::Revolve : CadFeatureKind::Extrude,
-                          revolve ? &state.revolve : nullptr,
+                          revolve ? revolvePayload : nullptr,
                           extrude,
                           record != nullptr && record->hasFeatureSupport ? &record->featureSupport
                                                                          : nullptr};

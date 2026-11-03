@@ -583,6 +583,11 @@ struct CadFeature {
     CadFeatureOperation operation = CadFeatureOperation::Add;
     CadSketchId sketchId = kNoCadSketch;
     ExtrudeFeature extrude;
+    // `CAD-REVOLVE-FEATURE-R1`. A later feature may be a Revolve Add or Cut:
+    // then `revolve` is its payload and `extrude` the canonical empty one; an
+    // Extrude keeps the canonical empty `revolve`. One encoding per feature.
+    CadFeatureKind kind = CadFeatureKind::Extrude;
+    RevolveFeature revolve;
 };
 
 bool sameCadFeature(const CadFeature& a, const CadFeature& b);
@@ -964,6 +969,15 @@ bool cadBodyStateUsesDrafting(const CadBodyState& state);
 // Whether any feature is a Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`). Such a
 // state round-trips only through `CADB` v7, and is never legacy-representable.
 bool cadBodyStateUsesRevolve(const CadBodyState& state);
+// `CAD-REVOLVE-FEATURE-R1`: a later Revolve Add or Cut, the thing `CADB` v15
+// alone carries.
+bool cadBodyStateUsesLaterRevolve(const CadBodyState& state);
+// Appends a later Revolve Add or Cut on a NEW sketch record on `support`, the
+// way `appendCadLaterFeatureWithSketch` appends an extrusion. 0 when the chain
+// or the table is full.
+uint32_t appendCadLaterRevolveWithSketch(CadBodyState* state, CadFeatureOperation operation,
+                                         const CadFeatureSupport& support, CadSketch sketch,
+                                         RevolveFeature revolve);
 
 // Whether the body carries a Chamfer or a Fillet. Such a state round-trips
 // only through `CADB` v9, and is never legacy-representable.
