@@ -39,7 +39,7 @@ Status: ✅ zrobione · 🔜 w realizacji · ⏳ zaplanowane
 | 5c | Do ściany i wymiary położenia | extent Do ściany dla Add i Cut; położenie otworu wymiarami od krawędzi | ✅ |
 | 6 | **Płaszczyzny konstrukcyjne** | szkic na płaszczyźnie odsuniętej od ściany i pod kątem (✅); przez 3 punkty, od płaszczyzny świata (⏳) | 🔜 |
 | 7 | Skorupa i ściany | Skorupa, Wciśnij/wyciągnij ścianę, Odsuń ścianę, Usuń ścianę, Pochylenie | ⏳ |
-| 8 | Obrót i bryły | Obrót Add/Cut (✅); prymityw → część CAD: prostopadłościan, walec, sfera, stożek (✅); torus, rura (⏳) | 🔜 |
+| 8 | Obrót i bryły | Obrót Add/Cut (✅); prymityw → część CAD: prostopadłościan, walec, sfera, stożek, kapsuła (✅); otwory i operacje na płaskich ścianach części obrotowej (✅); torus, rura (⏳) | 🔜 |
 | 9 | Przeciągnięcie i Wyciągnięcie złożone | Sweep wzdłuż ścieżki, Loft brył, Spirala | ⏳ |
 | 10 | Kombinacja brył | suma, różnica, część wspólna dwóch brył; Podziel bryłę | ⏳ |
 | 11 | Parametry | działania w polach liczbowych (✅); nazwane wartości, Tabela konfiguracji (⏳) | 🔜 |

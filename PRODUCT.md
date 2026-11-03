@@ -1060,6 +1060,18 @@ the part, or one that holds all of it, is refused with the reason.
 
 UNVERIFIED on the emulator until `IntersectTest` runs green.
 
+## Building on a revolved part
+
+A part whose first shape was revolved now takes more shapes. Its flat faces —
+the discs and rings swept by straight profile edges square to the axis, such
+as a cylinder's or a cone's flat ends — offer **Sketch here** and **Hole**
+like any flat face, so you can sketch, extrude an Add, Cut or Intersect, or
+drill a hole there. Its curved faces and the ends of a part turned through
+less than a full circle still offer nothing, and its round edges are not
+filleted.
+
+UNVERIFIED on the emulator until `RevolvedPartHoleTest` runs green.
+
 ## Turning a shape into a CAD part
 
 The Shape panel of a box, cylinder, sphere, cone or capsule has **Make CAD
