@@ -389,7 +389,10 @@ void runCadEdgeFinishSelfTests(std::vector<ArrangementSelfTestCheck>* out,
         CadRegenerationReport report;
         const CadStatus regen = regenerateCadBody(consumed, &mesh, &report);
         r.check("EF_08_a_later_cut_that_removes_the_edge_names_the_finish",
-                regen == CadStatus::EdgeFinishNoEffect
+                // The edge is no longer an outside edge of the part, which
+                // is said before the tool would remove nothing
+                // (`CAD-EDGE-FINISH-R2`).
+                regen == CadStatus::EdgeNotOnBody
                         && report.failedFeatureId == state.edgeFinishes[0].finishId);
     }
 
@@ -530,6 +533,59 @@ void runCadEdgeFinishSelfTests(std::vector<ArrangementSelfTestCheck>* out,
         history.redo();
         r.check("EF_12_redo_restores_the_same_finish",
                 stateOf().edgeFinishes.size() == 1u && stateOf().edgeFinishes[0].finishId == finishId);
+    }
+
+    // EF2 (`CAD-EDGE-FINISH-R2`): only a real OUTSIDE edge of the part is
+    // finished. A boss's foot -- convex in the boss's own prism, buried where it
+    // meets the block -- and an edge under a flush face are refused by name.
+    {
+        const CadBodyState boss =
+                withFeature(blockState(), CadFeatureOperation::Add, 0.8, 0.8, 0.5);
+        CadFeatureEdge foot;
+        CadFeatureEdge top;
+        CadFeatureEdge blockTop;
+        const bool found = edgeNear(boss, 2u, DVec3{0.0, -0.4, 1.0}, &foot)
+                           && edgeNear(boss, 2u, DVec3{0.0, -0.4, 1.5}, &top)
+                           && edgeNear(boss, kCadFeatureId, DVec3{0.0, -1.0, 1.0}, &blockTop);
+        CadBodyState onFoot = boss;
+        CadBodyState onTop = boss;
+        CadBodyState onBlock = boss;
+        r.check("EF2_01_a_boss_foot_is_where_two_features_meet_and_is_refused",
+                found && finishWith(&onFoot, CadEdgeFinishKind::Chamfer, 0.05, {foot.ref})
+                                 == CadStatus::EdgeNotOnBody);
+        r.check("EF2_02_the_boss_top_and_the_uncovered_block_edge_still_finish",
+                found && finishWith(&onTop, CadEdgeFinishKind::Fillet, 0.05, {top.ref}) == CadStatus::Ok
+                        && finishWith(&onBlock, CadEdgeFinishKind::Fillet, 0.1, {blockTop.ref})
+                                   == CadStatus::Ok);
+        CadBodyMesh mesh;
+        const bool drawn = regenerateCadBody(boss, &mesh) == CadStatus::Ok;
+        const CadSolid solid = cadSolidFromBodyMesh(mesh);
+        r.check("EF2_03_the_offer_test_reads_the_drawn_part_the_same_way",
+                drawn && found && !cadEdgeIsOutsideEdgeOfBody(foot, solid)
+                        && cadEdgeIsOutsideEdgeOfBody(top, solid)
+                        && cadEdgeIsOutsideEdgeOfBody(blockTop, solid));
+        // A boss as wide as the block, flush with its sides: the block's top
+        // edge is under the boss and the boss's foot is flush with the block's
+        // side -- neither is an edge of the part any more.
+        const CadBodyState flush =
+                withFeature(blockState(), CadFeatureOperation::Add, 2.0, 2.0, 0.5);
+        CadFeatureEdge covered;
+        CadFeatureEdge flushFoot;
+        CadFeatureEdge flushTop;
+        const bool flushFound = edgeNear(flush, kCadFeatureId, DVec3{0.0, -1.0, 1.0}, &covered)
+                                && edgeNear(flush, 2u, DVec3{0.0, -1.0, 1.0}, &flushFoot)
+                                && edgeNear(flush, 2u, DVec3{0.0, -1.0, 1.5}, &flushTop);
+        CadBodyState onCovered = flush;
+        CadBodyState onFlushFoot = flush;
+        CadBodyState onFlushTop = flush;
+        r.check("EF2_04_edges_under_a_flush_face_are_refused_and_its_top_finishes",
+                flushFound
+                        && finishWith(&onCovered, CadEdgeFinishKind::Chamfer, 0.05, {covered.ref})
+                                   == CadStatus::EdgeNotOnBody
+                        && finishWith(&onFlushFoot, CadEdgeFinishKind::Chamfer, 0.05, {flushFoot.ref})
+                                   == CadStatus::EdgeNotOnBody
+                        && finishWith(&onFlushTop, CadEdgeFinishKind::Chamfer, 0.05, {flushTop.ref})
+                                   == CadStatus::Ok);
     }
 
     // Bounded single-shot timing: a block's top loop filleted.

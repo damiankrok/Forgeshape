@@ -458,10 +458,27 @@ void pickEdgeFinishOfferLocked(const forgeshape::CameraSnapshot& camera, int vie
     }
     float hx = 0.0f;
     float hy = 0.0f;
+    // Only the part's real OUTSIDE edges are offered (`CAD-EDGE-FINISH-R2`):
+    // a prism edge buried where two features meet, or under a finish already
+    // applied, would round into a groove. Judged once here, on the body as it
+    // is drawn; a commit judges again on its own regeneration.
+    std::shared_ptr<const forgeshape::CadBodyMesh> drawn;
+    forgeshape::CadSolid solid;
+    if (body->regenerated(&drawn) == forgeshape::CadStatus::Ok && drawn != nullptr) {
+        solid = forgeshape::cadSolidFromBodyMesh(*drawn);
+    }
+    const auto outside = [&solid](const forgeshape::CadFeatureEdge& edge) {
+        return forgeshape::cadEdgeIsOutsideEdgeOfBody(edge, solid);
+    };
     std::vector<forgeshape::CadFeatureEdge> edges;
     if (forgeshape::projectWorldToScreen(camera, hit.position, viewWidth, viewHeight, &hx, &hy)
         && forgeshape::enumerateCadFinishableEdges(body->state(), &edges)
                    == forgeshape::CadStatus::Ok) {
+        edges.erase(std::remove_if(edges.begin(), edges.end(),
+                                   [&outside](const forgeshape::CadFeatureEdge& edge) {
+                                       return !outside(edge);
+                                   }),
+                    edges.end());
         float best = kEdgePickPixels;
         int bestIndex = -1;
         double bestT = 0.5;
@@ -510,11 +527,21 @@ void pickEdgeFinishOfferLocked(const forgeshape::CameraSnapshot& camera, int vie
     if (g_faceSketchOffer.kind == forgeshape::ChosenSupport::Kind::Face
         && g_faceSketchOffer.faceRef.producerObjectId == hit.objectId) {
         std::vector<forgeshape::CadEdgeRef> faceEdges;
+        std::vector<forgeshape::CadFeatureEdge> resolved;
         if (forgeshape::cadFinishableEdgesOfFace(body->state(),
                                                  g_faceSketchOffer.faceRef.producerLocalFeatureId,
                                                  g_faceSketchOffer.faceRef.face, &faceEdges)
                     == forgeshape::CadStatus::Ok
-            && !faceEdges.empty()) {
+            && forgeshape::resolveCadFinishEdges(body->state(), faceEdges, &resolved)
+                       == forgeshape::CadStatus::Ok) {
+            // Every edge of the face that is a real outside edge; a face whose
+            // edges all meet other features offers no finish at all.
+            faceEdges.clear();
+            for (const forgeshape::CadFeatureEdge& edge : resolved) {
+                if (outside(edge)) faceEdges.push_back(edge.ref);
+            }
+        }
+        if (!faceEdges.empty()) {
             g_edgeFinishOffer.body = hit.objectId;
             g_edgeFinishOffer.edges = std::move(faceEdges);
             g_edgeFinishOffer.fromFace = true;

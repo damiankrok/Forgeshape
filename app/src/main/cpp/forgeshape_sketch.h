@@ -386,11 +386,15 @@ enum class CadStatus : uint8_t {
     ThroughAllUnsupported,
     // Through All found no material on its side of the sketch plane.
     ThroughAllReachesNothing,
+    // `CAD-EDGE-FINISH-R2`. The edge is not an outside edge of the part as it
+    // stands: it is where two features meet (a boss's foot), or one of its
+    // faces is buried in or flush with other material.
+    EdgeNotOnBody,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 112;
+constexpr int kCadStatusCount = 113;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);

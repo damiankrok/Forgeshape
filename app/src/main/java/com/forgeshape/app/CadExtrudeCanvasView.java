@@ -140,6 +140,20 @@ final class CadExtrudeCanvasView extends FrameLayout {
         boolean onCanvasHoleDelete(long bodyId, long holeId);
     }
 
+    /**
+     * Where the trailing controls stand (`CAD-UI-DOCK-R1`): the face actions
+     * and the feature editors are DOCKED beside them rather than over the
+     * model, so they neither cover the part being edited nor take the touches
+     * that orbit it. Answers, in THIS view's coordinates, out[0] the inner edge
+     * of the trailing controls (their left edge, or their right edge when they
+     * stand on the left), out[1] the top a docked surface starts at, out[2] 1
+     * when the controls stand on the LEFT, out[3] the lowest y a docked
+     * surface may reach. False when there is no geometry yet.
+     */
+    interface DockAnchor {
+        boolean trailingDock(View canvas, int[] out);
+    }
+
     /** The extent choices, in {@link CadHudPresentation#EXTENTS} order. */
     private static final int[] EXTENT_CHOICE_IDS = {
             R.id.cad_extrude_extent_one_side, R.id.cad_extrude_extent_symmetric,
@@ -302,6 +316,18 @@ final class CadExtrudeCanvasView extends FrameLayout {
     private long holeId;
     private float holeX;
     private float holeY;
+
+    private DockAnchor dockAnchor;
+    private final android.widget.ScrollView patternScroll;
+    private final android.widget.ScrollView holeScroll;
+    private final int[] dockEdge = new int[4];
+    /**
+     * A small ring at the point the face offer, or a new hole, applies to:
+     * the one thing left at the model once the actions moved to the dock. Not
+     * clickable and not focusable, so every touch on it reaches the viewport.
+     */
+    private final View offerMarker;
+    private final float[] markerPoint = new float[2];
 
     /** Whether the action palette is open. Presentation only; never a domain value. */
     private boolean paletteOpen;
@@ -586,8 +612,10 @@ final class CadExtrudeCanvasView extends FrameLayout {
         // --- The Fillet / Chamfer offer --------------------------------------
         edgeFinishBar = new LinearLayout(context);
         edgeFinishBar.setId(R.id.cad_canvas_edge_finish_bar);
-        edgeFinishBar.setOrientation(LinearLayout.HORIZONTAL);
-        edgeFinishBar.setGravity(Gravity.CENTER_VERTICAL);
+        // A vertical list docked beside the trailing controls: one captioned
+        // row per act, read top to bottom like the Tool Rail beside it.
+        edgeFinishBar.setOrientation(LinearLayout.VERTICAL);
+        edgeFinishBar.setGravity(Gravity.START);
         edgeFinishBar.setBackgroundResource(R.drawable.bg_hud_lone_control);
         edgeFinishBar.setElevation(EditorControlStyles.dimen(context, R.dimen.elevation_floating));
         edgeFinishBar.setClickable(true);
@@ -652,13 +680,28 @@ final class CadExtrudeCanvasView extends FrameLayout {
         edgeFinishEditor = editorSurface(context, R.id.cad_canvas_edge_finish_editor);
         edgeFinishEditor.setElevation(
                 EditorControlStyles.dimen(context, R.dimen.elevation_floating));
+        // Two rows -- the value, then its acts -- so the docked editor stays
+        // narrow beside the trailing controls.
+        edgeFinishEditor.setOrientation(LinearLayout.VERTICAL);
+        edgeFinishEditor.setGravity(Gravity.START);
+        final LinearLayout edgeFinishValueRow = new LinearLayout(context);
+        edgeFinishValueRow.setOrientation(LinearLayout.HORIZONTAL);
+        edgeFinishValueRow.setGravity(Gravity.CENTER_VERTICAL);
+        final LinearLayout edgeFinishActionRow = new LinearLayout(context);
+        edgeFinishActionRow.setOrientation(LinearLayout.HORIZONTAL);
+        edgeFinishActionRow.setGravity(Gravity.CENTER_VERTICAL);
+        edgeFinishEditor.addView(edgeFinishValueRow);
+        final LinearLayout.LayoutParams actionRowParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        actionRowParams.topMargin = editorGap;
+        edgeFinishEditor.addView(edgeFinishActionRow, actionRowParams);
         edgeFinishLabel = new TextView(context);
         edgeFinishLabel.setSingleLine(true);
         edgeFinishLabel.setTextColor(contentTint);
         edgeFinishLabel.setTextSize(TypedValue.COMPLEX_UNIT_PX,
                 EditorControlStyles.dimen(context, R.dimen.text_label));
         EditorControlStyles.applyMediumWeight(edgeFinishLabel);
-        edgeFinishEditor.addView(edgeFinishLabel, EditorControlStyles.wrap(0));
+        edgeFinishValueRow.addView(edgeFinishLabel, EditorControlStyles.wrap(0));
         edgeFinishField = distanceField(context, R.id.field_edge_finish_distance);
         edgeFinishField.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             @Override
@@ -670,7 +713,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 return false;
             }
         });
-        edgeFinishEditor.addView(edgeFinishField, EditorControlStyles.wrap(editorGap));
+        edgeFinishValueRow.addView(edgeFinishField, EditorControlStyles.wrap(editorGap));
         final TextView applyFinish = applyButton(context, R.id.apply_edge_finish);
         applyFinish.setOnClickListener(new OnClickListener() {
             @Override
@@ -678,7 +721,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 submitEdgeFinish();
             }
         });
-        edgeFinishEditor.addView(applyFinish, EditorControlStyles.wrap(editorGap));
+        edgeFinishActionRow.addView(applyFinish, EditorControlStyles.wrap(0));
         edgeFinishDelete = plainButton(context, R.id.delete_edge_finish,
                 R.string.edge_finish_delete);
         edgeFinishDelete.setOnClickListener(new OnClickListener() {
@@ -690,7 +733,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 }
             }
         });
-        edgeFinishEditor.addView(edgeFinishDelete, EditorControlStyles.wrap(editorGap));
+        edgeFinishActionRow.addView(edgeFinishDelete, EditorControlStyles.wrap(editorGap));
         final TextView cancelFinish = plainButton(context, R.id.cancel_edge_finish,
                 R.string.edge_finish_cancel);
         cancelFinish.setOnClickListener(new OnClickListener() {
@@ -700,7 +743,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 refreshFromNative();
             }
         });
-        edgeFinishEditor.addView(cancelFinish, EditorControlStyles.wrap(editorGap));
+        edgeFinishActionRow.addView(cancelFinish, EditorControlStyles.wrap(editorGap));
         addView(edgeFinishEditor, wrapParams());
 
         patternPanel = new PatternEditorPanel(context, new PatternEditorPanel.Listener() {
@@ -733,7 +776,11 @@ final class CadExtrudeCanvasView extends FrameLayout {
             }
         });
         patternPanel.setElevation(EditorControlStyles.dimen(context, R.dimen.elevation_floating));
-        addView(patternPanel, wrapParams());
+        // Docked editors scroll inside the room beside the trailing controls,
+        // so a short (landscape) window never cuts their Apply off.
+        patternScroll = dockScroll(context);
+        patternScroll.addView(patternPanel);
+        addView(patternScroll, wrapParams());
 
         holePanel = new HoleEditorPanel(context, new HoleEditorPanel.Listener() {
             @Override
@@ -765,8 +812,29 @@ final class CadExtrudeCanvasView extends FrameLayout {
             }
         });
         holePanel.setElevation(EditorControlStyles.dimen(context, R.dimen.elevation_floating));
-        addView(holePanel, wrapParams());
+        holeScroll = dockScroll(context);
+        holeScroll.addView(holePanel);
+        addView(holeScroll, wrapParams());
+
+        offerMarker = new View(context);
+        offerMarker.setId(R.id.cad_canvas_offer_marker);
+        offerMarker.setBackgroundResource(R.drawable.bg_offer_marker);
+        offerMarker.setClickable(false);
+        offerMarker.setFocusable(false);
+        offerMarker.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        offerMarker.setVisibility(GONE);
+        final int markerPx = Math.round(18f * density);
+        addView(offerMarker, new FrameLayout.LayoutParams(markerPx, markerPx));
         setAnnotationVisible(false, false);
+    }
+
+    /** A transparent vertical scroller a docked editor stands in. */
+    private static android.widget.ScrollView dockScroll(Context context) {
+        final android.widget.ScrollView scroll = new android.widget.ScrollView(context);
+        scroll.setFillViewport(false);
+        scroll.setClipToPadding(false);
+        scroll.setVerticalScrollBarEnabled(true);
+        return scroll;
     }
 
     /** An icon and a caption beside it, as one 48 dp target. */
@@ -959,7 +1027,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
             if (child == editSketch.view || child == sketchOnFace || child == edgeFinishBar) {
                 return CadHudTouchAttribution.EDIT_SKETCH;
             }
-            if (child == edgeFinishEditor || child == patternPanel || child == holePanel) {
+            if (child == edgeFinishEditor || child == patternScroll || child == holeScroll) {
                 return CadHudTouchAttribution.EDITOR;
             }
         }
@@ -1168,6 +1236,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         editSketch.view.setVisibility(GONE);
         sketchOnFace.setVisibility(GONE);
         edgeFinishBar.setVisibility(GONE);
+        offerMarker.setVisibility(GONE);
         closeEdgeFinishEditor();
         closePatternEditor();
         closeHoleEditor();
@@ -1404,16 +1473,24 @@ final class CadExtrudeCanvasView extends FrameLayout {
         }
         final boolean faceOffered = anchorSpace.ready()
                 && NativeViewport.faceSketchOfferPoint(faceOfferPoint);
-        if (faceOffered) {
+        // An open feature editor owns the dock; the face's own offer waits.
+        final boolean editing = edgeEditorKind >= 0 || patternPanel.isOpen() || holePanel.isOpen();
+        dockedBelow = 0;
+        if (faceOffered && !editing) {
             sketchOnFace.setVisibility(VISIBLE);
             setVisibility(VISIBLE);
-            // Above the touched point, so the finger that tapped does not
-            // cover the offer it produced.
-            placeAt(sketchOnFace, faceOfferPoint[0], faceOfferPoint[1] - hitPx);
+            // Docked beside the trailing controls (`CAD-UI-DOCK-R1`), the
+            // first of the face's acts; only a marker stays on the model.
+            if (placeDocked(sketchOnFace, 0)) {
+                dockedBelow = sketchOnFace.getMeasuredHeight() + paletteGap;
+            } else {
+                placeAt(sketchOnFace, faceOfferPoint[0], faceOfferPoint[1] - hitPx);
+            }
         } else {
             sketchOnFace.setVisibility(GONE);
         }
         final boolean finishShown = refreshEdgeFinishOffer();
+        refreshOfferMarker(faceOffered);
         if (!NativeViewport.cadBodySketchAnchor(body, bodyAnchor)) {
             editSketch.view.setVisibility(GONE);
             sketchBodyId = NativeViewport.NO_OBJECT;
@@ -1665,6 +1742,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         editSketch.view.setVisibility(GONE);
         sketchOnFace.setVisibility(GONE);
         edgeFinishBar.setVisibility(GONE);
+        offerMarker.setVisibility(GONE);
         closeEdgeFinishEditor();
         closePatternEditor();
         closeHoleEditor();
@@ -1702,7 +1780,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
             edgeFinishBar.setVisibility(GONE);
             edgeFinishEditor.setVisibility(VISIBLE);
             setVisibility(VISIBLE);
-            placeAt(edgeFinishEditor, edgeEditorX, edgeEditorY + hitPx);
+            placeEditor(edgeFinishEditor, edgeEditorX, edgeEditorY);
             return true;
         }
         if (patternPanel.isOpen()) {
@@ -1720,7 +1798,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
             }
             edgeFinishBar.setVisibility(GONE);
             setVisibility(VISIBLE);
-            placeAt(patternPanel, patternX, patternY + hitPx);
+            placeEditor(patternScroll, patternX, patternY);
             return true;
         }
         if (holePanel.isOpen()) {
@@ -1733,7 +1811,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
             }
             edgeFinishBar.setVisibility(GONE);
             setVisibility(VISIBLE);
-            placeAt(holePanel, holeX, holeY + hitPx);
+            placeEditor(holeScroll, holeX, holeY);
             return true;
         }
         final boolean holeOffered = anchorSpace.ready() && NativeViewport.holeOfferState(holeOffer);
@@ -1756,10 +1834,12 @@ final class CadExtrudeCanvasView extends FrameLayout {
             edgeFinishBar.setVisibility(VISIBLE);
             setVisibility(VISIBLE);
             final double[] at = holeOffered ? holeOffer : patternOffer;
-            placeAt(edgeFinishBar, (float) at[holeOffered ? NativeViewport.HOLE_OFFER_X
-                            : NativeViewport.PATTERN_OFFER_X],
-                    (float) at[holeOffered ? NativeViewport.HOLE_OFFER_Y
-                            : NativeViewport.PATTERN_OFFER_Y] + hitPx);
+            if (!placeDocked(edgeFinishBar, dockedBelow)) {
+                placeAt(edgeFinishBar, (float) at[holeOffered ? NativeViewport.HOLE_OFFER_X
+                                : NativeViewport.PATTERN_OFFER_X],
+                        (float) at[holeOffered ? NativeViewport.HOLE_OFFER_Y
+                                : NativeViewport.PATTERN_OFFER_Y] + hitPx);
+            }
             return true;
         }
         final Context context = getContext();
@@ -1782,8 +1862,110 @@ final class CadExtrudeCanvasView extends FrameLayout {
         // a lone edge's stands above it.
         final float x = (float) edgeOffer[NativeViewport.EDGE_OFFER_X];
         final float y = (float) edgeOffer[NativeViewport.EDGE_OFFER_Y];
-        placeAt(edgeFinishBar, x, face ? y + hitPx : y - hitPx);
+        if (!placeDocked(edgeFinishBar, dockedBelow)) {
+            placeAt(edgeFinishBar, x, face ? y + hitPx : y - hitPx);
+        }
         return true;
+    }
+
+    // -----------------------------------------------------------------------
+    // The dock beside the trailing controls (`CAD-UI-DOCK-R1`)
+    // -----------------------------------------------------------------------
+
+    /** How far down the dock the next docked surface starts, this refresh. */
+    private int dockedBelow;
+
+    /** Supplies where the trailing controls stand; the workspace owns them. */
+    void setDockAnchor(DockAnchor anchor) {
+        dockAnchor = anchor;
+    }
+
+    /**
+     * Places {@code shown} in the dock beside the trailing controls, {@code
+     * below} pixels under its top, no wider than the room between the
+     * window's far edge and those controls. False when there is no dock yet
+     * (no layout); the caller then falls back to the point it would stand at.
+     */
+    private boolean placeDocked(View shown, int below) {
+        if (dockAnchor == null || getWidth() <= 0 || !dockAnchor.trailingDock(this, dockEdge)) {
+            return false;
+        }
+        final int gap = paletteGap;
+        final boolean onLeft = dockEdge[2] != 0;
+        final int inner = dockEdge[0];
+        final int room = onLeft ? getWidth() - inner - 2 * gap : inner - 2 * gap;
+        final int top = dockEdge[1] + below;
+        final int maxHeight = Math.max(hitPx, dockEdge[3] - top);
+        if (room < hitPx) {
+            return false;
+        }
+        // The natural width, then held to the room: a docked surface may never
+        // stand on the controls it is docked beside.
+        shown.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        final ViewGroup.LayoutParams params = shown.getLayoutParams();
+        final int wantedWidth = shown.getMeasuredWidth() > room ? room
+                : ViewGroup.LayoutParams.WRAP_CONTENT;
+        // Held to the dock's height too: a docked editor scrolls (it stands in
+        // a ScrollView) rather than running under the bottom row.
+        final int wantedHeight = shown.getMeasuredHeight() > maxHeight ? maxHeight
+                : ViewGroup.LayoutParams.WRAP_CONTENT;
+        if (params != null && (params.width != wantedWidth || params.height != wantedHeight)) {
+            params.width = wantedWidth;
+            params.height = wantedHeight;
+            shown.setLayoutParams(params);
+        }
+        shown.measure(View.MeasureSpec.makeMeasureSpec(room, View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST));
+        final int width = shown.getMeasuredWidth();
+        final int left = onLeft ? inner + gap : inner - gap - width;
+        shown.setTranslationX(left - shown.getLeft());
+        shown.setTranslationY(top - shown.getTop());
+        return true;
+    }
+
+    /** An editor in the dock, its marker at the point it edits. */
+    private void placeEditor(View editor, float pointX, float pointY) {
+        markerPoint[0] = pointX;
+        markerPoint[1] = pointY;
+        if (!placeDocked(editor, 0)) {
+            placeAt(editor, pointX, pointY + hitPx);
+        }
+    }
+
+    /**
+     * The marker at the point the dock's acts apply to: an open editor's
+     * point, else the tapped face's, else a lone tapped edge's. Absent when
+     * nothing is offered or the dock is not in use.
+     */
+    private void refreshOfferMarker(boolean faceOffered) {
+        final boolean editing = edgeEditorKind >= 0 || patternPanel.isOpen() || holePanel.isOpen();
+        float x;
+        float y;
+        if (editing) {
+            x = markerPoint[0];
+            y = markerPoint[1];
+        } else if (faceOffered) {
+            x = faceOfferPoint[0];
+            y = faceOfferPoint[1];
+        } else if (edgeFinishBar.getVisibility() == VISIBLE) {
+            x = (float) edgeOffer[NativeViewport.EDGE_OFFER_X];
+            y = (float) edgeOffer[NativeViewport.EDGE_OFFER_Y];
+        } else {
+            offerMarker.setVisibility(GONE);
+            return;
+        }
+        if (dockAnchor == null || x <= 0f && y <= 0f) {
+            offerMarker.setVisibility(GONE);
+            return;
+        }
+        offerMarker.setVisibility(VISIBLE);
+        placeAt(offerMarker, x, y);
+    }
+
+    /** Whether the offer marker is drawn; verification. */
+    boolean offerMarkerShown() {
+        return offerMarker.getVisibility() == VISIBLE;
     }
 
     // -----------------------------------------------------------------------
@@ -1810,7 +1992,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 holeBegin[NativeViewport.HOLE_BEGIN_U], holeBegin[NativeViewport.HOLE_BEGIN_V]);
         edgeFinishBar.setVisibility(GONE);
         setVisibility(VISIBLE);
-        placeAt(holePanel, holeX, holeY + hitPx);
+        placeEditor(holeScroll, holeX, holeY);
     }
 
     /**
@@ -1836,7 +2018,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         holePanel.openExisting(holeInfo);
         edgeFinishBar.setVisibility(GONE);
         setVisibility(VISIBLE);
-        placeAt(holePanel, holeX, holeY + hitPx);
+        placeEditor(holeScroll, holeX, holeY);
         return true;
     }
 
@@ -1871,7 +2053,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         patternPanel.openNew(kind, patternOffer);
         edgeFinishBar.setVisibility(GONE);
         setVisibility(VISIBLE);
-        placeAt(patternPanel, patternX, patternY + hitPx);
+        placeEditor(patternScroll, patternX, patternY);
     }
 
     /**
@@ -1899,7 +2081,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         patternPanel.openExisting(patternInfo, patternSeeds);
         edgeFinishBar.setVisibility(GONE);
         setVisibility(VISIBLE);
-        placeAt(patternPanel, patternX, patternY + hitPx);
+        placeEditor(patternScroll, patternX, patternY);
         return true;
     }
 
@@ -1977,7 +2159,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         edgeFinishBar.setVisibility(GONE);
         edgeFinishEditor.setVisibility(VISIBLE);
         setVisibility(VISIBLE);
-        placeAt(edgeFinishEditor, edgeEditorX, edgeEditorY + hitPx);
+        placeEditor(edgeFinishEditor, edgeEditorX, edgeEditorY);
         edgeFinishField.requestFocus();
         final InputMethodManager ime = (InputMethodManager)
                 context.getSystemService(Context.INPUT_METHOD_SERVICE);

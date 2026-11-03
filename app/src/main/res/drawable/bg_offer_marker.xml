@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The offer marker (`CAD-UI-DOCK-R1`): a hollow ring at the point the docked
+     face actions apply to. Hollow, so the face under it stays visible; drawn in
+     the accent with a dark halo so it reads on every palette. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <stroke android:width="4dp" android:color="#99000000" />
+        </shape>
+    </item>
+    <item android:bottom="1dp" android:left="1dp" android:right="1dp" android:top="1dp">
+        <shape android:shape="oval">
+            <stroke android:width="2dp" android:color="?attr/fsAccent" />
+        </shape>
+    </item>
+</layer-list>

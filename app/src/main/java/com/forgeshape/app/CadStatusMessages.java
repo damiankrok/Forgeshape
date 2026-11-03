@@ -181,6 +181,8 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_through_all_unsupported);
             case NativeViewport.CAD_THROUGH_ALL_REACHES_NOTHING:
                 return context.getString(R.string.status_through_all_reaches_nothing);
+            case NativeViewport.CAD_EDGE_NOT_ON_BODY:
+                return context.getString(R.string.status_edge_not_on_body);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));

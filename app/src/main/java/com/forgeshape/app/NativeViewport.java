@@ -2376,6 +2376,8 @@ final class NativeViewport {
     static final int CAD_THROUGH_ALL_UNSUPPORTED = 110;
     /** Through All found no material on its side of the sketch. */
     static final int CAD_THROUGH_ALL_REACHES_NOTHING = 111;
+    /** `CAD-EDGE-FINISH-R2`: the edge is where two features meet, not an outside edge. */
+    static final int CAD_EDGE_NOT_ON_BODY = 112;
 
     // --- Chamfer and Fillet (`CAD-EDGE-FINISH-R1`) ------------------------
 

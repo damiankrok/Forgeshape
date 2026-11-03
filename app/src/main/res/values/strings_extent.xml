@@ -8,4 +8,5 @@
     <string name="history_detail_through_all">Through All</string>
     <string name="status_through_all_unsupported">Only a Cut can go through all: an Add or the first shape of a part needs a distance.</string>
     <string name="status_through_all_reaches_nothing">There is no material on that side to cut through. Flip the cut into the part.</string>
+    <string name="status_edge_not_on_body">That edge is where two features meet, not an outside edge of the part, so it cannot be rounded or bevelled.</string>
 </resources>

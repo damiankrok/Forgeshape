@@ -591,6 +591,46 @@ bool cadSolidContainsPoint(const CadSolid& solid, const DVec3& point) {
     return (crossings % 2) == 1;
 }
 
+bool cadEdgeIsOutsideEdgeOfBody(const CadFeatureEdge& edge, const CadSolid& body) {
+    if (body.empty() || !(edge.length > 0.0)) {
+        return false;
+    }
+    // A probe distance small beside the edge and its faces, so it stays on
+    // this edge's faces and in this edge's corner.
+    const double room = std::min({edge.widthA, edge.widthB, edge.length});
+    const double e = std::max(1.0e-7, 0.05 * room);
+    for (double s : {0.3, 0.5, 0.7}) {
+        const DVec3 p = dvec3Add(edge.start, dvec3Scale(edge.direction, s * edge.length));
+        // Just beyond face A and face B, a little in from the edge: open space
+        // on an outside edge, material where the face is buried or flush.
+        const DVec3 overA = dvec3Add(p, dvec3Add(dvec3Scale(edge.normalA, e),
+                                                 dvec3Scale(edge.inwardA, 0.5 * e)));
+        const DVec3 overB = dvec3Add(p, dvec3Add(dvec3Scale(edge.normalB, e),
+                                                 dvec3Scale(edge.inwardB, 0.5 * e)));
+        // In the corner the finish removes: material on an edge that is there.
+        const DVec3 corner = dvec3Add(p, dvec3Scale(dvec3Add(edge.inwardA, edge.inwardB), 0.5 * e));
+        if (cadSolidContainsPoint(body, overA) || cadSolidContainsPoint(body, overB)
+            || !cadSolidContainsPoint(body, corner)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+CadSolid cadSolidFromBodyMesh(const CadBodyMesh& mesh) {
+    CadSolid solid;
+    solid.positions.reserve(mesh.mesh.vertices.size() * 3u);
+    for (const MeshVertex& v : mesh.mesh.vertices) {
+        solid.positions.insert(solid.positions.end(),
+                               {static_cast<double>(v.position[0]),
+                                static_cast<double>(v.position[1]),
+                                static_cast<double>(v.position[2])});
+    }
+    solid.indices = mesh.mesh.indices;
+    solid.faceTags.assign(solid.indices.size() / 3u, 0u);
+    return solid;
+}
+
 CadStatus buildCadEdgeFinishTool(const CadFeatureEdge& edge, CadEdgeFinishKind kind,
                                  double distance, const CadSolid& body, uint32_t tag,
                                  CadSolid* out) {

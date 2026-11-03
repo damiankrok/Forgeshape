@@ -2067,6 +2067,12 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
                 if (why != CadStatus::Ok) {
                     return finish(why, edgeFinish.finishId);
                 }
+                // The prism's edge must be a real outside edge of the part as
+                // it stands; cutting the corner of one buried where two
+                // features meet would carve a groove (`CAD-EDGE-FINISH-R2`).
+                if (!cadEdgeIsOutsideEdgeOfBody(edge, body)) {
+                    return finish(CadStatus::EdgeNotOnBody, edgeFinish.finishId);
+                }
                 CadSolid tool;
                 why = buildCadEdgeFinishTool(edge, edgeFinish.kind, edgeFinish.distance, body,
                                              finishTag[f], &tool);

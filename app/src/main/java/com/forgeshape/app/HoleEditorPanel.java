@@ -164,9 +164,12 @@ final class HoleEditorPanel extends LinearLayout {
         positionRow.addView(label(context, R.string.hole_label_u), EditorControlStyles.wrap(gap));
         uField = field(context, R.id.field_hole_u, true);
         positionRow.addView(uField, EditorControlStyles.wrap(gap));
-        positionRow.addView(label(context, R.string.hole_label_v), EditorControlStyles.wrap(gap));
+        // The second coordinate on its own row, so the docked editor stays
+        // narrow beside the trailing controls (`CAD-UI-DOCK-R1`).
+        final LinearLayout positionRow2 = row(context, gap);
+        positionRow2.addView(label(context, R.string.hole_label_v), EditorControlStyles.wrap(0));
         vField = field(context, R.id.field_hole_v, true);
-        positionRow.addView(vField, EditorControlStyles.wrap(gap));
+        positionRow2.addView(vField, EditorControlStyles.wrap(gap));
 
         final LinearLayout actions = row(context, gap);
         final TextView apply = EditorControlStyles.primaryButton(context, R.id.apply_hole,
@@ -206,6 +209,7 @@ final class HoleEditorPanel extends LinearLayout {
         addView(boreRow);
         addView(sinkRow);
         addView(positionRow);
+        addView(positionRow2);
         addView(actions);
     }
 

@@ -650,6 +650,7 @@
     <item name="delete_pattern" type="id" />
     <item name="cancel_pattern" type="id" />
     <item name="cad_canvas_hole" type="id" />
+    <item name="cad_canvas_offer_marker" type="id" />
     <item name="cad_canvas_hole_editor" type="id" />
     <item name="hole_kind_simple" type="id" />
     <item name="hole_kind_counterbore" type="id" />

@@ -937,6 +937,9 @@ final class EditorWorkspaceView extends FrameLayout
                 (v, l, t, r, b, ol, ot, or, ob) -> placeSketchModifyUnderNavigator());
         cadExtrudeCanvas = new CadExtrudeCanvasView(context, this, anchorSpace, this);
         overlayRoot.addView(cadExtrudeCanvas, CadExtrudeCanvasView.anchoredParams());
+        // The face actions and the feature editors dock beside the trailing
+        // controls rather than over the model (`CAD-UI-DOCK-R1`).
+        cadExtrudeCanvas.setDockAnchor(this::trailingDock);
         cadRevolveAngle = new CadRevolveAngleLabelView(context, this, anchorSpace, this);
         overlayRoot.addView(cadRevolveAngle, CadRevolveAngleLabelView.anchoredParams());
 
@@ -2235,6 +2238,45 @@ final class EditorWorkspaceView extends FrameLayout
      * model seen from the same place. Applied immediately, with an open
      * precision surface re-seated rather than left on the old edge.
      */
+    private final int[] dockCanvasAt = new int[2];
+    private final int[] dockViewAt = new int[2];
+
+    /**
+     * Where a docked CAD surface may stand (`CAD-UI-DOCK-R1`), in the canvas's
+     * coordinates: beside the trailing host -- and beside a side-seated
+     * precision surface when one is open, so a docked surface never stands on
+     * either -- from the host's top down to the bottom row. Presentation only.
+     */
+    private boolean trailingDock(View canvas, int[] out) {
+        if (trailingHost.getVisibility() != VISIBLE || trailingHost.getWidth() <= 0
+                || canvas.getHeight() <= 0) {
+            return false;
+        }
+        final boolean left = appliedLeftHanded != null && appliedLeftHanded;
+        canvas.getLocationInWindow(dockCanvasAt);
+        trailingHost.getLocationInWindow(dockViewAt);
+        final int hostLeft = dockViewAt[0] - dockCanvasAt[0];
+        int inner = left ? hostLeft + trailingHost.getWidth() : hostLeft;
+        final int top = dockViewAt[1] - dockCanvasAt[1];
+        if (inspector.getParent() == middleRow && inspector.getVisibility() == VISIBLE
+                && inspector.getWidth() > 0) {
+            inspector.getLocationInWindow(dockViewAt);
+            final int inspectorLeft = dockViewAt[0] - dockCanvasAt[0];
+            inner = left ? Math.max(inner, inspectorLeft + inspector.getWidth())
+                         : Math.min(inner, inspectorLeft);
+        }
+        int bottom = canvas.getHeight();
+        if (bottomRow.getVisibility() == VISIBLE && bottomRow.getHeight() > 0) {
+            bottomRow.getLocationInWindow(dockViewAt);
+            bottom = Math.min(bottom, dockViewAt[1] - dockCanvasAt[1]);
+        }
+        out[0] = inner;
+        out[1] = top;
+        out[2] = left ? 1 : 0;
+        out[3] = bottom;
+        return true;
+    }
+
     private void applyHandedness(Handedness handedness) {
         final boolean left = handedness == Handedness.LEFT;
         if (appliedLeftHanded != null && appliedLeftHanded == left) {

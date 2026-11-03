@@ -146,4 +146,16 @@ CadStatus deleteCadEdgeFinishOfBody(ConstructionScene& scene, ConstructionHistor
 // only; used to decide where a tool may run past its edge.
 bool cadSolidContainsPoint(const CadSolid& solid, const DVec3& point);
 
+// Whether `edge` -- an edge of one feature's OWN prism -- is a real OUTSIDE
+// convex edge of `body`, the part as it stands (`CAD-EDGE-FINISH-R2`): at
+// samples along its middle, the space just beyond each of its two faces is
+// empty and the corner between them is material. False where two features
+// meet -- a boss's foot on the block it stands on, a face flush with a
+// neighbour's, an edge another feature swallowed -- where cutting the
+// prism's corner would carve a groove into the part instead of rounding it.
+bool cadEdgeIsOutsideEdgeOfBody(const CadFeatureEdge& edge, const CadSolid& body);
+
+// A regenerated body's mesh as a solid for containment questions.
+CadSolid cadSolidFromBodyMesh(const CadBodyMesh& mesh);
+
 }  // namespace forgeshape
