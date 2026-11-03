@@ -590,7 +590,8 @@ public final class CadCanvasExtrudeTest {
                     badge.toString().toLowerCase().contains("new body"));
             for (int id : new int[]{R.id.cad_extrude_operation_add,
                     R.id.cad_extrude_operation_cut, R.id.sketch_operation_add,
-                    R.id.sketch_operation_cut}) {
+                    R.id.sketch_operation_cut, R.id.cad_extrude_operation_intersect,
+                    R.id.sketch_operation_intersect}) {
                 final View control = workspace.findViewById(id);
                 assertTrue("E2E-CADUXS1-08: no Add or Cut control is drawn here: " + id,
                         control == null || !control.isShown());
@@ -602,7 +603,10 @@ public final class CadCanvasExtrudeTest {
                 // Since `CAD-V6-REVOLVE-NEWBODY-E2E-R1` the sketch panel offers
                 // "Revolve…" over a chosen region -- a real act, never an
                 // operation of the extrusion -- so only the cluster is held to it.
-                if (!"Revolve".equals(forbidden)) {
+                // Since `CAD-INTERSECT-R1` Intersect IS an operation, offered on
+                // a part's face alone: its chip is held to not being DRAWN here
+                // (the id list above), never to not existing.
+                if (!"Revolve".equals(forbidden) && !"Intersect".equals(forbidden)) {
                     assertFalse("nor does the sketch panel",
                             containsText(workspace.sketchEditor(), forbidden));
                 }
