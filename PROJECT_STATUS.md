@@ -1,7 +1,47 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.108.0
+**Status Version:** 0.109.0
 **Updated:** 2026-11-03
+**Latest stage:** **`CAD-EDGE-FINISH-R1` — Chamfer and Fillet**
+(2026-11-03). **TECH PASS (emulator) / OWNER PHYSICAL REVIEW REQUIRED / NOT
+MERGED.** Branch `claude/new-session-g87rge`, product and tests at `4e82da1`.
+OWNER request: "make those functions (fillet/chamfer from the research) and add
+a bit more in one stage". Proposal A of `docs/CAD_UX_RESEARCH.md`, plus the
+face-wide variant and History editing.
+
+- **Model.** `CadBodyState::edgeFinishes`: per finish an id from
+  `nextFeatureId`, Chamfer or Fillet, a distance (setback / radius,
+  1e-5..100 m) and 1..32 semantic `CadEdgeRef`s (feature + two face tokens of
+  that feature's OWN prism, canonical order). Applied after every extrusion,
+  one kernel `Difference` per edge with a derived tool
+  (`forgeshape_cad_edge_finish.{h,cpp}`); straight convex edges between two
+  flat faces of a New Body / Add Extrude only, everything else refused by name
+  (`EdgeNotFound`, `EdgeNotEligible`, `EdgeFinishTargetUnsupported`,
+  `EdgeFinishInvalid`, `EdgeFinishTooLarge`, `EdgeFinishNoEffect`,
+  `TooManyEdgeFinishes`; CadStatus 93..99, appended).
+- **Format.** `CADB` v9 (DATA_PACKAGE_SPEC.md §7l), written only when a body
+  carries a finish; every v1..v8 project keeps its bytes and fingerprint. No
+  new corpus fixture (72 unchanged); round trip and refusals are host checks.
+- **UX.** A Construction tap beside a straight edge offers **Fillet /
+  Chamfer** (the edge highlighted); a tap on a face offers **Round edges /
+  Bevel edges** for all its edges beside **Sketch here**. The editor is seeded
+  with a 1/2/5 value that fits; Apply, edit and Delete are each one Undo; the
+  History lists finishes after the features and reopens them with Delete.
+- **Evidence.** Host `HOST_SELFTESTS_OK (4516 checks, 0 failed)` with 42
+  `EF_*` checks (exact chamfer, fillet and mitred-loop volumes, flush boss
+  edge, refusals, v9 round trip and bad kind, acts and Undo/Redo;
+  mutation-tested). `CI FAST` `41568427411` success (artifact `ci-fast-evidence`
+  `13200945155` holds `app-debug.apk`). `CI DEVICE` `41568430756`: attempt 1
+  died installing the SDK image before any build (infrastructure); attempt 2
+  **PASS** — 25/25 tokens, `EdgeFinishTest` OK (2/2: Fillet of one edge and its
+  Undo; Chamfer of a whole face, edit and Delete from History). Physical-device
+  behaviour UNVERIFIED.
+- **Not this stage:** curved, concave, Cut and Revolve edges, edges between two
+  features, asymmetric chamfers, a rolling-ball blend where three filleted
+  edges meet (R1 leaves the intersection of the cuts), a drag handle, Shell,
+  Draft, Hole, Through All, patterns.
+
+**Previous stage:** `STARTUP-FACE-ICONS-R1` (record below, unchanged).
 **Latest stage:** **`STARTUP-FACE-ICONS-R1` — fast launch, a direct
 Sketch-on-face path, a new mark and launcher icon** (2026-11-03). **TECH PASS
 (emulator) / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
@@ -5006,14 +5046,18 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: OWNER physical-device review of the
-`STARTUP-FACE-ICONS-R1` APK** (`app-debug.apk` in artifact `13196542612` of
-`CI FAST` `41559577989`, branch `claude/new-session-g87rge`): the
+`CAD-EDGE-FINISH-R1` APK** (`app-debug.apk` in artifact `13200945155` of
+`CI FAST` `41568427411`, branch `claude/new-session-g87rge`): tap beside an
+edge of an extruded block → Fillet → Apply → the edge is round, Undo takes it
+back; tap the middle of a face → Round edges / Bevel edges; History → the
+finish row → change the value or Delete. It also carries `STARTUP-FACE-ICONS-R1`: the
 app starts straight to Home; after an extrusion, tap a flat face → *Sketch
 here* → the sketch opens on that face; the new launcher icon and glyphs read as
 what they do. It carries everything below, so that one review also covers the
 earlier pending checklists. If the OWNER then wants modelling depth, the first
-proposed stage in `docs/CAD_UX_RESEARCH.md` §6 (straight-edge Chamfer and
-Fillet as a feature) needs explicit authorisation — it is NOT authorised here.
+proposed stage in `docs/CAD_UX_RESEARCH.md` §6 not yet done (B: selection
+suggests the action, including push/pull of a face) needs explicit
+authorisation — it is NOT authorised here.
 
 The earlier review it subsumes: the
 `SKETCH-NAVIGATOR-OUTCOME-R1` APK (`ci-fast-evidence` artifact `13179561711`
@@ -5048,7 +5092,7 @@ still open (`COUNCIL_FINDINGS.md` §5, `NEXT_VERTICAL_SLICE_OPTIONS.md`).
 
 Do not start T-Spline local refinement, general NURBS, a Surface trim of a
 curved surface, feature reorder or suppression, a Revolve Add/Cut or later Revolve feature, Through All, To Object, Intersect, a Hole feature,
-fillet, chamfer, shell, a pattern, a constraint solver (or any persistent
+a curved / concave / Cut-edge fillet or chamfer, shell, a pattern, a constraint solver (or any persistent
 sketch relation), projected edges, drawing sheets, CAD → Sculpt, Stage024,
 `CAD-A4` or Stage 026 from this status. A second third-party library needs its
 own gate.
