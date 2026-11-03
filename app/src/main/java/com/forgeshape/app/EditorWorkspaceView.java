@@ -2892,10 +2892,17 @@ final class EditorWorkspaceView extends FrameLayout
         // during the CAD bootstrap would be a project the user never chose.
         objectsCapsule.showCreationAvailable(projectOpen && !sculpting && !sketching);
         objectsSection.showCreationAvailable(projectOpen && !sculpting && !sketching);
-        // The bottom edge names the active body and steps the history; in the
-        // bootstrap there is neither, so the whole edge is withdrawn rather
-        // than drawn empty.
-        bottomRow.setVisibility(projectOpen ? VISIBLE : GONE);
+        // The bottom edge names the active body and steps the history. In the
+        // CAD bootstrap there is no body, but while its sketch is DRAWN there
+        // is a sketch history to step (`SKETCH-KNIFE-UNDO-R1`): the edge stays
+        // for the history capsule and the Objects capsule alone is withdrawn
+        // rather than drawn empty. Otherwise, with neither, the whole edge is.
+        final boolean bootstrapDrawing = !projectOpen && sketching
+                && nativeSketch[NativeViewport.SKETCH_STATE] == NativeViewport.SKETCH_EDITING;
+        bottomRow.setVisibility(projectOpen || bootstrapDrawing ? VISIBLE : GONE);
+        if (appliedObjectsDocked == null || !appliedObjectsDocked) {
+            objectsCapsule.setVisibility(projectOpen ? VISIBLE : GONE);
+        }
         // And deletion on the same terms, for the same reason: `sceneDeleteBody`
         // refuses while sculpting, because the Sculpt target is fixed for the
         // duration of the mode and Undo is refused there too -- a delete made

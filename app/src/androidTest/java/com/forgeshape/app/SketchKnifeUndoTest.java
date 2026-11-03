@@ -64,8 +64,10 @@ public final class SketchKnifeUndoTest {
     public void sku01_undoAndRedoStepTheSketchWhileItIsDrawn() {
         enterFirstSketch();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertEquals("the pair is drawn in the sketch", View.VISIBLE,
-                    workspace.historyGroup().getVisibility());
+            assertTrue("the pair is ON SCREEN in the first project's own sketch",
+                    workspace.historyGroup().isShown());
+            assertEquals("while the bootstrap has no body to name", View.GONE,
+                    workspace.objectsCapsule().getVisibility());
             assertFalse("nothing drawn, nothing to undo", workspace.undoAction().isEnabled());
             assertFalse(workspace.redoAction().isEnabled());
             return null;
