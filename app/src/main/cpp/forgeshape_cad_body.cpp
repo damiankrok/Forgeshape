@@ -8,6 +8,7 @@
 
 #include "forgeshape_cad_edge_finish.h"
 #include "forgeshape_cad_feature.h"
+#include "forgeshape_cad_hole.h"
 #include "forgeshape_cad_kernel.h"
 #include "forgeshape_cad_pattern.h"
 
@@ -531,6 +532,57 @@ const CadFeaturePattern* findCadFeaturePattern(const CadBodyState& state, uint32
     return nullptr;
 }
 
+const char* cadHoleKindName(CadHoleKind kind) {
+    switch (kind) {
+        case CadHoleKind::Simple: return "Simple";
+        case CadHoleKind::Counterbore: return "Counterbore";
+        case CadHoleKind::Countersink: return "Countersink";
+    }
+    return "unknown";
+}
+
+bool cadHoleKindFromIndex(int index, CadHoleKind* out) {
+    if (out == nullptr || index < 0 || index >= kCadHoleKindCount) return false;
+    *out = static_cast<CadHoleKind>(index);
+    return true;
+}
+
+int cadHoleKindIndex(CadHoleKind kind) { return static_cast<int>(kind); }
+
+bool sameCadFeatureHole(const CadFeatureHole& a, const CadFeatureHole& b) {
+    return a.holeId == b.holeId && a.kind == b.kind && sameCadFeatureSupport(a.support, b.support)
+           && a.u == b.u && a.v == b.v && a.diameter == b.diameter
+           && a.throughAll == b.throughAll && a.depth == b.depth
+           && a.boreDiameter == b.boreDiameter && a.boreDepth == b.boreDepth
+           && a.sinkDiameter == b.sinkDiameter && a.sinkAngleDegrees == b.sinkAngleDegrees;
+}
+
+double cadHoleCountersinkDepth(const CadFeatureHole& hole) {
+    if (hole.kind != CadHoleKind::Countersink) return 0.0;
+    const double half = 0.5 * hole.sinkAngleDegrees * 3.14159265358979323846 / 180.0;
+    return 0.5 * (hole.sinkDiameter - hole.diameter) / std::tan(half);
+}
+
+bool cadBodyStateUsesHoles(const CadBodyState& state) { return !state.holes.empty(); }
+
+uint32_t appendCadFeatureHole(CadBodyState* state, CadFeatureHole hole) {
+    if (state == nullptr || state->holes.size() >= kMaxCadHoles
+        || state->nextFeatureId == 0xFFFFFFFFu) {
+        return 0;
+    }
+    hole.holeId = state->nextFeatureId;
+    state->holes.push_back(std::move(hole));
+    state->nextFeatureId += 1u;
+    return state->holes.back().holeId;
+}
+
+const CadFeatureHole* findCadFeatureHole(const CadBodyState& state, uint32_t holeId) {
+    for (const CadFeatureHole& hole : state.holes) {
+        if (hole.holeId == holeId) return &hole;
+    }
+    return nullptr;
+}
+
 namespace {
 
 // A total order over face tokens: kind, entity, local index, then -- for a
@@ -788,6 +840,10 @@ bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
     if (cadBodyStateUsesPatterns(state)) {
         return false;
     }
+    // Nor a hole below v11 (`CAD-HOLE-R1`).
+    if (cadBodyStateUsesHoles(state)) {
+        return false;
+    }
     // A Construction role or a sketch dimension has no encoding below v8
     // (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`).
     if (cadBodyStateUsesDrafting(state)) {
@@ -913,8 +969,13 @@ bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b) {
         || !sameRevolveFeature(a.revolve, b.revolve)
         || a.laterFeatures.size() != b.laterFeatures.size()
         || a.edgeFinishes.size() != b.edgeFinishes.size()
-        || a.patterns.size() != b.patterns.size()) {
+        || a.patterns.size() != b.patterns.size() || a.holes.size() != b.holes.size()) {
         return false;
+    }
+    for (size_t i = 0; i < a.holes.size(); ++i) {
+        if (!sameCadFeatureHole(a.holes[i], b.holes[i])) {
+            return false;
+        }
     }
     for (size_t i = 0; i < a.patterns.size(); ++i) {
         if (!sameCadFeaturePattern(a.patterns[i], b.patterns[i])) {
@@ -1398,6 +1459,10 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
         if (!state.patterns.empty()) {
             return CadStatus::PatternTargetUnsupported;
         }
+        // Nor a flat face to drill into.
+        if (!state.holes.empty()) {
+            return CadStatus::HoleSupportInvalid;
+        }
         const CadStatus revolveWhy =
                 validateRevolveFeatureGeometry(cadBaseSketch(state), state.revolve, &baseRegions);
         if (revolveWhy != CadStatus::Ok) {
@@ -1445,6 +1510,12 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
     const CadStatus patternWhy = validateCadFeaturePatterns(state);
     if (patternWhy != CadStatus::Ok) {
         return patternWhy;
+    }
+    // Holes (`CAD-HOLE-R1`): ids, bounds, canonical form, and a face of an
+    // earlier feature that resolves at the stored lineage.
+    const CadStatus holeWhy = validateCadFeatureHoles(state);
+    if (holeWhy != CadStatus::Ok) {
+        return holeWhy;
     }
     if (outProfiles != nullptr) {
         *outProfiles = std::move(baseRegions.loops);
@@ -1643,9 +1714,19 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
         token.kind = CadFaceKind::Side;
         faces.push_back(CadMeshFace{pattern.patternId, token, false});
     }
+    // And one INELIGIBLE entry per hole (`CAD-HOLE-R1`): a bore wall is curved
+    // and a counterbore floor is no feature's face.
+    std::vector<uint32_t> holeTag;
+    for (const CadFeatureHole& hole : state.holes) {
+        holeTag.push_back(static_cast<uint32_t>(faces.size()));
+        CadFaceToken token;
+        token.kind = CadFaceKind::Side;
+        faces.push_back(CadMeshFace{hole.holeId, token, false});
+    }
+    const bool drilled = !state.holes.empty();
 
     // Every body any earlier version created: R0's path, bit for bit.
-    if (!finished && chain.size() == 1u && base.kind == CadFeatureKind::Extrude
+    if (!finished && !drilled && chain.size() == 1u && base.kind == CadFeatureKind::Extrude
         && extrudeSelectsSingleSimpleProfile(base.extrude)) {
         const SketchRegion& region = base.regions.regions[base.chosen.front()];
         const ClosedProfile& profile = base.regions.loops.profiles[region.outerLoop];
@@ -1695,7 +1776,7 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
         components = measure.components;
         volume = measure.volume;
     }
-    if (chain.size() > 1u || finished) {
+    if (chain.size() > 1u || finished || drilled) {
         const auto t0 = std::chrono::steady_clock::now();
         CadSolidMeasure measure;
         if (cadKernelValidateSolid(body, &measure) != CadKernelStatus::Ok) {
@@ -1707,9 +1788,70 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
         // each is applied once every feature below its id is, and before any
         // feature above it, so a later Cut sees the instances it follows.
         size_t nextPattern = 0;
+        size_t nextHole = 0;
+        // One hole: its tool from its face and the body as it stands here.
+        auto applyHole = [&](size_t index) -> CadStatus {
+            const CadFeatureHole& hole = state.holes[index];
+            local.failedFeatureId = hole.holeId;
+            CadFrame64 frame;
+            if (!cadHoleFrame(chain, hole, &frame)) {
+                return CadStatus::HoleSupportInvalid;
+            }
+            // The face must still carry material where the hole is drilled,
+            // exactly as a later feature's sketch must.
+            CadFrame64 faceFrame;
+            resolveCadFeatureSupportFrame(chain, hole.support, &faceFrame);
+            if (!cadSolidHasFaceOn(body, faceFrame)) {
+                return CadStatus::SupportFaceLost;
+            }
+            CadSolid tool;
+            const CadStatus toolWhy = buildCadHoleTool(hole, frame, body, holeTag[index], &tool);
+            if (toolWhy != CadStatus::Ok) {
+                return toolWhy;
+            }
+            CadSolidMeasure toolMeasure;
+            if (cadKernelValidateSolid(tool, &toolMeasure) != CadKernelStatus::Ok) {
+                return CadStatus::KernelFailed;
+            }
+            CadSolid result;
+            CadSolidMeasure resultMeasure;
+            if (cadKernelBoolean(body, tool, CadBooleanOp::Difference, &result)
+                        != CadKernelStatus::Ok
+                || cadKernelMeasure(result, &resultMeasure) != CadKernelStatus::Ok) {
+                return CadStatus::KernelFailed;
+            }
+            if (result.empty()) {
+                return CadStatus::CutRemovesBody;
+            }
+            if (volume - resultMeasure.volume <= kCadOperationEffectFraction * toolMeasure.volume) {
+                return CadStatus::HoleNoEffect;
+            }
+            body = std::move(result);
+            components = resultMeasure.components;
+            volume = resultMeasure.volume;
+            local.failedFeatureId = 0;
+            return CadStatus::Ok;
+        };
         auto applyPatternsBelow = [&](uint32_t limitId) -> CadStatus {
-            while (nextPattern < state.patterns.size()
-                   && state.patterns[nextPattern].patternId < limitId) {
+            while (true) {
+                // Patterns and holes interleave BY ID: whichever comes first.
+                const bool patternNext = nextPattern < state.patterns.size()
+                                         && state.patterns[nextPattern].patternId < limitId;
+                const bool holeNext = nextHole < state.holes.size()
+                                      && state.holes[nextHole].holeId < limitId;
+                if (holeNext
+                    && (!patternNext
+                        || state.holes[nextHole].holeId < state.patterns[nextPattern].patternId)) {
+                    const CadStatus holeWhy = applyHole(nextHole);
+                    ++nextHole;
+                    if (holeWhy != CadStatus::Ok) {
+                        return holeWhy;
+                    }
+                    continue;
+                }
+                if (!patternNext) {
+                    break;
+                }
                 const CadFeaturePattern& pattern = state.patterns[nextPattern];
                 const uint32_t tag = patternTag[nextPattern];
                 ++nextPattern;

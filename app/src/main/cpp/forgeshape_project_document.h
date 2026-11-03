@@ -227,6 +227,10 @@ constexpr uint16_t kCadSectionVersionV9 = 9;
 // Written ONLY when a body carries a pattern, so every v1..v9 project keeps
 // its bytes.
 constexpr uint16_t kCadSectionVersionV10 = 10;
+// v11 (`CAD-HOLE-R1`, DATA_PACKAGE_SPEC.md §7n): the v10 layout -- whose
+// pattern list may now be empty -- followed by each body's hole list. Written
+// ONLY when a body carries a hole, so every v1..v10 project keeps its bytes.
+constexpr uint16_t kCadSectionVersionV11 = 11;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.

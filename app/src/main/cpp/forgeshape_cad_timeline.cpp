@@ -11,6 +11,7 @@ const char* cadTimelineRowKindName(CadTimelineRowKind kind) {
         case CadTimelineRowKind::Feature: return "Feature";
         case CadTimelineRowKind::Finish: return "Finish";
         case CadTimelineRowKind::Pattern: return "Pattern";
+        case CadTimelineRowKind::Hole: return "Hole";
     }
     return "unknown";
 }
@@ -90,10 +91,46 @@ CadTimeline buildCadTimeline(const CadBodyState& state, const CadRegenerationRep
     // feature whose id is above its own, exactly where regeneration applies it.
     size_t nextPattern = 0;
     uint32_t patternOrdinal = 0;
+    size_t nextHole = 0;
+    uint32_t holeOrdinal = 0;
+    auto stateOf = [&](CadTimelineRow* row, uint32_t id) {
+        if (!evaluated) {
+            row->state = pastEdit ? CadTimelineRowState::Pending : CadTimelineRowState::Ok;
+        } else if (pastFailure) {
+            row->state = CadTimelineRowState::NotRegenerated;
+        } else if (report.status != CadStatus::Ok && report.failedFeatureId == id) {
+            row->state = CadTimelineRowState::Failed;
+            row->status = report.status;
+            pastFailure = true;
+        }
+    };
     auto listPatternsBelow = [&](uint32_t limitId) {
-        while (nextPattern < state.patterns.size()
-               && state.patterns[nextPattern].patternId < limitId
-               && timeline.rows.size() < kMaxCadTimelineRows) {
+        while (timeline.rows.size() < kMaxCadTimelineRows) {
+            // Patterns and holes interleave BY ID, as regeneration applies them.
+            const bool patternNext = nextPattern < state.patterns.size()
+                                     && state.patterns[nextPattern].patternId < limitId;
+            const bool holeNext =
+                    nextHole < state.holes.size() && state.holes[nextHole].holeId < limitId;
+            if (holeNext
+                && (!patternNext
+                    || state.holes[nextHole].holeId < state.patterns[nextPattern].patternId)) {
+                const CadFeatureHole& hole = state.holes[nextHole++];
+                CadTimelineRow row;
+                row.kind = CadTimelineRowKind::Hole;
+                row.id = hole.holeId;
+                row.editFeatureId = hole.holeId;
+                row.ordinal = ++holeOrdinal;
+                row.holeKind = hole.kind;
+                row.holeDiameter = hole.diameter;
+                row.holeThroughAll = hole.throughAll;
+                row.holeDepth = hole.depth;
+                stateOf(&row, hole.holeId);
+                timeline.rows.push_back(row);
+                continue;
+            }
+            if (!patternNext) {
+                break;
+            }
             const CadFeaturePattern& pattern = state.patterns[nextPattern++];
             CadTimelineRow row;
             row.kind = CadTimelineRowKind::Pattern;
@@ -245,7 +282,12 @@ std::string cadTimelineRowSummary(const CadTimelineRow& row) {
                       cadTimelineRowStateName(row.state));
         return buffer;
     }
-    if (row.kind == CadTimelineRowKind::Pattern) {
+    if (row.kind == CadTimelineRowKind::Hole) {
+        std::snprintf(buffer, sizeof(buffer), "Hole %s #%u d %.6g %s %.6g %s",
+                      cadHoleKindName(row.holeKind), row.id, row.holeDiameter,
+                      row.holeThroughAll ? "through" : "depth", row.holeDepth,
+                      cadTimelineRowStateName(row.state));
+    } else if (row.kind == CadTimelineRowKind::Pattern) {
         std::snprintf(buffer, sizeof(buffer), "Pattern %s #%u %u instances of %u features %s",
                       cadPatternKindName(row.patternKind), row.id, row.patternInstances,
                       row.patternFeatureCount, cadTimelineRowStateName(row.state));

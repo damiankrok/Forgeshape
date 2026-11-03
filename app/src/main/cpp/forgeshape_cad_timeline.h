@@ -39,6 +39,8 @@ enum class CadTimelineRowKind : uint8_t {
     // A Linear, Circular or Mirror pattern (`CAD-PATTERN-R1`), listed at its
     // place in the chain BY ID, because that is where it is applied.
     Pattern,
+    // A hole (`CAD-HOLE-R1`), listed at its place in the chain BY ID.
+    Hole,
 };
 
 const char* cadTimelineRowKindName(CadTimelineRowKind kind);
@@ -121,6 +123,12 @@ struct CadTimelineRow {
     CadPatternKind patternKind = CadPatternKind::Linear;
     uint32_t patternInstances = 0;
     uint32_t patternFeatureCount = 0;
+
+    // --- a hole row (`CAD-HOLE-R1`) ---
+    CadHoleKind holeKind = CadHoleKind::Simple;
+    Meters holeDiameter = 0.0;
+    bool holeThroughAll = false;
+    Meters holeDepth = 0.0;
 };
 
 struct CadTimeline {
@@ -138,7 +146,8 @@ struct CadTimeline {
 
 // How many rows a timeline can have: one per feature and one per sketch.
 constexpr uint32_t kMaxCadTimelineRows =
-        kMaxCadFeatures + kMaxCadSketches + kMaxCadEdgeFinishes + kMaxCadFeaturePatterns;
+        kMaxCadFeatures + kMaxCadSketches + kMaxCadEdgeFinishes + kMaxCadFeaturePatterns
+        + kMaxCadHoles;
 
 // THE timeline of `state`.
 //

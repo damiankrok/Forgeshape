@@ -762,6 +762,45 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
             mixBits(p.offset);
         }
     }
+    // `CAD-HOLE-R1`: every hole's whole authored truth -- id, kind, the face
+    // it stands on (feature, token, lineage) and the exact bits of every
+    // number. Mixed only when the body has one, so every project without keeps
+    // its fingerprint.
+    if (cadBodyStateUsesHoles(state)) {
+        auto mixBits = [&hash](double v) {
+            uint64_t bits = 0;
+            std::memcpy(&bits, &v, sizeof bits);
+            mixU64(hash, bits);
+        };
+        mixU64(hash, 0x484F4C30ull);  // "HOL0"
+        mixU64(hash, state.holes.size());
+        for (const CadFeatureHole& h : state.holes) {
+            mixU64(hash, h.holeId);
+            mixU64(hash, static_cast<uint64_t>(h.kind));
+            mixU64(hash, h.support.featureId);
+            mixU64(hash, cadFaceTokenCode(h.support.face));
+            mixU64(hash, h.support.face.fragment ? 1u : 0u);
+            if (h.support.face.fragment) {
+                for (const ArrangementCut* cut :
+                     {&h.support.face.fragmentStart, &h.support.face.fragmentEnd}) {
+                    mixU64(hash, static_cast<uint64_t>(cut->kind));
+                    mixU64(hash, cut->partnerEntityId);
+                    mixU64(hash, cut->partnerEdgeLocalIndex);
+                    mixU64(hash, cut->ordinal);
+                }
+            }
+            mixU64(hash, h.support.lineageToken);
+            mixBits(h.u);
+            mixBits(h.v);
+            mixBits(h.diameter);
+            mixU64(hash, h.throughAll ? 1u : 0u);
+            mixBits(h.depth);
+            mixBits(h.boreDiameter);
+            mixBits(h.boreDepth);
+            mixBits(h.sinkDiameter);
+            mixBits(h.sinkAngleDegrees);
+        }
+    }
     // `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: a Revolve's whole authored truth -- its
     // selection, its axis ref, the exact angle bits and the direction. Mixed
     // only for a Revolve, so every Extrude project keeps the fingerprint it

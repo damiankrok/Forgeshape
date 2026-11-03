@@ -61,6 +61,7 @@
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_edge_finish.h"
 #include "forgeshape_cad_pattern.h"
+#include "forgeshape_cad_hole.h"
 #include "forgeshape_cad_extrude_tool.h"
 #include "forgeshape_cad_feature.h"
 #include "forgeshape_cad_sketch_inventory.h"
@@ -339,6 +340,18 @@ struct EdgeFinishOffer {
     double anchorT = 0.5;
 };
 EdgeFinishOffer g_edgeFinishOffer;
+
+// The face a NEW hole is drilled into (`CAD-HOLE-R1`), captured when the
+// user takes the face offer's Hole chip so the editor can stay open while the
+// offer itself is withdrawn. Session presentation on the offer's terms: a
+// semantic support, never a triangle; never a history step, a `.forge` byte
+// or the fingerprint. Re-validated by the act like any other state. Guarded
+// by g_stateMutex.
+struct HoleDraft {
+    forgeshape::ObjectId body = forgeshape::kNoObject;
+    forgeshape::CadFeatureSupport support{};
+};
+HoleDraft g_holeDraft;
 
 // How close, in pixels, a tap must land to a projected edge to choose it rather
 // than the face under it. A fixed pixel distance like the sketch's own 24 px
@@ -5207,6 +5220,294 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadPatternDelete(
     return cadCode(status);
 }
 
+// ---------------------------------------------------------------------------
+// Holes (`CAD-HOLE-R1`)
+// ---------------------------------------------------------------------------
+
+namespace {
+// Whether a live face offer can take a hole, and where: the body, the support
+// on its own face, and the touched point in that face's BODY-LOCAL frame.
+// Offered only where the act can succeed -- an unlocked Extrude CAD body below
+// the hole cap whose face resolves. The caller holds g_stateMutex.
+bool holeOfferLocked(forgeshape::ChosenSupport* fresh, const forgeshape::SceneObject** outObject,
+                     forgeshape::CadFeatureSupport* outSupport, double* outU, double* outV) {
+    if (!faceSketchOfferLiveLocked(fresh)) {
+        return false;
+    }
+    const forgeshape::SceneObject* object =
+            forgeshape::constructionScene().findBody(fresh->faceRef.producerObjectId);
+    const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    if (body == nullptr || object->locked()
+        || body->state().baseKind != forgeshape::CadFeatureKind::Extrude
+        || body->state().holes.size() >= forgeshape::kMaxCadHoles) {
+        return false;
+    }
+    forgeshape::CadFeatureSupport support;
+    support.featureId = fresh->faceRef.producerLocalFeatureId;
+    support.face = fresh->faceRef.face;
+    support.lineageToken = fresh->faceRef.lineageToken;
+    std::vector<forgeshape::CadFeatureGeometry> chain;
+    forgeshape::CadFrame64 local;
+    forgeshape::Mat4 model;
+    if (forgeshape::buildCadChainGeometry(body->state(), &chain, nullptr, support.featureId)
+                != forgeshape::CadStatus::Ok
+        || !forgeshape::resolveCadFeatureSupportFrame(chain, support, &local)
+        || !forgeshape::constructionScene().resolveWorldModel(object->objectId(), &model)) {
+        return false;
+    }
+    // The touched point is held in the face's WORLD frame; the hole is stored
+    // in its body-local one. Solve W - O = a U + b V in world, where O, U, V
+    // are the local frame's origin and axes carried through the model -- right
+    // under a non-uniform scale too.
+    const forgeshape::SketchFrame& f = fresh->worldFrame;
+    const forgeshape::Vec3 w = forgeshape::vec3Add(
+            f.origin, forgeshape::vec3Add(forgeshape::vec3Scale(f.u, g_faceSketchOfferU),
+                                          forgeshape::vec3Scale(f.v, g_faceSketchOfferV)));
+    const forgeshape::Vec3 o = edgeWorldPoint(model, local.origin);
+    const forgeshape::Vec3 uw = forgeshape::vec3Sub(
+            edgeWorldPoint(model, forgeshape::dvec3Add(local.origin, local.u)), o);
+    const forgeshape::Vec3 vw = forgeshape::vec3Sub(
+            edgeWorldPoint(model, forgeshape::dvec3Add(local.origin, local.v)), o);
+    const forgeshape::Vec3 d = forgeshape::vec3Sub(w, o);
+    const double uu = forgeshape::vec3Dot(uw, uw);
+    const double uv = forgeshape::vec3Dot(uw, vw);
+    const double vv = forgeshape::vec3Dot(vw, vw);
+    const double du = forgeshape::vec3Dot(d, uw);
+    const double dv = forgeshape::vec3Dot(d, vw);
+    const double det = uu * vv - uv * uv;
+    if (!(std::fabs(det) > 1e-18)) {
+        return false;
+    }
+    if (outObject != nullptr) *outObject = object;
+    if (outSupport != nullptr) *outSupport = support;
+    if (outU != nullptr) *outU = (du * vv - dv * uv) / det;
+    if (outV != nullptr) *outV = (dv * uu - du * uv) / det;
+    return true;
+}
+
+// Where a committed hole's axis meets its face, on screen.
+bool holeScreenPoint(const forgeshape::SceneObject& object, const forgeshape::CadFeatureHole& hole,
+                     float* x, float* y) {
+    forgeshape::CadFrame64 frame;
+    forgeshape::Mat4 model;
+    if (object.cadOrNull() == nullptr
+        || !forgeshape::cadHoleFrame(object.cadOrNull()->state(), hole, &frame)
+        || !forgeshape::constructionScene().resolveWorldModel(object.objectId(), &model)) {
+        return false;
+    }
+    return forgeshape::projectWorldToScreen(g_camera.snapshot(), edgeWorldPoint(model, frame.origin),
+                                            g_camera.viewportWidth(), g_camera.viewportHeight(), x, y);
+}
+}  // namespace
+
+// Whether the tapped face takes a hole, into out[0..2]: [0] the body id,
+// [1..2] the touched point on screen. False when it does not.
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_holeOfferState(
+    JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr jsize kSlots = 3;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) {
+        return JNI_FALSE;
+    }
+    jdouble v[kSlots] = {0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ChosenSupport fresh;
+        const forgeshape::SceneObject* object = nullptr;
+        if (!holeOfferLocked(&fresh, &object, nullptr, nullptr, nullptr)) {
+            return JNI_FALSE;
+        }
+        const forgeshape::SketchFrame& f = fresh.worldFrame;
+        const forgeshape::Vec3 world = forgeshape::vec3Add(
+                f.origin, forgeshape::vec3Add(forgeshape::vec3Scale(f.u, g_faceSketchOfferU),
+                                              forgeshape::vec3Scale(f.v, g_faceSketchOfferV)));
+        float sx = 0.0f;
+        float sy = 0.0f;
+        if (!forgeshape::projectWorldToScreen(g_camera.snapshot(), world, g_camera.viewportWidth(),
+                                              g_camera.viewportHeight(), &sx, &sy)) {
+            return JNI_FALSE;
+        }
+        v[0] = static_cast<jdouble>(object->objectId());
+        v[1] = sx;
+        v[2] = sy;
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, v);
+    return JNI_TRUE;
+}
+
+// Takes the Hole chip: captures the face for the NEW hole and answers its
+// seeds into out[0..5]: [0] the body id, [1] the diameter, [2..3] the touched
+// point snapped to a round grid in the face's own frame, [4..5] the touched
+// point on screen. The face offer is spent. False when there is none.
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_holeOfferBegin(
+    JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr jsize kSlots = 6;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) {
+        return JNI_FALSE;
+    }
+    jdouble v[kSlots] = {0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ChosenSupport fresh;
+        const forgeshape::SceneObject* object = nullptr;
+        forgeshape::CadFeatureSupport support;
+        double u = 0.0;
+        double w = 0.0;
+        if (!holeOfferLocked(&fresh, &object, &support, &u, &w)) {
+            return JNI_FALSE;
+        }
+        const double diameter = forgeshape::suggestCadHoleDiameter(object->cadOrNull()->state());
+        float sx = 0.0f;
+        float sy = 0.0f;
+        const forgeshape::SketchFrame& f = fresh.worldFrame;
+        const forgeshape::Vec3 world = forgeshape::vec3Add(
+                f.origin, forgeshape::vec3Add(forgeshape::vec3Scale(f.u, g_faceSketchOfferU),
+                                              forgeshape::vec3Scale(f.v, g_faceSketchOfferV)));
+        forgeshape::projectWorldToScreen(g_camera.snapshot(), world, g_camera.viewportWidth(),
+                                         g_camera.viewportHeight(), &sx, &sy);
+        g_holeDraft.body = object->objectId();
+        g_holeDraft.support = support;
+        v[0] = static_cast<jdouble>(object->objectId());
+        v[1] = diameter;
+        v[2] = forgeshape::snapCadHolePosition(u, diameter);
+        v[3] = forgeshape::snapCadHolePosition(w, diameter);
+        v[4] = sx;
+        v[5] = sy;
+        g_faceSketchOffer = forgeshape::ChosenSupport{};
+        g_edgeFinishOffer = EdgeFinishOffer{};
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, v);
+    FS_LOGI("FORGESHAPE_HOLE_OFFER_BEGIN body=%lld", (long long)v[0]);
+    return JNI_TRUE;
+}
+
+// Adds (holeId 0, on the face `holeOfferBegin` captured) or edits a hole as
+// ONE Undo. `kind` 0 Simple, 1 Counterbore, 2 Countersink; lengths in metres,
+// the countersink angle in degrees; (u, v) the point in the face's frame. The
+// fields a kind does not use are written as zero, so the canonical form is the
+// domain's and not the caller's. Returns the CadStatus code.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleApply(
+    JNIEnv*, jclass, jlong bodyId, jlong holeId, jint kind, jdouble diameter,
+    jboolean throughAll, jdouble depth, jdouble boreDiameter, jdouble boreDepth,
+    jdouble sinkDiameter, jdouble sinkAngle, jdouble u, jdouble v) {
+    forgeshape::CadStatus status;
+    uint32_t minted = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = retainedSketchActRefusal();
+        forgeshape::CadFeatureHole hole;
+        if (status == forgeshape::CadStatus::Ok
+            && !forgeshape::cadHoleKindFromIndex(static_cast<int>(kind), &hole.kind)) {
+            status = forgeshape::CadStatus::HoleInvalid;
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            hole.diameter = diameter;
+            hole.throughAll = throughAll == JNI_TRUE;
+            hole.depth = hole.throughAll ? 0.0 : depth;
+            hole.u = u;
+            hole.v = v;
+            if (hole.kind == forgeshape::CadHoleKind::Counterbore) {
+                hole.boreDiameter = boreDiameter;
+                hole.boreDepth = boreDepth;
+            } else if (hole.kind == forgeshape::CadHoleKind::Countersink) {
+                hole.sinkDiameter = sinkDiameter;
+                hole.sinkAngleDegrees = sinkAngle;
+            }
+            const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
+            if (holeId > 0) {
+                status = holeId > 0xFFFFFFFFll
+                                 ? forgeshape::CadStatus::HoleNotFound
+                                 : forgeshape::editCadFeatureHoleOfBody(
+                                           forgeshape::constructionScene(),
+                                           forgeshape::constructionHistory(), id,
+                                           static_cast<uint32_t>(holeId), hole);
+            } else if (g_holeDraft.body != id || id == forgeshape::kNoObject) {
+                status = forgeshape::CadStatus::HoleSupportInvalid;
+            } else {
+                hole.support = g_holeDraft.support;
+                status = forgeshape::addCadFeatureHoleToBody(forgeshape::constructionScene(),
+                                                            forgeshape::constructionHistory(), id,
+                                                            hole, &minted);
+            }
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            g_holeDraft = HoleDraft{};
+            g_faceSketchOffer = forgeshape::ChosenSupport{};
+            g_edgeFinishOffer = EdgeFinishOffer{};
+        }
+    }
+    FS_LOGI("FORGESHAPE_HOLE_APPLY hole=%lld minted=%u kind=%d through=%d %s", (long long)holeId,
+            minted, (int)kind, throughAll == JNI_TRUE ? 1 : 0, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// A committed hole, into out[0..12]: [0] kind, [1] diameter, [2] 1 Through
+// All, [3] depth, [4] counterbore diameter, [5] its depth, [6] countersink
+// diameter, [7] its angle, [8..9] the point in the face's frame, [10] 1 when
+// [11..12] (where its axis meets the face, on screen) project. False for no
+// such hole.
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleInfo(
+    JNIEnv* env, jclass, jlong bodyId, jlong holeId, jdoubleArray out) {
+    constexpr jsize kSlots = 13;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) {
+        return JNI_FALSE;
+    }
+    jdouble v[kSlots] = {0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SceneObject* object =
+                forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(bodyId));
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        const forgeshape::CadFeatureHole* h =
+                body != nullptr && holeId > 0 && holeId <= 0xFFFFFFFFll
+                        ? forgeshape::findCadFeatureHole(body->state(), static_cast<uint32_t>(holeId))
+                        : nullptr;
+        if (h == nullptr) {
+            return JNI_FALSE;
+        }
+        v[0] = forgeshape::cadHoleKindIndex(h->kind);
+        v[1] = h->diameter;
+        v[2] = h->throughAll ? 1.0 : 0.0;
+        v[3] = h->depth;
+        v[4] = h->boreDiameter;
+        v[5] = h->boreDepth;
+        v[6] = h->sinkDiameter;
+        v[7] = h->sinkAngleDegrees;
+        v[8] = h->u;
+        v[9] = h->v;
+        float sx = 0.0f;
+        float sy = 0.0f;
+        if (holeScreenPoint(*object, *h, &sx, &sy)) {
+            v[10] = 1.0;
+            v[11] = sx;
+            v[12] = sy;
+        }
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, v);
+    return JNI_TRUE;
+}
+
+// Removes hole `holeId` as ONE Undo.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleDelete(
+    JNIEnv*, jclass, jlong bodyId, jlong holeId) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = retainedSketchActRefusal();
+        if (status == forgeshape::CadStatus::Ok) {
+            status = holeId <= 0 || holeId > 0xFFFFFFFFll
+                             ? forgeshape::CadStatus::HoleNotFound
+                             : forgeshape::deleteCadFeatureHoleOfBody(
+                                       forgeshape::constructionScene(),
+                                       forgeshape::constructionHistory(),
+                                       static_cast<forgeshape::ObjectId>(bodyId),
+                                       static_cast<uint32_t>(holeId));
+        }
+    }
+    FS_LOGI("FORGESHAPE_HOLE_DELETE hole=%lld %s", (long long)holeId,
+            forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
 // Read-only projection of a world point to screen through the current camera.
 // A verification seam so a test can tap the exact pixel a plane or face target
 // projects to; it mutates nothing.
@@ -6315,7 +6616,8 @@ Java_com_forgeshape_app_NativeViewport_cadTimeline(JNIEnv* env, jclass, jlong bo
         for (jsize i = 0; i < count; ++i) {
             const forgeshape::CadTimelineRow& row = timeline.rows[static_cast<size_t>(i)];
             jdouble* v = &values[static_cast<size_t>(i) * kRowSlots];
-            v[0] = row.kind == forgeshape::CadTimelineRowKind::Pattern   ? 3.0
+            v[0] = row.kind == forgeshape::CadTimelineRowKind::Hole      ? 4.0
+                   : row.kind == forgeshape::CadTimelineRowKind::Pattern ? 3.0
                    : row.kind == forgeshape::CadTimelineRowKind::Finish  ? 2.0
                    : row.kind == forgeshape::CadTimelineRowKind::Feature ? 1.0
                                                                          : 0.0;
@@ -6362,6 +6664,16 @@ Java_com_forgeshape_app_NativeViewport_cadTimeline(JNIEnv* env, jclass, jlong bo
                 v[15] = forgeshape::cadPatternKindIndex(row.patternKind);
                 v[17] = row.patternInstances;
                 v[18] = row.patternFeatureCount;
+            }
+            if (row.kind == forgeshape::CadTimelineRowKind::Hole) {
+                // A hole row reuses them too: the operation slot is the hole
+                // kind (0 Simple, 1 Counterbore, 2 Countersink), the region
+                // count 1 for Through All, the positive distance the diameter
+                // and the negative one the blind depth.
+                v[15] = forgeshape::cadHoleKindIndex(row.holeKind);
+                v[17] = row.holeThroughAll ? 1.0 : 0.0;
+                v[21] = row.holeDiameter;
+                v[22] = row.holeDepth;
             }
         }
         if (count > 0) {
@@ -9447,6 +9759,7 @@ Java_com_forgeshape_app_NativeViewport_loadProject(JNIEnv* env, jclass, jbyteArr
         }
         g_faceSketchOffer = forgeshape::ChosenSupport{};
         g_edgeFinishOffer = EdgeFinishOffer{};
+        g_holeDraft = HoleDraft{};
         status = forgeshape::loadProjectDocument(document, forgeshape::constructionScene(),
                                                  forgeshape::sculptSession(),
                                                  forgeshape::constructionHistory(), &report);
@@ -9960,6 +10273,7 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_closeProject(JNIEn
         g_selection.resetGesture();
         g_faceSketchOffer = forgeshape::ChosenSupport{};
         g_edgeFinishOffer = EdgeFinishOffer{};
+        g_holeDraft = HoleDraft{};
         forgeshape::constructionHistory().clear();
         scene.closeProject();
     }

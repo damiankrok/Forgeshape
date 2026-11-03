@@ -368,11 +368,24 @@ enum class CadStatus : uint8_t {
     PatternInstanceNoEffect,
     // The body already carries kMaxCadFeaturePatterns patterns.
     TooManyPatterns,
+    // `CAD-HOLE-R1`. A hole's own values are out of bounds or not in their
+    // kind's canonical form, or its id is not a fresh one of the chain.
+    HoleInvalid,
+    // A hole's face does not resolve: no such earlier feature, a stale
+    // lineage, a token the feature lacks, or a face no sketch may stand on.
+    HoleSupportInvalid,
+    // The hole removed nothing: it misses the body, or the material under the
+    // point is already gone.
+    HoleNoEffect,
+    // The body already carries kMaxCadHoles holes.
+    TooManyHoles,
+    // An act names a hole the body does not carry.
+    HoleNotFound,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 105;
+constexpr int kCadStatusCount = 110;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);

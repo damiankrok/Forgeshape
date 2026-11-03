@@ -173,6 +173,13 @@ CadStatus buildCadFeatureGeometry(const CadBodyState& state, uint32_t featureId,
 CadStatus appendCadFeatureSolid(const CadFeatureGeometry& geometry, uint32_t tagOffset,
                                 CadSolid* solid);
 
+// THE rule for where a `CadFeatureSupport` stands: the named feature in
+// `chain`, at the stored lineage, carrying the token on a face a sketch may
+// stand on. Its material-outward frame into `out`. False -- never a nearest
+// face -- otherwise. A later feature's sketch and a hole read it alike.
+bool resolveCadFeatureSupportFrame(const std::vector<CadFeatureGeometry>& chain,
+                                   const CadFeatureSupport& support, CadFrame64* out);
+
 // Whether `solid` still carries material on `frame`'s plane, facing along its
 // normal: a support face an earlier Cut removed entirely does not. Geometric,
 // not by tag, because a coplanar merge may legitimately re-tag a face.

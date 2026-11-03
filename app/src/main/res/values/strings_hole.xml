@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Holes: Simple, Counterbore and Countersink, blind or Through All (`CAD-HOLE-R1`). -->
+<resources>
+    <string name="hole_action">Hole</string>
+    <string name="hole_action_description">Drill a hole into this face where you tapped</string>
+    <string name="hole_simple">Simple</string>
+    <string name="hole_counterbore">Counterbore</string>
+    <string name="hole_countersink">Countersink</string>
+    <string name="hole_kind_simple_description">A plain round hole</string>
+    <string name="hole_kind_counterbore_description">A hole with a wider, flat-bottomed bore at the top, for a screw head</string>
+    <string name="hole_kind_countersink_description">A hole with a cone at the top, for a flat screw head</string>
+    <string name="hole_label_diameter">Diameter</string>
+    <string name="hole_through_all">Through All</string>
+    <string name="hole_through_all_description">Drill right through the part</string>
+    <string name="hole_blind">Depth</string>
+    <string name="hole_blind_description">Drill to a depth you type</string>
+    <string name="hole_label_depth">Depth</string>
+    <string name="hole_label_bore_diameter">Bore Ø</string>
+    <string name="hole_label_bore_depth">Bore depth</string>
+    <string name="hole_label_sink_diameter">Cone Ø</string>
+    <string name="hole_label_sink_angle">Angle</string>
+    <string name="hole_label_position">At</string>
+    <string name="hole_label_u">across</string>
+    <string name="hole_label_v">along</string>
+    <string name="hole_field_description">%1$s, in %2$s</string>
+    <string name="hole_degrees">degrees</string>
+    <string name="hole_delete">Delete</string>
+    <string name="hole_cancel">Cancel</string>
+    <string name="status_hole_applied">%1$s hole drilled. Undo takes it back.</string>
+    <string name="status_hole_edited">%1$s hole changed.</string>
+    <string name="status_hole_deleted">Hole removed. Undo brings it back.</string>
+    <string name="history_row_hole">Hole %1$d · %2$s</string>
+    <string name="history_detail_hole_through">Ø %1$s, through all</string>
+    <string name="history_detail_hole_blind">Ø %1$s, %2$s deep</string>
+    <string name="status_hole_invalid">Those hole values do not work: a counterbore or a cone must be wider than the hole and shallower than its depth, and the cone angle between 30° and 150°.</string>
+    <string name="status_hole_support_invalid">The face this hole was drilled into is no longer there.</string>
+    <string name="status_hole_no_effect">That hole removes nothing: it misses the part there. Move it onto the material.</string>
+    <string name="status_hole_too_many">This part already has the most holes it can hold.</string>
+    <string name="status_hole_not_found">That hole is no longer there.</string>
+</resources>

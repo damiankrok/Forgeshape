@@ -128,6 +128,16 @@ final class CadExtrudeCanvasView extends FrameLayout {
 
         /** A pattern field did not parse: say so as a verdict. */
         void onCanvasPatternFieldRefused(String message);
+
+        /**
+         * Apply a hole (`CAD-HOLE-R1`): a NEW one on the face native captured
+         * when {@code holeId} is 0, else an edit of that committed hole.
+         * Returns whether native accepted it, so the editor closes only then.
+         */
+        boolean onCanvasHoleApply(long bodyId, long holeId, HoleEditorPanel.Request request);
+
+        /** Remove committed hole {@code holeId} of body {@code bodyId}. */
+        boolean onCanvasHoleDelete(long bodyId, long holeId);
     }
 
     /** The extent choices, in {@link CadHudPresentation#EXTENTS} order. */
@@ -276,6 +286,22 @@ final class CadExtrudeCanvasView extends FrameLayout {
     private long patternFeatureId;
     private float patternX;
     private float patternY;
+
+    /**
+     * Hole (`CAD-HOLE-R1`): one more captioned action in the same bar, offered
+     * on any face of a CAD body a hole can be drilled into, and its editor.
+     * Presentation only; native owns the hole and the face it stands on.
+     */
+    private final View holeAction;
+    private final HoleEditorPanel holePanel;
+    private final double[] holeOffer = new double[NativeViewport.HOLE_OFFER_SIZE];
+    private final double[] holeBegin = new double[NativeViewport.HOLE_BEGIN_SIZE];
+    private final double[] holeInfo = new double[NativeViewport.HOLE_INFO_SIZE];
+    private long holeBodyId = NativeViewport.NO_OBJECT;
+    /** 0 for a new hole on the captured face, else the hole edited. */
+    private long holeId;
+    private float holeX;
+    private float holeY;
 
     /** Whether the action palette is open. Presentation only; never a domain value. */
     private boolean paletteOpen;
@@ -607,6 +633,17 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 openNewPattern(NativeViewport.PATTERN_MIRROR);
             }
         });
+        final TextView holeCaption = new TextView(context);
+        holeAction = captionedAction(context, R.id.cad_canvas_hole, R.drawable.ic_hole, holeCaption);
+        holeCaption.setText(R.string.hole_action);
+        holeAction.setContentDescription(context.getString(R.string.hole_action_description));
+        holeAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openNewHole();
+            }
+        });
+        edgeFinishBar.addView(holeAction, EditorControlStyles.wrap(0));
         edgeFinishBar.addView(patternAction, EditorControlStyles.wrap(0));
         edgeFinishBar.addView(mirrorAction, EditorControlStyles.wrap(0));
         edgeFinishBar.setVisibility(GONE);
@@ -697,6 +734,38 @@ final class CadExtrudeCanvasView extends FrameLayout {
         });
         patternPanel.setElevation(EditorControlStyles.dimen(context, R.dimen.elevation_floating));
         addView(patternPanel, wrapParams());
+
+        holePanel = new HoleEditorPanel(context, new HoleEditorPanel.Listener() {
+            @Override
+            public LengthUnit holeUnit() {
+                return host.uiState().displayUnit();
+            }
+
+            @Override
+            public void holeFieldRefused(String message) {
+                CadExtrudeCanvasView.this.actions.onCanvasPatternFieldRefused(message);
+            }
+
+            @Override
+            public boolean holeApply(HoleEditorPanel.Request request) {
+                return CadExtrudeCanvasView.this.actions.onCanvasHoleApply(holeBodyId, holeId,
+                        request);
+            }
+
+            @Override
+            public boolean holeDelete() {
+                return holeId > 0L
+                        && CadExtrudeCanvasView.this.actions.onCanvasHoleDelete(holeBodyId, holeId);
+            }
+
+            @Override
+            public void holeCancelled() {
+                hideIme();
+                refreshFromNative();
+            }
+        });
+        holePanel.setElevation(EditorControlStyles.dimen(context, R.dimen.elevation_floating));
+        addView(holePanel, wrapParams());
         setAnnotationVisible(false, false);
     }
 
@@ -890,7 +959,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
             if (child == editSketch.view || child == sketchOnFace || child == edgeFinishBar) {
                 return CadHudTouchAttribution.EDIT_SKETCH;
             }
-            if (child == edgeFinishEditor || child == patternPanel) {
+            if (child == edgeFinishEditor || child == patternPanel || child == holePanel) {
                 return CadHudTouchAttribution.EDITOR;
             }
         }
@@ -1101,6 +1170,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         edgeFinishBar.setVisibility(GONE);
         closeEdgeFinishEditor();
         closePatternEditor();
+        closeHoleEditor();
         final Context context = getContext();
         final LengthUnit unit = host.uiState().displayUnit();
         final int extent = extentMode();
@@ -1588,6 +1658,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         edgeFinishBar.setVisibility(GONE);
         closeEdgeFinishEditor();
         closePatternEditor();
+        closeHoleEditor();
         sketchBodyId = NativeViewport.NO_OBJECT;
         setVisibility(GONE);
     }
@@ -1643,6 +1714,21 @@ final class CadExtrudeCanvasView extends FrameLayout {
             placeAt(patternPanel, patternX, patternY + hitPx);
             return true;
         }
+        if (holePanel.isOpen()) {
+            // The open hole editor keeps its own anchor: a new hole where the
+            // face was tapped, an edit where its axis meets the face.
+            if (holeId > 0L && NativeViewport.cadHoleInfo(holeBodyId, holeId, holeInfo)
+                    && holeInfo[NativeViewport.HOLE_INFO_ON_SCREEN] != 0.0) {
+                holeX = (float) holeInfo[NativeViewport.HOLE_INFO_X];
+                holeY = (float) holeInfo[NativeViewport.HOLE_INFO_Y];
+            }
+            edgeFinishBar.setVisibility(GONE);
+            setVisibility(VISIBLE);
+            placeAt(holePanel, holeX, holeY + hitPx);
+            return true;
+        }
+        final boolean holeOffered = anchorSpace.ready() && NativeViewport.holeOfferState(holeOffer);
+        holeAction.setVisibility(holeOffered ? VISIBLE : GONE);
         final boolean patternOffered = anchorSpace.ready()
                 && NativeViewport.patternOfferState(patternOffer);
         final boolean finishOffered = anchorSpace.ready()
@@ -1651,17 +1737,20 @@ final class CadExtrudeCanvasView extends FrameLayout {
         mirrorAction.setVisibility(patternOffered ? VISIBLE : GONE);
         edgeFillet.setVisibility(finishOffered ? VISIBLE : GONE);
         edgeChamfer.setVisibility(finishOffered ? VISIBLE : GONE);
-        if (!finishOffered && !patternOffered) {
+        if (!finishOffered && !patternOffered && !holeOffered) {
             edgeFinishBar.setVisibility(GONE);
             return false;
         }
         if (!finishOffered) {
             // A face whose edges cannot be finished (a pocket's wall, say) still
-            // offers Pattern and Mirror, below the finger like a face's bar.
+            // offers Hole, Pattern and Mirror, below the finger like a face's bar.
             edgeFinishBar.setVisibility(VISIBLE);
             setVisibility(VISIBLE);
-            placeAt(edgeFinishBar, (float) patternOffer[NativeViewport.PATTERN_OFFER_X],
-                    (float) patternOffer[NativeViewport.PATTERN_OFFER_Y] + hitPx);
+            final double[] at = holeOffered ? holeOffer : patternOffer;
+            placeAt(edgeFinishBar, (float) at[holeOffered ? NativeViewport.HOLE_OFFER_X
+                            : NativeViewport.PATTERN_OFFER_X],
+                    (float) at[holeOffered ? NativeViewport.HOLE_OFFER_Y
+                            : NativeViewport.PATTERN_OFFER_Y] + hitPx);
             return true;
         }
         final Context context = getContext();
@@ -1692,6 +1781,71 @@ final class CadExtrudeCanvasView extends FrameLayout {
     // Pattern and Mirror (`CAD-PATTERN-R1`)
     // -----------------------------------------------------------------------
 
+    // -----------------------------------------------------------------------
+    // Hole (`CAD-HOLE-R1`)
+    // -----------------------------------------------------------------------
+
+    /** Opens the hole editor for a NEW hole where the face was tapped. */
+    private void openNewHole() {
+        if (!NativeViewport.holeOfferBegin(holeBegin)) {
+            refreshFromNative();
+            return;
+        }
+        closeEdgeFinishEditor();
+        closePatternEditor();
+        holeId = 0L;
+        holeBodyId = (long) holeBegin[NativeViewport.HOLE_BEGIN_BODY];
+        holeX = (float) holeBegin[NativeViewport.HOLE_BEGIN_X];
+        holeY = (float) holeBegin[NativeViewport.HOLE_BEGIN_Y];
+        holePanel.openNew(holeBegin[NativeViewport.HOLE_BEGIN_DIAMETER],
+                holeBegin[NativeViewport.HOLE_BEGIN_U], holeBegin[NativeViewport.HOLE_BEGIN_V]);
+        edgeFinishBar.setVisibility(GONE);
+        setVisibility(VISIBLE);
+        placeAt(holePanel, holeX, holeY + hitPx);
+    }
+
+    /**
+     * Opens the hole editor over a COMMITTED hole, from the History: its
+     * values, Apply as an edit, and Delete. Returns false for a hole native
+     * lacks.
+     */
+    boolean beginHoleEdit(long bodyId, long id) {
+        if (!NativeViewport.cadHoleInfo(bodyId, id, holeInfo)) {
+            return false;
+        }
+        closeEdgeFinishEditor();
+        closePatternEditor();
+        holeBodyId = bodyId;
+        holeId = id;
+        if (holeInfo[NativeViewport.HOLE_INFO_ON_SCREEN] != 0.0) {
+            holeX = (float) holeInfo[NativeViewport.HOLE_INFO_X];
+            holeY = (float) holeInfo[NativeViewport.HOLE_INFO_Y];
+        } else {
+            holeX = getWidth() * 0.5f;
+            holeY = getHeight() * 0.3f;
+        }
+        holePanel.openExisting(holeInfo);
+        edgeFinishBar.setVisibility(GONE);
+        setVisibility(VISIBLE);
+        placeAt(holePanel, holeX, holeY + hitPx);
+        return true;
+    }
+
+    /** Closes the hole editor without applying anything. */
+    void closeHoleEditor() {
+        if (!holePanel.isOpen()) {
+            return;
+        }
+        holePanel.close();
+        holeId = 0L;
+        hideIme();
+    }
+
+    /** Whether the hole editor is open; verification. */
+    boolean holeEditorOpen() {
+        return holePanel.isOpen();
+    }
+
     /** Opens the pattern editor for a NEW pattern of the offered feature. */
     private void openNewPattern(int kind) {
         if (!NativeViewport.patternOfferState(patternOffer)) {
@@ -1699,6 +1853,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
             return;
         }
         closeEdgeFinishEditor();
+        closeHoleEditor();
         patternId = 0L;
         patternFeatureId = (long) patternOffer[NativeViewport.PATTERN_OFFER_FEATURE];
         patternBodyId = (long) patternOffer[NativeViewport.PATTERN_OFFER_BODY];
@@ -1720,6 +1875,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
             return false;
         }
         closeEdgeFinishEditor();
+        closeHoleEditor();
         patternBodyId = bodyId;
         patternId = id;
         patternFeatureId = (long) patternInfo[NativeViewport.PATTERN_INFO_FEATURE];
@@ -1794,6 +1950,8 @@ final class CadExtrudeCanvasView extends FrameLayout {
     }
 
     private void showEdgeFinishEditor(int kind, double meters, boolean editing) {
+        closePatternEditor();
+        closeHoleEditor();
         final Context context = getContext();
         final LengthUnit unit = host.uiState().displayUnit();
         final int labelRes = kind == NativeViewport.EDGE_FINISH_FILLET

@@ -479,6 +479,28 @@ CadStatus deriveRevolveFeature(CadFeatureGeometry* g) {
 
 }  // namespace
 
+bool resolveCadFeatureSupportFrame(const std::vector<CadFeatureGeometry>& chain,
+                                   const CadFeatureSupport& support, CadFrame64* out) {
+    const CadFeatureGeometry* supporting = nullptr;
+    for (const CadFeatureGeometry& earlier : chain) {
+        if (earlier.featureId == support.featureId) {
+            supporting = &earlier;
+            break;
+        }
+    }
+    if (supporting == nullptr || supporting->signature != support.lineageToken) {
+        return false;
+    }
+    for (const CadFeatureFace& candidate : supporting->faces) {
+        if (sameCadFaceToken(candidate.token, support.face)) {
+            if (!candidate.eligible) return false;
+            if (out != nullptr) *out = candidate.frame;
+            return true;
+        }
+    }
+    return false;
+}
+
 DVec3 cadFramePoint(const CadFrame64& frame, double a, double b, double c) {
     return dvec3Add(frame.origin, frameDirection(frame, a, b, c));
 }
@@ -507,27 +529,8 @@ CadStatus sketchPlacement(const CadBodyState& state, CadSketchId sketchId, const
     if (sketch.plane != Workplane::XY || sketch.hasFaceSupport) {
         return CadStatus::FeatureSupportInvalid;
     }
-    const CadFeatureGeometry* supporting = nullptr;
-    for (const CadFeatureGeometry& earlier : chain) {
-        if (earlier.featureId == support->featureId) {
-            supporting = &earlier;
-            break;
-        }
-    }
-    const CadFeatureFace* face = nullptr;
-    if (supporting != nullptr && supporting->signature == support->lineageToken) {
-        for (const CadFeatureFace& candidate : supporting->faces) {
-            if (sameCadFaceToken(candidate.token, support->face)) {
-                face = &candidate;
-                break;
-            }
-        }
-    }
-    if (face == nullptr || !face->eligible) {
-        return CadStatus::FeatureSupportInvalid;
-    }
-    *out = face->frame;
-    return CadStatus::Ok;
+    return resolveCadFeatureSupportFrame(chain, *support, out) ? CadStatus::Ok
+                                                               : CadStatus::FeatureSupportInvalid;
 }
 
 // The one walk behind both entry points: every feature in order, whichever

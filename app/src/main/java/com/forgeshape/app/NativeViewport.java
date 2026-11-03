@@ -2362,6 +2362,16 @@ final class NativeViewport {
     static final int CAD_PATTERN_INSTANCE_NO_EFFECT = 103;
     /** The body already carries the most patterns it may. */
     static final int CAD_TOO_MANY_PATTERNS = 104;
+    /** `CAD-HOLE-R1`: the hole's own values are out of bounds or not canonical. */
+    static final int CAD_HOLE_INVALID = 105;
+    /** The face a hole was drilled into no longer resolves. */
+    static final int CAD_HOLE_SUPPORT_INVALID = 106;
+    /** The hole removed nothing: it misses the part. */
+    static final int CAD_HOLE_NO_EFFECT = 107;
+    /** The body already carries the most holes it may. */
+    static final int CAD_TOO_MANY_HOLES = 108;
+    /** An act named a hole the body does not carry. */
+    static final int CAD_HOLE_NOT_FOUND = 109;
 
     // --- Chamfer and Fillet (`CAD-EDGE-FINISH-R1`) ------------------------
 
@@ -2488,6 +2498,68 @@ final class NativeViewport {
 
     /** Removes a pattern as ONE Undo. Returns a CAD status. */
     static native int cadPatternDelete(long bodyId, long patternId);
+
+    // --- Holes (`CAD-HOLE-R1`) ------------------------------------------------
+
+    /** The hole kinds, in the native enum's order. */
+    static final int HOLE_SIMPLE = 0;
+    static final int HOLE_COUNTERBORE = 1;
+    static final int HOLE_COUNTERSINK = 2;
+
+    /** {@link #holeOfferState} slots: the body and the touched point on screen. */
+    static final int HOLE_OFFER_SIZE = 3;
+    static final int HOLE_OFFER_BODY = 0;
+    static final int HOLE_OFFER_X = 1;
+    static final int HOLE_OFFER_Y = 2;
+
+    /**
+     * Whether the tapped face takes a hole (an unlocked Extrude CAD body below
+     * the hole cap). Presentation; native re-validates on every read.
+     */
+    static native boolean holeOfferState(double[] out);
+
+    /** {@link #holeOfferBegin} slots: the seeds of the NEW hole. */
+    static final int HOLE_BEGIN_SIZE = 6;
+    static final int HOLE_BEGIN_BODY = 0;
+    static final int HOLE_BEGIN_DIAMETER = 1;
+    static final int HOLE_BEGIN_U = 2;
+    static final int HOLE_BEGIN_V = 3;
+    static final int HOLE_BEGIN_X = 4;
+    static final int HOLE_BEGIN_Y = 5;
+
+    /** Takes the Hole chip: native captures the face and answers the seeds. */
+    static native boolean holeOfferBegin(double[] out);
+
+    /**
+     * Adds (holeId 0, on the captured face) or edits a hole as ONE Undo.
+     * Lengths in metres, the cone angle in degrees, (u, v) on the face.
+     * Returns a CAD status.
+     */
+    static native int cadHoleApply(long bodyId, long holeId, int kind, double diameter,
+            boolean throughAll, double depth, double boreDiameter, double boreDepth,
+            double sinkDiameter, double sinkAngle, double u, double v);
+
+    /** {@link #cadHoleInfo} slots. */
+    static final int HOLE_INFO_SIZE = 13;
+    static final int HOLE_INFO_KIND = 0;
+    static final int HOLE_INFO_DIAMETER = 1;
+    static final int HOLE_INFO_THROUGH_ALL = 2;
+    static final int HOLE_INFO_DEPTH = 3;
+    static final int HOLE_INFO_BORE_DIAMETER = 4;
+    static final int HOLE_INFO_BORE_DEPTH = 5;
+    static final int HOLE_INFO_SINK_DIAMETER = 6;
+    static final int HOLE_INFO_SINK_ANGLE = 7;
+    static final int HOLE_INFO_U = 8;
+    static final int HOLE_INFO_V = 9;
+    static final int HOLE_INFO_ON_SCREEN = 10;
+    static final int HOLE_INFO_X = 11;
+    static final int HOLE_INFO_Y = 12;
+
+    /** A committed hole's values and screen anchor. */
+    static native boolean cadHoleInfo(long bodyId, long holeId, double[] out);
+
+    /** Removes a hole as ONE Undo. Returns a CAD status. */
+    static native int cadHoleDelete(long bodyId, long holeId);
 
     /**
      * What an extrusion does to material (`CAD-VERTICAL-SLICE-R1`), in the
@@ -3485,6 +3557,13 @@ final class NativeViewport {
      * #TIMELINE_ROW_HOLES} how many features it repeats.
      */
     static final int TIMELINE_KIND_PATTERN = 3;
+    /**
+     * A hole (`CAD-HOLE-R1`): {@link #TIMELINE_ROW_OPERATION} is the hole kind
+     * ({@link #HOLE_SIMPLE}..), {@link #TIMELINE_ROW_REGIONS} 1 for Through
+     * All, {@link #TIMELINE_ROW_POSITIVE} the diameter and {@link
+     * #TIMELINE_ROW_NEGATIVE} the blind depth, in metres.
+     */
+    static final int TIMELINE_KIND_HOLE = 4;
 
     static final int TIMELINE_STATE_OK = 0;
     static final int TIMELINE_STATE_FAILED = 1;
@@ -3494,9 +3573,9 @@ final class NativeViewport {
 
     /**
      * The most rows a CAD timeline can have: one per feature, one per sketch,
-     * one per Chamfer or Fillet and one per pattern.
+     * one per Chamfer or Fillet, one per pattern and one per hole.
      */
-    static final int TIMELINE_MAX_ROWS = 64;
+    static final int TIMELINE_MAX_ROWS = 96;
 
     /**
      * A CAD body's feature chain as a TIMELINE of sketch and feature rows in

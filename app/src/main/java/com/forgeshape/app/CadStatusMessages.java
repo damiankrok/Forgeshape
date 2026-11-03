@@ -167,6 +167,16 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_pattern_instance_no_effect);
             case NativeViewport.CAD_TOO_MANY_PATTERNS:
                 return context.getString(R.string.status_pattern_too_many);
+            case NativeViewport.CAD_HOLE_INVALID:
+                return context.getString(R.string.status_hole_invalid);
+            case NativeViewport.CAD_HOLE_SUPPORT_INVALID:
+                return context.getString(R.string.status_hole_support_invalid);
+            case NativeViewport.CAD_HOLE_NO_EFFECT:
+                return context.getString(R.string.status_hole_no_effect);
+            case NativeViewport.CAD_TOO_MANY_HOLES:
+                return context.getString(R.string.status_hole_too_many);
+            case NativeViewport.CAD_HOLE_NOT_FOUND:
+                return context.getString(R.string.status_hole_not_found);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));

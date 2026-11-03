@@ -3432,6 +3432,16 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         final long bodyId = NativeViewport.sceneActiveBodyId();
+        if (row.isHole()) {
+            // A hole has no sketch: its editor is the canvas one, over where
+            // it is drilled, with Delete beside Apply.
+            setFeatureHistoryOpen(false);
+            if (!cadExtrudeCanvas.beginHoleEdit(bodyId, row.id)) {
+                showStatus(CadStatusMessages.describe(context, NativeViewport.CAD_HOLE_NOT_FOUND),
+                        R.attr.fsTextError);
+            }
+            return;
+        }
         if (row.isPattern()) {
             // A pattern has no sketch either: its editor is the canvas one,
             // over the first feature it repeats, with Delete beside Apply.
@@ -4360,6 +4370,38 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onCanvasPatternFieldRefused(String message) {
         showStatus(message, R.attr.fsTextError);
+    }
+
+    @Override
+    public boolean onCanvasHoleApply(long bodyId, long holeId, HoleEditorPanel.Request request) {
+        final Context context = getContext();
+        final int status = NativeViewport.cadHoleApply(bodyId, holeId, request.kind,
+                request.diameter, request.throughAll, request.depth, request.boreDiameter,
+                request.boreDepth, request.sinkDiameter, request.sinkAngle, request.u, request.v);
+        if (status != NativeViewport.CAD_OK) {
+            // The editor stays open with every value the user typed, so the
+            // refusal can be fixed rather than retyped.
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return false;
+        }
+        onNativeStateChanged();
+        final String kind = context.getString(HolePresentation.kindName(request.kind));
+        showStatus(context.getString(holeId > 0L ? R.string.status_hole_edited
+                : R.string.status_hole_applied, kind), R.attr.fsTextSecondary);
+        return true;
+    }
+
+    @Override
+    public boolean onCanvasHoleDelete(long bodyId, long holeId) {
+        final Context context = getContext();
+        final int status = NativeViewport.cadHoleDelete(bodyId, holeId);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return false;
+        }
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_hole_deleted), R.attr.fsTextSecondary);
+        return true;
     }
 
     /**

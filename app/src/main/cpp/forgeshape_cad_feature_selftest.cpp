@@ -24,6 +24,7 @@
 #include "forgeshape_cad_edge_finish_selftest.h"
 #include "forgeshape_sketch_knife_undo_selftest.h"
 #include "forgeshape_cad_pattern_selftest.h"
+#include "forgeshape_cad_hole_selftest.h"
 #include "forgeshape_cad_revolve_selftest.h"
 #include "forgeshape_cad_timeline_selftest.h"
 #include "forgeshape_sketch_drafting_selftest.h"
@@ -5846,6 +5847,15 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + patternPerformance;
+    // Holes (`CAD-HOLE-R1`): Simple, Counterbore and Countersink, blind and
+    // Through All.
+    std::vector<ArrangementSelfTestCheck> holes;
+    std::string holePerformance;
+    runCadHoleSelfTests(&holes, &holePerformance);
+    for (const ArrangementSelfTestCheck& check : holes) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + holePerformance;
     // Sketch ergonomics (`SKETCH-KNIFE-UNDO-R1`): push-through to Cut, the
     // staged sketch's own Undo / Redo, and the knife.
     std::vector<ArrangementSelfTestCheck> knifeUndo;

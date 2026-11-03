@@ -701,6 +701,78 @@ bool sameCadFeaturePattern(const CadFeaturePattern& a, const CadFeaturePattern& 
 // The instance count of a pattern, the original included.
 uint32_t cadPatternInstanceCount(const CadFeaturePattern& pattern);
 
+// ---------------------------------------------------------------------------
+// Holes (`CAD-HOLE-R1`)
+// ---------------------------------------------------------------------------
+//
+// A hole is drilled INTO a planar face of one of the body's features, at a
+// point of that face, along the face's inward normal. Its truth is the face it
+// stands on (`CadFeatureSupport`: feature id, face token, lineage -- the very
+// reference a later feature's sketch uses), the point in that face's own frame
+// and its numbers. The tool solid -- a cylinder with an optional counterbore
+// or countersink, at the circle's density -- is derived from those values and,
+// for Through All, from how far the body reaches below the face at that point
+// in the chain; it is applied as one kernel Difference and never stored.
+//
+// Holes take their place in the chain BY ID, exactly as patterns do, and their
+// triangles carry the hole's own INELIGIBLE face-table entry: a bore wall is
+// curved and a counterbore floor is not a feature face, so nothing stands on
+// either. Each kind has ONE canonical form: the fields it does not use are
+// exactly zero, and Through All stores no depth.
+
+enum class CadHoleKind : uint8_t {
+    Simple,
+    Counterbore,
+    Countersink,
+};
+
+constexpr int kCadHoleKindCount = 3;
+
+const char* cadHoleKindName(CadHoleKind kind);
+bool cadHoleKindFromIndex(int index, CadHoleKind* out);
+int cadHoleKindIndex(CadHoleKind kind);
+
+// Bounds, metres and degrees.
+constexpr double kMinHoleDiameter = 1.0e-4;
+constexpr double kMaxHoleDiameter = 100.0;
+constexpr double kMinHoleDepth = 1.0e-5;
+constexpr double kMaxHoleDepth = 1000.0;
+constexpr double kMaxHolePosition = 1000.0;
+constexpr double kMinCountersinkAngleDegrees = 30.0;
+constexpr double kMaxCountersinkAngleDegrees = 150.0;
+constexpr uint32_t kMaxCadHoles = 32;
+
+struct CadFeatureHole {
+    // Minted from `CadBodyState::nextFeatureId`: features, finishes, patterns
+    // and holes share one id space.
+    uint32_t holeId = 0;
+    CadHoleKind kind = CadHoleKind::Simple;
+    // The face the hole is drilled into, on a feature with a smaller id.
+    CadFeatureSupport support{};
+    // The hole's axis point in the face's own frame (`CadFeatureFace::frame`),
+    // metres along its `u` and `v`.
+    double u = 0.0;
+    double v = 0.0;
+    double diameter = 0.005;
+    // Through All: as deep as the body reaches below the face, derived at
+    // regeneration; then `depth` is exactly 0. Otherwise `depth` is the blind
+    // depth below the face.
+    bool throughAll = true;
+    double depth = 0.0;
+    // Counterbore only: the wider bore at the top and how deep it goes.
+    double boreDiameter = 0.0;
+    double boreDepth = 0.0;
+    // Countersink only: the cone's diameter at the face and its included angle.
+    double sinkDiameter = 0.0;
+    double sinkAngleDegrees = 0.0;
+};
+
+bool sameCadFeatureHole(const CadFeatureHole& a, const CadFeatureHole& b);
+
+// How deep a countersink's cone reaches below the face: the radial step over
+// the tangent of half the included angle. Zero for any other kind.
+double cadHoleCountersinkDepth(const CadFeatureHole& hole);
+
 // The whole authored truth of one CAD Body. Plain, copyable, comparable,
 // BOUNDED (the sketch caps its entities and every polyline's vertices, the
 // table caps its sketches and the chain caps its features), and carrying
@@ -746,6 +818,10 @@ struct CadBodyState {
     // strictly ascending by id and applied in the chain BY ID. Empty for every
     // body any earlier version created; a body with one is written `CADB` v10.
     std::vector<CadFeaturePattern> patterns;
+    // Holes drilled into the body's faces (`CAD-HOLE-R1`), strictly ascending
+    // by id and applied in the chain BY ID. Empty for every body any earlier
+    // version created; a body with one is written `CADB` v11.
+    std::vector<CadFeatureHole> holes;
 };
 
 // The record with `sketchId`, or null.
@@ -841,6 +917,18 @@ uint32_t appendCadFeaturePattern(CadBodyState* state, CadFeaturePattern pattern)
 
 // The pattern with `patternId`, or null.
 const CadFeaturePattern* findCadFeaturePattern(const CadBodyState& state, uint32_t patternId);
+
+// Whether the body carries a hole. Such a state round-trips only through
+// `CADB` v11, and is never legacy-representable.
+bool cadBodyStateUsesHoles(const CadBodyState& state);
+
+// Appends `hole` with its id minted from `nextFeatureId` (the field's own id
+// is ignored). Returns the id, or 0 with nothing added at kMaxCadHoles.
+// Validates nothing else.
+uint32_t appendCadFeatureHole(CadBodyState* state, CadFeatureHole hole);
+
+// The hole with `holeId`, or null.
+const CadFeatureHole* findCadFeatureHole(const CadBodyState& state, uint32_t holeId);
 
 // The number of features in the chain, the base included.
 inline uint32_t cadFeatureCount(const CadBodyState& state) {

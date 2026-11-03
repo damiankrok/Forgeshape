@@ -527,6 +527,16 @@ bool cadDocumentNeedsV8(const ProjectDocument& document) {
     return false;
 }
 
+// Whether any CAD body needs the v11 section (`CAD-HOLE-R1`): a hole.
+bool cadDocumentNeedsV11(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (cadBodyStateUsesHoles(body.state)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Whether any CAD body needs the v10 section (`CAD-PATTERN-R1`): a pattern.
 bool cadDocumentNeedsV10(const ProjectDocument& document) {
     for (const ProjectCadBody& body : document.cad.bodies) {
@@ -1382,6 +1392,15 @@ bool cadPatternKindFromFileCode(uint8_t code, CadPatternKind* out) {
     return code >= 1u && cadPatternKindFromIndex(static_cast<int>(code) - 1, out);
 }
 
+// §7n: 1 Simple, 2 Counterbore, 3 Countersink.
+uint8_t cadHoleKindFileCode(CadHoleKind kind) {
+    return static_cast<uint8_t>(cadHoleKindIndex(kind) + 1);
+}
+
+bool cadHoleKindFromFileCode(uint8_t code, CadHoleKind* out) {
+    return code >= 1u && cadHoleKindFromIndex(static_cast<int>(code) - 1, out);
+}
+
 uint8_t cadBodyAxisFileCode(CadBodyAxis axis) {
     return static_cast<uint8_t>(cadBodyAxisIndex(axis) + 1);
 }
@@ -1403,7 +1422,7 @@ bool cadEdgeFinishKindFromFileCode(uint8_t code, CadEdgeFinishKind* out) {
 }
 
 void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKinds,
-                    bool drafting, bool finishes, bool patterns) {
+                    bool drafting, bool finishes, bool patterns, bool holes) {
     const CadBodyState& state = body.state;
     out.u64(body.objectId);
     out.u32(state.nextSketchId);
@@ -1498,6 +1517,24 @@ void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKin
             out.f64(pattern.center[1]);
             out.f64(pattern.center[2]);
             out.f64(pattern.offset);
+        }
+    }
+    if (holes) {
+        // §7n: the body's holes, ascending by id.
+        out.u32(static_cast<uint32_t>(state.holes.size()));
+        for (const CadFeatureHole& hole : state.holes) {
+            out.u32(hole.holeId);
+            out.u8(cadHoleKindFileCode(hole.kind));
+            writeCadFeatureSupportV6(out, hole.support);
+            out.f64(hole.u);
+            out.f64(hole.v);
+            out.f64(hole.diameter);
+            out.u8(hole.throughAll ? 1u : 0u);
+            out.f64(hole.depth);
+            out.f64(hole.boreDiameter);
+            out.f64(hole.boreDepth);
+            out.f64(hole.sinkDiameter);
+            out.f64(hole.sinkAngleDegrees);
         }
     }
 }
@@ -1614,7 +1651,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
 
     // The section is written at the LOWEST version that can carry it, so every
     // project that predates a feature keeps the bytes it always had.
-    const bool cadV10 = document.hasCad && cadDocumentNeedsV10(document);
+    const bool cadV11 = document.hasCad && cadDocumentNeedsV11(document);
+    const bool cadV10 = document.hasCad && (cadV11 || cadDocumentNeedsV10(document));
     const bool cadV9 = document.hasCad && (cadV10 || cadDocumentNeedsV9(document));
     const bool cadV8 = document.hasCad && (cadV9 || cadDocumentNeedsV8(document));
     const bool cadV7 = document.hasCad && (cadV8 || cadDocumentNeedsV7(document));
@@ -1633,7 +1671,7 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
                 // table replaces the inline sketches outright. v7 (§7h) is that
                 // layout with a kind after every feature id.
                 writeCadBodyV6(out, body, /*featureKinds=*/cadV7, /*drafting=*/cadV8,
-                               /*finishes=*/cadV9, /*patterns=*/cadV10);
+                               /*finishes=*/cadV9, /*patterns=*/cadV10, /*holes=*/cadV11);
                 continue;
             }
             const CadBodyState& state = body.state;
@@ -1786,7 +1824,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
         appendSection(file, kSectionTagCad,
-                      cadV10  ? kCadSectionVersionV10
+                      cadV11  ? kCadSectionVersionV11
+                      : cadV10 ? kCadSectionVersionV10
                       : cadV9 ? kCadSectionVersionV9
                       : cadV8 ? kCadSectionVersionV8
                       : cadV7 ? kCadSectionVersionV7
@@ -2469,7 +2508,7 @@ ProjectCodecStatus readCadSelectionV6(ByteReader& in, ExtrudeFeature* extrude) {
 // Structure and file codes here; every relation between the parts --
 // ids, order, references, placements, selections -- is `validateCadBodyState`'s.
 ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool featureKinds,
-                                   bool drafting, bool finishes, bool patterns) {
+                                   bool drafting, bool finishes, bool patterns, bool holes) {
     CadBodyState& state = body->state;
     uint32_t sketchCount = 0;
     if (!in.u64(&body->objectId) || !in.u32(&state.nextSketchId)
@@ -2745,13 +2784,49 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
             pattern.reversed2 = reversed2 == 1u;
         }
     }
+    if (holes) {
+        uint32_t holeCount = 0;
+        if (!in.u32(&holeCount)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        // As for patterns: one body of several may carry none, and a whole
+        // section without a hole is refused below.
+        if (holeCount > kMaxCadHoles) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        state.holes.assign(holeCount, CadFeatureHole{});
+        for (CadFeatureHole& hole : state.holes) {
+            uint8_t kindCode = 0;
+            if (!in.u32(&hole.holeId) || !in.u8(&kindCode) || !in.u32(&hole.support.featureId)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            if (!cadHoleKindFromFileCode(kindCode, &hole.kind)) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            const ProjectCodecStatus faceWhy = readCadFaceTokenV6(in, &hole.support.face);
+            if (faceWhy != ProjectCodecStatus::Ok) {
+                return faceWhy;
+            }
+            uint8_t through = 0;
+            if (!in.u64(&hole.support.lineageToken) || !in.f64(&hole.u) || !in.f64(&hole.v)
+                || !in.f64(&hole.diameter) || !in.u8(&through) || !in.f64(&hole.depth)
+                || !in.f64(&hole.boreDiameter) || !in.f64(&hole.boreDepth)
+                || !in.f64(&hole.sinkDiameter) || !in.f64(&hole.sinkAngleDegrees)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            if (through > 1u) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            hole.throughAll = through == 1u;
+        }
+    }
     return ProjectCodecStatus::Ok;
 }
 
 ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, uint16_t version) {
     if (version == kCadSectionVersionV6 || version == kCadSectionVersionV7
         || version == kCadSectionVersionV8 || version == kCadSectionVersionV9
-        || version == kCadSectionVersionV10) {
+        || version == kCadSectionVersionV10 || version == kCadSectionVersionV11) {
         uint32_t bodyCount = 0;
         if (!in.u32(&bodyCount)) {
             return ProjectCodecStatus::Truncated;
@@ -2772,19 +2847,30 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
                     decodeCadBodyV6(in, &body, /*featureKinds=*/version >= kCadSectionVersionV7,
                                     /*drafting=*/version >= kCadSectionVersionV8,
                                     /*finishes=*/version >= kCadSectionVersionV9,
-                                    /*patterns=*/version >= kCadSectionVersionV10);
+                                    /*patterns=*/version >= kCadSectionVersionV10,
+                                    /*holes=*/version >= kCadSectionVersionV11);
             if (why != ProjectCodecStatus::Ok) {
                 return why;
             }
         }
         // A v10 section exists only for a pattern: one with none anywhere is
         // a second encoding of a v9 (or lower) section.
-        if (version >= kCadSectionVersionV10) {
+        if (version == kCadSectionVersionV10) {
             bool anyPattern = false;
             for (const ProjectCadBody& body : record->bodies) {
                 anyPattern = anyPattern || !body.state.patterns.empty();
             }
             if (!anyPattern) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+        }
+        // And a v11 section exists only for a hole (`CAD-HOLE-R1`).
+        if (version >= kCadSectionVersionV11) {
+            bool anyHole = false;
+            for (const ProjectCadBody& body : record->bodies) {
+                anyHole = anyHole || !body.state.holes.empty();
+            }
+            if (!anyHole) {
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
         }
@@ -3077,7 +3163,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
                         || sectionVersion == kCadSectionVersionV7
                         || sectionVersion == kCadSectionVersionV8
                         || sectionVersion == kCadSectionVersionV9
-                        || sectionVersion == kCadSectionVersionV10;
+                        || sectionVersion == kCadSectionVersionV10
+                        || sectionVersion == kCadSectionVersionV11;
         } else if (isScene) {
             // SCNE became the second multi-version section at Stage 018A: v1 as
             // every build before it wrote, and v2 carrying per-body visibility,

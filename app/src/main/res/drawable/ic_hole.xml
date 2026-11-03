@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hole: a part seen from the side, cut open, with a bore drilled down through
+  it and the drill's centre line above it. The section is what tells a hole
+  from a Pattern's circles and a Cut's pocket.
+
+  Drawn white and tinted at use; see EditorControlStyles.icon().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- The part's section, either side of the bore. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillAlpha="0.55"
+        android:pathData="M2,10 h7 v11 h-7 Z M15,10 h7 v11 h-7 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineJoin="round"
+        android:pathData="M2,10 h7 v11 M15,21 v-11 h7" />
+    <!-- The axis the hole is drilled along. -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:pathData="M12,2.5 v2.5 M12,7 v2.5 M12,11.5 v2.5 M12,16 v2.5" />
+</vector>

@@ -108,6 +108,16 @@ final class FeatureHistoryPresentation {
             return kind == NativeViewport.TIMELINE_KIND_PATTERN;
         }
 
+        /** A hole (`CAD-HOLE-R1`). */
+        boolean isHole() {
+            return kind == NativeViewport.TIMELINE_KIND_HOLE;
+        }
+
+        /** A hole row drills through the whole part (the regions slot carries it). */
+        boolean holeThroughAll() {
+            return edges != 0;
+        }
+
         /** A pattern row's instance count (the regions slot carries it). */
         int patternInstances() {
             return edges;

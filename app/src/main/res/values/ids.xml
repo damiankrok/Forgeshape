@@ -648,4 +648,22 @@
     <item name="apply_pattern" type="id" />
     <item name="delete_pattern" type="id" />
     <item name="cancel_pattern" type="id" />
+    <item name="cad_canvas_hole" type="id" />
+    <item name="cad_canvas_hole_editor" type="id" />
+    <item name="hole_kind_simple" type="id" />
+    <item name="hole_kind_counterbore" type="id" />
+    <item name="hole_kind_countersink" type="id" />
+    <item name="hole_through_all" type="id" />
+    <item name="hole_blind" type="id" />
+    <item name="field_hole_diameter" type="id" />
+    <item name="field_hole_depth" type="id" />
+    <item name="field_hole_bore_diameter" type="id" />
+    <item name="field_hole_bore_depth" type="id" />
+    <item name="field_hole_sink_diameter" type="id" />
+    <item name="field_hole_sink_angle" type="id" />
+    <item name="field_hole_u" type="id" />
+    <item name="field_hole_v" type="id" />
+    <item name="apply_hole" type="id" />
+    <item name="delete_hole" type="id" />
+    <item name="cancel_hole" type="id" />
 </resources>

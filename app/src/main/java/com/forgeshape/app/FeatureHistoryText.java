@@ -28,6 +28,10 @@ final class FeatureHistoryText {
             return context.getString(R.string.history_row_pattern, row.ordinal,
                     context.getString(PatternPresentation.kindName(row.operation)));
         }
+        if (row.isHole()) {
+            return context.getString(R.string.history_row_hole, row.ordinal,
+                    context.getString(HolePresentation.kindName(row.operation)));
+        }
         if (row.domain == FeatureHistoryPresentation.DOMAIN_SURFACE) {
             // A Surface feature is named by its kind and its own id, the way
             // the Surface surface's Thicken buttons and the issue text name it.
@@ -68,6 +72,13 @@ final class FeatureHistoryText {
         }
         if (row.isPattern()) {
             return context.getString(R.string.history_detail_pattern, row.patternInstances());
+        }
+        if (row.isHole()) {
+            return row.holeThroughAll()
+                    ? context.getString(R.string.history_detail_hole_through,
+                            unit.formatWithUnit(row.positive))
+                    : context.getString(R.string.history_detail_hole_blind,
+                            unit.formatWithUnit(row.positive), unit.formatWithUnit(row.negative));
         }
         if (row.isSketch()) {
             if (row.onBodyFace || row.onFeatureFace) {
