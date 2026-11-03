@@ -49,4 +49,21 @@ final class MassPresentation {
                 unit.formatWithUnit(mass[NativeViewport.MASS_CENTROID_X + 2]),
                 formatMass(volume * density));
     }
+
+    /**
+     * The Measure distance reading (`CAD-MEASURE-R1`): how many of the two
+     * points are picked, then the distance and its world-axis components in
+     * the display unit.
+     */
+    static String describeDistance(Context context, LengthUnit unit, double[] measure) {
+        final int count = (int) measure[NativeViewport.MEASURE_COUNT];
+        if (count < 2) {
+            return context.getString(R.string.measure_distance_points, count);
+        }
+        return context.getString(R.string.measure_distance_result,
+                unit.formatWithUnit(measure[NativeViewport.MEASURE_DISTANCE]),
+                unit.formatWithUnit(measure[NativeViewport.MEASURE_DX]),
+                unit.formatWithUnit(measure[NativeViewport.MEASURE_DX + 1]),
+                unit.formatWithUnit(measure[NativeViewport.MEASURE_DX + 2]));
+    }
 }

@@ -629,6 +629,11 @@ final class EditorWorkspaceView extends FrameLayout
                                 }
                                 freeformEditor.refreshFromNative();
                             }
+                            // A tap while measuring picked a point: the
+                            // reading is all that moved (`CAD-MEASURE-R1`).
+                            if (NativeViewport.measureActive()) {
+                                cadEditor.refreshMeasureDistance();
+                            }
                             NativeViewport.gizmoState(nativeGizmo);
                             final long commits =
                                     (long) nativeGizmo[NativeViewport.GIZMO_COMMITTED_DRAGS];

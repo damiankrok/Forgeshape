@@ -64,6 +64,7 @@
 #include "forgeshape_cad_hole.h"
 #include "forgeshape_cad_from_primitive.h"
 #include "forgeshape_mass_properties.h"
+#include "forgeshape_measure.h"
 #include "forgeshape_cad_extrude_tool.h"
 #include "forgeshape_cad_feature.h"
 #include "forgeshape_cad_sketch_inventory.h"
@@ -326,6 +327,14 @@ forgeshape::ChosenSupport g_faceSketchOffer;
 float g_faceSketchOfferU = 0.0f;
 float g_faceSketchOfferV = 0.0f;
 
+// Measure distance (`CAD-MEASURE-R1`): while on, an ordinary Construction tap
+// on a drawn surface picks a measured point instead of selecting or offering
+// anything. Session presentation, never project truth: no `.forge` byte, no
+// history step, no fingerprint. Cleared by turning it off and by a load or a
+// close. Guarded by g_stateMutex.
+bool g_measureActive = false;
+forgeshape::MeasureState g_measure;
+
 // The Chamfer / Fillet offer (`CAD-EDGE-FINISH-R1`): the straight edge an
 // ordinary Construction tap landed beside, or every finishable edge of the
 // planar face it landed on. Session presentation on the face offer's terms --
@@ -378,6 +387,19 @@ constexpr float kEdgePickPixels = 36.0f;
 // Whether the offer may be shown or acted on now, its body and its edges
 // resolved against the body AS IT IS NOW. A stale offer is dropped. The caller
 // holds g_stateMutex.
+// Whether Measure owns the Construction tap now: on, over an open project,
+// and no mode that owns the viewport (a sketch, the chooser, Sculpt, a cage
+// edit) running. The caller holds g_stateMutex.
+bool measureLiveLocked() {
+    if (!g_measureActive) {
+        return false;
+    }
+    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    return scene.hasProject() && !forgeshape::sculptSession().inSculptMode()
+           && !forgeshape::sketchSession().active() && !forgeshape::supportChooser().active()
+           && !forgeshape::freeformEditSession().active();
+}
+
 bool edgeFinishOfferLiveLocked(const forgeshape::CadBody** outBody,
                                std::vector<forgeshape::CadFeatureEdge>* outEdges,
                                forgeshape::Mat4* outModel) {
@@ -2343,6 +2365,16 @@ void renderThreadMain() {
                         forgeshape::SketchOverlayPtr edgeHighlight;
                         if (!session.active()) {
                             edgeHighlight = edgeFinishOfferOverlayLocked();
+                        }
+                        // ...or a measurement's points and line (`CAD-MEASURE-R1`),
+                        // its crosses 14 px across at the first point's depth.
+                        if (!edgeHighlight && measureLiveLocked() && g_measure.count > 0) {
+                            float metersPerPixel = 0.0f;
+                            forgeshape::worldMetersPerPixel(g_camera.snapshot(), g_measure.a,
+                                                            g_camera.viewportHeight(),
+                                                            &metersPerPixel);
+                            edgeHighlight = forgeshape::measureOverlay(g_measure,
+                                                                      14.0f * metersPerPixel);
                         }
                         if (edgeHighlight) {
                             renderer.setSketchOverlay(edgeHighlight);
@@ -8206,6 +8238,83 @@ Java_com_forgeshape_app_NativeViewport_bodyMassProperties(JNIEnv* env, jclass, j
     return JNI_TRUE;
 }
 
+// Measure distance (`CAD-MEASURE-R1`). Turning it on withdraws the face and
+// edge offers, because the next tap belongs to the measurement; turning it off
+// forgets the points.
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_measureSetActive(JNIEnv*, jclass,
+                                                                              jboolean active) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    g_measureActive = active == JNI_TRUE;
+    g_measure = forgeshape::MeasureState{};
+    if (g_measureActive) {
+        g_faceSketchOffer = forgeshape::ChosenSupport{};
+        g_edgeFinishOffer = EdgeFinishOffer{};
+    }
+}
+
+// Whether Measure owns the Construction tap right now.
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_measureActive(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return measureLiveLocked() ? JNI_TRUE : JNI_FALSE;
+}
+
+// The measurement, into out[0..15]: [0] points picked (0..2); [1..3] the first
+// and [4..6] the second, world metres; [7] the distance; [8..10] dX, dY, dZ;
+// [11] / [12] 1 when the first / second point snapped to a corner; [13..14]
+// the screen point of the line's middle and [15] 1 when it projects. False
+// with nothing written while Measure does not own the tap.
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_measureState(JNIEnv* env, jclass,
+                                                                              jdoubleArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 16) {
+        return JNI_FALSE;
+    }
+    jdouble v[16] = {};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (!measureLiveLocked()) {
+            return JNI_FALSE;
+        }
+        const forgeshape::MeasureResult result = forgeshape::measureResult(g_measure);
+        v[0] = g_measure.count;
+        v[1] = g_measure.a.x;
+        v[2] = g_measure.a.y;
+        v[3] = g_measure.a.z;
+        v[4] = g_measure.b.x;
+        v[5] = g_measure.b.y;
+        v[6] = g_measure.b.z;
+        v[7] = result.distance;
+        v[8] = result.dx;
+        v[9] = result.dy;
+        v[10] = result.dz;
+        v[11] = g_measure.snappedA ? 1.0 : 0.0;
+        v[12] = g_measure.snappedB ? 1.0 : 0.0;
+        if (result.complete) {
+            const forgeshape::Vec3 mid = forgeshape::vec3Scale(
+                    forgeshape::vec3Add(g_measure.a, g_measure.b), 0.5f);
+            float sx = 0.0f;
+            float sy = 0.0f;
+            if (forgeshape::projectWorldToScreen(g_camera.snapshot(), mid, g_camera.viewportWidth(),
+                                                 g_camera.viewportHeight(), &sx, &sy)) {
+                v[13] = sx;
+                v[14] = sy;
+                v[15] = 1.0;
+            }
+        }
+    }
+    env->SetDoubleArrayRegion(out, 0, 16, v);
+    return JNI_TRUE;
+}
+
+// Debug: records a measured point as a tap would, without a camera. Test seam.
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_debugMeasureRecord(
+    JNIEnv*, jclass, jdouble x, jdouble y, jdouble z) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::measureRecordPoint(&g_measure,
+                                   forgeshape::Vec3{static_cast<float>(x), static_cast<float>(y),
+                                                    static_cast<float>(z)},
+                                   false);
+}
+
 // ---------------------------------------------------------------------------
 // A construction plane off a face (`CAD-PLANE-R1`)
 // ---------------------------------------------------------------------------
@@ -10106,6 +10215,8 @@ Java_com_forgeshape_app_NativeViewport_loadProject(JNIEnv* env, jclass, jbyteArr
         }
         g_faceSketchOffer = forgeshape::ChosenSupport{};
         g_edgeFinishOffer = EdgeFinishOffer{};
+        g_measureActive = false;
+        g_measure = forgeshape::MeasureState{};
         g_holeDraft = HoleDraft{};
         status = forgeshape::loadProjectDocument(document, forgeshape::constructionScene(),
                                                  forgeshape::sculptSession(),
@@ -10621,6 +10732,8 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_closeProject(JNIEn
         g_faceSketchOffer = forgeshape::ChosenSupport{};
         g_edgeFinishOffer = EdgeFinishOffer{};
         g_holeDraft = HoleDraft{};
+        g_measureActive = false;
+        g_measure = forgeshape::MeasureState{};
         forgeshape::constructionHistory().clear();
         scene.closeProject();
     }
@@ -11813,7 +11926,32 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 tapResolved = false;
                 tapRefusedInSculpt = true;
             }
-            if (tapResolved && viewWidth > 0 && viewHeight > 0) {
+            if (tapResolved && viewWidth > 0 && viewHeight > 0 && measureLiveLocked()) {
+                // Measure owns the tap (`CAD-MEASURE-R1`): the point it lands
+                // on -- snapped to the hit triangle's nearest corner on screen
+                // -- is measured, and neither the selection, the active body
+                // nor any offer changes, so the surface showing the result
+                // stays the one the user opened.
+                hit = forgeshape::pickScene(g_camera.snapshot(), tapX, tapY, viewWidth, viewHeight);
+                if (hit.hit) {
+                    forgeshape::Vec3 point = hit.position;
+                    bool snapped = false;
+                    for (const forgeshape::SceneDrawItem& item : forgeshape::viewSceneSnapshot()) {
+                        if (item.objectId == hit.objectId && item.mesh) {
+                            point = forgeshape::measureSnapPoint(
+                                    g_camera.snapshot(), viewWidth, viewHeight, tapX, tapY, *item.mesh,
+                                    item.model, hit.triangleIndex, hit.position, &snapped);
+                            break;
+                        }
+                    }
+                    forgeshape::measureRecordPoint(&g_measure, point, snapped);
+                    FS_LOGI("FORGESHAPE_MEASURE_POINT count=%d snapped=%d", g_measure.count,
+                            snapped ? 1 : 0);
+                }
+                g_faceSketchOffer = forgeshape::ChosenSupport{};
+                g_edgeFinishOffer = EdgeFinishOffer{};
+                tapResolved = false;
+            } else if (tapResolved && viewWidth > 0 && viewHeight > 0) {
                 // Picking uses the camera snapshot as it stands at release, so a
                 // tap after any amount of navigation resolves against what is on
                 // screen right now — and against the ACTIVE representation,

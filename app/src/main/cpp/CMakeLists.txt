@@ -101,6 +101,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_mesh.cpp
     forgeshape_mass_properties.cpp
     forgeshape_cad_from_primitive.cpp
+    forgeshape_measure.cpp
     forgeshape_mesh_fixtures.cpp
     forgeshape_picking.cpp
     forgeshape_project_bootstrap.cpp

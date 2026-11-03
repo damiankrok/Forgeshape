@@ -106,7 +106,10 @@ final class NumericPropertyRow extends LinearLayout {
         // over — a negative coordinate or angle is an ordinary value that must
         // be typeable, and a negative dimension must be typeable so it can be
         // visibly refused rather than unreachable.
-        field.setKeyListener(DigitsKeyListener.getInstance("0123456789.,-"));
+        // The operators and parentheses are accepted too, so a sum typed on a
+        // hardware keyboard or pasted (40+2.5, 120/3) reads through
+        // LengthUnit.parse's arithmetic rather than being filtered away.
+        field.setKeyListener(DigitsKeyListener.getInstance("0123456789.,-+*/()"));
         field.setRawInputType(InputType.TYPE_CLASS_NUMBER
                 | InputType.TYPE_NUMBER_FLAG_DECIMAL
                 | InputType.TYPE_NUMBER_FLAG_SIGNED);

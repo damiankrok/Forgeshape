@@ -135,12 +135,22 @@ enum LengthUnit {
      * {@link BigDecimal} does not accept) raise {@link NumberFormatException};
      * this method does not judge whether the number is a usable dimension, which
      * is the caller's and ultimately native code's decision.
+     *
+     * <p>Text that is not a plain number is read as arithmetic -- {@code 40+2.5},
+     * {@code 120/3}, {@code (10-4)*2} -- by the one safe reader the drafting
+     * fields already use ({@link ExactExpression}), so every numeric field takes
+     * a sum the way a desktop CAD field does. A plain number never reaches it,
+     * so it reads exactly as it always did.
      */
     static BigDecimal parse(String raw) {
         final String text = raw == null ? "" : raw.trim().replace(',', '.');
         if (text.isEmpty()) {
             throw new NumberFormatException("blank");
         }
-        return new BigDecimal(text);
+        try {
+            return new BigDecimal(text);
+        } catch (NumberFormatException notPlain) {
+            return ExactExpression.parse(text);
+        }
     }
 }

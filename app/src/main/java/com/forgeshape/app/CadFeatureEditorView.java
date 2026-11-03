@@ -68,6 +68,10 @@ final class CadFeatureEditorView extends LinearLayout
 
     private final TextView measureText;
     private final NumericPropertyRow densityField;
+    /** `CAD-MEASURE-R1`: the Measure distance toggle and its reading. */
+    private final TextView measureDistance;
+    private final TextView measureDistanceText;
+    private final double[] nativeMeasure = new double[NativeViewport.MEASURE_SIZE];
     /** kg/m³; presentation only, session-scoped, the density of water to start. */
     private double density = MassPresentation.DEFAULT_DENSITY;
 
@@ -179,6 +183,22 @@ final class CadFeatureEditorView extends LinearLayout
         final LinearLayout.LayoutParams recomputeParams = EditorControlStyles.rowParams(smallGap);
         recomputeParams.width = LayoutParams.MATCH_PARENT;
         addView(recompute, recomputeParams);
+        // Measure distance (`CAD-MEASURE-R1`): while on, two taps on the model
+        // are measured; the reading is presentation and reaches no file.
+        measureDistance = EditorControlStyles.secondaryActionChip(context, R.id.measure_distance,
+                context.getString(R.string.measure_distance));
+        measureDistance.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                NativeViewport.measureSetActive(!NativeViewport.measureActive());
+                refreshMeasureDistance();
+            }
+        });
+        final LinearLayout.LayoutParams measureParams = EditorControlStyles.rowParams(gap);
+        measureParams.width = LayoutParams.MATCH_PARENT;
+        addView(measureDistance, measureParams);
+        measureDistanceText = EditorControlStyles.titleText(context, R.id.measure_distance_result, "");
+        addView(measureDistanceText, EditorControlStyles.rowParams(smallGap));
 
         addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.unit_selector)),
                 EditorControlStyles.rowParams(sectionGap));
@@ -221,8 +241,42 @@ final class CadFeatureEditorView extends LinearLayout
         return apply;
     }
 
+    /**
+     * Measure owns the model's taps only while its reading can be seen: a panel
+     * that closes, or a part that stops being shown here, turns it off, so a
+     * tap never measures behind the user's back.
+     */
+    @Override
+    public void onVisibilityAggregated(boolean isVisible) {
+        super.onVisibilityAggregated(isVisible);
+        if (!isVisible && NativeViewport.measureActive()) {
+            NativeViewport.measureSetActive(false);
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        if (NativeViewport.measureActive()) {
+            NativeViewport.measureSetActive(false);
+        }
+        super.onDetachedFromWindow();
+    }
+
+    /** The Measure distance toggle and reading, from native. */
+    void refreshMeasureDistance() {
+        final boolean on = NativeViewport.measureState(nativeMeasure);
+        EditorControlStyles.setChipActive(measureDistance, on);
+        measureDistance.setText(on ? R.string.measure_distance_stop : R.string.measure_distance);
+        measureDistanceText.setVisibility(on ? VISIBLE : GONE);
+        if (on) {
+            measureDistanceText.setText(MassPresentation.describeDistance(getContext(),
+                    host.uiState().displayUnit(), nativeMeasure));
+        }
+    }
+
     /** The Measure section's text, from the active body's mesh. */
     private void refreshMeasure() {
+        refreshMeasureDistance();
         final double[] mass = new double[NativeViewport.MASS_SIZE];
         final long body = NativeViewport.sceneActiveBodyId();
         if (body <= 0L || !NativeViewport.bodyMassProperties(body, mass)) {

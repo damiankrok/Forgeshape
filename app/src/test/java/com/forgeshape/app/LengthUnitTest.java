@@ -88,6 +88,16 @@ public final class LengthUnitTest {
     }
 
     @Test
+    public void readsArithmeticTheWayADesktopCadFieldDoes() {
+        assertEquals(0, new BigDecimal("42.5").compareTo(LengthUnit.parse("40+2.5")));
+        assertEquals(0, new BigDecimal("40").compareTo(LengthUnit.parse("120/3")));
+        assertEquals(0, new BigDecimal("12").compareTo(LengthUnit.parse(" (10-4)*2 ")));
+        assertEquals(0, new BigDecimal("2.5").compareTo(LengthUnit.parse("5,0/2")));
+        assertEquals("a plain number reads as it always did", new BigDecimal("1E+3"),
+                LengthUnit.parse("1E3"));
+    }
+
+    @Test
     public void refusesTextThatIsNotANumber() {
         final String[] rejected = {"", "   ", "abc", "1.2.3", "NaN", "Infinity", "-"};
         for (String text : rejected) {

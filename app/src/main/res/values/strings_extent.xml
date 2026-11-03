@@ -39,4 +39,8 @@
     <string name="status_primitive_not_convertible">Only a box, a cylinder, a sphere or a cone that has not been sculpted can become a CAD part.</string>
     <string name="status_cad_intersect_removes_body">The extrusion shares no material with the part, so Intersect would leave nothing.</string>
     <string name="status_cad_intersect_no_effect">The extrusion holds the whole part, so Intersect would change nothing.</string>
+    <string name="measure_distance">Measure distance</string>
+    <string name="measure_distance_stop">Stop measuring</string>
+    <string name="measure_distance_points">Points %1$d of 2</string>
+    <string name="measure_distance_result">Distance %1$s\nΔX %2$s · ΔY %3$s · ΔZ %4$s</string>
 </resources>

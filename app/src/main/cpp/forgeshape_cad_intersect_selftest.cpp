@@ -1,5 +1,7 @@
 #include "forgeshape_cad_intersect_selftest.h"
 
+#include "forgeshape_measure.h"
+
 #include "forgeshape_mass_properties.h"
 
 #include "forgeshape_cad_hole.h"
@@ -513,6 +515,62 @@ void runCadIntersectSelfTests(std::vector<ArrangementSelfTestCheck>* out, std::s
                 world && !w.sketch.operationAvailable(CadFeatureOperation::Intersect)
                         && w.sketch.setOperation(CadFeatureOperation::Intersect)
                                    != CadStatus::Ok);
+    }
+    // --- MS_01..03: measuring a distance (`CAD-MEASURE-R1`) -----------------------
+    {
+        MeasureState m;
+        const bool none = !measureResult(m).complete;
+        measureRecordPoint(&m, Vec3{1.0f, 2.0f, 3.0f}, true);
+        const bool one = m.count == 1 && !measureResult(m).complete && m.snappedA;
+        measureRecordPoint(&m, Vec3{4.0f, 6.0f, 3.0f}, false);
+        const MeasureResult two = measureResult(m);
+        r.check("MS_01_two_points_measure_the_distance_and_its_components",
+                none && one && m.count == 2 && two.complete && near(two.distance, 5.0, 1e-9)
+                        && near(two.dx, 3.0, 1e-9) && near(two.dy, 4.0, 1e-9) && two.dz == 0.0);
+        measureRecordPoint(&m, Vec3{0.0f, 0.0f, 0.0f}, false);
+        r.check("MS_01_a_third_point_starts_a_new_measurement",
+                m.count == 1 && !measureResult(m).complete && m.a.x == 0.0f && !m.snappedA);
+        // The overlay: a cross per point and the line between them.
+        MeasureState both;
+        measureRecordPoint(&both, Vec3{0.0f, 0.0f, 0.0f}, false);
+        const size_t oneCross = measureOverlay(both, 0.1f)->vertices.size();
+        measureRecordPoint(&both, Vec3{1.0f, 0.0f, 0.0f}, false);
+        const SketchOverlayPtr drawn = measureOverlay(both, 0.1f);
+        r.check("MS_02_the_overlay_draws_each_point_and_the_line",
+                oneCross == 6u && drawn->vertices.size() == 14u && drawn->ranges.size() == 1u
+                        && drawn->revision != measureOverlay(MeasureState{}, 0.1f)->revision);
+        // A tap near a box corner snaps to it; one in the middle of a face does not.
+        CameraController camera;
+        camera.setViewport(1000, 1000);
+        camera.frameSketchView(Vec3{0.0f, 0.0f, 0.0f}, Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f},
+                               Vec3{0.0f, 0.0f, 1.0f});
+        const MeshVertex quad[4] = {{{-1.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, 0.0f},
+                                    {{1.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, 0.0f},
+                                    {{1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, 0.0f},
+                                    {{-1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, 0.0f}};
+        const uint32_t tris[6] = {0, 1, 2, 0, 2, 3};
+        MeshValidation validation;
+        const RuntimeMeshPtr mesh = createRuntimeMesh(1, 1, quad, 4, tris, 6, &validation, false);
+        float cx = 0.0f;
+        float cy = 0.0f;
+        const bool projected = projectWorldToScreen(camera.snapshot(), Vec3{1.0f, 1.0f, 0.0f}, 1000,
+                                                    1000, &cx, &cy);
+        bool snapped = false;
+        const Vec3 corner = mesh ? measureSnapPoint(camera.snapshot(), 1000, 1000, cx - 5.0f,
+                                                    cy + 5.0f, *mesh, mat4Identity(), 0,
+                                                    Vec3{0.99f, 0.99f, 0.0f}, &snapped)
+                                 : Vec3{};
+        bool centred = true;
+        float mx = 0.0f;
+        float my = 0.0f;
+        projectWorldToScreen(camera.snapshot(), Vec3{0.2f, -0.1f, 0.0f}, 1000, 1000, &mx, &my);
+        const Vec3 middle = mesh ? measureSnapPoint(camera.snapshot(), 1000, 1000, mx, my, *mesh,
+                                                    mat4Identity(), 0, Vec3{0.2f, -0.1f, 0.0f},
+                                                    &centred)
+                                 : Vec3{};
+        r.check("MS_03_a_tap_beside_a_corner_measures_the_corner_exactly",
+                projected && snapped && corner.x == 1.0f && corner.y == 1.0f && !centred
+                        && middle.x == 0.2f && middle.y == -0.1f);
     }
     if (performance != nullptr) {
         char line[96];

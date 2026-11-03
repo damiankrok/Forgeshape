@@ -670,6 +670,8 @@
     <item name="sketch_plane_section" type="id" />
     <item name="cad_mass_properties" type="id" />
     <item name="make_cad_part" type="id" />
+    <item name="measure_distance" type="id" />
+    <item name="measure_distance_result" type="id" />
     <item name="field_density" type="id" />
     <item name="apply_density" type="id" />
     <item name="field_sketch_plane_offset" type="id" />

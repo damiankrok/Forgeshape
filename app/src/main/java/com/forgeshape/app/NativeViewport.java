@@ -2610,6 +2610,33 @@ final class NativeViewport {
      */
     static native int sceneConvertToCadPart(long bodyId);
 
+    /**
+     * `CAD-MEASURE-R1`: while on, an ordinary tap on the model picks a measured
+     * point (snapped to a triangle corner near the finger) instead of selecting
+     * or offering anything. Turning it either way forgets the points.
+     */
+    static native void measureSetActive(boolean active);
+
+    /** Whether Measure owns the Construction tap right now. */
+    static native boolean measureActive();
+
+    /**
+     * The measurement into {@code out[MEASURE_SIZE]}; false while Measure does
+     * not own the tap. See the {@code MEASURE_*} slots.
+     */
+    static native boolean measureState(double[] out);
+
+    /** Test seam: records a measured point as a tap would. */
+    static native void debugMeasureRecord(double x, double y, double z);
+
+    static final int MEASURE_SIZE = 16;
+    /** Points picked, 0..2. */
+    static final int MEASURE_COUNT = 0;
+    /** The distance, metres, once both points are picked. */
+    static final int MEASURE_DISTANCE = 7;
+    /** dX, dY, dZ follow at +1, +2. */
+    static final int MEASURE_DX = 8;
+
     /** Whether the active body is a primitive with a CAD part, right now. */
     static native boolean sceneActiveHasCadPart();
 
