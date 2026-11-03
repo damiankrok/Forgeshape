@@ -911,6 +911,20 @@ stays a useful size, and a value you type is never nudged to it.
 Not yet: sketching on an imported or sculpted surface; a curved face as a
 sketch support; and moving a face-attached body on its own.
 
+## Revolving into a part
+
+**Revolve…** is offered for a sketch on a face of a CAD part as well: besides
+a new body, the precision surface's operation row offers **Add** and **Cut**,
+so a revolved shape — a groove, a ring, a round boss — joins or cuts the SAME
+part as one Undo step, and the History lists it as a Revolve. A part whose
+first shape was revolved still takes no later feature, and a Revolve is not
+repeated by a pattern.
+
+Verified on the emulator (`RevolveFeatureTest`, CI DEVICE `41721301856`): on
+a 2 × 2 × 1 m block's top, a full-turn Revolve of a circle about a line in the
+face offers Add and Cut, commits a Cut into the same part as one Undo step,
+the part's volume drops, and the History lists a Revolve.
+
 ## Cutting through the whole part
 
 When a sketch on a face of a CAD part is set to **Cut**, the extrude palette

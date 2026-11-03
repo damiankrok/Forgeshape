@@ -44,9 +44,17 @@ piece of stage 12 (Inspect).
   `41715271445` (`ToFaceTest` 2/2) success. Two earlier runs failed on the
   runner (no disk for the AVD; the system image did not install) before any
   test ran. Physical-device behaviour UNVERIFIED.
+- **A later Revolve Add or Cut** (`CAD-REVOLVE-FEATURE-R1`, product at
+  `053f7c7`): `CadFeature::kind` / `::revolve` (one payload per feature), the
+  session's Revolve offering Add and Cut on a part's face, the operation row
+  kept while revolving; `CADB` v15 (§7r). Host `RV_*` (whole suite
+  4704/4704); `CI FAST` `41718470300`; `CI DEVICE` `41721301856`
+  (`RevolveFeatureTest` 1/1; `41718489143` had `CadRevolveOwnerTest` and
+  `ToFaceTest` green beside a too-short circle drag in the new test, fixed).
 - **Not this stage:** To Face on a non-parallel face, To Object, a plane
   through three points or off a world plane, a reusable construction-plane
-  object, measuring between two picked points.
+  object, measuring between two picked points, a later feature on a revolved
+  part.
 
 **Previous stage:** `CAD-EDGE-FINISH-R2` + `CAD-UI-DOCK-R1` (record below, unchanged).
 **Latest stage:** **`CAD-EDGE-FINISH-R2` + `CAD-UI-DOCK-R1` — only outside
@@ -2507,8 +2515,9 @@ lives in Git history; only what still constrains the code is kept here.
 `SCULPT-UNDO-R0` (`ARCH-OWNER-12` — a dedicated bounded volatile per-body Sculpt
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
-**Next Stage:** `CAD-REVOLVE-FEATURE-R1` — a later Revolve Add or Cut (stage 8
-of `docs/FEATURE_PARITY_PLAN.md`), after the OWNER physical-device review of the
+**Next Stage:** `CAD-PRIMITIVES-R1` — ready-made CAD parts (box, cylinder,
+sphere, cone, torus, tube; stage 8 of `docs/FEATURE_PARITY_PLAN.md`), after the
+OWNER physical-device review of the
 `CAD-EXTENT-R1` + `CAD-UI-DOCK-R1` APK (Through All, holes, patterns, sketch
 Undo/Redo, the knife, push-through to Cut, Fillet/Chamfer on outside edges,
 the docked face actions); the Delete → Undo → Redo owner
