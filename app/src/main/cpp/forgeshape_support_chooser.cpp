@@ -23,6 +23,58 @@ SketchFrame frameOf(const Mat4& faceWorld) {
 
 }  // namespace
 
+bool resolveFaceSupportFromHit(const ConstructionScene& scene, const SceneHit& sceneHit,
+                               ChosenSupport* out) {
+    if (out == nullptr || !sceneHit.hit || sceneHit.triangleIndex < 0) {
+        return false;
+    }
+    const SceneObject* body = scene.findBody(sceneHit.objectId);
+    if (body == nullptr || body->cadOrNull() == nullptr) {
+        return false;
+    }
+    // The ranges of the mesh the body actually PUBLISHED -- its cached
+    // regeneration -- so a triangle index from the pick means the same
+    // triangle here, boolean result or prism. A rendered triangle is mapped
+    // to a semantic face; a curved side resolves but is not eligible.
+    std::vector<CadFaceRange> ranges;
+    std::shared_ptr<const CadBodyMesh> published;
+    if (body->cadOrNull()->regenerated(&published) != CadStatus::Ok
+        || cadFaceRangesFromMesh(*published, &ranges) != CadStatus::Ok) {
+        return false;
+    }
+    const uint32_t firstIndex = static_cast<uint32_t>(sceneHit.triangleIndex) * 3u;
+    for (const CadFaceRange& rg : ranges) {
+        if (firstIndex < rg.firstIndex || firstIndex >= rg.firstIndex + rg.indexCount) {
+            continue;
+        }
+        if (!rg.eligible) {
+            return false;  // a cylindrical side: not a valid support
+        }
+        CadFace face;
+        if (resolveCadFeatureFace(body->cadOrNull()->state(), rg.featureId, rg.token, &face)
+            != CadStatus::Ok) {
+            return false;
+        }
+        Mat4 producerModel;
+        if (!scene.resolveWorldModel(body->objectId(), &producerModel)) {
+            return false;
+        }
+        const Mat4 faceWorld = mat4Multiply(producerModel, cadFaceFrameMatrix(face));
+        ChosenSupport best;
+        best.kind = ChosenSupport::Kind::Face;
+        best.plane = Workplane::XY;
+        best.faceRef.producerObjectId = body->objectId();
+        best.faceRef.producerLocalFeatureId = rg.featureId;
+        best.faceRef.face = rg.token;
+        best.faceRef.lineageToken =
+                cadFeatureTopologySignature(body->cadOrNull()->state(), rg.featureId);
+        best.worldFrame = frameOf(faceWorld);
+        *out = best;
+        return true;
+    }
+    return false;
+}
+
 CadStatus refreshChosenSupport(const ConstructionScene& scene, const ChosenSupport& chosen,
                                ChosenSupport* out) {
     if (out == nullptr) {
@@ -135,6 +187,12 @@ void SupportChooser::begin(bool allowFaces) {
     ++revision_;
 }
 
+void SupportChooser::beginWithSelection(const ChosenSupport& chosen) {
+    begin(true);
+    selected_ = chosen;
+    hovered_ = chosen;
+}
+
 void SupportChooser::cancel() {
     active_ = false;
     hovered_ = ChosenSupport{};
@@ -199,52 +257,14 @@ ChosenSupport SupportChooser::resolve(const CameraSnapshot& camera, float x, flo
             }
         }
         if (sceneHit.hit && sceneHit.triangleIndex >= 0) {
-            const SceneObject* body = scene.findBody(sceneHit.objectId);
-            if (body != nullptr && body->cadOrNull() != nullptr) {
-                // The ranges of the mesh the body actually PUBLISHED -- its
-                // cached regeneration -- so a triangle index from the pick
-                // means the same triangle here, boolean result or prism.
-                std::vector<CadFaceRange> ranges;
-                std::shared_ptr<const CadBodyMesh> published;
-                if (body->cadOrNull()->regenerated(&published) == CadStatus::Ok
-                    && cadFaceRangesFromMesh(*published, &ranges) == CadStatus::Ok) {
-                    const uint32_t firstIndex =
-                        static_cast<uint32_t>(sceneHit.triangleIndex) * 3u;
-                    for (const CadFaceRange& rg : ranges) {
-                        if (firstIndex < rg.firstIndex || firstIndex >= rg.firstIndex + rg.indexCount) {
-                            continue;
-                        }
-                        if (!rg.eligible) {
-                            break;  // a cylindrical side: not a valid support
-                        }
-                        CadFace face;
-                        if (resolveCadFeatureFace(body->cadOrNull()->state(), rg.featureId,
-                                                  rg.token, &face)
-                            != CadStatus::Ok) {
-                            break;
-                        }
-                        Mat4 producerModel;
-                        if (!scene.resolveWorldModel(body->objectId(), &producerModel)) {
-                            break;
-                        }
-                        const float d = std::sqrt(vec3Dot(vec3Sub(sceneHit.position, camera.eye), vec3Sub(sceneHit.position, camera.eye)));
-                        // A face nearer than the best plane wins; ties go to the
-                        // face, which is the thing the user physically touched.
-                        if (d <= bestDistance + 1e-3f) {
-                            const Mat4 faceWorld = mat4Multiply(producerModel,
-                                                                cadFaceFrameMatrix(face));
-                            best = ChosenSupport{};
-                            best.kind = ChosenSupport::Kind::Face;
-                            best.plane = Workplane::XY;
-                            best.faceRef.producerObjectId = body->objectId();
-                            best.faceRef.producerLocalFeatureId = rg.featureId;
-                            best.faceRef.face = rg.token;
-                            best.faceRef.lineageToken = cadFeatureTopologySignature(
-                                    body->cadOrNull()->state(), rg.featureId);
-                            best.worldFrame = frameOf(faceWorld);
-                        }
-                        break;
-                    }
+            ChosenSupport face;
+            if (resolveFaceSupportFromHit(scene, sceneHit, &face)) {
+                const float d = std::sqrt(vec3Dot(vec3Sub(sceneHit.position, camera.eye),
+                                                  vec3Sub(sceneHit.position, camera.eye)));
+                // A face nearer than the best plane wins; ties go to the
+                // face, which is the thing the user physically touched.
+                if (d <= bestDistance + 1e-3f) {
+                    best = face;
                 }
             }
         }

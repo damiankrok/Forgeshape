@@ -18,7 +18,12 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **twenty-five** `*_SELFTEST_OK` tokens, then
+The self-test suites are OPT-IN (`STARTUP-FACE-ICONS-R1`): they run only when
+`adb -s <serial> shell setprop debug.forgeshape.selftests 1` was set before the
+launch, which `CI DEVICE` does; an ordinary debug launch skips them, logs
+`FORGESHAPE_DEBUG_SUITES_NOT_REQUESTED` and reaches Home at once (run on every
+launch they held it back ~20 s). With the property set, a clean debug launch
+emits **twenty-five** `*_SELFTEST_OK` tokens, then
 `FORGESHAPE_NATIVE_VIEWPORT_OK`. All twenty-five, in emission order:
 
 ```
@@ -63,8 +68,8 @@ dropped capture until a larger buffer proves otherwise.
 
 Camera, picking, dynamic-mesh, Construction-box, sculpt, render-shading,
 Construction-history, gizmo, project-format, render-recovery, CAD, mirror,
-CAD-feature, Freeform and Surface self-tests are debug-only and run once from `NativeViewport.start()`. They must
-never run per frame. Each builds the domain objects it needs — the scene,
+CAD-feature, Freeform and Surface self-tests are debug-only and run once from `NativeViewport.start()`,
+and only when the property above asks for them. They must never run per frame. Each builds the domain objects it needs — the scene,
 history, gizmo, CAD and mirror suites build their own `ConstructionScene` and
 their own camera — rather than reading process-scoped state, so a suite's
 result never depends on what a live session left behind. The project suite
@@ -321,7 +326,19 @@ on the host, with no device, and is the fast native loop.
   a first sketch did not have; the by-name plane list stays as
   `sketch_plane_by_name`, the accessibility fallback, never removed. A stylus
   hover highlights a chooser target and never commits; hardware hover is not
-  claimed on the emulator.
+  claimed on the emulator. **A planar face is also a door to a sketch DIRECTLY**
+  (`STARTUP-FACE-ICONS-R1`): an ordinary Construction tap that lands on an
+  eligible planar face of a CAD body (`resolveFaceSupportFromHit`, the chooser's
+  own triangle-to-`TopoRef` rule) OFFERS a sketch there — a captioned "Sketch
+  here" chip on the canvas extrude cluster, standing above the touched point
+  re-projected every refresh — and the chip begins the sketch through the
+  chooser's own confirm (`faceSketchOfferBegin`), so the face is re-validated
+  and the view framed exactly as a chooser tap does. The offer is session
+  presentation: a TopoRef plus the point in the face's own `(u, v)`, never a
+  triangle index, never a history step, a `.forge` byte or the fingerprint; a
+  tap that hits no eligible face, a load and a close withdraw it, every read
+  re-validates it, and it is absent while a sketch, the chooser, Sculpt or a
+  Freeform cage edit owns the viewport.
 - **The ForgeShape mark is the one project door, and its drawer owns no act**
   (`MODELING-R1-OWNER-CORRECTION`). The mark leads the Global Toolbar row, in
   a capsule of its own, a 48 dp target whose width `ToolbarRowBudget` reserves
@@ -1400,6 +1417,12 @@ on the host, with no device, and is the fast native loop.
   forms are `← Construction` and `← Imported Mesh` — the way OUT of Sculpt, in
   its two destinations — with the full wording kept as the content description in
   both. A third abbreviated label needs its own approval.
+- **The launcher icon is the ForgeShape mark in colour** (`STARTUP-FACE-ICONS-R1`):
+  an adaptive icon (`mipmap-anydpi-v26/ic_launcher*`, background, foreground
+  and an Android 13 monochrome layer) of the same notched-block geometry
+  `ic_forgeshape_mark` draws in white. One icon names one act: no two controls
+  that do different things share a drawing (Transform's axis tripod is not
+  Move's arrows; New Body is not the Box primitive; Shape is not either).
 - **Nothing unimplemented is drawn as a tool or as a creation action.** There
   is no longer an exception: `Export` was the last reserved control and it now
   writes a real GLB. A control that looks like it works and does not is worse

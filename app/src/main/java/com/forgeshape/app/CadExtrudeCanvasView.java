@@ -96,6 +96,13 @@ final class CadExtrudeCanvasView extends FrameLayout {
         void onExtrudeOperationRequested(int operation);
 
         void onCanvasEditSketchRequested(long bodyId);
+
+        /**
+         * The "Sketch here" chip standing on a planar face the user tapped:
+         * begin a sketch on that face. Native re-validates the face and owns
+         * the whole decision; the chip only asks.
+         */
+        void onCanvasSketchOnFaceRequested();
     }
 
     /** The extent choices, in {@link CadHudPresentation#EXTENTS} order. */
@@ -196,6 +203,13 @@ final class CadExtrudeCanvasView extends FrameLayout {
 
     /** The retained-sketch control, shown over a committed CAD Body instead. */
     private final IconControl editSketch;
+    /**
+     * "Sketch here": the direct sketch-on-face offer, standing just above the
+     * point of the planar CAD face the last viewport tap landed on. Always
+     * captioned, because it is the one control that teaches the gesture.
+     */
+    private final LinearLayout sketchOnFace;
+    private final float[] faceOfferPoint = new float[2];
 
     /** Whether the action palette is open. Presentation only; never a domain value. */
     private boolean paletteOpen;
@@ -433,6 +447,49 @@ final class CadExtrudeCanvasView extends FrameLayout {
             }
         });
         addView(editSketch.view, wrapParams());
+
+        // --- The direct sketch-on-face offer ---------------------------------
+        sketchOnFace = new LinearLayout(context);
+        sketchOnFace.setId(R.id.cad_canvas_sketch_on_face);
+        sketchOnFace.setOrientation(LinearLayout.HORIZONTAL);
+        sketchOnFace.setGravity(Gravity.CENTER_VERTICAL);
+        sketchOnFace.setBackgroundResource(R.drawable.bg_hud_lone_control);
+        sketchOnFace.setMinimumHeight(hitPx);
+        sketchOnFace.setMinimumWidth(hitPx);
+        sketchOnFace.setPadding(captionPadH, 0, captionPadH + captionPadH / 2, 0);
+        sketchOnFace.setClickable(true);
+        sketchOnFace.setFocusable(true);
+        sketchOnFace.setElevation(EditorControlStyles.dimen(context, R.dimen.elevation_floating));
+        sketchOnFace.setContentDescription(context.getString(R.string.sketch_on_face_description));
+        final ImageView faceGlyph = new ImageView(context);
+        faceGlyph.setImageResource(R.drawable.ic_sketch_new);
+        faceGlyph.setImageTintList(contentTint);
+        faceGlyph.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        faceGlyph.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        sketchOnFace.addView(faceGlyph, new LinearLayout.LayoutParams(referenceGlyphPx,
+                referenceGlyphPx));
+        final TextView faceCaption = new TextView(context);
+        faceCaption.setText(R.string.sketch_on_face_caption);
+        faceCaption.setSingleLine(true);
+        faceCaption.setIncludeFontPadding(false);
+        faceCaption.setTextColor(contentTint);
+        faceCaption.setTextSize(TypedValue.COMPLEX_UNIT_PX,
+                EditorControlStyles.dimen(context, R.dimen.text_label));
+        EditorControlStyles.applyMediumWeight(faceCaption);
+        faceCaption.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        final LinearLayout.LayoutParams faceCaptionParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        faceCaptionParams.leftMargin = captionPadH;
+        sketchOnFace.addView(faceCaption, faceCaptionParams);
+        sketchOnFace.setVisibility(GONE);
+        sketchOnFace.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                sketchOnFace.setVisibility(GONE);
+                CadExtrudeCanvasView.this.actions.onCanvasSketchOnFaceRequested();
+            }
+        });
+        addView(sketchOnFace, wrapParams());
         setAnnotationVisible(false, false);
     }
 
@@ -572,7 +629,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
             if (child == editor || child == secondEditor) {
                 return CadHudTouchAttribution.EDITOR;
             }
-            if (child == editSketch.view) {
+            if (child == editSketch.view || child == sketchOnFace) {
                 return CadHudTouchAttribution.EDIT_SKETCH;
             }
         }
@@ -779,6 +836,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         }
         sketchBodyId = NativeViewport.NO_OBJECT;
         editSketch.view.setVisibility(GONE);
+        sketchOnFace.setVisibility(GONE);
         final Context context = getContext();
         final LengthUnit unit = host.uiState().displayUnit();
         final int extent = extentMode();
@@ -997,9 +1055,27 @@ final class CadExtrudeCanvasView extends FrameLayout {
         // Sketch for every sketch itself, and at a large font scale it grows
         // over the anchor, where the chip would take its acts' taps.
         if (body == NativeViewport.NO_OBJECT || NativeViewport.supportChooserActive()
-                || retainedChipWithdrawn.getAsBoolean()
-                || !NativeViewport.cadBodySketchAnchor(body, bodyAnchor)) {
+                || retainedChipWithdrawn.getAsBoolean()) {
             hide();
+            return;
+        }
+        final boolean faceOffered = anchorSpace.ready()
+                && NativeViewport.faceSketchOfferPoint(faceOfferPoint);
+        if (faceOffered) {
+            sketchOnFace.setVisibility(VISIBLE);
+            setVisibility(VISIBLE);
+            // Above the touched point, so the finger that tapped does not
+            // cover the offer it produced.
+            placeAt(sketchOnFace, faceOfferPoint[0], faceOfferPoint[1] - hitPx);
+        } else {
+            sketchOnFace.setVisibility(GONE);
+        }
+        if (!NativeViewport.cadBodySketchAnchor(body, bodyAnchor)) {
+            editSketch.view.setVisibility(GONE);
+            sketchBodyId = NativeViewport.NO_OBJECT;
+            if (!faceOffered) {
+                hide();
+            }
             return;
         }
         sketchBodyId = body;
@@ -1243,6 +1319,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         setAnnotationVisible(false, false);
         secondReading.setVisibility(GONE);
         editSketch.view.setVisibility(GONE);
+        sketchOnFace.setVisibility(GONE);
         sketchBodyId = NativeViewport.NO_OBJECT;
         setVisibility(GONE);
     }

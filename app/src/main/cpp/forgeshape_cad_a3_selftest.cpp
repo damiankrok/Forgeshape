@@ -521,6 +521,24 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
                         && capPick.faceRef.face.kind == CadFaceKind::CapFar
                         && capPick.faceRef.producerObjectId == a->objectId());
 
+        // The direct "Sketch on face" offer resolves an ORDINARY scene pick to
+        // the very same semantic face the chooser's tap chose, and a curved
+        // side, a miss or a non-face answers nothing.
+        {
+            const SceneHit hit = pickSceneSnapshot(s, fx, fy, 1000, 1000, scene.snapshot());
+            ChosenSupport offered;
+            const bool resolved = resolveFaceSupportFromHit(scene, hit, &offered);
+            r.check("CADA3_27_a_scene_pick_on_a_cap_offers_the_chooser_s_face",
+                    resolved && offered.kind == ChosenSupport::Kind::Face
+                            && sameTopoRef(offered.faceRef, capPick.faceRef)
+                            && std::fabs(vec3Dot(offered.worldFrame.n, Vec3{0, 0, 1}) - 1.0f)
+                                       < 1e-4f);
+            ChosenSupport none;
+            r.check("CADA3_27_a_miss_offers_no_face",
+                    !resolveFaceSupportFromHit(scene, SceneHit{}, &none)
+                            && none.kind == ChosenSupport::Kind::None);
+        }
+
         // A tap on empty space selects nothing (a plane target may still be hit,
         // but far off the body it is the plane, not a face).
         const ChosenSupport miss = chooser.select(s, 5.0f, 5.0f, 1000, 1000, scene);
@@ -541,6 +559,29 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
         const ChosenSupport sidePick = chooser.select(cs, sx, sy, 1000, 1000, cscene);
         r.check("CADA3_26_a_curved_side_never_selects_as_a_face",
                 sidePick.kind != ChosenSupport::Kind::Face);
+        {
+            // A REAL hit on the curved wall, from the 3/4 view: walk round the
+            // cylinder at mid-height and keep the samples that land on the
+            // wall (not a cap). None of them may offer a sketch.
+            int wallHits = 0;
+            bool anyOffered = false;
+            for (int k = 0; k < 16; ++k) {
+                const float a = 6.2831853f * static_cast<float>(k) / 16.0f;
+                float px = 0, py = 0;
+                if (!projectWorldToScreen(s, Vec3{std::cos(a), std::sin(a), 1.0f}, 1000, 1000,
+                                          &px, &py)) {
+                    continue;
+                }
+                const SceneHit wall = pickSceneSnapshot(s, px, py, 1000, 1000, cscene.snapshot());
+                if (!wall.hit || wall.position.z < 0.05f || wall.position.z > 1.95f) {
+                    continue;
+                }
+                ++wallHits;
+                ChosenSupport offered;
+                anyOffered = anyOffered || resolveFaceSupportFromHit(cscene, wall, &offered);
+            }
+            r.check("CADA3_27_a_curved_side_offers_no_sketch", wallHits > 0 && !anyOffered);
+        }
         chooser.cancel();
 
         // World-plane picking: with faces off, a tap on the XY plane near the

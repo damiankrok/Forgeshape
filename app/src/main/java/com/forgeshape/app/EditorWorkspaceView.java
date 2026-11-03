@@ -4216,6 +4216,33 @@ final class EditorWorkspaceView extends FrameLayout
         onEditCadSketchRequested();
     }
 
+    /**
+     * The canvas "Sketch here" chip: begins a sketch on the planar face the
+     * last viewport tap landed on — the direct path beside the spatial
+     * chooser, so a sketch on a body's face is one tap on the face and one on
+     * the chip. Native re-validates the face and frames the view exactly as a
+     * chooser confirm does; a refusal is said by name and changes nothing.
+     */
+    @Override
+    public void onCanvasSketchOnFaceRequested() {
+        final Context context = getContext();
+        final int status = NativeViewport.faceSketchOfferBegin();
+        setAddPrimitiveOpen(false, null);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            onNativeStateChanged();
+            return;
+        }
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        lastReportedSketchStatus = NativeViewport.CAD_OK;
+        onNativeStateChanged();
+        NativeViewport.sketchState(nativeSketch);
+        final int tool = (int) nativeSketch[NativeViewport.SKETCH_TOOL];
+        showStatus(context.getString(R.string.status_sketch_started_on_face,
+                context.getString(SKETCH_TOOL_HINTS[tool])), R.attr.fsTextSecondary);
+    }
+
     /** The canvas extrude cluster, for verification. */
     CadExtrudeCanvasView cadExtrudeCanvas() {
         return cadExtrudeCanvas;

@@ -413,7 +413,19 @@ emit several hundred lines in a few milliseconds and the default buffer silently
 drops the tail, which reads exactly like a self-test that stopped partway
 through. That is a logging limit, not an app failure.
 
-A clean debug launch emits **twenty-five** `*_SELFTEST_OK` tokens, in this order, then
+The self-test suites run only when ASKED FOR: set the system property first,
+then launch (it survives until the device reboots):
+
+```
+adb -s <serial> shell setprop debug.forgeshape.selftests 1
+```
+
+Without it an ordinary debug launch skips them, logs
+`FORGESHAPE_DEBUG_SUITES_NOT_REQUESTED` and reaches Home at once — run on every
+launch they held the first screen back for about 20 s on the emulator. `CI
+DEVICE` (`scripts/ci-device-smoke.sh`) sets the property before its startup
+capture and keeps it for the instrumentation that follows. With it, a clean
+debug launch emits **twenty-five** `*_SELFTEST_OK` tokens, in this order, then
 `FORGESHAPE_NATIVE_VIEWPORT_OK` once the first frame is presented:
 
 ```

@@ -2626,6 +2626,19 @@ along the sketch frame's normal via `CameraController::frameSketchView` (no
 pitch clamp). `CADB` gains section version 2 for the support; v1 stays
 byte-identical, and load validates the whole dependency graph before applying.
 
+**The direct face path** (`STARTUP-FACE-ICONS-R1`). The chooser's
+triangle-to-face rule is one free function, `resolveFaceSupportFromHit` (the
+published mesh's `CadFaceRange`s → an eligible semantic face → a `ChosenSupport`
+carrying its `TopoRef` and world frame), and the chooser's `resolve` calls it.
+The JNI touch path calls the same function on an ordinary Construction tap's
+`SceneHit` and keeps the result as `g_faceSketchOffer` plus the touched point in
+the face's `(u, v)` — session state under `g_stateMutex`, never a project fact.
+`faceSketchOfferPoint` re-validates it (`refreshChosenSupport`) and re-projects
+the point for `CadExtrudeCanvasView`'s "Sketch here" chip on every refresh;
+`faceSketchOfferBegin` enters the chooser already holding the face
+(`SupportChooser::beginWithSelection`) and runs `confirmChosenSupportLocked`, so
+there is no second begin path. Host evidence: `CADA3_27_*` in the CAD-A3 suite.
+
 ### Curves, the view, the dimension and Edit Sketch (`SKETCH-UX-R1`)
 
 **Curves are authored points.** `SketchArc` is three points ON the curve and

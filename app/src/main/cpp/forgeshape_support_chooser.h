@@ -19,6 +19,7 @@
 
 #include "forgeshape_camera.h"
 #include "forgeshape_scene.h"
+#include "forgeshape_selection.h"
 #include "forgeshape_sketch.h"
 #include "forgeshape_sketch_overlay.h"
 #include "forgeshape_sketch_session.h"
@@ -45,6 +46,14 @@ struct ChosenSupport {
 // recomputed from the producer's current world model and face frame. A world
 // plane is returned as it is. On a refusal nothing is written and the caller
 // begins no sketch.
+// Maps an ordinary scene pick onto an eligible planar CAD face, exactly as the
+// chooser's own tap does: the triangle is looked up in the ranges of the mesh
+// the body PUBLISHED, so a triangle index is only ever a transient lookup and
+// the answer is the semantic TopoRef. False for a non-CAD body, a curved side
+// or any face that does not resolve; nothing is written then.
+bool resolveFaceSupportFromHit(const ConstructionScene& scene, const SceneHit& hit,
+                               ChosenSupport* out);
+
 CadStatus refreshChosenSupport(const ConstructionScene& scene, const ChosenSupport& chosen,
                                ChosenSupport* out);
 
@@ -56,6 +65,11 @@ public:
     // Enters the mode. `allowFaces` is true for New Sketch inside an existing
     // CAD project; false for a brand-new CAD project (no bodies to sketch on).
     void begin(bool allowFaces);
+    // Enters the mode with `chosen` already selected, faces allowed: the direct
+    // "Sketch on face" path, where the face was picked by an ordinary viewport
+    // tap and the user's one further tap is the confirmation. The caller
+    // confirms at once; nothing here is project state.
+    void beginWithSelection(const ChosenSupport& chosen);
     void cancel();
     bool active() const { return active_; }
     bool allowFaces() const { return allowFaces_; }

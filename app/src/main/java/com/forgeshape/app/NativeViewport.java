@@ -2786,6 +2786,21 @@ final class NativeViewport {
     static native boolean supportChooserActive();
 
     /**
+     * The direct "Sketch on face" offer: the screen point (out[0..1]) of the
+     * planar CAD face the last ordinary viewport tap landed on, re-projected
+     * through the current camera. False when there is no live offer — none was
+     * made, the face no longer resolves, or a sketch, Sculpt or the chooser
+     * owns the viewport. Read-only; session presentation, never project truth.
+     */
+    static native boolean faceSketchOfferPoint(float[] out);
+
+    /** Begins a sketch on the offered face. Returns a CAD status code. */
+    static native int faceSketchOfferBegin();
+
+    /** Withdraws the offer. Mutates nothing in the project. */
+    static native void faceSketchOfferDismiss();
+
+    /**
      * Projects a world point to a screen pixel through the current camera, into
      * {@code out[0..1]}. Read-only verification seam so a test can tap the exact
      * pixel a plane or face target projects to. Returns false if off screen.

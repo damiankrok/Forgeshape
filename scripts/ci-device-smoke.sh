@@ -286,6 +286,16 @@ PHASE="startup"
 adb -s "$SERIAL" install -r "$APP_APK" > "$OUT/install-app.log" 2>&1 \
     || fail_with "DEVICE_INFRASTRUCTURE_FAILURE" "app install failed: $(tail -n 1 "$OUT/install-app.log")"
 
+# The debug self-test suites run only when asked for (debug.forgeshape.selftests
+# = 1; an ordinary debug launch skips them so Home appears at once). This job
+# IS the evidence that asks for them, and it keeps the property set for the
+# instrumentation that follows, so every process start in the job runs exactly
+# what it ran before the suites became opt-in.
+adb -s "$SERIAL" shell setprop debug.forgeshape.selftests 1 > /dev/null 2>&1 \
+    || fail_with "DEVICE_INFRASTRUCTURE_FAILURE" "could not set debug.forgeshape.selftests"
+[ "$(adb -s "$SERIAL" shell getprop debug.forgeshape.selftests 2>/dev/null | tr -d '\r')" = "1" ] \
+    || fail_with "DEVICE_INFRASTRUCTURE_FAILURE" "debug.forgeshape.selftests did not read back as 1"
+
 # A freshly booted emulator is still busy. The startup suites write ~3600
 # lines in well under a second, and when logd cannot drain its socket fast
 # enough liblog DROPS lines on the writer side — a 64M ring buffer does not

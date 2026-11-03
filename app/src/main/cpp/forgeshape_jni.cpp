@@ -20,6 +20,7 @@
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
 #include <jni.h>
+#include <sys/system_properties.h>
 
 #include <algorithm>
 #include <chrono>
@@ -306,6 +307,20 @@ float g_chooserDownY = 0.0f;
 bool g_chooserTravelled = false;
 constexpr float kChooserTapSlopPixels = 24.0f;
 
+// The direct "Sketch on face" offer: the planar CAD face the last ordinary
+// Construction viewport tap landed on. SESSION PRESENTATION, never project
+// truth -- no ObjectId, no history step, no .forge byte, no fingerprint. It
+// holds the semantic TopoRef the tap resolved to (never a triangle index) and
+// the touched point in that face's own (u, v), so the chip follows the face
+// when the camera or the producer moves. Every read re-validates the face
+// through `refreshChosenSupport`, so an Undo, an edit or a delete that loses
+// the face withdraws the offer rather than pointing at where it used to be.
+// Cleared by a tap that hits no eligible face, and by every mode that owns
+// the viewport (a sketch, the chooser, Sculpt). Guarded by g_stateMutex.
+forgeshape::ChosenSupport g_faceSketchOffer;
+float g_faceSketchOfferU = 0.0f;
+float g_faceSketchOfferV = 0.0f;
+
 // Frames the camera EXACTLY normal to the active sketch -- no pitch-clamp
 // approximation, and correct for a face frame at any orientation (`CAD-A3` B3)
 // -- through the session's VIEW frame, so the orientation navigator's flip and
@@ -449,6 +464,29 @@ bool readOptionalIntRegion(JNIEnv* env, jintArray array, int count, jint* out) {
         return false;
     }
     return true;
+}
+
+// Whether this launch was asked to run the debug self-test suites: the
+// system property `debug.forgeshape.selftests` equals "1" (`adb shell setprop
+// debug.forgeshape.selftests 1`, settable by the shell user on any device).
+// Always false in a release build, which compiles no suite at all.
+bool debugSuitesRequested() {
+#ifndef NDEBUG
+    char value[PROP_VALUE_MAX] = {0};
+    if (__system_property_get("debug.forgeshape.selftests", value) <= 0) {
+        return false;
+    }
+    return value[0] == '1' && value[1] == '\0';
+#else
+    return false;
+#endif
+}
+
+void logDebugSuitesSkipped() {
+#ifndef NDEBUG
+    FS_LOGI("FORGESHAPE_DEBUG_SUITES_NOT_REQUESTED "
+            "(adb shell setprop debug.forgeshape.selftests 1 runs them at the next launch)");
+#endif
 }
 
 void runCameraSelfTestsAndLog() {
@@ -2127,29 +2165,41 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     // a load. Nothing is published here; an empty scene draws as empty.
     FS_LOGI("FORGESHAPE_STARTUP_NO_PROJECT bodies=%d",
             (int)forgeshape::constructionScene().bodyCount());
-    runCameraSelfTestsAndLog();
-    runPickingSelfTestsAndLog();
-    runMeshSelfTestsAndLog();
-    runConstructionSelfTestsAndLog();
-    runTransformSelfTestsAndLog();
-    runPrimitiveSelfTestsAndLog();
-    runSphereSelfTestsAndLog();
-    runConeCapsuleSelfTestsAndLog();
-    runSculptSelfTestsAndLog();
-    runRenderMeshSelfTestsAndLog();
-    runSceneSelfTestsAndLog();
-    runHistorySelfTestsAndLog();
-    runGizmoSelfTestsAndLog();
-    runProjectSelfTestsAndLog();
-    runRenderRecoverySelfTestsAndLog();
-    runGltfExportSelfTestsAndLog();
-    runGltfImportSelfTestsAndLog();
-    runCadSelfTestsAndLog();
-    runBodyDimensionsSelfTestsAndLog();
-    runMirrorSelfTestsAndLog();
-    runCadFeatureSelfTestsAndLog();
-    runFreeformSelfTestsAndLog();
-    runSurfaceSelfTestsAndLog();
+    // The debug self-test suites run only when ASKED FOR (`debug.forgeshape.
+    // selftests` = 1, which CI DEVICE and the evidence scripts set before the
+    // launch). They are 25 suites and ~4500 checks, Manifold booleans and the
+    // timed performance runs among them, executed synchronously on the UI
+    // thread inside onCreate in an unoptimised debug build: run on every
+    // launch they held Home off the screen for ~20 s on the emulator. An
+    // ordinary debug launch now skips them and says so by name, so a capture
+    // that expected tokens cannot mistake a skipped run for a dropped one.
+    if (debugSuitesRequested()) {
+        runCameraSelfTestsAndLog();
+        runPickingSelfTestsAndLog();
+        runMeshSelfTestsAndLog();
+        runConstructionSelfTestsAndLog();
+        runTransformSelfTestsAndLog();
+        runPrimitiveSelfTestsAndLog();
+        runSphereSelfTestsAndLog();
+        runConeCapsuleSelfTestsAndLog();
+        runSculptSelfTestsAndLog();
+        runRenderMeshSelfTestsAndLog();
+        runSceneSelfTestsAndLog();
+        runHistorySelfTestsAndLog();
+        runGizmoSelfTestsAndLog();
+        runProjectSelfTestsAndLog();
+        runRenderRecoverySelfTestsAndLog();
+        runGltfExportSelfTestsAndLog();
+        runGltfImportSelfTestsAndLog();
+        runCadSelfTestsAndLog();
+        runBodyDimensionsSelfTestsAndLog();
+        runMirrorSelfTestsAndLog();
+        runCadFeatureSelfTestsAndLog();
+        runFreeformSelfTestsAndLog();
+        runSurfaceSelfTestsAndLog();
+    } else {
+        logDebugSuitesSkipped();
+    }
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -4330,6 +4380,103 @@ JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_supportChooser
     JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
     return forgeshape::supportChooser().active() ? JNI_TRUE : JNI_FALSE;
+}
+
+// ---------------------------------------------------------------------------
+// Direct "Sketch on face" (the tap-a-face path beside the spatial chooser)
+// ---------------------------------------------------------------------------
+
+namespace {
+// Whether the offer may be shown or taken now, and its re-validated support.
+// Exactly the conditions `supportChooserBegin` refuses, asked here so the
+// chip is ABSENT where it could not succeed. The caller holds g_stateMutex.
+bool faceSketchOfferLiveLocked(forgeshape::ChosenSupport* fresh) {
+    if (g_faceSketchOffer.kind != forgeshape::ChosenSupport::Kind::Face) {
+        return false;
+    }
+    forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    if (!scene.hasProject() || forgeshape::sculptSession().inSculptMode()
+        || forgeshape::sketchSession().active() || forgeshape::supportChooser().active()
+        || forgeshape::constructionHistory().editInProgress()
+        || forgeshape::freeformEditSession().active()) {
+        return false;
+    }
+    if (forgeshape::refreshChosenSupport(scene, g_faceSketchOffer, fresh)
+        != forgeshape::CadStatus::Ok) {
+        g_faceSketchOffer = forgeshape::ChosenSupport{};
+        return false;
+    }
+    const forgeshape::SceneObject* producer =
+            scene.findBody(fresh->faceRef.producerObjectId);
+    if (producer == nullptr || !producer->visible()) {
+        return false;
+    }
+    return true;
+}
+}  // namespace
+
+// The screen point the "Sketch on face" chip stands on: the touched point of
+// the offered face, re-projected through the current camera, into out[0..1].
+// False when there is no live offer or the point does not project.
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_faceSketchOfferPoint(
+    JNIEnv* env, jclass, jfloatArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 2) {
+        return JNI_FALSE;
+    }
+    float point[2] = {0.0f, 0.0f};
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ChosenSupport fresh;
+        if (faceSketchOfferLiveLocked(&fresh)) {
+            const forgeshape::SketchFrame& f = fresh.worldFrame;
+            const forgeshape::Vec3 world = forgeshape::vec3Add(
+                    f.origin, forgeshape::vec3Add(forgeshape::vec3Scale(f.u, g_faceSketchOfferU),
+                                                  forgeshape::vec3Scale(f.v, g_faceSketchOfferV)));
+            found = forgeshape::projectWorldToScreen(g_camera.snapshot(), world,
+                                                     g_camera.viewportWidth(),
+                                                     g_camera.viewportHeight(), &point[0],
+                                                     &point[1]);
+        }
+    }
+    if (!found) {
+        return JNI_FALSE;
+    }
+    env->SetFloatArrayRegion(out, 0, 2, point);
+    return JNI_TRUE;
+}
+
+// Begins a sketch on the offered face through the chooser's own confirm, so
+// the face is re-validated and the camera framed exactly as a chooser tap
+// does. Returns the CadStatus code; the offer is spent either way.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_faceSketchOfferBegin(
+    JNIEnv*, jclass) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::NotSketching;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ChosenSupport fresh;
+        if (faceSketchOfferLiveLocked(&fresh)) {
+            forgeshape::supportChooser().beginWithSelection(fresh);
+            status = confirmChosenSupportLocked();
+            if (status != forgeshape::CadStatus::Ok) {
+                forgeshape::supportChooser().cancel();
+            }
+        }
+        g_faceSketchOffer = forgeshape::ChosenSupport{};
+    }
+    if (status == forgeshape::CadStatus::Ok) {
+        FS_LOGI("FORGESHAPE_FACE_SKETCH_BEGIN ok");
+    } else {
+        FS_LOGI("FORGESHAPE_FACE_SKETCH_REFUSED:%s", forgeshape::cadStatusName(status));
+    }
+    return cadCode(status);
+}
+
+// Withdraws the offer (Back, or any surface that takes the viewport).
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_faceSketchOfferDismiss(
+    JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    g_faceSketchOffer = forgeshape::ChosenSupport{};
 }
 
 // Read-only projection of a world point to screen through the current camera.
@@ -8524,6 +8671,7 @@ Java_com_forgeshape_app_NativeViewport_loadProject(JNIEnv* env, jclass, jbyteArr
             forgeshape::sketchSession().cancel();
             endSketchView();
         }
+        g_faceSketchOffer = forgeshape::ChosenSupport{};
         status = forgeshape::loadProjectDocument(document, forgeshape::constructionScene(),
                                                  forgeshape::sculptSession(),
                                                  forgeshape::constructionHistory(), &report);
@@ -9035,6 +9183,7 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_closeProject(JNIEn
         forgeshape::sculptSession().enterConstruction();
         forgeshape::gizmoSession().setActive(false);
         g_selection.resetGesture();
+        g_faceSketchOffer = forgeshape::ChosenSupport{};
         forgeshape::constructionHistory().clear();
         scene.closeProject();
     }
@@ -10220,6 +10369,21 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 // an editor bound to no body would have nothing to show.
                 if (hit.hit) {
                     forgeshape::constructionScene().setActiveBody(hit.objectId);
+                }
+                // A tap on an eligible planar face of a CAD body OFFERS a
+                // sketch there (one more tap on the chip begins it); a tap
+                // anywhere else withdraws the offer.
+                forgeshape::ChosenSupport face;
+                if (hit.hit
+                    && forgeshape::resolveFaceSupportFromHit(forgeshape::constructionScene(), hit,
+                                                             &face)) {
+                    const forgeshape::Vec3 d = forgeshape::vec3Sub(hit.position,
+                                                                   face.worldFrame.origin);
+                    g_faceSketchOffer = face;
+                    g_faceSketchOfferU = forgeshape::vec3Dot(d, face.worldFrame.u);
+                    g_faceSketchOfferV = forgeshape::vec3Dot(d, face.worldFrame.v);
+                } else {
+                    g_faceSketchOffer = forgeshape::ChosenSupport{};
                 }
             } else {
                 tapResolved = false;

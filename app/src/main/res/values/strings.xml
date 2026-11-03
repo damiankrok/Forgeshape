@@ -490,6 +490,9 @@
     <string name="cad_profile_circle">Circle profile</string>
     <string name="cad_profile_polygon">Polygon profile — %1$d points. Its points are not numerically editable in this version.</string>
     <string name="status_sketch_started">Sketching on %1$s — %2$s.</string>
+    <string name="status_sketch_started_on_face">Sketching on the face — %1$s.</string>
+    <string name="sketch_on_face_caption">Sketch here</string>
+    <string name="sketch_on_face_description">Start a new sketch on this face of the body</string>
     <string name="status_sketch_unavailable">Finish the current action before starting a sketch.</string>
     <string name="status_sketch_tool">%1$s: %2$s.</string>
     <string name="status_sketch_finished">Profile found — set the depth, then Extrude.</string>
