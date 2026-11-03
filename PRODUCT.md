@@ -1036,6 +1036,48 @@ open surface reports no volume. Nothing here is saved with the project.
 Verified on the emulator (`SketchPlaneTest`, CI DEVICE `41712407765`): a 2 × 2 × 1 m block measures
 4 m³, 16 m², centre of mass 0.5 m up and 2 m across.
 
+## Measuring a distance and an angle
+
+The Measure section also has **Measure distance**. While it is on, a tap on
+the model picks a point instead of selecting anything — a tap beside a corner
+takes the corner itself — and the second tap reads the **distance** between
+the two points with its X, Y and Z parts in the display unit, and the
+**angle between the two faces** they lie on (0° for parallel faces, 90° for
+square ones). The points and the line between them are drawn on the model; a
+third tap starts again. **Stop measuring**, or closing the panel, gives the
+taps back. Nothing here is saved with the project.
+
+UNVERIFIED on the emulator until `MeasureDistanceTest` runs green.
+
+## Keeping only what an extrusion passes through
+
+For a sketch on a face of a CAD part, the extrude palette and the precision
+surface offer **Intersect** beside Add and Cut (its badge is two overlapping
+outlines with their shared lens filled). It grows into the part, and the
+commit keeps only the material the extrusion passes through — the rest of the
+part is removed — as one Undo step on the same part. An extrusion that misses
+the part, or one that holds all of it, is refused with the reason.
+
+UNVERIFIED on the emulator until `IntersectTest` runs green.
+
+## Turning a shape into a CAD part
+
+The Shape panel of a box, cylinder, sphere, cone or capsule has **Make CAD
+part**: the shape is replaced by a CAD part of the same size, place, name,
+visibility and lock, so holes, fillets, patterns and later features can be
+added to it. One Undo brings the shape back. A plane, or a shape that has
+been sculpted, has no CAD part and the button is not shown.
+
+UNVERIFIED on the emulator until `CadPrimitivePartTest` runs green.
+
+## Sums in number fields
+
+A number field also takes simple arithmetic — `40+2.5`, `120/3`, `(10-4)*2` —
+typed on a hardware keyboard or pasted; a plain number reads exactly as
+before. The phone's number keypad has no `*` or `/` key, so on-screen entry of
+a sum is not offered yet. UNVERIFIED until the JVM unit tests
+(`LengthUnitTest`) run green; on-device keyboard entry UNVERIFIED.
+
 ## Where the face's actions and editors stand
 
 Tapping a flat face of a CAD part leaves a small hollow ring at the point you
