@@ -353,6 +353,21 @@ struct HoleDraft {
 };
 HoleDraft g_holeDraft;
 
+// The two edges the open hole editor places its hole from (`CAD-TO-FACE-R1`):
+// seeded by `cadHoleEdgeSeed`, read by the apply and by the edge highlight,
+// cleared when the editor closes or chooses a point. Session presentation on
+// the draft's terms -- the tokens never cross JNI, never reach a `.forge` byte,
+// a history step or the fingerprint. Guarded by g_stateMutex.
+struct HoleEdgeDraft {
+    bool active = false;
+    forgeshape::ObjectId body = forgeshape::kNoObject;
+    uint32_t holeId = 0;  // 0: the NEW hole on `g_holeDraft`'s face
+    forgeshape::CadFeatureSupport support{};
+    forgeshape::CadFaceToken edgeA{};
+    forgeshape::CadFaceToken edgeB{};
+};
+HoleEdgeDraft g_holeEdgeDraft;
+
 // How close, in pixels, a tap must land to a projected edge to choose it rather
 // than the face under it. A fixed pixel distance like the sketch's own 24 px
 // tap slop; a little wider, because an edge is a line and not an area.
@@ -402,12 +417,49 @@ forgeshape::Vec3 edgeWorldPoint(const forgeshape::Mat4& model, const forgeshape:
 // its two outward normals, so it reads as a stroke and is not buried in the
 // surface. Its revision is a hash of its own vertices, so it re-uploads exactly
 // when the offer, the body's placement or the body changed.
+forgeshape::SketchOverlayPtr edgeHighlightOverlay(
+        const std::vector<forgeshape::CadFeatureEdge>& edges, const forgeshape::Mat4& model);
+
+// The two edges a hole is being placed from, as the same highlight. Null when
+// no hole editor is placing from edges, or what it names no longer resolves.
+forgeshape::SketchOverlayPtr holeEdgeOverlayLocked() {
+    if (!g_holeEdgeDraft.active) {
+        return forgeshape::SketchOverlayPtr{};
+    }
+    forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    const forgeshape::SceneObject* object = scene.findBody(g_holeEdgeDraft.body);
+    const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    forgeshape::Mat4 model;
+    if (body == nullptr || !object->visible() || !scene.resolveWorldModel(object->objectId(), &model)) {
+        return forgeshape::SketchOverlayPtr{};
+    }
+    std::vector<forgeshape::CadFeatureEdge> all;
+    if (forgeshape::enumerateCadFeatureEdges(body->state(), g_holeEdgeDraft.support.featureId, &all)
+        != forgeshape::CadStatus::Ok) {
+        return forgeshape::SketchOverlayPtr{};
+    }
+    std::vector<forgeshape::CadFeatureEdge> picked;
+    for (const forgeshape::CadFaceToken& other : {g_holeEdgeDraft.edgeA, g_holeEdgeDraft.edgeB}) {
+        const forgeshape::CadEdgeRef wanted = forgeshape::canonicalCadEdgeRef(forgeshape::CadEdgeRef{
+                g_holeEdgeDraft.support.featureId, g_holeEdgeDraft.support.face, other});
+        for (const forgeshape::CadFeatureEdge& edge : all) {
+            if (forgeshape::sameCadEdgeRef(edge.ref, wanted)) picked.push_back(edge);
+        }
+    }
+    return picked.empty() ? forgeshape::SketchOverlayPtr{} : edgeHighlightOverlay(picked, model);
+}
+
 forgeshape::SketchOverlayPtr edgeFinishOfferOverlayLocked() {
     std::vector<forgeshape::CadFeatureEdge> edges;
     forgeshape::Mat4 model;
     if (!edgeFinishOfferLiveLocked(nullptr, &edges, &model)) {
-        return forgeshape::SketchOverlayPtr{};
+        return holeEdgeOverlayLocked();
     }
+    return edgeHighlightOverlay(edges, model);
+}
+
+forgeshape::SketchOverlayPtr edgeHighlightOverlay(
+        const std::vector<forgeshape::CadFeatureEdge>& edges, const forgeshape::Mat4& model) {
     auto built = std::make_shared<forgeshape::SketchOverlay>();
     std::vector<forgeshape::GizmoVertex>& v = built->vertices;
     for (const forgeshape::CadFeatureEdge& edge : edges) {
@@ -5393,6 +5445,7 @@ JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_holeOfferBegin
                                          g_camera.viewportHeight(), &sx, &sy);
         g_holeDraft.body = object->objectId();
         g_holeDraft.support = support;
+        g_holeEdgeDraft = HoleEdgeDraft{};
         v[0] = static_cast<jdouble>(object->objectId());
         v[1] = diameter;
         v[2] = forgeshape::snapCadHolePosition(u, diameter);
@@ -5415,7 +5468,8 @@ JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_holeOfferBegin
 JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleApply(
     JNIEnv*, jclass, jlong bodyId, jlong holeId, jint kind, jdouble diameter,
     jboolean throughAll, jdouble depth, jdouble boreDiameter, jdouble boreDepth,
-    jdouble sinkDiameter, jdouble sinkAngle, jdouble u, jdouble v) {
+    jdouble sinkDiameter, jdouble sinkAngle, jdouble u, jdouble v, jboolean byEdges,
+    jdouble edgeDistanceA, jdouble edgeDistanceB) {
     forgeshape::CadStatus status;
     uint32_t minted = 0;
     {
@@ -5432,6 +5486,25 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleApply(
             hole.depth = hole.throughAll ? 0.0 : depth;
             hole.u = u;
             hole.v = v;
+            if (byEdges == JNI_TRUE) {
+                // From the two edges the editor was seeded with -- for this
+                // hole (or the new one), never another's.
+                const uint32_t wantedHole =
+                        holeId > 0 && holeId <= 0xFFFFFFFFll ? static_cast<uint32_t>(holeId) : 0u;
+                if (!g_holeEdgeDraft.active
+                    || g_holeEdgeDraft.body != static_cast<forgeshape::ObjectId>(bodyId)
+                    || g_holeEdgeDraft.holeId != wantedHole) {
+                    status = forgeshape::CadStatus::HoleEdgeNotFound;
+                } else {
+                    hole.byEdges = true;
+                    hole.u = 0.0;
+                    hole.v = 0.0;
+                    hole.edgeFaceA = g_holeEdgeDraft.edgeA;
+                    hole.edgeFaceB = g_holeEdgeDraft.edgeB;
+                    hole.edgeDistanceA = edgeDistanceA;
+                    hole.edgeDistanceB = edgeDistanceB;
+                }
+            }
             if (hole.kind == forgeshape::CadHoleKind::Counterbore) {
                 hole.boreDiameter = boreDiameter;
                 hole.boreDepth = boreDepth;
@@ -5440,7 +5513,9 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleApply(
                 hole.sinkAngleDegrees = sinkAngle;
             }
             const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
-            if (holeId > 0) {
+            if (status != forgeshape::CadStatus::Ok) {
+                // refused above
+            } else if (holeId > 0) {
                 status = holeId > 0xFFFFFFFFll
                                  ? forgeshape::CadStatus::HoleNotFound
                                  : forgeshape::editCadFeatureHoleOfBody(
@@ -5458,12 +5533,14 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleApply(
         }
         if (status == forgeshape::CadStatus::Ok) {
             g_holeDraft = HoleDraft{};
+            g_holeEdgeDraft = HoleEdgeDraft{};
             g_faceSketchOffer = forgeshape::ChosenSupport{};
             g_edgeFinishOffer = EdgeFinishOffer{};
         }
     }
-    FS_LOGI("FORGESHAPE_HOLE_APPLY hole=%lld minted=%u kind=%d through=%d %s", (long long)holeId,
-            minted, (int)kind, throughAll == JNI_TRUE ? 1 : 0, forgeshape::cadStatusName(status));
+    FS_LOGI("FORGESHAPE_HOLE_APPLY hole=%lld minted=%u kind=%d through=%d edges=%d %s",
+            (long long)holeId, minted, (int)kind, throughAll == JNI_TRUE ? 1 : 0,
+            byEdges == JNI_TRUE ? 1 : 0, forgeshape::cadStatusName(status));
     return cadCode(status);
 }
 
@@ -5474,11 +5551,15 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleApply(
 // such hole.
 JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleInfo(
     JNIEnv* env, jclass, jlong bodyId, jlong holeId, jdoubleArray out) {
-    constexpr jsize kSlots = 13;
-    if (out == nullptr || env->GetArrayLength(out) < kSlots) {
+    // `CAD-TO-FACE-R1` added [13] 1 when placed from two edges, [14..15] the
+    // two distances; [8..9] then read the DERIVED point.
+    constexpr jsize kLegacySlots = 13;
+    constexpr jsize kMaxSlots = 16;
+    if (out == nullptr || env->GetArrayLength(out) < kLegacySlots) {
         return JNI_FALSE;
     }
-    jdouble v[kSlots] = {0};
+    const jsize kSlots = std::min(env->GetArrayLength(out), kMaxSlots);
+    jdouble v[kMaxSlots] = {0};
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         const forgeshape::SceneObject* object =
@@ -5501,6 +5582,21 @@ JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleInfo(
         v[7] = h->sinkAngleDegrees;
         v[8] = h->u;
         v[9] = h->v;
+        if (h->byEdges) {
+            std::vector<forgeshape::CadFeatureGeometry> chain;
+            double pu = 0.0;
+            double pv = 0.0;
+            if (forgeshape::buildCadChainGeometry(body->state(), &chain, nullptr,
+                                                  h->support.featureId)
+                        == forgeshape::CadStatus::Ok
+                && forgeshape::cadHolePoint(chain, *h, &pu, &pv) == forgeshape::CadStatus::Ok) {
+                v[8] = pu;
+                v[9] = pv;
+            }
+            v[13] = 1.0;
+            v[14] = h->edgeDistanceA;
+            v[15] = h->edgeDistanceB;
+        }
         float sx = 0.0f;
         float sy = 0.0f;
         if (holeScreenPoint(*object, *h, &sx, &sy)) {
@@ -5511,6 +5607,70 @@ JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleInfo(
     }
     env->SetDoubleArrayRegion(out, 0, kSlots, v);
     return JNI_TRUE;
+}
+
+// `CAD-TO-FACE-R1`. Begins placing a hole from two edges of its face: for
+// hole `holeId` (or, at 0, the NEW hole on the face `holeOfferBegin`
+// captured), standing at (u, v) on that face now. A hole already placed from
+// edges keeps its own two; otherwise native chooses the two nearest edges that
+// are not parallel, at the distances it stands from them, so switching moves
+// nothing. Writes the two distances into out[0..1], keeps the edges for the
+// apply and the highlight, and returns the CadStatus code.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleEdgeSeed(
+    JNIEnv* env, jclass, jlong bodyId, jlong holeId, jdouble u, jdouble v, jdoubleArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 2) {
+        return cadCode(forgeshape::CadStatus::HoleInvalid);
+    }
+    forgeshape::CadStatus status = forgeshape::CadStatus::HoleNotFound;
+    jdouble values[2] = {0.0, 0.0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
+        const forgeshape::SceneObject* object = forgeshape::constructionScene().findBody(id);
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        forgeshape::CadFeatureHole hole;
+        bool have = false;
+        if (body != nullptr && holeId > 0 && holeId <= 0xFFFFFFFFll) {
+            const forgeshape::CadFeatureHole* h =
+                    forgeshape::findCadFeatureHole(body->state(), static_cast<uint32_t>(holeId));
+            if (h != nullptr) {
+                hole = *h;
+                have = true;
+            }
+        } else if (body != nullptr && holeId == 0 && g_holeDraft.body == id) {
+            hole.support = g_holeDraft.support;
+            have = true;
+        }
+        if (have) {
+            forgeshape::CadFeatureHole placed = hole;
+            status = forgeshape::CadStatus::Ok;
+            if (!hole.byEdges) {
+                hole.u = u;
+                hole.v = v;
+                status = forgeshape::suggestCadHoleEdges(body->state(), hole, &placed);
+            }
+            if (status == forgeshape::CadStatus::Ok) {
+                g_holeEdgeDraft.active = true;
+                g_holeEdgeDraft.body = id;
+                g_holeEdgeDraft.holeId = holeId > 0 ? static_cast<uint32_t>(holeId) : 0u;
+                g_holeEdgeDraft.support = placed.support;
+                g_holeEdgeDraft.edgeA = placed.edgeFaceA;
+                g_holeEdgeDraft.edgeB = placed.edgeFaceB;
+                values[0] = placed.edgeDistanceA;
+                values[1] = placed.edgeDistanceB;
+            }
+        }
+    }
+    env->SetDoubleArrayRegion(out, 0, 2, values);
+    FS_LOGI("FORGESHAPE_HOLE_EDGE_SEED hole=%lld %s", (long long)holeId,
+            forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// Ends placing from edges: the editor closed, or chose a point instead.
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleEdgeRelease(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    g_holeEdgeDraft = HoleEdgeDraft{};
 }
 
 // Removes hole `holeId` as ONE Undo.
@@ -5528,6 +5688,9 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadHoleDelete(
                                        forgeshape::constructionHistory(),
                                        static_cast<forgeshape::ObjectId>(bodyId),
                                        static_cast<uint32_t>(holeId));
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            g_holeEdgeDraft = HoleEdgeDraft{};
         }
     }
     FS_LOGI("FORGESHAPE_HOLE_DELETE hole=%lld %s", (long long)holeId,
@@ -6325,11 +6488,15 @@ bool resolveCadSketchWorldFrame(forgeshape::ConstructionScene& scene, forgeshape
 // distance the candidate chain DERIVES, so the value reads where the cut will
 // actually reach.
 //   [59] 1 when Through All can be chosen now (`throughAllAvailable`)
+//
+// `CAD-TO-FACE-R1` added To Face (extent 4), whose distance is derived the
+// same way:
+//   [60] 1 when To Face can be chosen now (`toFaceAvailable`)
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                                                            jdoubleArray out) {
     constexpr jsize kLegacySlots = 21;
-    constexpr jsize kMaxSlots = 60;
+    constexpr jsize kMaxSlots = 61;
     if (out == nullptr || env->GetArrayLength(out) < kLegacySlots) {
         return;
     }
@@ -6353,6 +6520,7 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                     session.selectedAreaCount());
             values[30] = static_cast<double>(session.editingFeatureId());
             values[59] = session.throughAllAvailable() ? 1.0 : 0.0;
+            values[60] = session.toFaceAvailable() ? 1.0 : 0.0;
             if (ready) {
                 // The SAME evaluation the render thread draws and the commit
                 // applies: latest-only, cached by candidate revision.
@@ -11078,6 +11246,28 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 if (sketch.tapOutcomeSerial() != tapSerialBefore) {
                     sketchTapOutcome = sketch.lastTapOutcome();
                     sketchTapSelected = sketch.selectedAreaCount();
+                    // `CAD-TO-FACE-R1`: a Ready tap beside every region, while
+                    // the extrusion ends on a face, chooses the face it lands
+                    // on -- the scene picked exactly where the session looked
+                    // (the Down pixel through the Down camera), the face named
+                    // by the chooser's own triangle-to-face rule.
+                    if (sketchTapOutcome == forgeshape::SketchTapOutcome::Exterior
+                        && forgeshape::extrudeIsToFace(sketch.extrude()) && viewWidth > 0
+                        && viewHeight > 0) {
+                        const forgeshape::SceneHit faceHit = forgeshape::pickScene(
+                                sketch.regionTapCamera(), sketch.regionTapX(), sketch.regionTapY(),
+                                viewWidth, viewHeight);
+                        forgeshape::ChosenSupport faceChosen;
+                        if (faceHit.hit
+                            && forgeshape::resolveFaceSupportFromHit(
+                                       forgeshape::constructionScene(), faceHit, &faceChosen)) {
+                            const forgeshape::CadStatus retarget =
+                                    sketch.setToFaceTargetFromTopoRef(faceChosen.faceRef);
+                            FS_LOGI("FORGESHAPE_CAD_TO_FACE_TAP:%s feature=%u",
+                                    forgeshape::cadStatusName(retarget),
+                                    (unsigned)faceChosen.faceRef.producerLocalFeatureId);
+                        }
+                    }
                 }
                 // READY is the one state where an unclaimed single finger
                 // NAVIGATES (`CAD-UX-S1-C1`). While the sketch is being drawn a

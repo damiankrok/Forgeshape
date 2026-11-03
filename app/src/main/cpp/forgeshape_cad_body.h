@@ -128,9 +128,17 @@ enum class ExtrudeExtentMode : uint8_t {
     // mesh generator, the face frames and the preview still see two plain
     // distances. Until it is resolved the two distances read 0.
     ThroughAll,
+    // `CAD-TO-FACE-R1`. Up to a named planar face of an EARLIER feature of the
+    // same body (`ExtrudeFeature::toFace`), for a later Add or Cut. Like
+    // Through All its distance is DERIVED -- the distance along `direction`
+    // from the sketch plane to that face's plane, which must be parallel to it
+    // -- canonically `depth` and `secondDistance` are exactly 0, and the chain
+    // resolves the feature into a One Side extrusion before anything reads a
+    // distance, so an upstream size edit that moves the face moves the end.
+    ToFace,
 };
 
-constexpr int kExtrudeExtentModeCount = 4;
+constexpr int kExtrudeExtentModeCount = 5;
 
 const char* extrudeExtentModeName(ExtrudeExtentMode mode);
 bool extrudeExtentModeFromIndex(int index, ExtrudeExtentMode* out);
@@ -179,6 +187,26 @@ constexpr uint32_t kMaxPlanarFaceSelection = kMaxArrangementFaces;
 constexpr uint32_t kMaxPlanarFaceHoles = kMaxRegionHoles;
 constexpr uint32_t kMaxPlanarFaceCycleFragments = kMaxProfileVertices;
 
+// Where a LATER feature's sketch stands: a planar face of an EARLIER feature of
+// the SAME body, by semantic identity. Deliberately not a `TopoRef`: that names
+// another body and derives this body's world placement from it, while this
+// names a face in the body's own local space and places only the feature's
+// sketch. A body that supported itself through a `TopoRef` would be a cycle.
+// The same reference also names the face a To Face extrusion ends on and the
+// face a hole is drilled into.
+struct CadFeatureSupport {
+    // An earlier feature of this body: the base (kCadFeatureId) or a later one
+    // with a smaller id.
+    uint32_t featureId = kCadFeatureId;
+    CadFaceToken face{};
+    // That feature's topology signature when the sketch was placed, on the
+    // `TopoRef` rule: a face-structure change fails closed, a size edit keeps
+    // it attached.
+    uint64_t lineageToken = 0;
+};
+
+bool sameCadFeatureSupport(const CadFeatureSupport& a, const CadFeatureSupport& b);
+
 struct ExtrudeFeature {
     // WHAT is extruded: a selection of sketch REGIONS (forgeshape_sketch_region.h),
     // stored by semantic identity and in canonical order. The first region is
@@ -219,6 +247,9 @@ struct ExtrudeFeature {
     // payload is refused, never read as either.
     CadSelectionKind selection = CadSelectionKind::LoopRegions;
     std::vector<PlanarFaceRef> planarFaces;
+    // `CAD-TO-FACE-R1`. The face a ToFace extrusion ends on, in ToFace ALONE;
+    // canonically the default `CadFeatureSupport{}` in every other mode.
+    CadFeatureSupport toFace{};
 };
 
 bool sameExtrudeFeature(const ExtrudeFeature& a, const ExtrudeFeature& b);
@@ -256,6 +287,18 @@ inline bool extrudeIsThroughAll(const ExtrudeFeature& extrude) {
 // the same selection and side, `distance` on that side. Returned unchanged for
 // any other mode.
 ExtrudeFeature extrudeResolvedThroughAll(const ExtrudeFeature& extrude, Meters distance);
+
+// `CAD-TO-FACE-R1`. Whether the extrusion ends on a named face.
+inline bool extrudeIsToFace(const ExtrudeFeature& extrude) {
+    return extrude.extent == ExtrudeExtentMode::ToFace;
+}
+// Whether the distance is derived from the body (Through All or To Face).
+inline bool extrudeDistanceIsDerived(const ExtrudeFeature& extrude) {
+    return extrudeIsThroughAll(extrude) || extrudeIsToFace(extrude);
+}
+// A derived extrusion (Through All or To Face) as the One Side extrusion of
+// `distance` it resolves to; any other extrusion is returned as it is.
+ExtrudeFeature extrudeResolvedToDistance(const ExtrudeFeature& extrude, Meters distance);
 
 // The feature `to` implies, from the one there is (`CAD-EXT-R1` transitions).
 //
@@ -434,24 +477,6 @@ int cadFeatureOperationIndex(CadFeatureOperation operation);
 // history step, a `.forge` record and a regeneration stay finite; far above
 // what a phone session builds on one part.
 constexpr uint32_t kMaxCadFeatures = 16;
-
-// Where a LATER feature's sketch stands: a planar face of an EARLIER feature of
-// the SAME body, by semantic identity. Deliberately not a `TopoRef`: that names
-// another body and derives this body's world placement from it, while this
-// names a face in the body's own local space and places only the feature's
-// sketch. A body that supported itself through a `TopoRef` would be a cycle.
-struct CadFeatureSupport {
-    // An earlier feature of this body: the base (kCadFeatureId) or a later one
-    // with a smaller id.
-    uint32_t featureId = kCadFeatureId;
-    CadFaceToken face{};
-    // That feature's topology signature when the sketch was placed, on the
-    // `TopoRef` rule: a face-structure change fails closed, a size edit keeps
-    // it attached.
-    uint64_t lineageToken = 0;
-};
-
-bool sameCadFeatureSupport(const CadFeatureSupport& a, const CadFeatureSupport& b);
 
 // ---------------------------------------------------------------------------
 // The retained sketch table (`CAD-V6-S1`)
@@ -783,6 +808,19 @@ struct CadFeatureHole {
     // Countersink only: the cone's diameter at the face and its included angle.
     double sinkDiameter = 0.0;
     double sinkAngleDegrees = 0.0;
+    // `CAD-TO-FACE-R1`. Placed by its distances from two EDGES of its face
+    // rather than by the point (u, v): each edge is named by the OTHER face of
+    // the support feature that meets the support face along it, and the axis
+    // stands `edgeDistanceA` in from the first and `edgeDistanceB` in from the
+    // second, measured in the face's plane, so an upstream size edit that
+    // moves an edge carries the hole with it. Canonically `u` and `v` are then
+    // exactly 0 (the point is derived); without it every edge field is its
+    // default.
+    bool byEdges = false;
+    CadFaceToken edgeFaceA{};
+    CadFaceToken edgeFaceB{};
+    double edgeDistanceA = 0.0;
+    double edgeDistanceB = 0.0;
 };
 
 bool sameCadFeatureHole(const CadFeatureHole& a, const CadFeatureHole& b);
@@ -939,6 +977,10 @@ const CadFeaturePattern* findCadFeaturePattern(const CadBodyState& state, uint32
 // Whether any feature's extent is Through All (`CAD-EXTENT-R1`). Such a state
 // round-trips only through `CADB` v12, and is never legacy-representable.
 bool cadBodyStateUsesThroughAll(const CadBodyState& state);
+// `CAD-TO-FACE-R1`: a To Face extrusion or a hole placed from two edges, the
+// two things `CADB` v13 alone carries.
+bool cadBodyStateUsesToFace(const CadBodyState& state);
+bool cadBodyStateUsesHoleEdges(const CadBodyState& state);
 
 // Whether the body carries a hole. Such a state round-trips only through
 // `CADB` v11, and is never legacy-representable.

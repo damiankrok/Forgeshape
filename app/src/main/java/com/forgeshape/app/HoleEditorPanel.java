@@ -44,6 +44,16 @@ final class HoleEditorPanel extends LinearLayout {
 
         /** The panel closed without applying anything. */
         void holeCancelled();
+
+        /**
+         * Begins placing from two edges of the face, the hole standing at
+         * (u, v) now (`CAD-TO-FACE-R1`): the two distances, or null when
+         * native refused (the host has said why).
+         */
+        double[] holeEdgeSeed(double u, double v);
+
+        /** Ends placing from edges. */
+        void holeEdgesReleased();
     }
 
     /** Every value one Apply sends, in native's units (metres, degrees). */
@@ -58,6 +68,10 @@ final class HoleEditorPanel extends LinearLayout {
         double sinkAngle;
         double u;
         double v;
+        /** Placed from two edges: {@link #edgeA} and {@link #edgeB} in, (u, v) unused. */
+        boolean byEdges;
+        double edgeA;
+        double edgeB;
     }
 
     private final Listener listener;
@@ -74,11 +88,20 @@ final class HoleEditorPanel extends LinearLayout {
     private final EditText sinkAngleField;
     private final EditText uField;
     private final EditText vField;
+    private final LinearLayout positionRow;
+    private final LinearLayout positionRow2;
+    private final TextView pointChip;
+    private final TextView edgesChip;
+    private final LinearLayout edgeRowA;
+    private final LinearLayout edgeRowB;
+    private final EditText edgeAField;
+    private final EditText edgeBField;
     private final TextView deleteButton;
 
     private int kind = NativeViewport.HOLE_SIMPLE;
     private boolean throughAll = true;
     private boolean editing;
+    private boolean byEdges;
 
     HoleEditorPanel(Context context, Listener listener) {
         super(context);
@@ -159,17 +182,51 @@ final class HoleEditorPanel extends LinearLayout {
 
         // Where on the face: two signed numbers in the face's own frame, so a
         // tap's position can be made exact.
-        final LinearLayout positionRow = row(context, gap);
+        // How it is placed: at a point of the face, or by its distances from
+        // two of the face's edges, which then carry it when the part changes.
+        final LinearLayout placeRow = row(context, gap);
+        pointChip = EditorControlStyles.chip(context, R.id.hole_place_point,
+                context.getString(R.string.hole_place_point));
+        pointChip.setContentDescription(context.getString(R.string.hole_place_point_description));
+        pointChip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                choosePlacement(false);
+            }
+        });
+        placeRow.addView(pointChip, EditorControlStyles.wrap(0));
+        edgesChip = EditorControlStyles.chip(context, R.id.hole_place_edges,
+                context.getString(R.string.hole_place_edges));
+        edgesChip.setContentDescription(context.getString(R.string.hole_place_edges_description));
+        edgesChip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                choosePlacement(true);
+            }
+        });
+        placeRow.addView(edgesChip, EditorControlStyles.wrap(gap));
+
+        positionRow = row(context, gap);
         positionRow.addView(label(context, R.string.hole_label_position), EditorControlStyles.wrap(0));
         positionRow.addView(label(context, R.string.hole_label_u), EditorControlStyles.wrap(gap));
         uField = field(context, R.id.field_hole_u, true);
         positionRow.addView(uField, EditorControlStyles.wrap(gap));
         // The second coordinate on its own row, so the docked editor stays
         // narrow beside the trailing controls (`CAD-UI-DOCK-R1`).
-        final LinearLayout positionRow2 = row(context, gap);
+        positionRow2 = row(context, gap);
         positionRow2.addView(label(context, R.string.hole_label_v), EditorControlStyles.wrap(0));
         vField = field(context, R.id.field_hole_v, true);
         positionRow2.addView(vField, EditorControlStyles.wrap(gap));
+
+        // From edges: the two highlighted edges, one row each.
+        edgeRowA = row(context, gap);
+        edgeRowA.addView(label(context, R.string.hole_label_edge_a), EditorControlStyles.wrap(0));
+        edgeAField = field(context, R.id.field_hole_edge_a, false);
+        edgeRowA.addView(edgeAField, EditorControlStyles.wrap(gap));
+        edgeRowB = row(context, gap);
+        edgeRowB.addView(label(context, R.string.hole_label_edge_b), EditorControlStyles.wrap(0));
+        edgeBField = field(context, R.id.field_hole_edge_b, false);
+        edgeRowB.addView(edgeBField, EditorControlStyles.wrap(gap));
 
         final LinearLayout actions = row(context, gap);
         final TextView apply = EditorControlStyles.primaryButton(context, R.id.apply_hole,
@@ -208,8 +265,11 @@ final class HoleEditorPanel extends LinearLayout {
         addView(depthRow);
         addView(boreRow);
         addView(sinkRow);
+        addView(placeRow);
         addView(positionRow);
         addView(positionRow2);
+        addView(edgeRowA);
+        addView(edgeRowB);
         addView(actions);
     }
 
@@ -222,6 +282,7 @@ final class HoleEditorPanel extends LinearLayout {
         final LengthUnit unit = listener.holeUnit();
         uField.setText(unit.format(u));
         vField.setText(unit.format(v));
+        byEdges = false;
         deleteButton.setVisibility(GONE);
         refresh();
         setVisibility(VISIBLE);
@@ -248,9 +309,15 @@ final class HoleEditorPanel extends LinearLayout {
         }
         uField.setText(unit.format(info[NativeViewport.HOLE_INFO_U]));
         vField.setText(unit.format(info[NativeViewport.HOLE_INFO_V]));
+        byEdges = false;
         deleteButton.setVisibility(VISIBLE);
         refresh();
         setVisibility(VISIBLE);
+        // A hole placed from edges reopens on them, highlighted.
+        if (info.length > NativeViewport.HOLE_INFO_BY_EDGES
+                && info[NativeViewport.HOLE_INFO_BY_EDGES] != 0.0) {
+            choosePlacement(true);
+        }
     }
 
     boolean isOpen() {
@@ -262,11 +329,55 @@ final class HoleEditorPanel extends LinearLayout {
     }
 
     void close() {
+        final boolean wasOpen = isOpen();
         setVisibility(GONE);
         for (EditText field : new EditText[] {diameterField, depthField, boreDiameterField,
-                boreDepthField, sinkDiameterField, sinkAngleField, uField, vField}) {
+                boreDepthField, sinkDiameterField, sinkAngleField, uField, vField, edgeAField,
+                edgeBField}) {
             field.clearFocus();
         }
+        if (byEdges || wasOpen) {
+            byEdges = false;
+            listener.holeEdgesReleased();
+        }
+    }
+
+    /** Whether the hole is being placed from two edges. */
+    boolean placedFromEdges() {
+        return byEdges;
+    }
+
+    /**
+     * At a point, or from the two nearest edges at the distances it stands
+     * from them now, so switching moves nothing; a refusal keeps the point.
+     */
+    private void choosePlacement(boolean edges) {
+        if (edges == byEdges) {
+            refresh();
+            return;
+        }
+        if (!edges) {
+            byEdges = false;
+            listener.holeEdgesReleased();
+            refresh();
+            return;
+        }
+        final Double u = parse(uField, true);
+        final Double v = parse(vField, true);
+        if (u == null || v == null) {
+            refuse(u == null ? R.string.hole_label_u : R.string.hole_label_v,
+                    u == null ? uField : vField);
+            return;
+        }
+        final double[] seeded = listener.holeEdgeSeed(u, v);
+        if (seeded == null) {
+            return;
+        }
+        final LengthUnit unit = listener.holeUnit();
+        edgeAField.setText(unit.format(seeded[0]));
+        edgeBField.setText(unit.format(seeded[1]));
+        byEdges = true;
+        refresh();
     }
 
     // -------------------------------------------------------------------------
@@ -301,6 +412,12 @@ final class HoleEditorPanel extends LinearLayout {
         EditorControlStyles.setChipActive(throughChip, throughAll);
         EditorControlStyles.setChipActive(blindChip, !throughAll);
         depthField.setVisibility(throughAll ? GONE : VISIBLE);
+        EditorControlStyles.setChipActive(pointChip, !byEdges);
+        EditorControlStyles.setChipActive(edgesChip, byEdges);
+        positionRow.setVisibility(byEdges ? GONE : VISIBLE);
+        positionRow2.setVisibility(byEdges ? GONE : VISIBLE);
+        edgeRowA.setVisibility(byEdges ? VISIBLE : GONE);
+        edgeRowB.setVisibility(byEdges ? VISIBLE : GONE);
         boreRow.setVisibility(HolePresentation.boreShown(kind) ? VISIBLE : GONE);
         sinkRow.setVisibility(HolePresentation.sinkShown(kind) ? VISIBLE : GONE);
         final String unit = listener.holeUnit().label();
@@ -313,6 +430,8 @@ final class HoleEditorPanel extends LinearLayout {
                 context.getString(R.string.hole_degrees));
         describe(uField, R.string.hole_label_u, unit);
         describe(vField, R.string.hole_label_v, unit);
+        describe(edgeAField, R.string.hole_label_edge_a, unit);
+        describe(edgeBField, R.string.hole_label_edge_b, unit);
     }
 
     private void describe(EditText field, int labelRes, String unit) {
@@ -367,18 +486,34 @@ final class HoleEditorPanel extends LinearLayout {
             request.sinkDiameter = sink;
             request.sinkAngle = angle;
         }
-        final Double u = parse(uField, true);
-        if (u == null) {
-            refuse(R.string.hole_label_u, uField);
-            return;
+        if (byEdges) {
+            final Double a = parse(edgeAField, true);
+            if (a == null) {
+                refuse(R.string.hole_label_edge_a, edgeAField);
+                return;
+            }
+            final Double b = parse(edgeBField, true);
+            if (b == null) {
+                refuse(R.string.hole_label_edge_b, edgeBField);
+                return;
+            }
+            request.byEdges = true;
+            request.edgeA = a;
+            request.edgeB = b;
+        } else {
+            final Double u = parse(uField, true);
+            if (u == null) {
+                refuse(R.string.hole_label_u, uField);
+                return;
+            }
+            final Double v = parse(vField, true);
+            if (v == null) {
+                refuse(R.string.hole_label_v, vField);
+                return;
+            }
+            request.u = u;
+            request.v = v;
         }
-        final Double v = parse(vField, true);
-        if (v == null) {
-            refuse(R.string.hole_label_v, vField);
-            return;
-        }
-        request.u = u;
-        request.v = v;
         if (listener.holeApply(request)) {
             close();
         }

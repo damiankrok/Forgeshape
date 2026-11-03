@@ -1167,7 +1167,7 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             // sample makes it One Side (`extrudeFeatureWithSide`), measured
             // from the arrow it reaches now; a still tap changes nothing, and
             // a cancel gives Through All back.
-            dragFromThroughAll_ = extrudeIsThroughAll(extrude_);
+            dragFromThroughAll_ = extrudeDistanceIsDerived(extrude_);
             touchOverlay();
             return true;
         }
@@ -3002,6 +3002,20 @@ CadStatus SketchSession::applyExtrudeFeature(const ExtrudeFeature& requested) {
         if (!throughAllAvailable()) {
             return fail(CadStatus::ThroughAllUnsupported);
         }
+    } else if (requested.extent == ExtrudeExtentMode::ToFace) {
+        // The same, and the face must be one the candidates name.
+        if (!toFaceAvailable()) {
+            return fail(CadStatus::ToFaceUnsupported);
+        }
+        bool named = false;
+        for (const CadToFaceCandidate& c : toFaceCandidates()) {
+            named = named
+                    || (sameCadFeatureSupport(c.target, requested.toFace)
+                        && c.direction == requested.direction);
+        }
+        if (!named) {
+            return fail(CadStatus::ToFaceTargetInvalid);
+        }
     } else if (!sidesOk) {
         return fail(CadStatus::InvalidExtrudeDepth);
     }
@@ -3014,8 +3028,7 @@ CadStatus SketchSession::applyExtrudeFeature(const ExtrudeFeature& requested) {
     setExtrudeRegions(&extrude_, regions);
     extrude_.selection = kind;
     extrude_.planarFaces = std::move(faces);
-    if (extrude_.extent == ExtrudeExtentMode::OneSide
-        || extrude_.extent == ExtrudeExtentMode::ThroughAll) {
+    if (extrude_.extent == ExtrudeExtentMode::OneSide || extrudeDistanceIsDerived(extrude_)) {
         // The user's live One Side choice IS the transition memory; nothing
         // else writes it, so the two can never disagree.
         oneSideDirection_ = extrude_.direction;
@@ -3030,8 +3043,72 @@ bool SketchSession::throughAllAvailable() const {
            && editingSketchId_ == kNoCadSketch;
 }
 
+uint32_t SketchSession::candidateFeatureIdIn(const CadBodyState& state) const {
+    uint32_t featureId = editingFeatureId_;
+    if (featureId == 0 && !state.laterFeatures.empty()) {
+        featureId = state.laterFeatures.back().featureId;
+    }
+    return featureId;
+}
+
+bool SketchSession::toFaceAvailable() const {
+    return state_ == SketchSessionState::Ready && featureKind_ == CadFeatureKind::Extrude
+           && (operation_ == CadFeatureOperation::Add || operation_ == CadFeatureOperation::Cut)
+           && editingFeatureId_ != kCadFeatureId && editingSketchId_ == kNoCadSketch
+           && !toFaceCandidates().empty();
+}
+
+const std::vector<CadToFaceCandidate>& SketchSession::toFaceCandidates() const {
+    if (toFaceCacheRevision_ == candidateRevision_) {
+        return toFaceCache_;
+    }
+    toFaceCache_.clear();
+    toFaceCacheRevision_ = candidateRevision_;
+    if (state_ != SketchSessionState::Ready || featureKind_ != CadFeatureKind::Extrude
+        || (operation_ != CadFeatureOperation::Add && operation_ != CadFeatureOperation::Cut)
+        || editingFeatureId_ == kCadFeatureId || editingSketchId_ != kNoCadSketch) {
+        return toFaceCache_;
+    }
+    const CadBodyState state = candidateState();
+    const uint32_t featureId = candidateFeatureIdIn(state);
+    if (featureId > kCadFeatureId
+        && cadToFaceCandidates(state, featureId, &toFaceCache_) != CadStatus::Ok) {
+        toFaceCache_.clear();
+    }
+    return toFaceCache_;
+}
+
+CadStatus SketchSession::setToFaceTarget(const CadFeatureSupport& target) {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (!toFaceAvailable()) {
+        return fail(CadStatus::ToFaceUnsupported);
+    }
+    for (const CadToFaceCandidate& c : toFaceCandidates()) {
+        if (!sameCadFeatureSupport(c.target, target)) continue;
+        ExtrudeFeature next =
+                extrudeFeatureWithExtent(displayExtrude(), ExtrudeExtentMode::ToFace, c.direction);
+        next.extent = ExtrudeExtentMode::ToFace;
+        next.direction = c.direction;
+        next.depth = 0.0;
+        next.secondDistance = 0.0;
+        next.toFace = c.target;
+        return applyExtrudeFeature(next);
+    }
+    return fail(CadStatus::ToFaceTargetInvalid);
+}
+
+CadStatus SketchSession::setToFaceTargetFromTopoRef(const TopoRef& face) {
+    if (face.producerObjectId != targetBodyId_ || targetBodyId_ == kNoObject) {
+        return fail(CadStatus::ToFaceTargetInvalid);
+    }
+    return setToFaceTarget(
+            CadFeatureSupport{face.producerLocalFeatureId, face.face, face.lineageToken});
+}
+
 ExtrudeFeature SketchSession::displayExtrude() const {
-    if (!extrudeIsThroughAll(extrude_)) {
+    if (!extrudeDistanceIsDerived(extrude_)) {
         return extrude_;
     }
     if (displayCacheRevision_ == candidateRevision_) {
@@ -3040,19 +3117,16 @@ ExtrudeFeature SketchSession::displayExtrude() const {
     // The feature the candidate builds: the one being edited, or the one this
     // session appends last.
     const CadBodyState state = candidateState();
-    uint32_t featureId = editingFeatureId_;
-    if (featureId == 0 && !state.laterFeatures.empty()) {
-        featureId = state.laterFeatures.back().featureId;
-    }
+    const uint32_t featureId = candidateFeatureIdIn(state);
     // Unresolvable (nothing on that side): a short arrow on the chosen side,
     // while the candidate's own verdict names the refusal.
-    ExtrudeFeature resolved = extrudeResolvedThroughAll(extrude_, kDefaultExtrudeDepthMeters * 0.1);
+    ExtrudeFeature resolved = extrudeResolvedToDistance(extrude_, kDefaultExtrudeDepthMeters * 0.1);
     std::vector<CadFeatureGeometry> chain;
     if (featureId > kCadFeatureId
         && buildCadChainGeometry(state, &chain, nullptr, featureId) == CadStatus::Ok) {
         for (const CadFeatureGeometry& g : chain) {
             if (g.featureId == featureId) {
-                resolved = extrudeResolvedThroughAll(extrude_, g.farOffset - g.nearOffset);
+                resolved = extrudeResolvedToDistance(extrude_, g.farOffset - g.nearOffset);
             }
         }
     }
@@ -3078,6 +3152,31 @@ CadStatus SketchSession::setExtrudeExtent(ExtrudeExtentMode extent) {
     }
     if (extent == ExtrudeExtentMode::ThroughAll && !throughAllAvailable()) {
         return fail(CadStatus::ThroughAllUnsupported);
+    }
+    if (extent == ExtrudeExtentMode::ToFace) {
+        // Into To Face: the NEAREST face on the side the solid grows now, or
+        // -- when that side has none -- the nearest on the other.
+        if (!toFaceAvailable()) {
+            return fail(CadStatus::ToFaceUnsupported);
+        }
+        if (extrudeIsToFace(extrude_)) {
+            return fail(CadStatus::Ok);
+        }
+        const ExtrudeDirection side = extrude_.extent == ExtrudeExtentMode::OneSide
+                                                      || extrudeIsThroughAll(extrude_)
+                                              ? extrude_.direction
+                                              : oneSideDirection_;
+        const CadToFaceCandidate* chosen = nullptr;
+        for (const CadToFaceCandidate& c : toFaceCandidates()) {
+            if (c.direction == side) {
+                chosen = &c;
+                break;
+            }
+        }
+        if (chosen == nullptr) {
+            chosen = &toFaceCandidates().front();
+        }
+        return setToFaceTarget(chosen->target);
     }
     // Out of Through All, the distance it reaches now is the one carried over.
     return applyExtrudeFeature(
@@ -3130,6 +3229,19 @@ CadStatus SketchSession::flipExtrudeDirection() {
     // Sides states both explicitly, so there is no side left for a Flip to
     // choose; using it to swap A and B would be a second, hidden meaning for
     // one control.
+    if (extrudeIsToFace(extrude_)) {
+        // To Face is one-sided too: Flip ends on the nearest face on the
+        // other side, and says so by name when there is none.
+        const ExtrudeDirection other = extrude_.direction == ExtrudeDirection::AlongNormal
+                                               ? ExtrudeDirection::AgainstNormal
+                                               : ExtrudeDirection::AlongNormal;
+        for (const CadToFaceCandidate& c : toFaceCandidates()) {
+            if (c.direction == other) {
+                return setToFaceTarget(c.target);
+            }
+        }
+        return fail(CadStatus::ToFaceBehind);
+    }
     if (extrude_.extent == ExtrudeExtentMode::ThroughAll) {
         // Through All is one-sided too: Flip chooses the other side.
         ExtrudeFeature flipped = extrude_;
@@ -3304,6 +3416,10 @@ CadStatus SketchSession::setOperation(CadFeatureOperation operation) {
         // Only a Cut goes through a body: leaving Cut keeps the distance the
         // cut reached, as One Side, rather than a state the commit refuses.
         if (extrudeIsThroughAll(extrude_) && operation != CadFeatureOperation::Cut) {
+            extrude_ = displayExtrude();
+        }
+        // To Face ends an Add or a Cut; a New Body keeps the reach as One Side.
+        if (extrudeIsToFace(extrude_) && operation == CadFeatureOperation::NewBody) {
             extrude_ = displayExtrude();
         }
         operation_ = operation;

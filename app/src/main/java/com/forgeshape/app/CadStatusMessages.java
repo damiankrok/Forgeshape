@@ -183,6 +183,18 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_through_all_reaches_nothing);
             case NativeViewport.CAD_EDGE_NOT_ON_BODY:
                 return context.getString(R.string.status_edge_not_on_body);
+            case NativeViewport.CAD_TO_FACE_UNSUPPORTED:
+                return context.getString(R.string.status_to_face_unsupported);
+            case NativeViewport.CAD_TO_FACE_TARGET_INVALID:
+                return context.getString(R.string.status_to_face_target_invalid);
+            case NativeViewport.CAD_TO_FACE_NOT_PARALLEL:
+                return context.getString(R.string.status_to_face_not_parallel);
+            case NativeViewport.CAD_TO_FACE_BEHIND:
+                return context.getString(R.string.status_to_face_behind);
+            case NativeViewport.CAD_HOLE_EDGE_NOT_FOUND:
+                return context.getString(R.string.status_hole_edge_not_found);
+            case NativeViewport.CAD_HOLE_EDGES_PARALLEL:
+                return context.getString(R.string.status_hole_edges_parallel);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));

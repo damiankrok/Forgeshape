@@ -1,5 +1,7 @@
 #include "forgeshape_cad_hole.h"
 
+#include "forgeshape_cad_edge_finish.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -75,6 +77,18 @@ CadStatus applyHoleAct(ConstructionScene& scene, ConstructionHistory& history, O
 }  // namespace
 
 CadStatus validateCadHoleValues(const CadFeatureHole& h) {
+    // Placed from edges or at a point -- one encoding each (`CAD-TO-FACE-R1`).
+    if (h.byEdges) {
+        if (h.u != 0.0 || h.v != 0.0 || !inRange(h.edgeDistanceA, kMinHoleDepth, kMaxHolePosition)
+            || !inRange(h.edgeDistanceB, kMinHoleDepth, kMaxHolePosition)
+            || sameCadFaceToken(h.edgeFaceA, h.edgeFaceB)) {
+            return CadStatus::HoleInvalid;
+        }
+    } else if (!sameCadFaceToken(h.edgeFaceA, CadFaceToken{})
+               || !sameCadFaceToken(h.edgeFaceB, CadFaceToken{}) || h.edgeDistanceA != 0.0
+               || h.edgeDistanceB != 0.0) {
+        return CadStatus::HoleInvalid;
+    }
     if (!inRange(h.u, -kMaxHolePosition, kMaxHolePosition)
         || !inRange(h.v, -kMaxHolePosition, kMaxHolePosition)
         || !inRange(h.diameter, kMinHoleDiameter, kMaxHoleDiameter)) {
@@ -114,15 +128,177 @@ CadStatus validateCadHoleValues(const CadFeatureHole& h) {
     return CadStatus::HoleInvalid;
 }
 
+namespace {
+
+// One edge of the hole's face as the face's own plane sees it: the edge face
+// `token` of the support feature, and the in-plane equation of the line the
+// two faces share -- a point at (u, v) stands `a·u + b·v + c` in from it,
+// measured in the face's plane.
+struct HoleEdgeLine {
+    double a = 0.0;
+    double b = 0.0;
+    double c = 0.0;
+};
+
+CadStatus holeEdgeLine(const CadFeatureGeometry& feature, const CadFrame64& face,
+                       const CadFaceToken& token, HoleEdgeLine* out) {
+    for (const CadFeatureFace& other : feature.faces) {
+        if (!sameCadFaceToken(other.token, token)) continue;
+        // A curved side's frame is one facet's: no single line to measure from.
+        if (!other.eligible) return CadStatus::HoleEdgeNotFound;
+        // The other face's normal within the hole's face: zero when the two
+        // are parallel, which share no edge.
+        const double along = dvec3Dot(other.frame.n, face.n);
+        const DVec3 inPlane = dvec3Sub(other.frame.n, dvec3Scale(face.n, along));
+        const double s = std::sqrt(dvec3Dot(inPlane, inPlane));
+        if (!(s > 1.0e-6)) return CadStatus::HoleEdgeNotFound;
+        // The other face is material-outward, so the face's material lies on
+        // the side its normal points away from: in = -dot(p - g, n) / s.
+        out->a = -dvec3Dot(face.u, other.frame.n) / s;
+        out->b = -dvec3Dot(face.v, other.frame.n) / s;
+        out->c = -dvec3Dot(dvec3Sub(face.origin, other.frame.origin), other.frame.n) / s;
+        return CadStatus::Ok;
+    }
+    return CadStatus::HoleEdgeNotFound;
+}
+
+const CadFeatureGeometry* holeSupportFeature(const std::vector<CadFeatureGeometry>& chain,
+                                             const CadFeatureHole& hole) {
+    for (const CadFeatureGeometry& g : chain) {
+        if (g.featureId == hole.support.featureId) return &g;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+CadStatus cadHolePoint(const std::vector<CadFeatureGeometry>& chain, const CadFeatureHole& hole,
+                       double* outU, double* outV) {
+    CadFrame64 face;
+    if (!resolveCadFeatureSupportFrame(chain, hole.support, &face)) {
+        return CadStatus::HoleSupportInvalid;
+    }
+    double u = hole.u;
+    double v = hole.v;
+    if (hole.byEdges) {
+        const CadFeatureGeometry* feature = holeSupportFeature(chain, hole);
+        if (feature == nullptr) return CadStatus::HoleSupportInvalid;
+        if (sameCadFaceToken(hole.edgeFaceA, hole.support.face)
+            || sameCadFaceToken(hole.edgeFaceB, hole.support.face)) {
+            return CadStatus::HoleEdgeNotFound;
+        }
+        HoleEdgeLine first;
+        HoleEdgeLine second;
+        CadStatus why = holeEdgeLine(*feature, face, hole.edgeFaceA, &first);
+        if (why != CadStatus::Ok) return why;
+        why = holeEdgeLine(*feature, face, hole.edgeFaceB, &second);
+        if (why != CadStatus::Ok) return why;
+        // a·u + b·v + c = d for both edges: two lines, one point -- unless the
+        // edges run the same way (each row is a unit normal, so the
+        // determinant is the sine between them).
+        const double det = first.a * second.b - second.a * first.b;
+        if (!(std::fabs(det) > 1.0e-6)) return CadStatus::HoleEdgesParallel;
+        const double r1 = hole.edgeDistanceA - first.c;
+        const double r2 = hole.edgeDistanceB - second.c;
+        u = (r1 * second.b - r2 * first.b) / det;
+        v = (first.a * r2 - second.a * r1) / det;
+        if (!std::isfinite(u) || !std::isfinite(v)) return CadStatus::HoleEdgesParallel;
+    }
+    if (outU != nullptr) *outU = u;
+    if (outV != nullptr) *outV = v;
+    return CadStatus::Ok;
+}
+
 bool cadHoleFrame(const std::vector<CadFeatureGeometry>& chain, const CadFeatureHole& hole,
                   CadFrame64* out) {
     CadFrame64 face;
     if (!resolveCadFeatureSupportFrame(chain, hole.support, &face)) {
         return false;
     }
-    face.origin = cadFramePoint(face, hole.u, hole.v, 0.0);
+    double u = 0.0;
+    double v = 0.0;
+    if (cadHolePoint(chain, hole, &u, &v) != CadStatus::Ok) {
+        return false;
+    }
+    face.origin = cadFramePoint(face, u, v, 0.0);
     if (out != nullptr) *out = face;
     return true;
+}
+
+CadStatus suggestCadHoleEdges(const CadBodyState& state, const CadFeatureHole& hole,
+                              CadFeatureHole* out) {
+    if (out == nullptr) return CadStatus::HoleInvalid;
+    std::vector<CadFeatureGeometry> chain;
+    if (buildCadChainGeometry(state, &chain, nullptr, hole.support.featureId) != CadStatus::Ok) {
+        return CadStatus::HoleSupportInvalid;
+    }
+    double u = 0.0;
+    double v = 0.0;
+    const CadStatus pointWhy = cadHolePoint(chain, hole, &u, &v);
+    if (pointWhy != CadStatus::Ok) return pointWhy;
+    CadFrame64 face;
+    const CadFeatureGeometry* feature = holeSupportFeature(chain, hole);
+    if (feature == nullptr || !resolveCadFeatureSupportFrame(chain, hole.support, &face)) {
+        return CadStatus::HoleSupportInvalid;
+    }
+    // The real edges of the face: the support feature's own prism edges that
+    // have the hole's face on one side.
+    std::vector<CadFeatureEdge> edges;
+    if (enumerateCadFeatureEdges(state, hole.support.featureId, &edges) != CadStatus::Ok) {
+        return CadStatus::HoleEdgeNotFound;
+    }
+    struct Option {
+        CadFaceToken token;
+        HoleEdgeLine line;
+        double distance;
+    };
+    std::vector<Option> options;
+    for (const CadFeatureEdge& edge : edges) {
+        CadFaceToken other{};
+        if (sameCadFaceToken(edge.ref.faceA, hole.support.face)) {
+            other = edge.ref.faceB;
+        } else if (sameCadFaceToken(edge.ref.faceB, hole.support.face)) {
+            other = edge.ref.faceA;
+        } else {
+            continue;
+        }
+        bool seen = false;
+        for (const Option& o : options) seen = seen || sameCadFaceToken(o.token, other);
+        if (seen) continue;
+        HoleEdgeLine line;
+        if (holeEdgeLine(*feature, face, other, &line) != CadStatus::Ok) continue;
+        const double distance = line.a * u + line.b * v + line.c;
+        // Only an edge the point stands inside of.
+        if (!(distance > 0.0)) continue;
+        options.push_back(Option{other, line, distance});
+    }
+    std::stable_sort(options.begin(), options.end(), [](const Option& x, const Option& y) {
+        if (x.distance != y.distance) return x.distance < y.distance;
+        return cadFaceTokenCode(x.token) < cadFaceTokenCode(y.token);
+    });
+    for (size_t i = 0; i < options.size(); ++i) {
+        for (size_t j = i + 1; j < options.size(); ++j) {
+            const double sine = options[i].line.a * options[j].line.b
+                                - options[j].line.a * options[i].line.b;
+            if (std::fabs(sine) < 0.2) continue;  // nearly the same way: try the next
+            CadFeatureHole placed = hole;
+            placed.byEdges = true;
+            placed.u = 0.0;
+            placed.v = 0.0;
+            // The first edge is the one that reads first on the face: the
+            // one whose distance runs most along the face's u.
+            const bool swap = std::fabs(options[j].line.a) > std::fabs(options[i].line.a);
+            const Option& a = swap ? options[j] : options[i];
+            const Option& b = swap ? options[i] : options[j];
+            placed.edgeFaceA = a.token;
+            placed.edgeFaceB = b.token;
+            placed.edgeDistanceA = a.distance;
+            placed.edgeDistanceB = b.distance;
+            *out = placed;
+            return CadStatus::Ok;
+        }
+    }
+    return CadStatus::HoleEdgeNotFound;
 }
 
 bool cadHoleFrame(const CadBodyState& state, const CadFeatureHole& hole, CadFrame64* out) {
@@ -177,8 +353,9 @@ CadStatus validateCadFeatureHoles(const CadBodyState& state, uint32_t* outFailed
         return fail(chainWhy, failedFeature);
     }
     for (const CadFeatureHole& h : state.holes) {
-        if (!cadHoleFrame(chain, h, nullptr)) {
-            return fail(CadStatus::HoleSupportInvalid, h.holeId);
+        const CadStatus pointWhy = cadHolePoint(chain, h, nullptr, nullptr);
+        if (pointWhy != CadStatus::Ok) {
+            return fail(pointWhy, h.holeId);
         }
     }
     return CadStatus::Ok;

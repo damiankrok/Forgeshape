@@ -41,6 +41,7 @@ const char* extrudeExtentModeName(ExtrudeExtentMode mode) {
         case ExtrudeExtentMode::Symmetric: return "Symmetric";
         case ExtrudeExtentMode::TwoSides: return "TwoSides";
         case ExtrudeExtentMode::ThroughAll: return "ThroughAll";
+        case ExtrudeExtentMode::ToFace: return "ToFace";
     }
     return "unknown";
 }
@@ -54,6 +55,7 @@ bool extrudeExtentModeFromIndex(int index, ExtrudeExtentMode* out) {
         case 1: *out = ExtrudeExtentMode::Symmetric; return true;
         case 2: *out = ExtrudeExtentMode::TwoSides; return true;
         case 3: *out = ExtrudeExtentMode::ThroughAll; return true;
+        case 4: *out = ExtrudeExtentMode::ToFace; return true;
         default: return false;
     }
 }
@@ -186,7 +188,8 @@ Meters extrudePositiveDistance(const ExtrudeFeature& extrude) {
         case ExtrudeExtentMode::TwoSides:
             return extrude.depth;
         case ExtrudeExtentMode::ThroughAll:
-            return 0.0;  // derived; read only after `extrudeResolvedThroughAll`
+        case ExtrudeExtentMode::ToFace:
+            return 0.0;  // derived; read only after `extrudeResolvedToDistance`
     }
     return 0.0;
 }
@@ -200,19 +203,25 @@ Meters extrudeNegativeDistance(const ExtrudeFeature& extrude) {
         case ExtrudeExtentMode::TwoSides:
             return extrude.secondDistance;
         case ExtrudeExtentMode::ThroughAll:
+        case ExtrudeExtentMode::ToFace:
             return 0.0;
     }
     return 0.0;
 }
 
 ExtrudeFeature extrudeResolvedThroughAll(const ExtrudeFeature& extrude, Meters distance) {
-    if (extrude.extent != ExtrudeExtentMode::ThroughAll) {
+    return extrudeResolvedToDistance(extrude, distance);
+}
+
+ExtrudeFeature extrudeResolvedToDistance(const ExtrudeFeature& extrude, Meters distance) {
+    if (!extrudeDistanceIsDerived(extrude)) {
         return extrude;
     }
     ExtrudeFeature out = extrude;
     out.extent = ExtrudeExtentMode::OneSide;
     out.depth = distance;
     out.secondDistance = 0.0;
+    out.toFace = CadFeatureSupport{};
     return out;
 }
 
@@ -253,15 +262,19 @@ bool extrudeFeatureCanonical(const ExtrudeFeature& extrude) {
     if (!extentValid(extrude.extent) || !directionValid(extrude.direction)) {
         return false;
     }
-    // A side is meaningful in the two one-sided modes alone.
-    if (extrude.extent != ExtrudeExtentMode::OneSide
-        && extrude.extent != ExtrudeExtentMode::ThroughAll
+    // A side is meaningful in the one-sided modes alone.
+    if (extrude.extent != ExtrudeExtentMode::OneSide && !extrudeDistanceIsDerived(extrude)
         && extrude.direction != ExtrudeDirection::AlongNormal) {
         return false;
     }
-    // Through All stores no distance at all: one encoding per solid.
-    if (extrude.extent == ExtrudeExtentMode::ThroughAll
+    // Through All and To Face store no distance at all: one encoding per solid.
+    if (extrudeDistanceIsDerived(extrude)
         && (!sameBits(extrude.depth, 0.0) || !sameBits(extrude.secondDistance, 0.0))) {
+        return false;
+    }
+    // A face to end on in To Face alone; To Face names an earlier feature's
+    // face, never the base-less default.
+    if (extrudeIsToFace(extrude) != !sameCadFeatureSupport(extrude.toFace, CadFeatureSupport{})) {
         return false;
     }
     if (extrude.extent != ExtrudeExtentMode::TwoSides && !sameBits(extrude.secondDistance, 0.0)) {
@@ -290,22 +303,29 @@ ExtrudeFeature extrudeFeatureWithExtent(const ExtrudeFeature& from, ExtrudeExten
     if (!extentValid(to) || to == from.extent) {
         return from;
     }
-    if (to == ExtrudeExtentMode::ThroughAll) {
+    if (to == ExtrudeExtentMode::ThroughAll || to == ExtrudeExtentMode::ToFace) {
         // The side the solid reaches now (or the user's last One Side choice
-        // when it reaches both), and no distance: the body supplies it.
+        // when it reaches both), and no distance: the body supplies it. A To
+        // Face target is the caller's to name (`toFace`); this keeps the one
+        // `from` carried, which is the default unless `from` was To Face.
         ExtrudeFeature out = from;
-        out.extent = ExtrudeExtentMode::ThroughAll;
-        out.direction = from.extent == ExtrudeExtentMode::OneSide ? from.direction : preferredSide;
+        out.extent = to;
+        out.direction = from.extent == ExtrudeExtentMode::OneSide || extrudeDistanceIsDerived(from)
+                                ? from.direction
+                                : preferredSide;
         out.depth = 0.0;
         out.secondDistance = 0.0;
+        if (to == ExtrudeExtentMode::ThroughAll) {
+            out.toFace = CadFeatureSupport{};
+        }
         return out;
     }
-    if (from.extent == ExtrudeExtentMode::ThroughAll) {
-        // An unresolved Through All has no distance to carry over; the caller
-        // that knows it resolves first (`extrudeResolvedThroughAll`). Alone,
-        // the default depth on the same side is the readable starting point.
+    if (extrudeDistanceIsDerived(from)) {
+        // An unresolved derived extent has no distance to carry over; the
+        // caller that knows it resolves first (`extrudeResolvedToDistance`).
+        // Alone, the default depth on the same side is the readable start.
         return extrudeFeatureWithExtent(
-                extrudeResolvedThroughAll(from, kDefaultExtrudeDepthMeters), to, from.direction);
+                extrudeResolvedToDistance(from, kDefaultExtrudeDepthMeters), to, from.direction);
     }
     ExtrudeFeature out = from;
     out.extent = to;
@@ -327,6 +347,7 @@ ExtrudeFeature extrudeFeatureWithExtent(const ExtrudeFeature& from, ExtrudeExten
             out.secondDistance = 0.0;
             break;
         case ExtrudeExtentMode::ThroughAll:
+        case ExtrudeExtentMode::ToFace:
             break;  // handled above
         case ExtrudeExtentMode::TwoSides:
             // Both sides start from what the previous mode reached, so the
@@ -345,14 +366,15 @@ ExtrudeFeature extrudeFeatureWithSide(const ExtrudeFeature& from, bool positiveS
                                       Meters distance) {
     ExtrudeFeature out = from;
     switch (from.extent) {
-        case ExtrudeExtentMode::ThroughAll: {
-            // A length written to a Through All extrusion is the user stating
-            // a depth: it becomes One Side on the same side.
+        case ExtrudeExtentMode::ThroughAll:
+        case ExtrudeExtentMode::ToFace: {
+            // A length written to a derived extrusion is the user stating a
+            // depth: it becomes One Side on the same side.
             const bool solidIsPositive = from.direction == ExtrudeDirection::AlongNormal;
             if (positiveSide != solidIsPositive) {
                 return from;
             }
-            return extrudeResolvedThroughAll(from, distance);
+            return extrudeResolvedToDistance(from, distance);
         }
         case ExtrudeExtentMode::OneSide: {
             const bool solidIsPositive = from.direction == ExtrudeDirection::AlongNormal;
@@ -380,9 +402,9 @@ ExtrudeFeature extrudeFeatureWithSide(const ExtrudeFeature& from, bool positiveS
 
 ExtrudeFeature extrudeFeatureWithPrimary(const ExtrudeFeature& from, Meters distance,
                                          ExtrudeDirection direction) {
-    if (from.extent == ExtrudeExtentMode::ThroughAll) {
-        // A typed depth over Through All is a depth: One Side, as typed.
-        ExtrudeFeature out = extrudeResolvedThroughAll(from, distance);
+    if (extrudeDistanceIsDerived(from)) {
+        // A typed depth over a derived extent is a depth: One Side, as typed.
+        ExtrudeFeature out = extrudeResolvedToDistance(from, distance);
         out.direction = direction;
         return out;
     }
@@ -486,7 +508,8 @@ bool sameExtrudeFeature(const ExtrudeFeature& a, const ExtrudeFeature& b) {
         }
     }
     return sameBits(a.depth, b.depth) && a.direction == b.direction && a.extent == b.extent
-           && sameBits(a.secondDistance, b.secondDistance);
+           && sameBits(a.secondDistance, b.secondDistance)
+           && sameCadFeatureSupport(a.toFace, b.toFace);
 }
 
 bool sameRevolveFeature(const RevolveFeature& a, const RevolveFeature& b) {
@@ -612,7 +635,10 @@ bool sameCadFeatureHole(const CadFeatureHole& a, const CadFeatureHole& b) {
            && a.u == b.u && a.v == b.v && a.diameter == b.diameter
            && a.throughAll == b.throughAll && a.depth == b.depth
            && a.boreDiameter == b.boreDiameter && a.boreDepth == b.boreDepth
-           && a.sinkDiameter == b.sinkDiameter && a.sinkAngleDegrees == b.sinkAngleDegrees;
+           && a.sinkDiameter == b.sinkDiameter && a.sinkAngleDegrees == b.sinkAngleDegrees
+           && a.byEdges == b.byEdges && sameCadFaceToken(a.edgeFaceA, b.edgeFaceA)
+           && sameCadFaceToken(a.edgeFaceB, b.edgeFaceB) && a.edgeDistanceA == b.edgeDistanceA
+           && a.edgeDistanceB == b.edgeDistanceB;
 }
 
 double cadHoleCountersinkDepth(const CadFeatureHole& hole) {
@@ -627,6 +653,21 @@ bool cadBodyStateUsesThroughAll(const CadBodyState& state) {
     if (extrudeIsThroughAll(state.extrude)) return true;
     for (const CadFeature& feature : state.laterFeatures) {
         if (extrudeIsThroughAll(feature.extrude)) return true;
+    }
+    return false;
+}
+
+bool cadBodyStateUsesToFace(const CadBodyState& state) {
+    if (extrudeIsToFace(state.extrude)) return true;
+    for (const CadFeature& feature : state.laterFeatures) {
+        if (extrudeIsToFace(feature.extrude)) return true;
+    }
+    return false;
+}
+
+bool cadBodyStateUsesHoleEdges(const CadBodyState& state) {
+    for (const CadFeatureHole& hole : state.holes) {
+        if (hole.byEdges) return true;
     }
     return false;
 }
@@ -908,7 +949,8 @@ bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
     }
     // Nor a hole below v11 (`CAD-HOLE-R1`), nor Through All below v12
     // (`CAD-EXTENT-R1`).
-    if (cadBodyStateUsesHoles(state) || cadBodyStateUsesThroughAll(state)) {
+    if (cadBodyStateUsesHoles(state) || cadBodyStateUsesThroughAll(state)
+        || cadBodyStateUsesToFace(state)) {
         return false;
     }
     // A Construction role or a sketch dimension has no encoding below v8
@@ -1080,9 +1122,9 @@ CadStatus validateExtrudeExtent(const ExtrudeFeature& extrude) {
     if (!extentValid(extrude.extent) || !extrudeFeatureCanonical(extrude)) {
         return CadStatus::InvalidExtrudeExtent;
     }
-    // Through All states no distance: the chain derives it, and refuses it
-    // there by name when the body reaches nowhere on that side.
-    if (extrude.extent == ExtrudeExtentMode::ThroughAll) {
+    // Through All and To Face state no distance: the chain derives it, and
+    // refuses it there by name when it cannot.
+    if (extrudeDistanceIsDerived(extrude)) {
         return CadStatus::Ok;
     }
     const Meters positive = extrudePositiveDistance(extrude);
@@ -1560,6 +1602,9 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
     // for it to go through.
     if (extrudeIsThroughAll(state.extrude)) {
         return CadStatus::ThroughAllUnsupported;
+    }
+    if (extrudeIsToFace(state.extrude)) {
+        return CadStatus::ToFaceUnsupported;
     }
     const CadStatus baseWhy =
             validateCadFeatureGeometry(cadBaseSketch(state), state.extrude, &baseRegions);

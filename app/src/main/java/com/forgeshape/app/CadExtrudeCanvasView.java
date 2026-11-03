@@ -138,6 +138,15 @@ final class CadExtrudeCanvasView extends FrameLayout {
 
         /** Remove committed hole {@code holeId} of body {@code bodyId}. */
         boolean onCanvasHoleDelete(long bodyId, long holeId);
+
+        /**
+         * Begins placing the hole from two edges of its face (`CAD-TO-FACE-R1`):
+         * the two distances, or null on a refusal the host has said.
+         */
+        double[] onCanvasHoleEdgeSeed(long bodyId, long holeId, double u, double v);
+
+        /** Ends placing from edges. */
+        void onCanvasHoleEdgesReleased();
     }
 
     /**
@@ -157,7 +166,8 @@ final class CadExtrudeCanvasView extends FrameLayout {
     /** The extent choices, in {@link CadHudPresentation#EXTENTS} order. */
     private static final int[] EXTENT_CHOICE_IDS = {
             R.id.cad_extrude_extent_one_side, R.id.cad_extrude_extent_symmetric,
-            R.id.cad_extrude_extent_two_sides, R.id.cad_extrude_extent_through_all};
+            R.id.cad_extrude_extent_two_sides, R.id.cad_extrude_extent_through_all,
+            R.id.cad_extrude_extent_to_face};
     /** The operation choices, in {@link CadHudPresentation#OPERATIONS} order. */
     private static final int[] OPERATION_CHOICE_IDS = {
             R.id.cad_extrude_operation_new_body, R.id.cad_extrude_operation_add,
@@ -810,6 +820,17 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 hideIme();
                 refreshFromNative();
             }
+
+            @Override
+            public double[] holeEdgeSeed(double u, double v) {
+                return CadExtrudeCanvasView.this.actions.onCanvasHoleEdgeSeed(holeBodyId, holeId,
+                        u, v);
+            }
+
+            @Override
+            public void holeEdgesReleased() {
+                CadExtrudeCanvasView.this.actions.onCanvasHoleEdgesReleased();
+            }
         });
         holePanel.setElevation(EditorControlStyles.dimen(context, R.dimen.elevation_floating));
         holeScroll = dockScroll(context);
@@ -1261,7 +1282,10 @@ final class CadExtrudeCanvasView extends FrameLayout {
         reading.setText(extent == NativeViewport.EXTENT_THROUGH_ALL
                 ? context.getString(R.string.extrude_through_all_reading,
                         unit.formatWithUnit(shownDepth))
-                : unit.formatWithUnit(shownDepth));
+                : extent == NativeViewport.EXTENT_TO_FACE
+                        ? context.getString(R.string.extrude_to_face_reading,
+                                unit.formatWithUnit(shownDepth))
+                        : unit.formatWithUnit(shownDepth));
         reading.setContentDescription(context.getString(
                 extent == NativeViewport.EXTENT_SYMMETRIC ? R.string.extrude_each_side_description
                         : extent == NativeViewport.EXTENT_TWO_SIDES
@@ -1401,10 +1425,13 @@ final class CadExtrudeCanvasView extends FrameLayout {
         // The palette.
         final boolean throughAllAvailable =
                 tool[NativeViewport.CAD_EXTRUDE_THROUGH_ALL_AVAILABLE] != 0.0;
+        final boolean toFaceAvailable = tool.length > NativeViewport.CAD_EXTRUDE_TO_FACE_AVAILABLE
+                && tool[NativeViewport.CAD_EXTRUDE_TO_FACE_AVAILABLE] != 0.0;
         for (int i = 0; i < extentChoices.length; i++) {
             final int mode = CadHudPresentation.EXTENTS[i];
             extentChoices[i].view.setVisibility(
-                    CadHudPresentation.extentOffered(mode, throughAllAvailable) || mode == extent
+                    CadHudPresentation.extentOffered(mode, throughAllAvailable, toFaceAvailable)
+                            || mode == extent
                             ? VISIBLE : GONE);
             markChoice(extentChoices[i], mode == extent,
                     CadHudPresentation.extentDescription(mode));

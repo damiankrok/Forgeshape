@@ -36,6 +36,22 @@ bool cadHoleFrame(const std::vector<CadFeatureGeometry>& chain, const CadFeature
                   CadFrame64* out);
 bool cadHoleFrame(const CadBodyState& state, const CadFeatureHole& hole, CadFrame64* out);
 
+// `CAD-TO-FACE-R1`. The hole's axis point in its face's own (u, v): the stored
+// point, or -- placed from edges -- the point `edgeDistanceA` and
+// `edgeDistanceB` in from the two named edges, measured in the face's plane.
+// `HoleSupportInvalid` when the face does not resolve, `HoleEdgeNotFound` when
+// an edge face is not a flat face of the support feature meeting the hole's
+// face, `HoleEdgesParallel` when the two edges do not fix one point.
+CadStatus cadHolePoint(const std::vector<CadFeatureGeometry>& chain, const CadFeatureHole& hole,
+                       double* outU, double* outV);
+
+// `CAD-TO-FACE-R1`. `hole` (placed at a point, or already from edges) placed
+// from the two edges of its face nearest its axis that are not parallel, at
+// the distances it stands from them now, so switching to edges moves nothing.
+// `HoleEdgeNotFound` when the face has no two such edges.
+CadStatus suggestCadHoleEdges(const CadBodyState& state, const CadFeatureHole& hole,
+                              CadFeatureHole* out);
+
 // The hole's tool: a closed, outward-wound solid of revolution about the axis
 // -- the bore, and the counterbore or the countersink above it -- at the
 // circle's density, starting a little ABOVE the face so the kernel sees a clean

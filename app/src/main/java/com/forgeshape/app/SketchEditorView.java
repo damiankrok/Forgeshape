@@ -489,8 +489,8 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         // that is still invalid is refused by name, and changes nothing.
         directionRow.setVisibility(
                 nativeExtrude[NativeViewport.CAD_EXTRUDE_EXTENT] == NativeViewport.EXTENT_ONE_SIDE
-                        || nativeExtrude[NativeViewport.CAD_EXTRUDE_EXTENT]
-                                == NativeViewport.EXTENT_THROUGH_ALL
+                        || CadHudPresentation.extentIsDerived(
+                                (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_EXTENT])
                         ? VISIBLE
                         : GONE);
         showDirection();
@@ -761,9 +761,13 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         return submitDepth(currentDirection());
     }
 
-    /** Through All, and the depth field still says what native wrote into it. */
+    /**
+     * A derived extent (Through All, To Face), and the depth field still says
+     * what native wrote into it.
+     */
     private boolean throughAllUntouched() {
-        return nativeExtrude[NativeViewport.CAD_EXTRUDE_EXTENT] == NativeViewport.EXTENT_THROUGH_ALL
+        return CadHudPresentation.extentIsDerived(
+                       (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_EXTENT])
                 && depthField.text().equals(shownDepthText);
     }
 

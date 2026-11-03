@@ -390,11 +390,28 @@ enum class CadStatus : uint8_t {
     // stands: it is where two features meet (a boss's foot), or one of its
     // faces is buried in or flush with other material.
     EdgeNotOnBody,
+    // `CAD-TO-FACE-R1`. To Face on a feature that cannot take it: the base
+    // feature, a Revolve, or a session with no face to reach.
+    ToFaceUnsupported,
+    // The named face does not resolve: no such earlier feature, a stale
+    // lineage, no such face, or a face no sketch may stand on.
+    ToFaceTargetInvalid,
+    // The named face is not parallel to the sketch plane, so "up to it" has
+    // no single distance.
+    ToFaceNotParallel,
+    // The named face is on the sketch plane or behind it.
+    ToFaceBehind,
+    // A hole placed from edges names a face of its support feature that
+    // meets no edge of the hole's face (`CAD-TO-FACE-R1`).
+    HoleEdgeNotFound,
+    // The two edges a hole is placed from are parallel, so two distances do
+    // not fix one point.
+    HoleEdgesParallel,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 113;
+constexpr int kCadStatusCount = 119;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);

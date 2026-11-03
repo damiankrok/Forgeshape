@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- To Face: the sketch plane on top, a solid face below it, and one arrow
+     from the plane whose head stops ON that face. Its silhouette (an arrow
+     meeting a filled bar) separates it from One Side, whose arrow stops in the
+     open, and from Through All, whose arrow passes the far line. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,17 h18 v3 h-18 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M3,5 L21,5 M12,5 L12,16 M8.5,12.5 L12,16 L15.5,12.5" />
+</vector>

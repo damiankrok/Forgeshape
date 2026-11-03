@@ -239,6 +239,7 @@ uint8_t extrudeExtentFileCode(ExtrudeExtentMode mode) {
         case ExtrudeExtentMode::Symmetric: return 2;
         case ExtrudeExtentMode::TwoSides: return 3;
         case ExtrudeExtentMode::ThroughAll: return 4;
+        case ExtrudeExtentMode::ToFace: return 5;
     }
     return 0;
 }
@@ -250,6 +251,7 @@ bool extrudeExtentFromFileCode(uint8_t code, ExtrudeExtentMode* out) {
         case 2: *out = ExtrudeExtentMode::Symmetric; return true;
         case 3: *out = ExtrudeExtentMode::TwoSides; return true;
         case 4: *out = ExtrudeExtentMode::ThroughAll; return true;
+        case 5: *out = ExtrudeExtentMode::ToFace; return true;
         default: return false;
     }
 }
@@ -523,6 +525,17 @@ bool cadDocumentNeedsV7(const ProjectDocument& document) {
 bool cadDocumentNeedsV8(const ProjectDocument& document) {
     for (const ProjectCadBody& body : document.cad.bodies) {
         if (cadBodyStateUsesDrafting(body.state)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Whether any CAD body needs the v13 section (`CAD-TO-FACE-R1`): a To Face
+// extrusion or a hole placed from edges.
+bool cadDocumentNeedsV13(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (cadBodyStateUsesToFace(body.state) || cadBodyStateUsesHoleEdges(body.state)) {
             return true;
         }
     }
@@ -1434,7 +1447,7 @@ bool cadEdgeFinishKindFromFileCode(uint8_t code, CadEdgeFinishKind* out) {
 }
 
 void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKinds,
-                    bool drafting, bool finishes, bool patterns, bool holes) {
+                    bool drafting, bool finishes, bool patterns, bool holes, bool toFace) {
     const CadBodyState& state = body.state;
     out.u64(body.objectId);
     out.u32(state.nextSketchId);
@@ -1489,6 +1502,10 @@ void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKin
         out.u8(extrudeDirectionFileCode(extrude.direction));
         out.f64(extrude.depth);
         out.f64(extrude.secondDistance);
+        if (toFace && extrudeIsToFace(extrude)) {
+            // §7p: the face a To Face extrusion ends on, on the support layout.
+            writeCadFeatureSupportV6(out, extrude.toFace);
+        }
         writeCadSelectionV6(out, extrude);
     }
     if (finishes) {
@@ -1547,6 +1564,16 @@ void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKin
             out.f64(hole.boreDepth);
             out.f64(hole.sinkDiameter);
             out.f64(hole.sinkAngleDegrees);
+            if (toFace) {
+                // §7p: how the hole is placed, and from which two edges.
+                out.u8(hole.byEdges ? 1u : 0u);
+                if (hole.byEdges) {
+                    writeCadFaceTokenV6(out, hole.edgeFaceA);
+                    writeCadFaceTokenV6(out, hole.edgeFaceB);
+                    out.f64(hole.edgeDistanceA);
+                    out.f64(hole.edgeDistanceB);
+                }
+            }
         }
     }
 }
@@ -1663,7 +1690,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
 
     // The section is written at the LOWEST version that can carry it, so every
     // project that predates a feature keeps the bytes it always had.
-    const bool cadV12 = document.hasCad && cadDocumentNeedsV12(document);
+    const bool cadV13 = document.hasCad && cadDocumentNeedsV13(document);
+    const bool cadV12 = document.hasCad && (cadV13 || cadDocumentNeedsV12(document));
     const bool cadV11 = document.hasCad && (cadV12 || cadDocumentNeedsV11(document));
     const bool cadV10 = document.hasCad && (cadV11 || cadDocumentNeedsV10(document));
     const bool cadV9 = document.hasCad && (cadV10 || cadDocumentNeedsV9(document));
@@ -1684,7 +1712,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
                 // table replaces the inline sketches outright. v7 (§7h) is that
                 // layout with a kind after every feature id.
                 writeCadBodyV6(out, body, /*featureKinds=*/cadV7, /*drafting=*/cadV8,
-                               /*finishes=*/cadV9, /*patterns=*/cadV10, /*holes=*/cadV11);
+                               /*finishes=*/cadV9, /*patterns=*/cadV10, /*holes=*/cadV11,
+                               /*toFace=*/cadV13);
                 continue;
             }
             const CadBodyState& state = body.state;
@@ -1837,7 +1866,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
         appendSection(file, kSectionTagCad,
-                      cadV12  ? kCadSectionVersionV12
+                      cadV13  ? kCadSectionVersionV13
+                      : cadV12 ? kCadSectionVersionV12
                       : cadV11 ? kCadSectionVersionV11
                       : cadV10 ? kCadSectionVersionV10
                       : cadV9 ? kCadSectionVersionV9
@@ -2522,7 +2552,8 @@ ProjectCodecStatus readCadSelectionV6(ByteReader& in, ExtrudeFeature* extrude) {
 // Structure and file codes here; every relation between the parts --
 // ids, order, references, placements, selections -- is `validateCadBodyState`'s.
 ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool featureKinds,
-                                   bool drafting, bool finishes, bool patterns, bool holes) {
+                                   bool drafting, bool finishes, bool patterns, bool holes,
+                                   bool toFace) {
     CadBodyState& state = body->state;
     uint32_t sketchCount = 0;
     if (!in.u64(&body->objectId) || !in.u32(&state.nextSketchId)
@@ -2676,8 +2707,26 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
         CadFeatureOperation operation = CadFeatureOperation::NewBody;
         if (!cadFeatureOperationFromFileCode(operationCode, &operation)
             || !extrudeExtentFromFileCode(extentCode, &extrude.extent)
-            || !extrudeDirectionFromFileCode(directionCode, &extrude.direction)
-            || !extrudeFeatureCanonical(extrude)) {
+            || !extrudeDirectionFromFileCode(directionCode, &extrude.direction)) {
+            return ProjectCodecStatus::InvalidSemanticValue;
+        }
+        if (extrudeIsToFace(extrude)) {
+            // §7p: code 5 exists from v13 on, followed by the face it ends on.
+            if (!toFace) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            if (!in.u32(&extrude.toFace.featureId)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            const ProjectCodecStatus faceWhy = readCadFaceTokenV6(in, &extrude.toFace.face);
+            if (faceWhy != ProjectCodecStatus::Ok) {
+                return faceWhy;
+            }
+            if (!in.u64(&extrude.toFace.lineageToken)) {
+                return ProjectCodecStatus::Truncated;
+            }
+        }
+        if (!extrudeFeatureCanonical(extrude)) {
             return ProjectCodecStatus::InvalidSemanticValue;
         }
         // The first feature IS the body: id 1 and New Body, the two facts the
@@ -2832,6 +2881,28 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
             hole.throughAll = through == 1u;
+            if (toFace) {
+                uint8_t placement = 0;
+                if (!in.u8(&placement)) {
+                    return ProjectCodecStatus::Truncated;
+                }
+                if (placement > 1u) {
+                    return ProjectCodecStatus::InvalidSemanticValue;
+                }
+                hole.byEdges = placement == 1u;
+                if (hole.byEdges) {
+                    ProjectCodecStatus edgeWhy = readCadFaceTokenV6(in, &hole.edgeFaceA);
+                    if (edgeWhy == ProjectCodecStatus::Ok) {
+                        edgeWhy = readCadFaceTokenV6(in, &hole.edgeFaceB);
+                    }
+                    if (edgeWhy != ProjectCodecStatus::Ok) {
+                        return edgeWhy;
+                    }
+                    if (!in.f64(&hole.edgeDistanceA) || !in.f64(&hole.edgeDistanceB)) {
+                        return ProjectCodecStatus::Truncated;
+                    }
+                }
+            }
         }
     }
     return ProjectCodecStatus::Ok;
@@ -2841,7 +2912,7 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
     if (version == kCadSectionVersionV6 || version == kCadSectionVersionV7
         || version == kCadSectionVersionV8 || version == kCadSectionVersionV9
         || version == kCadSectionVersionV10 || version == kCadSectionVersionV11
-        || version == kCadSectionVersionV12) {
+        || version == kCadSectionVersionV12 || version == kCadSectionVersionV13) {
         uint32_t bodyCount = 0;
         if (!in.u32(&bodyCount)) {
             return ProjectCodecStatus::Truncated;
@@ -2863,7 +2934,8 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
                                     /*drafting=*/version >= kCadSectionVersionV8,
                                     /*finishes=*/version >= kCadSectionVersionV9,
                                     /*patterns=*/version >= kCadSectionVersionV10,
-                                    /*holes=*/version >= kCadSectionVersionV11);
+                                    /*holes=*/version >= kCadSectionVersionV11,
+                                    /*toFace=*/version >= kCadSectionVersionV13);
             if (why != ProjectCodecStatus::Ok) {
                 return why;
             }
@@ -2885,8 +2957,21 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         for (const ProjectCadBody& body : record->bodies) {
             anyThroughAll = anyThroughAll || cadBodyStateUsesThroughAll(body.state);
         }
-        if (anyThroughAll != (version >= kCadSectionVersionV12)) {
+        if ((anyThroughAll && version < kCadSectionVersionV12)
+            || (!anyThroughAll && version == kCadSectionVersionV12)) {
             return ProjectCodecStatus::InvalidSemanticValue;
+        }
+        // And a v13 section exists only for a To Face extrusion or a hole
+        // placed from edges (`CAD-TO-FACE-R1`).
+        if (version == kCadSectionVersionV13) {
+            bool anyV13 = false;
+            for (const ProjectCadBody& body : record->bodies) {
+                anyV13 = anyV13 || cadBodyStateUsesToFace(body.state)
+                         || cadBodyStateUsesHoleEdges(body.state);
+            }
+            if (!anyV13) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
         }
         // And a v11 section exists only for a hole (`CAD-HOLE-R1`).
         if (version == kCadSectionVersionV11) {
@@ -2983,7 +3068,7 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         if (!workplaneFromFileCode(planeCode, &baseSketch.plane)
             || !extrudeDirectionFromFileCode(directionCode, &state.extrude.direction)
             || !extrudeExtentFromFileCode(extentCode, &state.extrude.extent)
-            || extrudeIsThroughAll(state.extrude)) {  // v12 alone carries code 4
+            || extrudeDistanceIsDerived(state.extrude)) {  // codes 4 and 5 are v12+ alone
             return ProjectCodecStatus::InvalidSemanticValue;
         }
         // The ONE canonical form, checked HERE as well as in the domain
@@ -3054,7 +3139,7 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
                     || feature.operation == CadFeatureOperation::NewBody
                     || !cadFaceKindFromFileCode(faceKindCode, &support.face.kind)
                     || !extrudeExtentFromFileCode(featureExtentCode, &feature.extrude.extent)
-                    || extrudeIsThroughAll(feature.extrude)
+                    || extrudeDistanceIsDerived(feature.extrude)
                     || !extrudeDirectionFromFileCode(featureDirectionCode,
                                                      &feature.extrude.direction)
                     || !extrudeFeatureCanonical(feature.extrude)) {
@@ -3191,7 +3276,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
                         || sectionVersion == kCadSectionVersionV9
                         || sectionVersion == kCadSectionVersionV10
                         || sectionVersion == kCadSectionVersionV11
-                        || sectionVersion == kCadSectionVersionV12;
+                        || sectionVersion == kCadSectionVersionV12
+                        || sectionVersion == kCadSectionVersionV13;
         } else if (isScene) {
             // SCNE became the second multi-version section at Stage 018A: v1 as
             // every build before it wrote, and v2 carrying per-body visibility,

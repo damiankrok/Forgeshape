@@ -1550,6 +1550,62 @@ keeps whichever of v1..v11 it already used, byte for byte, and its fingerprint
 3 and its two zero distances). No v12 corpus fixture exists yet: the round trip
 and the version rule are host evidence (`TA_06_*` in the CAD-feature suite).
 
+## 7p. `CADB` v13 — To Face, and a hole placed from edges (`CAD-TO-FACE-R1`)
+
+Version 13 is v12's layout (§7o) byte for byte, with three changes:
+
+1. an extent code may be **5, To Face**, which no earlier version has (a
+   v1..v12 section carrying it is `InvalidSemanticValue`). Immediately after
+   such a feature's `secondDistance` — before its selection — comes the face
+   it ends on, in the feature-support layout §7g gives a sketch's placement:
+
+   ```
+   u32  featureId                 an EARLIER feature of the same body
+   FACE token                     §7g's face token
+   u64  lineageToken              that feature's topology signature
+   ```
+
+   A To Face feature stores no distance (`depth` and `secondDistance` exactly
+   `0.0`, `InvalidExtrudeExtent` otherwise) and its direction is the side it
+   grows toward. Every other extent's target is absent from the file and is
+   the default in memory; a To Face feature without a resolvable target is
+   refused at validation;
+2. after every hole's `sinkAngleDegrees` comes a `u8` placement: `0` at its
+   point `(u, v)`, `1` from two edges, anything else `InvalidSemanticValue`.
+   A `1` is followed by
+
+   ```
+   FACE token  edgeFaceA          a flat face of the hole's support feature
+   FACE token  edgeFaceB          another, not parallel to the first's edge
+   f64         edgeDistanceA      in from edge A, in the face's plane, metres
+   f64         edgeDistanceB      in from edge B
+   ```
+
+   and then the hole's `u` and `v` are exactly `0.0` (the point is derived);
+   with a `0` the edge fields do not exist;
+3. a v13 section exists only for a To Face feature or a hole placed from
+   edges; one with neither is a second encoding of v12 (or lower) and is
+   refused, and a v13 section is not refused for carrying no Through All.
+
+The distance of a To Face feature is DERIVED at regeneration: the named face's
+plane must be parallel to the sketch plane (`ToFaceNotParallel`), and the
+distance is how far it stands from the sketch plane along the feature's
+direction — strictly positive (`ToFaceBehind`), so an upstream size edit that
+moves the face moves the end. Only a later Add or Cut may be To Face
+(`ToFaceUnsupported`); a face that does not resolve is `ToFaceTargetInvalid`,
+never retargeted. An edge-placed hole's edge is named by the OTHER face of the
+support feature that meets the hole's face along it; a token naming no flat
+face of that feature, or the hole's own face, is `HoleEdgeNotFound`, and two
+edges running the same way are `HoleEdgesParallel`.
+
+v13 is written exactly when it is needed; every other project keeps whichever
+of v1..v12 it already used, byte for byte. The fingerprint mixes a `TOFD`
+block (each To Face feature's id and target, each edge-placed hole's id, edge
+tokens and exact distance bits) only when the body has one, so every project
+without keeps its fingerprint. No v13 corpus fixture exists yet: the round
+trip and the version rule are host evidence (`TF_07_*`, `HE_05_*` in the
+CAD-feature suite).
+
 ## 7j. `FRFM` v1 — the Freeform bodies (`MODELING-FOUNDATIONS-R1` B)
 
 A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is

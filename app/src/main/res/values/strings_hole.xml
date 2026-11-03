@@ -22,6 +22,12 @@
     <string name="hole_label_position">At</string>
     <string name="hole_label_u">across</string>
     <string name="hole_label_v">along</string>
+    <string name="hole_place_point">At point</string>
+    <string name="hole_place_point_description">Place the hole at a point of the face</string>
+    <string name="hole_place_edges">From edges</string>
+    <string name="hole_place_edges_description">Place the hole by its distances from the two highlighted edges of the face, so it follows them when the part changes</string>
+    <string name="hole_label_edge_a">From edge 1</string>
+    <string name="hole_label_edge_b">From edge 2</string>
     <string name="hole_field_description">%1$s, in %2$s</string>
     <string name="hole_degrees">degrees</string>
     <string name="hole_delete">Delete</string>

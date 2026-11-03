@@ -180,6 +180,31 @@ CadStatus appendCadFeatureSolid(const CadFeatureGeometry& geometry, uint32_t tag
 bool resolveCadFeatureSupportFrame(const std::vector<CadFeatureGeometry>& chain,
                                    const CadFeatureSupport& support, CadFrame64* out);
 
+// `CAD-TO-FACE-R1`. Where a To Face extrusion placed on `placement` ends: the
+// distance along its direction from the sketch plane to the plane of the face
+// `extrude.toFace` names in `chain`. `ToFaceTargetInvalid` when the face does
+// not resolve, `ToFaceNotParallel` when its plane is not parallel to the
+// sketch's, `ToFaceBehind` when it is on the sketch plane or behind it,
+// `InvalidExtrudeDepth` past the sketch bound.
+CadStatus cadToFaceDistance(const std::vector<CadFeatureGeometry>& chain,
+                            const CadFrame64& placement, const ExtrudeFeature& extrude,
+                            double* outDistance);
+
+// One face a To Face extrusion could end on, on one side of its sketch.
+struct CadToFaceCandidate {
+    CadFeatureSupport target{};
+    ExtrudeDirection direction = ExtrudeDirection::AlongNormal;
+    double distance = 0.0;
+};
+
+// Every face a To Face extrusion of the feature `featureId` of `state` could
+// end on -- a face a sketch may stand on, of a feature before it, parallel to
+// its sketch plane and strictly beyond it -- on BOTH sides, nearest first
+// (ties by feature id, then token). Fails by the chain's own reason when the
+// earlier features do not derive or the feature's sketch has no placement.
+CadStatus cadToFaceCandidates(const CadBodyState& state, uint32_t featureId,
+                              std::vector<CadToFaceCandidate>* out);
+
 // Whether `solid` still carries material on `frame`'s plane, facing along its
 // normal: a support face an earlier Cut removed entirely does not. Geometric,
 // not by tag, because a coplanar merge may legitimately re-tag a face.

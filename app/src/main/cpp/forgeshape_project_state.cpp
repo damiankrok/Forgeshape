@@ -801,6 +801,39 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
             mixBits(h.sinkAngleDegrees);
         }
     }
+    // `CAD-TO-FACE-R1`: every To Face extrusion's face and every hole placed
+    // from edges -- the two edge faces and the exact distance bits. Mixed only
+    // when the body has one, so every project without keeps its fingerprint.
+    if (cadBodyStateUsesToFace(state) || cadBodyStateUsesHoleEdges(state)) {
+        auto mixToken = [&hash](const CadFaceToken& face) {
+            mixU64(hash, cadFaceTokenCode(face));
+            mixU64(hash, face.fragment ? 1u : 0u);
+            if (face.fragment) {
+                for (const ArrangementCut* cut : {&face.fragmentStart, &face.fragmentEnd}) {
+                    mixU64(hash, static_cast<uint64_t>(cut->kind));
+                    mixU64(hash, cut->partnerEntityId);
+                    mixU64(hash, cut->partnerEdgeLocalIndex);
+                    mixU64(hash, cut->ordinal);
+                }
+            }
+        };
+        mixU64(hash, 0x544F4644ull);  // "TOFD"
+        for (const CadFeature& feature : state.laterFeatures) {
+            if (!extrudeIsToFace(feature.extrude)) continue;
+            mixU64(hash, feature.featureId);
+            mixU64(hash, feature.extrude.toFace.featureId);
+            mixToken(feature.extrude.toFace.face);
+            mixU64(hash, feature.extrude.toFace.lineageToken);
+        }
+        for (const CadFeatureHole& h : state.holes) {
+            if (!h.byEdges) continue;
+            mixU64(hash, h.holeId);
+            mixToken(h.edgeFaceA);
+            mixToken(h.edgeFaceB);
+            mixDouble(hash, h.edgeDistanceA);
+            mixDouble(hash, h.edgeDistanceB);
+        }
+    }
     // `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: a Revolve's whole authored truth -- its
     // selection, its axis ref, the exact angle bits and the direction. Mixed
     // only for a Revolve, so every Extrude project keeps the fingerprint it

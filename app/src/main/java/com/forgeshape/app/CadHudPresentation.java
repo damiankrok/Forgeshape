@@ -70,7 +70,8 @@ final class CadHudPresentation {
     /** The extent modes, in the native enum's order and the palette's order. */
     static final int[] EXTENTS = {
             NativeViewport.EXTENT_ONE_SIDE, NativeViewport.EXTENT_SYMMETRIC,
-            NativeViewport.EXTENT_TWO_SIDES, NativeViewport.EXTENT_THROUGH_ALL};
+            NativeViewport.EXTENT_TWO_SIDES, NativeViewport.EXTENT_THROUGH_ALL,
+            NativeViewport.EXTENT_TO_FACE};
 
     private CadHudPresentation() {
     }
@@ -164,6 +165,8 @@ final class CadHudPresentation {
                 return R.drawable.ic_extent_two_sides;
             case NativeViewport.EXTENT_THROUGH_ALL:
                 return R.drawable.ic_extent_through_all;
+            case NativeViewport.EXTENT_TO_FACE:
+                return R.drawable.ic_extent_to_face;
             default:
                 return R.drawable.ic_extent_one_side;
         }
@@ -178,6 +181,8 @@ final class CadHudPresentation {
                 return R.string.cad_hud_caption_two_sides;
             case NativeViewport.EXTENT_THROUGH_ALL:
                 return R.string.cad_hud_caption_through_all;
+            case NativeViewport.EXTENT_TO_FACE:
+                return R.string.cad_hud_caption_to_face;
             default:
                 return R.string.cad_hud_caption_one_side;
         }
@@ -192,6 +197,8 @@ final class CadHudPresentation {
                 return R.string.extent_two_sides_description;
             case NativeViewport.EXTENT_THROUGH_ALL:
                 return R.string.extent_through_all_description;
+            case NativeViewport.EXTENT_TO_FACE:
+                return R.string.extent_to_face_description;
             default:
                 return R.string.extent_one_side_description;
         }
@@ -203,7 +210,8 @@ final class CadHudPresentation {
      * the control is absent rather than shown and refused.
      */
     static boolean flipPresent(int mode) {
-        return mode == NativeViewport.EXTENT_ONE_SIDE || mode == NativeViewport.EXTENT_THROUGH_ALL;
+        return mode == NativeViewport.EXTENT_ONE_SIDE || mode == NativeViewport.EXTENT_THROUGH_ALL
+                || mode == NativeViewport.EXTENT_TO_FACE;
     }
 
     /**
@@ -212,7 +220,26 @@ final class CadHudPresentation {
      * a control that cannot succeed is not drawn.
      */
     static boolean extentOffered(int mode, boolean throughAllAvailable) {
-        return mode != NativeViewport.EXTENT_THROUGH_ALL || throughAllAvailable;
+        return extentOffered(mode, throughAllAvailable, false);
+    }
+
+    /**
+     * The same with To Face (`CAD-TO-FACE-R1`), drawn only where native says a
+     * face of the part can be reached.
+     */
+    static boolean extentOffered(int mode, boolean throughAllAvailable, boolean toFaceAvailable) {
+        if (mode == NativeViewport.EXTENT_THROUGH_ALL) {
+            return throughAllAvailable;
+        }
+        if (mode == NativeViewport.EXTENT_TO_FACE) {
+            return toFaceAvailable;
+        }
+        return true;
+    }
+
+    /** Whether an extent's distance is derived below JNI (Through All, To Face). */
+    static boolean extentIsDerived(int mode) {
+        return mode == NativeViewport.EXTENT_THROUGH_ALL || mode == NativeViewport.EXTENT_TO_FACE;
     }
 
     /**

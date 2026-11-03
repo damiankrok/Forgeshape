@@ -49,6 +49,7 @@
 
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_extrude_tool.h"
+#include "forgeshape_cad_feature.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_history.h"
 #include "forgeshape_input.h"
@@ -804,6 +805,28 @@ public:
     // Whether Through All can be chosen now: a new or edited later Cut of a
     // target body's Extrude chain.
     bool throughAllAvailable() const;
+    // `CAD-TO-FACE-R1`. Whether To Face can be chosen now: a new or edited
+    // later Add or Cut of a target body's Extrude chain with at least one
+    // face of an earlier feature parallel to the sketch to end on.
+    bool toFaceAvailable() const;
+    // The faces a To Face extrusion of this session could end on, both sides,
+    // nearest first (`cadToFaceCandidates`). Derived, cached by the candidate
+    // revision, never stored; empty when To Face does not apply.
+    const std::vector<CadToFaceCandidate>& toFaceCandidates() const;
+    // Ends the To Face extrusion on `target` -- a face of the candidates, on
+    // whichever side it lies -- through the one writer. Chooses To Face when
+    // it is not the extent yet. `ToFaceUnsupported` when To Face does not
+    // apply, `ToFaceTargetInvalid` for a face no candidate names.
+    CadStatus setToFaceTarget(const CadFeatureSupport& target);
+    // The same for a face named by a scene pick (`resolveFaceSupportFromHit`):
+    // refused unless it is a face of the body this session extends.
+    CadStatus setToFaceTargetFromTopoRef(const TopoRef& face);
+    // Where the last Ready tap was resolved: the camera captured at its Down
+    // and the Down pixel, so a caller can pick the scene exactly where the
+    // session looked for a region.
+    const CameraSnapshot& regionTapCamera() const { return regionTapCamera_; }
+    float regionTapX() const { return regionTapX_; }
+    float regionTapY() const { return regionTapY_; }
 
     // --- the extent (`CAD-EXT-R1`) ---------------------------------------
     //
@@ -1156,9 +1179,17 @@ private:
     // derived for (`displayExtrude`). Runtime cache only.
     mutable ExtrudeFeature displayCache_;
     mutable uint64_t displayCacheRevision_ = 0;
-    // Whether the extrude drag in progress started from Through All, so a
-    // second pointer or a Cancel gives Through All back rather than a depth.
+    // Whether the extrude drag in progress started from a derived extent
+    // (Through All or To Face), so a second pointer or a Cancel gives it back
+    // rather than a depth.
     bool dragFromThroughAll_ = false;
+    // The To Face candidates and the candidate revision they were derived
+    // for. Runtime cache only.
+    mutable std::vector<CadToFaceCandidate> toFaceCache_;
+    mutable uint64_t toFaceCacheRevision_ = 0;
+    // The id of the feature this session builds in `state`: the one being
+    // edited, or the one it appends last. 0 for a new body.
+    uint32_t candidateFeatureIdIn(const CadBodyState& state) const;
     CadCandidateEvaluation evaluation_;
     // A Ready-state tap that may pick a region: armed on a single-pointer Down
     // that misses the arrow, disarmed by travel or a second pointer.

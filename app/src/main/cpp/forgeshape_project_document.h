@@ -236,6 +236,13 @@ constexpr uint16_t kCadSectionVersionV11 = 11;
 // Written ONLY when a feature's extent is Through All, so every v1..v11
 // project keeps its bytes.
 constexpr uint16_t kCadSectionVersionV12 = 12;
+// v13 (`CAD-TO-FACE-R1`, DATA_PACKAGE_SPEC.md §7p): the v12 layout -- in which
+// an extent code may also be 5, To Face, followed by the face it ends on --
+// with a placement byte after every hole (0 at its point, 1 from two edges,
+// then the two edge faces and distances). Written ONLY when a feature is To
+// Face or a hole is placed from edges, so every v1..v12 project keeps its
+// bytes.
+constexpr uint16_t kCadSectionVersionV13 = 13;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.

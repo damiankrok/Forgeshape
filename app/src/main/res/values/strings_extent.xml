@@ -9,4 +9,15 @@
     <string name="status_through_all_unsupported">Only a Cut can go through all: an Add or the first shape of a part needs a distance.</string>
     <string name="status_through_all_reaches_nothing">There is no material on that side to cut through. Flip the cut into the part.</string>
     <string name="status_edge_not_on_body">That edge is where two features meet, not an outside edge of the part, so it cannot be rounded or bevelled.</string>
+    <string name="extent_to_face">To Face</string>
+    <string name="cad_hud_caption_to_face">To face</string>
+    <string name="extent_to_face_description">Extrude up to a face of the part. Tap another face of the part to end there instead.</string>
+    <string name="extrude_to_face_reading">To face (%1$s)</string>
+    <string name="history_detail_to_face">To Face</string>
+    <string name="status_to_face_unsupported">To Face ends an Add or a Cut on a face of the part parallel to the sketch, and there is none here.</string>
+    <string name="status_to_face_target_invalid">That face cannot end this extrusion: choose a flat face of the same part made before it.</string>
+    <string name="status_to_face_not_parallel">That face is not parallel to the sketch, so the extrusion cannot end on it.</string>
+    <string name="status_to_face_behind">There is no face of the part to reach on that side.</string>
+    <string name="status_hole_edge_not_found">That is not an edge of the hole\'s face.</string>
+    <string name="status_hole_edges_parallel">The two edges run the same way, so they cannot place the hole.</string>
 </resources>

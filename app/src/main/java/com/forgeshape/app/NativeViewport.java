@@ -2378,6 +2378,18 @@ final class NativeViewport {
     static final int CAD_THROUGH_ALL_REACHES_NOTHING = 111;
     /** `CAD-EDGE-FINISH-R2`: the edge is where two features meet, not an outside edge. */
     static final int CAD_EDGE_NOT_ON_BODY = 112;
+    /** `CAD-TO-FACE-R1`: To Face on a feature that cannot take it. */
+    static final int CAD_TO_FACE_UNSUPPORTED = 113;
+    /** The face To Face names does not resolve (or is not on this part). */
+    static final int CAD_TO_FACE_TARGET_INVALID = 114;
+    /** The face is not parallel to the sketch. */
+    static final int CAD_TO_FACE_NOT_PARALLEL = 115;
+    /** The face is on the sketch plane or behind it. */
+    static final int CAD_TO_FACE_BEHIND = 116;
+    /** A hole placed from edges names an edge its face does not have. */
+    static final int CAD_HOLE_EDGE_NOT_FOUND = 117;
+    /** The two edges a hole is placed from are parallel. */
+    static final int CAD_HOLE_EDGES_PARALLEL = 118;
 
     // --- Chamfer and Fillet (`CAD-EDGE-FINISH-R1`) ------------------------
 
@@ -2543,10 +2555,22 @@ final class NativeViewport {
      */
     static native int cadHoleApply(long bodyId, long holeId, int kind, double diameter,
             boolean throughAll, double depth, double boreDiameter, double boreDepth,
-            double sinkDiameter, double sinkAngle, double u, double v);
+            double sinkDiameter, double sinkAngle, double u, double v, boolean byEdges,
+            double edgeDistanceA, double edgeDistanceB);
+
+    /**
+     * `CAD-TO-FACE-R1`: begins placing hole {@code holeId} (0: the new hole on
+     * the captured face), standing at (u, v) now, from the two nearest edges
+     * of its face; native keeps the edges and highlights them. The two
+     * distances into {@code out[0..1]}. Returns a CAD status.
+     */
+    static native int cadHoleEdgeSeed(long bodyId, long holeId, double u, double v, double[] out);
+
+    /** Ends placing from edges (the editor closed or chose a point). */
+    static native void cadHoleEdgeRelease();
 
     /** {@link #cadHoleInfo} slots. */
-    static final int HOLE_INFO_SIZE = 13;
+    static final int HOLE_INFO_SIZE = 16;
     static final int HOLE_INFO_KIND = 0;
     static final int HOLE_INFO_DIAMETER = 1;
     static final int HOLE_INFO_THROUGH_ALL = 2;
@@ -2560,6 +2584,10 @@ final class NativeViewport {
     static final int HOLE_INFO_ON_SCREEN = 10;
     static final int HOLE_INFO_X = 11;
     static final int HOLE_INFO_Y = 12;
+    /** 1 when the hole is placed from two edges; U and V then read the derived point. */
+    static final int HOLE_INFO_BY_EDGES = 13;
+    static final int HOLE_INFO_EDGE_A = 14;
+    static final int HOLE_INFO_EDGE_B = 15;
 
     /** A committed hole's values and screen anchor. */
     static native boolean cadHoleInfo(long bodyId, long holeId, double[] out);
@@ -2839,7 +2867,7 @@ final class NativeViewport {
      * land between two of them. Every slot is DERIVED below JNI on every read —
      * the shell stores no depth, no direction and no anchor.
      */
-    static final int CAD_EXTRUDE_SIZE = 60;
+    static final int CAD_EXTRUDE_SIZE = 61;
     /** 1 when the canvas manipulator is live; 0 is the whole reason it is absent. */
     static final int CAD_EXTRUDE_ACTIVE = 0;
     /** The PRIMARY side's distance: the whole depth of a One Side extrusion. */
@@ -2944,6 +2972,8 @@ final class NativeViewport {
     static final int CAD_EXTRUDE_DOCK_HIDDEN = 58;
     /** 1 when Through All can be chosen now (a later Cut of a target body). */
     static final int CAD_EXTRUDE_THROUGH_ALL_AVAILABLE = 59;
+    /** `CAD-TO-FACE-R1`: 1 when To Face can be chosen now (a later Add or Cut with a face to reach). */
+    static final int CAD_EXTRUDE_TO_FACE_AVAILABLE = 60;
     static final int DOCK_SHOWN = 0;
     static final int DOCK_HIDDEN_NO_FRAME = 1;
     static final int DOCK_HIDDEN_NEAR_AXIS = 2;
@@ -2959,6 +2989,11 @@ final class NativeViewport {
      * distance is derived below JNI and reported in the distance slots.
      */
     static final int EXTENT_THROUGH_ALL = 3;
+    /**
+     * `CAD-TO-FACE-R1`: up to a face of the part parallel to the sketch, for a
+     * later Add or Cut; its distance is derived below JNI like Through All's.
+     */
+    static final int EXTENT_TO_FACE = 4;
 
     /** Side selectors for {@link #sketchSetExtrudeSide}. */
     static final int EXTRUDE_SIDE_POSITIVE = 1;

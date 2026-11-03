@@ -245,9 +245,9 @@ public final class CadHudPresentationTest {
             captions.add(CadHudPresentation.extentCaption(mode));
             descriptions.add(CadHudPresentation.extentDescription(mode));
         }
-        assertEquals(4, icons.size());
-        assertEquals(4, captions.size());
-        assertEquals(4, descriptions.size());
+        assertEquals(5, icons.size());
+        assertEquals(5, captions.size());
+        assertEquals(5, descriptions.size());
         assertEquals(R.drawable.ic_extent_one_side,
                 CadHudPresentation.extentIcon(NativeViewport.EXTENT_ONE_SIDE));
         assertEquals(R.drawable.ic_extent_symmetric,
@@ -268,6 +268,24 @@ public final class CadHudPresentationTest {
         assertEquals(NativeViewport.EXTENT_SYMMETRIC, CadHudPresentation.EXTENTS[1]);
         assertEquals(NativeViewport.EXTENT_TWO_SIDES, CadHudPresentation.EXTENTS[2]);
         assertEquals(NativeViewport.EXTENT_THROUGH_ALL, CadHudPresentation.EXTENTS[3]);
+        assertEquals(NativeViewport.EXTENT_TO_FACE, CadHudPresentation.EXTENTS[4]);
+    }
+
+    @Test
+    public void toFaceIsOfferedOnlyWhereNativeSaysAFaceCanBeReached() {
+        assertFalse("not drawn where it cannot succeed",
+                CadHudPresentation.extentOffered(NativeViewport.EXTENT_TO_FACE, true, false));
+        assertTrue(CadHudPresentation.extentOffered(NativeViewport.EXTENT_TO_FACE, false, true));
+        assertFalse("Through All keeps its own answer",
+                CadHudPresentation.extentOffered(NativeViewport.EXTENT_THROUGH_ALL, false, true));
+        assertTrue(CadHudPresentation.extentOffered(NativeViewport.EXTENT_SYMMETRIC, false, false));
+        assertTrue("To Face is one-sided, so it flips",
+                CadHudPresentation.flipPresent(NativeViewport.EXTENT_TO_FACE));
+        assertTrue(CadHudPresentation.extentIsDerived(NativeViewport.EXTENT_TO_FACE));
+        assertTrue(CadHudPresentation.extentIsDerived(NativeViewport.EXTENT_THROUGH_ALL));
+        assertFalse(CadHudPresentation.extentIsDerived(NativeViewport.EXTENT_ONE_SIDE));
+        assertEquals(R.drawable.ic_extent_to_face,
+                CadHudPresentation.extentIcon(NativeViewport.EXTENT_TO_FACE));
     }
 
     @Test

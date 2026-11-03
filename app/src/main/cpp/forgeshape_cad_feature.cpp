@@ -653,6 +653,26 @@ CadStatus walkCadChain(const CadBodyState& state, std::vector<CadFeatureGeometry
             }
             why = deriveFeature(view.featureId, view.operation, *view.sketch,
                                 extrudeResolvedThroughAll(*view.extrude, reach), placement, &g);
+        } else if (extrudeIsToFace(*view.extrude)) {
+            // `CAD-TO-FACE-R1`: a later feature alone, up to the plane of a
+            // face of a feature before it -- never a stored number.
+            if (base) {
+                return refuse(CadStatus::ToFaceUnsupported, view.featureId);
+            }
+            const CadStatus extentWhy = validateExtrudeExtent(*view.extrude);
+            if (extentWhy != CadStatus::Ok) {
+                return refuse(extentWhy, view.featureId);
+            }
+            if (!(view.extrude->toFace.featureId < view.featureId)) {
+                return refuse(CadStatus::ToFaceTargetInvalid, view.featureId);
+            }
+            double distance = 0.0;
+            const CadStatus reachWhy = cadToFaceDistance(chain, placement, *view.extrude, &distance);
+            if (reachWhy != CadStatus::Ok) {
+                return refuse(reachWhy, view.featureId);
+            }
+            why = deriveFeature(view.featureId, view.operation, *view.sketch,
+                                extrudeResolvedToDistance(*view.extrude, distance), placement, &g);
         } else {
             why = deriveFeature(view.featureId, view.operation, *view.sketch, *view.extrude,
                                 placement, &g);
@@ -667,6 +687,88 @@ CadStatus walkCadChain(const CadBodyState& state, std::vector<CadFeatureGeometry
 }
 
 }  // namespace
+
+CadStatus cadToFaceDistance(const std::vector<CadFeatureGeometry>& chain,
+                            const CadFrame64& placement, const ExtrudeFeature& extrude,
+                            double* outDistance) {
+    CadFrame64 face;
+    if (!resolveCadFeatureSupportFrame(chain, extrude.toFace, &face)) {
+        return CadStatus::ToFaceTargetInvalid;
+    }
+    // Parallel planes only: an end on a tilted face would be a slanted cap,
+    // a shape this extrusion does not make.
+    const double alignment = std::fabs(dvec3Dot(face.n, placement.n));
+    if (!(alignment >= 1.0 - 1.0e-9)) {
+        return CadStatus::ToFaceNotParallel;
+    }
+    const double sign = extrude.direction == ExtrudeDirection::AlongNormal ? 1.0 : -1.0;
+    const double distance =
+            sign * dvec3Dot(dvec3Sub(face.origin, placement.origin), placement.n);
+    if (!std::isfinite(distance) || !(distance > 0.0)
+        || validateDimensionMeters(distance) != DimensionValidation::Ok) {
+        return distance > kMaxSketchCoordinateMeters ? CadStatus::InvalidExtrudeDepth
+                                                     : CadStatus::ToFaceBehind;
+    }
+    if (distance > kMaxSketchCoordinateMeters) {
+        return CadStatus::InvalidExtrudeDepth;
+    }
+    if (outDistance != nullptr) *outDistance = distance;
+    return CadStatus::Ok;
+}
+
+CadStatus cadToFaceCandidates(const CadBodyState& state, uint32_t featureId,
+                              std::vector<CadToFaceCandidate>* out) {
+    if (out == nullptr) {
+        return CadStatus::RegenerationFailed;
+    }
+    out->clear();
+    CadFeatureView view;
+    if (featureId <= kCadFeatureId || !findCadFeature(state, featureId, &view)
+        || view.sketch == nullptr) {
+        return CadStatus::ToFaceUnsupported;
+    }
+    std::vector<CadFeatureGeometry> chain;
+    const CadStatus chainWhy = walkCadChain(state, &chain, nullptr, featureId - 1u);
+    if (chainWhy != CadStatus::Ok) {
+        return chainWhy;
+    }
+    CadFrame64 placement;
+    const CadStatus placed =
+            sketchPlacement(state, view.sketchId, *view.sketch, view.support, chain, &placement);
+    if (placed != CadStatus::Ok) {
+        return placed;
+    }
+    for (const CadFeatureGeometry& g : chain) {
+        for (const CadFeatureFace& face : g.faces) {
+            if (!face.eligible) continue;
+            for (ExtrudeDirection direction :
+                 {ExtrudeDirection::AlongNormal, ExtrudeDirection::AgainstNormal}) {
+                ExtrudeFeature probe;
+                probe.extent = ExtrudeExtentMode::ToFace;
+                probe.depth = 0.0;
+                probe.direction = direction;
+                probe.toFace = CadFeatureSupport{g.featureId, face.token, g.signature};
+                double distance = 0.0;
+                if (cadToFaceDistance(chain, placement, probe, &distance) == CadStatus::Ok) {
+                    CadToFaceCandidate c;
+                    c.target = probe.toFace;
+                    c.direction = direction;
+                    c.distance = distance;
+                    out->push_back(c);
+                }
+            }
+        }
+    }
+    std::stable_sort(out->begin(), out->end(),
+                     [](const CadToFaceCandidate& a, const CadToFaceCandidate& b) {
+                         if (a.distance != b.distance) return a.distance < b.distance;
+                         if (a.target.featureId != b.target.featureId) {
+                             return a.target.featureId < b.target.featureId;
+                         }
+                         return cadFaceTokenCode(a.target.face) < cadFaceTokenCode(b.target.face);
+                     });
+    return CadStatus::Ok;
+}
 
 CadStatus buildCadChainGeometry(const CadBodyState& state, std::vector<CadFeatureGeometry>* out,
                                 uint32_t* outFailedFeatureId, uint32_t throughFeatureId) {

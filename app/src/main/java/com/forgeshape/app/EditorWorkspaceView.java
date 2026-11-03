@@ -4222,7 +4222,7 @@ final class EditorWorkspaceView extends FrameLayout
         // direction native reports is what turns that into a real side. In
         // Symmetric and Two Sides the selector's own sides are literal.
         int target = side;
-        if (extent == NativeViewport.EXTENT_ONE_SIDE || extent == NativeViewport.EXTENT_THROUGH_ALL) {
+        if (extent == NativeViewport.EXTENT_ONE_SIDE || CadHudPresentation.extentIsDerived(extent)) {
             target = nativeExtrude[NativeViewport.CAD_EXTRUDE_DIRECTION]
                                      == NativeViewport.EXTRUDE_ALONG_NORMAL
                              ? NativeViewport.EXTRUDE_SIDE_POSITIVE
@@ -4263,7 +4263,9 @@ final class EditorWorkspaceView extends FrameLayout
                                                           ? R.string.extent_two_sides
                                                           : mode == NativeViewport.EXTENT_THROUGH_ALL
                                                                   ? R.string.extent_through_all
-                                                                  : R.string.extent_one_side)),
+                                                                  : mode == NativeViewport.EXTENT_TO_FACE
+                                                                          ? R.string.extent_to_face
+                                                                          : R.string.extent_one_side)),
                 R.attr.fsTextSecondary);
     }
 
@@ -4421,7 +4423,8 @@ final class EditorWorkspaceView extends FrameLayout
         final Context context = getContext();
         final int status = NativeViewport.cadHoleApply(bodyId, holeId, request.kind,
                 request.diameter, request.throughAll, request.depth, request.boreDiameter,
-                request.boreDepth, request.sinkDiameter, request.sinkAngle, request.u, request.v);
+                request.boreDepth, request.sinkDiameter, request.sinkAngle, request.u, request.v,
+                request.byEdges, request.edgeA, request.edgeB);
         if (status != NativeViewport.CAD_OK) {
             // The editor stays open with every value the user typed, so the
             // refusal can be fixed rather than retyped.
@@ -4433,6 +4436,22 @@ final class EditorWorkspaceView extends FrameLayout
         showStatus(context.getString(holeId > 0L ? R.string.status_hole_edited
                 : R.string.status_hole_applied, kind), R.attr.fsTextSecondary);
         return true;
+    }
+
+    @Override
+    public double[] onCanvasHoleEdgeSeed(long bodyId, long holeId, double u, double v) {
+        final double[] out = new double[2];
+        final int status = NativeViewport.cadHoleEdgeSeed(bodyId, holeId, u, v, out);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            return null;
+        }
+        return out;
+    }
+
+    @Override
+    public void onCanvasHoleEdgesReleased() {
+        NativeViewport.cadHoleEdgeRelease();
     }
 
     @Override
