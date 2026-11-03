@@ -234,7 +234,8 @@ on the host, with no device, and is the fast native loop.
   single-finger gesture belongs to the sketch and never orbits — an orbit would
   take the aligned view away under the finger placing a point — two fingers
   still pan and pinch, and creation, deletion, body switching, freeze and
-  Construction Undo/Redo are refused below JNI and withdrawn above it. In
+  Construction Undo/Redo are refused below JNI and withdrawn above it (the
+  capsule's Undo/Redo there step the staged sketch instead). In
   `Ready`, after Finish Sketch, a single finger that misses the extrude arrow
   NAVIGATES like anywhere else in the product (`CAD-UX-S1-C1`): the drawing is
   done, there is no aligned view left to protect, and the staged extrusion is
@@ -459,7 +460,9 @@ on the host, with no device, and is the fast native loop.
   viewpoint holding the last good value rather than guessing. A DRAG is clamped
   at a millimetre floor where a TYPED value is refused, and that difference is
   deliberate: a typed value is a statement the user made, and a drag has no
-  moment at which the user submitted zero. **Flip is a direction change and
+  moment at which the user submitted zero — except a NEW One Side feature on a
+  CAD body's face, whose drag may cross the sketch plane (*push-through*, see
+  the sketch-ergonomics rule). **Flip is a direction change and
   never a negative depth.** The arrow is one more `SketchOverlay` producer in
   the range the extrude preview already uses, so the renderer needed no change,
   no new style and no new pipeline; its SHAFT is the depth and only its head
@@ -924,6 +927,35 @@ on the host, with no device, and is the fast native loop.
   fingerprint. **Not this stage:** a persistent constraint solver, a
   fully-defined state, projected or linked edges, drawing sheets and title
   blocks, and any Spline dimension, Trim target, Extend or Offset.
+- **The staged sketch has its own Undo, the knife IS Trim, and the arrow can
+  be pushed through into a Cut** (`SKETCH-KNIFE-UNDO-R1`). While a sketch is
+  being DRAWN (Editing), the history capsule's Undo / Redo step
+  `SketchSession`'s own volatile branch — one entry per gesture or per act
+  (`UndoScope` records at the OUTERMOST mutating entry point only; a gesture's
+  entry is measured from its Down), a copy of the entities, dimensions and
+  their allocators, at most `kMaxSketchUndoEntries` (64), oldest dropped
+  first, Redo cleared by a new act, and a polyline/spline run or a pending arc
+  chord taken back first. It is never persisted, never a Construction step,
+  never in a checkpoint or the fingerprint, and gone with the session; native
+  decides which history a tap means (`historyUndo` asks the sketch first),
+  Construction Undo stays REFUSED under a sketch, the capsule is withdrawn in
+  Ready, and Finish is still the ONE transaction. **Trim is the eighth Tool
+  Rail entry** (`SketchTool::Trim`, appended at index 7): holding it IS
+  `SketchModifyMode::Trim` (the palette's Trim holds it too; any other mode or
+  tool puts it down), a tap trims the interval under the finger exactly as
+  before, and a SWIPE walks its stroke in steps of a quarter of the tap
+  tolerance and trims, through the ONE `trimAt`, whatever lies within 0.6 of a
+  step — so a crossing always cuts and a stroke merely passing beside a curve
+  does not — as one act and one Undo entry. **Push-through**: a NEW One Side
+  Extrude on a face of a CAD body (Cut available; not an edit, not a
+  world-plane sketch, not a Revolve) is decided at pointer-down; its drag reads
+  the signed distance on the frozen axis, and crossing the sketch plane
+  reverses the direction and sets the operation with it — into the material
+  (`cutIntoDirection`) is Cut, out of it the outward operation the user last
+  chose (New Body by default, Add once chosen). Both land through `setExtrude`
+  and the operation field, so validation is unchanged, and a second pointer or
+  Cancel restores the extrusion AND the operation the drag started from. None
+  of it changes a format, a section, a version or a fixture.
 - **The preview IS the candidate** (`CAD-VERTICAL-SLICE-R1`). `SketchSession`
   evaluates ONE candidate, latest-only, keyed by a revision every authoring
   change bumps (region, distance, extent, operation, flip); the renderer draws
@@ -1677,8 +1709,9 @@ user), *control cage* (a Freeform body's vertices, edges and faces),
 piece of a Surface body), *Stitch* / *Thicken* (joining Surface patches along
 coincident edges / making a closed solid of one),
 *Sketch* (the editing context between New Sketch and Extrude, on a
-  *workplane* XY, XZ or YZ, with the seven sketch tools Select, Line, Polyline,
-  Rectangle, Circle, Arc and Spline on the Tool Rail and *Finish Sketch* /
+  *workplane* XY, XZ or YZ, with the eight sketch tools Select, Line, Polyline,
+  Rectangle, Circle, Arc, Spline and *Trim* (the knife) on the Tool Rail and
+  *Finish Sketch* /
   *Extrude* as its two toolbar transitions),
   *extrude arrow* (the world-space arrow along the extrusion normal, its shaft
   the depth; never a "gizmo", which is the transform instrument and scales the
