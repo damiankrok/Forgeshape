@@ -92,10 +92,18 @@ public final class PatternTest {
         assertTrue("a Linear pattern first", activated(R.id.pattern_kind_linear));
         assertTrue("along a direction in the boss's own plane", activated(R.id.pattern_axis_x));
         assertFalse("a new pattern has nothing to delete", shown(R.id.delete_pattern));
-        assertEquals("the run that fits the part", "2", text(R.id.field_pattern_count));
+        // Native seeds the run that keeps every copy on the part; how many
+        // fit depends on the boss the finger drew, so the proof is that the
+        // seeded values APPLY untouched.
+        final int seeded = Integer.parseInt(text(R.id.field_pattern_count).trim());
+        assertTrue("at least two copies are seeded", seeded >= 2);
         press(R.id.apply_pattern);
         assertEquals("Apply is ONE undo step", undoBefore + 1, NativeViewport.constructionUndoDepth());
         assertEquals("the body carries one pattern", 1, patternRows(body));
+        final double[] info = new double[NativeViewport.PATTERN_INFO_SIZE];
+        assertTrue(NativeViewport.cadPatternInfo(body, lastPatternId(body), info));
+        assertEquals("the seeded count is what was applied", seeded,
+                (int) info[NativeViewport.PATTERN_INFO_COUNT]);
         assertFalse("the editor closes on success", shown(R.id.cad_canvas_pattern_editor));
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
