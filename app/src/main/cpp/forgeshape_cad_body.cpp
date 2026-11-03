@@ -466,6 +466,7 @@ const char* cadFeatureOperationName(CadFeatureOperation operation) {
         case CadFeatureOperation::NewBody: return "NewBody";
         case CadFeatureOperation::Add: return "Add";
         case CadFeatureOperation::Cut: return "Cut";
+        case CadFeatureOperation::Intersect: return "Intersect";
     }
     return "unknown";
 }
@@ -478,6 +479,7 @@ bool cadFeatureOperationFromIndex(int index, CadFeatureOperation* out) {
         case 0: *out = CadFeatureOperation::NewBody; return true;
         case 1: *out = CadFeatureOperation::Add; return true;
         case 2: *out = CadFeatureOperation::Cut; return true;
+        case 3: *out = CadFeatureOperation::Intersect; return true;
         default: return false;
     }
 }
@@ -949,6 +951,10 @@ bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
     if (state.baseKind != CadFeatureKind::Extrude || cadBodyStateUsesLaterRevolve(state)) {
         return false;
     }
+    // Nor an Intersect below v16 (`CAD-INTERSECT-R1`).
+    if (cadBodyStateUsesIntersect(state)) {
+        return false;
+    }
     // A Chamfer or a Fillet has no encoding below v9 (`CAD-EDGE-FINISH-R1`).
     if (cadBodyStateUsesEdgeFinishes(state)) {
         return false;
@@ -1026,6 +1032,13 @@ bool cadBodyStateUsesRevolve(const CadBodyState& state) {
 bool cadBodyStateUsesLaterRevolve(const CadBodyState& state) {
     for (const CadFeature& feature : state.laterFeatures) {
         if (feature.kind == CadFeatureKind::Revolve) return true;
+    }
+    return false;
+}
+
+bool cadBodyStateUsesIntersect(const CadBodyState& state) {
+    for (const CadFeature& feature : state.laterFeatures) {
+        if (feature.operation == CadFeatureOperation::Intersect) return true;
     }
     return false;
 }
@@ -2122,8 +2135,12 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
                 return finish(CadStatus::KernelFailed, feature.featureId);
             }
             const bool add = feature.operation == CadFeatureOperation::Add;
+            const bool intersect = feature.operation == CadFeatureOperation::Intersect;
             CadSolid result;
-            if (cadKernelBoolean(body, tool, add ? CadBooleanOp::Union : CadBooleanOp::Difference,
+            if (cadKernelBoolean(body, tool,
+                                 add         ? CadBooleanOp::Union
+                                 : intersect ? CadBooleanOp::Intersection
+                                             : CadBooleanOp::Difference,
                                  &result)
                 != CadKernelStatus::Ok) {
                 return finish(CadStatus::KernelFailed, feature.featureId);
@@ -2141,6 +2158,16 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
                 }
                 if (resultMeasure.volume - volume <= effectFloor) {
                     return finish(CadStatus::AddNoEffect, feature.featureId);
+                }
+            } else if (intersect) {
+                // Something must be kept, and something must be removed: an
+                // intersection that keeps the whole body is a tool that
+                // contains it, which changes nothing.
+                if (result.empty()) {
+                    return finish(CadStatus::IntersectRemovesBody, feature.featureId);
+                }
+                if (volume - resultMeasure.volume <= kCadOperationEffectFraction * volume) {
+                    return finish(CadStatus::IntersectNoEffect, feature.featureId);
                 }
             } else {
                 if (result.empty()) {

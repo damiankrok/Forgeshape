@@ -3149,7 +3149,7 @@ uint32_t SketchSession::candidateFeatureIdIn(const CadBodyState& state) const {
 
 bool SketchSession::toFaceAvailable() const {
     return state_ == SketchSessionState::Ready && featureKind_ == CadFeatureKind::Extrude
-           && (operation_ == CadFeatureOperation::Add || operation_ == CadFeatureOperation::Cut)
+           && operation_ != CadFeatureOperation::NewBody
            && editingFeatureId_ != kCadFeatureId && editingSketchId_ == kNoCadSketch
            && !toFaceCandidates().empty();
 }
@@ -3161,7 +3161,7 @@ const std::vector<CadToFaceCandidate>& SketchSession::toFaceCandidates() const {
     toFaceCache_.clear();
     toFaceCacheRevision_ = candidateRevision_;
     if (state_ != SketchSessionState::Ready || featureKind_ != CadFeatureKind::Extrude
-        || (operation_ != CadFeatureOperation::Add && operation_ != CadFeatureOperation::Cut)
+        || operation_ == CadFeatureOperation::NewBody
         || editingFeatureId_ == kCadFeatureId || editingSketchId_ != kNoCadSketch) {
         return toFaceCache_;
     }
@@ -3498,8 +3498,10 @@ bool SketchSession::operationAvailable(CadFeatureOperation operation) const {
         }
         return laterRevolveOk;
     }
+    // Add, Cut and (`CAD-INTERSECT-R1`) Intersect: the later operations.
     const bool addOrCut = operation == CadFeatureOperation::Add
-                          || operation == CadFeatureOperation::Cut;
+                          || operation == CadFeatureOperation::Cut
+                          || operation == CadFeatureOperation::Intersect;
     if (reuseSketchId_ != kNoCadSketch) {
         return addOrCut;
     }
@@ -3535,7 +3537,7 @@ CadStatus SketchSession::setOperation(CadFeatureOperation operation) {
         return fail(addOrCut && editingFeatureId_ == 0 ? CadStatus::OperationNeedsTarget
                                                        : CadStatus::InvalidFeatureOperation);
     }
-    if (operation != CadFeatureOperation::Cut) {
+    if (operation == CadFeatureOperation::Add || operation == CadFeatureOperation::NewBody) {
         outwardOperation_ = operation;  // what a push-through back out becomes
     }
     if (operation_ != operation) {
@@ -3564,8 +3566,12 @@ CadStatus SketchSession::setOperation(CadFeatureOperation operation) {
             const ExtrudeDirection addOut = cutInto == ExtrudeDirection::AgainstNormal
                                                     ? ExtrudeDirection::AlongNormal
                                                     : ExtrudeDirection::AgainstNormal;
-            const ExtrudeDirection wanted =
-                    operation == CadFeatureOperation::Cut ? cutInto : addOut;
+            // An Intersect keeps what its tool shares with the body, so it
+            // grows INTO the body as a Cut does.
+            const ExtrudeDirection wanted = (operation == CadFeatureOperation::Cut
+                                             || operation == CadFeatureOperation::Intersect)
+                                                    ? cutInto
+                                                    : addOut;
             if (extrude_.direction != wanted) {
                 const CadStatus turned = setExtrude(extrude_.depth, wanted);
                 if (turned != CadStatus::Ok) {
@@ -3591,6 +3597,9 @@ bool SketchSession::pushThroughAllowed() const {
     return state_ == SketchSessionState::Ready && featureKind_ == CadFeatureKind::Extrude
            && extrude_.extent == ExtrudeExtentMode::OneSide && editingFeatureId_ == 0
            && editingSketchId_ == kNoCadSketch
+           // An Intersect's arrow sets its depth and nothing else: crossing
+           // the plane has no operation of its own to become.
+           && operation_ != CadFeatureOperation::Intersect
            && operationAvailable(CadFeatureOperation::Cut)
            && (operationAvailable(CadFeatureOperation::Add)
                || operationAvailable(CadFeatureOperation::NewBody));
@@ -4583,9 +4592,10 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
     // tool is drawn in the destructive (X) red, an Add's in the positive (Y)
     // green, a New Body's in the neutral highlight. Colour is never the only
     // carrier -- the HUD badge names the operation by shape and by label.
-    const float opAxis = operation_ == CadFeatureOperation::Cut   ? 1.0f
-                         : operation_ == CadFeatureOperation::Add ? 2.0f
-                                                                  : 0.0f;
+    const float opAxis = operation_ == CadFeatureOperation::Cut         ? 1.0f
+                         : operation_ == CadFeatureOperation::Add       ? 2.0f
+                         : operation_ == CadFeatureOperation::Intersect ? 3.0f
+                                                                        : 0.0f;
     const float opHandle = operation_ == CadFeatureOperation::NewBody ? 1.0f : 0.0f;
     for (const SketchEntity& entity : sketch_.entities) {
         if (entity.construction()) {

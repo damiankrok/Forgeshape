@@ -23,6 +23,7 @@
     <item name="cad_extrude_operation_new_body" type="id" />
     <item name="cad_extrude_operation_add" type="id" />
     <item name="cad_extrude_operation_cut" type="id" />
+    <item name="cad_extrude_operation_intersect" type="id" />
 
     <!-- Settings page, Interface group: whether icon controls carry captions. -->
     <item name="tool_labels_off" type="id" />

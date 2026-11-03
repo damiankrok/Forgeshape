@@ -331,10 +331,14 @@ public final class CadHudPresentationTest {
             descriptions.add(CadHudPresentation.operationDescription(operation));
             colours.add(CadHudPresentation.operationColorAttr(operation));
         }
-        assertEquals("three SHAPES, so the meaning survives monochrome", 3, icons.size());
-        assertEquals(3, captions.size());
-        assertEquals(3, descriptions.size());
-        assertEquals(3, colours.size());
+        assertEquals("four SHAPES, so the meaning survives monochrome", 4, icons.size());
+        assertEquals(4, captions.size());
+        assertEquals(4, descriptions.size());
+        assertEquals(4, colours.size());
+        assertEquals(R.drawable.ic_op_intersect,
+                CadHudPresentation.operationIcon(NativeViewport.OPERATION_INTERSECT));
+        assertEquals(R.string.cad_hud_caption_intersect,
+                CadHudPresentation.operationCaption(NativeViewport.OPERATION_INTERSECT));
         assertEquals(R.drawable.ic_op_new_body,
                 CadHudPresentation.operationIcon(NativeViewport.OPERATION_NEW_BODY));
         assertEquals(R.drawable.ic_op_add,
@@ -353,7 +357,8 @@ public final class CadHudPresentationTest {
                 CadHudPresentation.operationColorAttr(NativeViewport.OPERATION_CUT));
         assertNotEquals("New Body never spends the accent a commit owns", R.attr.fsAccent,
                 CadHudPresentation.operationColorAttr(NativeViewport.OPERATION_NEW_BODY));
-        assertFalse(CadHudPresentation.isKnownOperation(3));
+        assertTrue(CadHudPresentation.isKnownOperation(NativeViewport.OPERATION_INTERSECT));
+        assertFalse(CadHudPresentation.isKnownOperation(4));
         assertFalse(CadHudPresentation.isKnownOperation(-1));
     }
 
@@ -362,6 +367,9 @@ public final class CadHudPresentationTest {
         assertEquals(NativeViewport.OPERATION_NEW_BODY, CadHudPresentation.OPERATIONS[0]);
         assertEquals(NativeViewport.OPERATION_ADD, CadHudPresentation.OPERATIONS[1]);
         assertEquals(NativeViewport.OPERATION_CUT, CadHudPresentation.OPERATIONS[2]);
+        assertEquals(NativeViewport.OPERATION_INTERSECT, CadHudPresentation.OPERATIONS[3]);
+        assertEquals(NativeViewport.OPERATION_BIT_INTERSECT,
+                CadHudPresentation.operationBit(NativeViewport.OPERATION_INTERSECT));
         assertEquals(NativeViewport.OPERATION_BIT_NEW_BODY,
                 CadHudPresentation.operationBit(NativeViewport.OPERATION_NEW_BODY));
         assertEquals(NativeViewport.OPERATION_BIT_ADD,
@@ -376,7 +384,7 @@ public final class CadHudPresentationTest {
         final int newBody = NativeViewport.OPERATION_BIT_NEW_BODY;
         final int add = NativeViewport.OPERATION_BIT_ADD;
         final int cut = NativeViewport.OPERATION_BIT_CUT;
-        for (int bits = 0; bits < 8; bits++) {
+        for (int bits = 0; bits < 16; bits++) {
             int expected = 0;
             for (int operation : CadHudPresentation.OPERATIONS) {
                 final boolean offered = CadHudPresentation.operationOffered(operation, bits);
@@ -389,8 +397,8 @@ public final class CadHudPresentationTest {
         }
         assertEquals(1, CadHudPresentation.offeredCount(newBody));
         assertEquals(3, CadHudPresentation.offeredCount(newBody | add | cut));
-        assertFalse("bits outside the three are never an operation",
-                CadHudPresentation.operationOffered(3, 0xFF));
+        assertFalse("bits outside the four are never an operation",
+                CadHudPresentation.operationOffered(4, 0xFF));
     }
 
     @Test

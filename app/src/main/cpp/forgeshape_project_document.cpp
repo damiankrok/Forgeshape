@@ -364,6 +364,7 @@ uint8_t cadFeatureOperationFileCode(CadFeatureOperation operation) {
         case CadFeatureOperation::NewBody: return 1;
         case CadFeatureOperation::Add: return 2;
         case CadFeatureOperation::Cut: return 3;
+        case CadFeatureOperation::Intersect: return 4;  // v16 only (§7s)
     }
     return 0;
 }
@@ -373,6 +374,7 @@ bool cadFeatureOperationFromFileCode(uint8_t code, CadFeatureOperation* out) {
         case 1: *out = CadFeatureOperation::NewBody; return true;
         case 2: *out = CadFeatureOperation::Add; return true;
         case 3: *out = CadFeatureOperation::Cut; return true;
+        case 4: *out = CadFeatureOperation::Intersect; return true;
         default: return false;
     }
 }
@@ -525,6 +527,17 @@ bool cadDocumentNeedsV7(const ProjectDocument& document) {
 bool cadDocumentNeedsV8(const ProjectDocument& document) {
     for (const ProjectCadBody& body : document.cad.bodies) {
         if (cadBodyStateUsesDrafting(body.state)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Whether any CAD body needs the v16 section (`CAD-INTERSECT-R1`): a later
+// Intersect.
+bool cadDocumentNeedsV16(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (cadBodyStateUsesIntersect(body.state)) {
             return true;
         }
     }
@@ -1718,7 +1731,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
 
     // The section is written at the LOWEST version that can carry it, so every
     // project that predates a feature keeps the bytes it always had.
-    const bool cadV15 = document.hasCad && cadDocumentNeedsV15(document);
+    const bool cadV16 = document.hasCad && cadDocumentNeedsV16(document);
+    const bool cadV15 = document.hasCad && (cadV16 || cadDocumentNeedsV15(document));
     const bool cadV14 = document.hasCad && (cadV15 || cadDocumentNeedsV14(document));
     const bool cadV13 = document.hasCad && (cadV14 || cadDocumentNeedsV13(document));
     const bool cadV12 = document.hasCad && (cadV13 || cadDocumentNeedsV12(document));
@@ -1896,7 +1910,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
         appendSection(file, kSectionTagCad,
-                      cadV15  ? kCadSectionVersionV15
+                      cadV16  ? kCadSectionVersionV16
+                      : cadV15 ? kCadSectionVersionV15
                       : cadV14 ? kCadSectionVersionV14
                       : cadV13 ? kCadSectionVersionV13
                       : cadV12 ? kCadSectionVersionV12
@@ -2585,7 +2600,8 @@ ProjectCodecStatus readCadSelectionV6(ByteReader& in, ExtrudeFeature* extrude) {
 // ids, order, references, placements, selections -- is `validateCadBodyState`'s.
 ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool featureKinds,
                                    bool drafting, bool finishes, bool patterns, bool holes,
-                                   bool toFace, bool planes, bool laterRevolve) {
+                                   bool toFace, bool planes, bool laterRevolve,
+                                   bool intersect) {
     CadBodyState& state = body->state;
     uint32_t sketchCount = 0;
     if (!in.u64(&body->objectId) || !in.u32(&state.nextSketchId)
@@ -2721,6 +2737,7 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
                 || (f == 0 && (operation != CadFeatureOperation::NewBody
                                || featureId != kCadFeatureId))
                 || (f != 0 && (!laterOk || operation == CadFeatureOperation::NewBody))
+                || (operation == CadFeatureOperation::Intersect && !intersect)
                 || !revolveDirectionFromFileCode(directionCode, &revolve.direction)) {
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
@@ -2755,7 +2772,9 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
             return ProjectCodecStatus::Truncated;
         }
         CadFeatureOperation operation = CadFeatureOperation::NewBody;
+        // Code 4, an Intersect, exists from v16 on (§7s).
         if (!cadFeatureOperationFromFileCode(operationCode, &operation)
+            || (operation == CadFeatureOperation::Intersect && !intersect)
             || !extrudeExtentFromFileCode(extentCode, &extrude.extent)
             || !extrudeDirectionFromFileCode(directionCode, &extrude.direction)) {
             return ProjectCodecStatus::InvalidSemanticValue;
@@ -2963,7 +2982,8 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         || version == kCadSectionVersionV8 || version == kCadSectionVersionV9
         || version == kCadSectionVersionV10 || version == kCadSectionVersionV11
         || version == kCadSectionVersionV12 || version == kCadSectionVersionV13
-        || version == kCadSectionVersionV14 || version == kCadSectionVersionV15) {
+        || version == kCadSectionVersionV14 || version == kCadSectionVersionV15
+        || version == kCadSectionVersionV16) {
         uint32_t bodyCount = 0;
         if (!in.u32(&bodyCount)) {
             return ProjectCodecStatus::Truncated;
@@ -2988,7 +3008,8 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
                                     /*holes=*/version >= kCadSectionVersionV11,
                                     /*toFace=*/version >= kCadSectionVersionV13,
                                     /*planes=*/version >= kCadSectionVersionV14,
-                                    /*laterRevolve=*/version >= kCadSectionVersionV15);
+                                    /*laterRevolve=*/version >= kCadSectionVersionV15,
+                                    /*intersect=*/version >= kCadSectionVersionV16);
             if (why != ProjectCodecStatus::Ok) {
                 return why;
             }
@@ -3021,6 +3042,16 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
                 anyLaterRevolve = anyLaterRevolve || cadBodyStateUsesLaterRevolve(body.state);
             }
             if (!anyLaterRevolve) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+        }
+        // A v16 section exists only for an Intersect (`CAD-INTERSECT-R1`).
+        if (version == kCadSectionVersionV16) {
+            bool anyIntersect = false;
+            for (const ProjectCadBody& body : record->bodies) {
+                anyIntersect = anyIntersect || cadBodyStateUsesIntersect(body.state);
+            }
+            if (!anyIntersect) {
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
         }
@@ -3210,6 +3241,7 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
                 // the first feature, and an unknown code is not repaired.
                 if (!cadFeatureOperationFromFileCode(operationCode, &feature.operation)
                     || feature.operation == CadFeatureOperation::NewBody
+                    || feature.operation == CadFeatureOperation::Intersect
                     || !cadFaceKindFromFileCode(faceKindCode, &support.face.kind)
                     || !extrudeExtentFromFileCode(featureExtentCode, &feature.extrude.extent)
                     || extrudeDistanceIsDerived(feature.extrude)
@@ -3352,7 +3384,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
                         || sectionVersion == kCadSectionVersionV12
                         || sectionVersion == kCadSectionVersionV13
                         || sectionVersion == kCadSectionVersionV14
-                        || sectionVersion == kCadSectionVersionV15;
+                        || sectionVersion == kCadSectionVersionV15
+                        || sectionVersion == kCadSectionVersionV16;
         } else if (isScene) {
             // SCNE became the second multi-version section at Stage 018A: v1 as
             // every build before it wrote, and v2 carrying per-body visibility,

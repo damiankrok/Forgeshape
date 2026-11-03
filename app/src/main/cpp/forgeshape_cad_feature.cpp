@@ -587,7 +587,9 @@ double throughAllReach(const CadBodyState& state, const std::vector<CadFeatureGe
         }
     };
     for (const CadFeatureGeometry& g : chain) {
-        if (g.operation == CadFeatureOperation::Cut) continue;
+        // Neither a Cut nor an Intersect reaches past the material before it.
+        if (g.operation == CadFeatureOperation::Cut
+            || g.operation == CadFeatureOperation::Intersect) continue;
         CadSolid solid;
         if (appendCadFeatureSolid(g, 0u, &solid) == CadStatus::Ok) measure(solid);
     }

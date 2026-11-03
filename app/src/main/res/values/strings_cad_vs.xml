@@ -33,6 +33,7 @@
     <string name="sketch_operation_new_body">New Body</string>
     <string name="sketch_operation_add">Add</string>
     <string name="sketch_operation_cut">Cut</string>
+    <string name="sketch_operation_intersect">Intersect</string>
     <string name="sketch_region_one_hole">%1$s, 1 hole</string>
     <string name="sketch_region_holes">%1$s, %2$d holes</string>
     <string name="sketch_region_description">Region: %1$s. Not selected.</string>
@@ -51,5 +52,6 @@
     <string name="status_operation_chosen">Operation: %1$s.</string>
     <string name="status_feature_added">Added to %1$s — one step to undo.</string>
     <string name="status_feature_cut">Cut from %1$s — one step to undo.</string>
+    <string name="status_feature_intersected">%1$s keeps only what the extrusion passes through — one step to undo.</string>
     <string name="status_feature_edit_begun">Editing feature %1$d of %2$s.</string>
 </resources>

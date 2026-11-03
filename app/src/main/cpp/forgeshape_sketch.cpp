@@ -14,7 +14,7 @@ namespace forgeshape {
 
 // The count is a literal in the header so Java can mirror it; this is what
 // keeps the literal honest when an enumerator is appended.
-static_assert(static_cast<int>(CadStatus::PrimitiveNotConvertible) + 1 == kCadStatusCount,
+static_assert(static_cast<int>(CadStatus::IntersectNoEffect) + 1 == kCadStatusCount,
               "kCadStatusCount must equal the number of CadStatus enumerators");
 
 const char* cadStatusName(CadStatus status) {
@@ -140,6 +140,8 @@ const char* cadStatusName(CadStatus status) {
         case CadStatus::HoleEdgesParallel: return "HoleEdgesParallel";
         case CadStatus::SketchPlaneInvalid: return "SketchPlaneInvalid";
         case CadStatus::PrimitiveNotConvertible: return "PrimitiveNotConvertible";
+        case CadStatus::IntersectRemovesBody: return "IntersectRemovesBody";
+        case CadStatus::IntersectNoEffect: return "IntersectNoEffect";
     }
     return "unknown";
 }

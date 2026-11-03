@@ -28,6 +28,7 @@
 #include "forgeshape_cad_through_all_selftest.h"
 #include "forgeshape_cad_to_face_selftest.h"
 #include "forgeshape_cad_plane_selftest.h"
+#include "forgeshape_cad_intersect_selftest.h"
 #include "forgeshape_cad_revolve_feature_selftest.h"
 #include "forgeshape_cad_revolve_selftest.h"
 #include "forgeshape_cad_timeline_selftest.h"
@@ -5884,6 +5885,14 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + planePerformance;
+    // The Intersect operation (`CAD-INTERSECT-R1`).
+    std::vector<ArrangementSelfTestCheck> intersectChecks;
+    std::string intersectPerformance;
+    runCadIntersectSelfTests(&intersectChecks, &intersectPerformance);
+    for (const ArrangementSelfTestCheck& check : intersectChecks) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + intersectPerformance;
     // A later Revolve Add or Cut (`CAD-REVOLVE-FEATURE-R1`).
     std::vector<ArrangementSelfTestCheck> revolveFeatureChecks;
     std::string revolveFeaturePerformance;

@@ -66,7 +66,7 @@ final class CadHudPresentation {
     /** The operations, in the native enum's order and the palette's order. */
     static final int[] OPERATIONS = {
             NativeViewport.OPERATION_NEW_BODY, NativeViewport.OPERATION_ADD,
-            NativeViewport.OPERATION_CUT};
+            NativeViewport.OPERATION_CUT, NativeViewport.OPERATION_INTERSECT};
     /** The extent modes, in the native enum's order and the palette's order. */
     static final int[] EXTENTS = {
             NativeViewport.EXTENT_ONE_SIDE, NativeViewport.EXTENT_SYMMETRIC,
@@ -255,11 +255,12 @@ final class CadHudPresentation {
     // Operation
     // -----------------------------------------------------------------------
 
-    /** Whether a value is one of the three operations native names. */
+    /** Whether a value is one of the four operations native names. */
     static boolean isKnownOperation(int operation) {
         return operation == NativeViewport.OPERATION_NEW_BODY
                 || operation == NativeViewport.OPERATION_ADD
-                || operation == NativeViewport.OPERATION_CUT;
+                || operation == NativeViewport.OPERATION_CUT
+                || operation == NativeViewport.OPERATION_INTERSECT;
     }
 
     /** The {@code OPERATION_BIT_*} for an operation, or 0 for an unknown one. */
@@ -271,6 +272,8 @@ final class CadHudPresentation {
                 return NativeViewport.OPERATION_BIT_ADD;
             case NativeViewport.OPERATION_CUT:
                 return NativeViewport.OPERATION_BIT_CUT;
+            case NativeViewport.OPERATION_INTERSECT:
+                return NativeViewport.OPERATION_BIT_INTERSECT;
             default:
                 return 0;
         }
@@ -282,7 +285,7 @@ final class CadHudPresentation {
         return bit != 0 && (availableBits & bit) != 0;
     }
 
-    /** How many of the three operations the bitmask offers. */
+    /** How many of the operations the bitmask offers. */
     static int offeredCount(int availableBits) {
         int count = 0;
         for (int operation : OPERATIONS) {
@@ -315,6 +318,8 @@ final class CadHudPresentation {
                 return R.drawable.ic_op_add;
             case NativeViewport.OPERATION_CUT:
                 return R.drawable.ic_op_cut;
+            case NativeViewport.OPERATION_INTERSECT:
+                return R.drawable.ic_op_intersect;
             default:
                 return R.drawable.ic_op_new_body;
         }
@@ -327,6 +332,8 @@ final class CadHudPresentation {
                 return R.string.cad_hud_caption_add;
             case NativeViewport.OPERATION_CUT:
                 return R.string.cad_hud_caption_cut;
+            case NativeViewport.OPERATION_INTERSECT:
+                return R.string.cad_hud_caption_intersect;
             default:
                 return R.string.cad_hud_caption_new_body;
         }
@@ -339,6 +346,8 @@ final class CadHudPresentation {
                 return R.string.cad_hud_operation_add_description;
             case NativeViewport.OPERATION_CUT:
                 return R.string.cad_hud_operation_cut_description;
+            case NativeViewport.OPERATION_INTERSECT:
+                return R.string.cad_hud_operation_intersect_description;
             default:
                 return R.string.cad_hud_operation_new_body_description;
         }
@@ -362,6 +371,10 @@ final class CadHudPresentation {
                 return R.attr.fsTextSuccess;
             case NativeViewport.OPERATION_CUT:
                 return R.attr.fsTextError;
+            case NativeViewport.OPERATION_INTERSECT:
+                // The measurement role: neither material gained nor lost, a
+                // boundary taken from two solids.
+                return R.attr.fsTextMeasure;
             default:
                 return R.attr.fsTextPrimary;
         }

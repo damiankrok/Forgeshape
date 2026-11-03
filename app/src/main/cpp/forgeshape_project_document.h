@@ -255,6 +255,10 @@ constexpr uint16_t kCadSectionVersionV14 = 14;
 // payload layout. Written ONLY when a later feature revolves, so every
 // v1..v14 project keeps its bytes.
 constexpr uint16_t kCadSectionVersionV15 = 15;
+// v16 (`CAD-INTERSECT-R1`, DATA_PACKAGE_SPEC.md §7s): the v15 layout, in
+// which a later feature's operation code may be 4, an Intersect. Written ONLY
+// when a later feature intersects, so every v1..v15 project keeps its bytes.
+constexpr uint16_t kCadSectionVersionV16 = 16;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.

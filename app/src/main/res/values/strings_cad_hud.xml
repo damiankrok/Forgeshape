@@ -16,6 +16,7 @@
     <string name="cad_hud_caption_new_body">New body</string>
     <string name="cad_hud_caption_add">Add</string>
     <string name="cad_hud_caption_cut">Cut</string>
+    <string name="cad_hud_caption_intersect">Intersect</string>
     <string name="cad_hud_caption_flip">Flip</string>
     <string name="cad_hud_caption_edit_sketch">Edit sketch</string>
 
@@ -35,6 +36,7 @@
     <string name="cad_hud_operation_new_body_description">Make a new body from this extrusion.</string>
     <string name="cad_hud_operation_add_description">Add this extrusion to the body the sketch stands on.</string>
     <string name="cad_hud_operation_cut_description">Cut this extrusion out of the body the sketch stands on.</string>
+    <string name="cad_hud_operation_intersect_description">Keep only the part of the body this extrusion passes through.</string>
 
     <string name="cad_hud_flip_description">Flip direction. Grow the solid out of the other side of the sketch; the depth is unchanged.</string>
 

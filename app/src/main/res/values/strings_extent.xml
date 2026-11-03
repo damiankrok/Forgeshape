@@ -37,4 +37,6 @@
     <string name="make_cad_part_description">Turn this shape into a CAD part of the same size and place, so holes, fillets and features can be added. Undo turns it back.</string>
     <string name="status_made_cad_part">The shape is now a CAD part. Undo turns it back.</string>
     <string name="status_primitive_not_convertible">Only a box, a cylinder, a sphere or a cone that has not been sculpted can become a CAD part.</string>
+    <string name="status_cad_intersect_removes_body">The extrusion shares no material with the part, so Intersect would leave nothing.</string>
+    <string name="status_cad_intersect_no_effect">The extrusion holds the whole part, so Intersect would change nothing.</string>
 </resources>

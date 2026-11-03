@@ -465,9 +465,13 @@ enum class CadFeatureOperation : uint8_t {
     NewBody,
     Add,
     Cut,
+    // `CAD-INTERSECT-R1`. A later feature that keeps ONLY the material its
+    // tool and the body have in common -- one kernel Intersection. Appended,
+    // so the three codes above keep their indices.
+    Intersect,
 };
 
-constexpr int kCadFeatureOperationCount = 3;
+constexpr int kCadFeatureOperationCount = 4;
 
 const char* cadFeatureOperationName(CadFeatureOperation operation);
 bool cadFeatureOperationFromIndex(int index, CadFeatureOperation* out);
@@ -972,6 +976,9 @@ bool cadBodyStateUsesRevolve(const CadBodyState& state);
 // `CAD-REVOLVE-FEATURE-R1`: a later Revolve Add or Cut, the thing `CADB` v15
 // alone carries.
 bool cadBodyStateUsesLaterRevolve(const CadBodyState& state);
+// `CAD-INTERSECT-R1`: whether any later feature is an Intersect, the thing
+// `CADB` v16 exists to carry.
+bool cadBodyStateUsesIntersect(const CadBodyState& state);
 // Appends a later Revolve Add or Cut on a NEW sketch record on `support`, the
 // way `appendCadLaterFeatureWithSketch` appends an extrusion. 0 when the chain
 // or the table is full.

@@ -415,11 +415,16 @@ enum class CadStatus : uint8_t {
     // part (a Capsule, a Plane, another representation, a sculpted body), or
     // an edit is in progress.
     PrimitiveNotConvertible,
+    // `CAD-INTERSECT-R1`. An Intersect whose tool shares no material with
+    // the body (it would keep nothing), and one whose tool contains the whole
+    // body (it would keep everything, which changes nothing).
+    IntersectRemovesBody,
+    IntersectNoEffect,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 121;
+constexpr int kCadStatusCount = 123;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);

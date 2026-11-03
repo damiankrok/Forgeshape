@@ -32,7 +32,10 @@ CadStatus finishTargetStatus(const CadBodyState& state, uint32_t featureId) {
     if (!findCadFeature(state, featureId, &view)) {
         return CadStatus::EdgeNotFound;
     }
-    if (view.kind != CadFeatureKind::Extrude || view.operation == CadFeatureOperation::Cut) {
+    // A Cut's and an Intersect's edges are where its tool met the body, not
+    // the tool's own prism edges (`CAD-INTERSECT-R1` keeps R1's rule).
+    if (view.kind != CadFeatureKind::Extrude || view.operation == CadFeatureOperation::Cut
+        || view.operation == CadFeatureOperation::Intersect) {
         return CadStatus::EdgeFinishTargetUnsupported;
     }
     return CadStatus::Ok;
@@ -66,7 +69,8 @@ CadStatus enumerateCadFeatureEdges(const CadBodyState& state, uint32_t featureId
         return solidWhy;
     }
     const bool targetable = view.kind == CadFeatureKind::Extrude
-                            && view.operation != CadFeatureOperation::Cut;
+                            && view.operation != CadFeatureOperation::Cut
+                            && view.operation != CadFeatureOperation::Intersect;
 
     // Weld: one index per distinct position, so an edge two triangles share is
     // one key whether or not the generator shared the vertex.

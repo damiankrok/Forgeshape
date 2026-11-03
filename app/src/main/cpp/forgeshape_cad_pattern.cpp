@@ -274,7 +274,10 @@ CadStatus validateCadFeaturePatterns(const CadBodyState& state, uint32_t* outFai
             bool found = false;
             for (const CadFeature& f : state.laterFeatures) {
                 found = found || (f.featureId == id && id < p.patternId);
-                if (f.featureId == id && f.kind == CadFeatureKind::Revolve) {
+                // A pattern repeats an Add or a Cut; an Intersect copy would
+                // keep only what every copy shares (`CAD-INTERSECT-R1`).
+                if (f.featureId == id && (f.kind == CadFeatureKind::Revolve
+                                          || f.operation == CadFeatureOperation::Intersect)) {
                     return fail(CadStatus::PatternTargetUnsupported, p.patternId);
                 }
             }

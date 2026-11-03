@@ -1649,6 +1649,22 @@ an `RVL1` block (each later Revolve's id, selection, axis, exact angle bits and
 direction) only then. No v15 corpus fixture exists yet: the round trip and the
 version rule are host evidence (`RV_03_*`).
 
+## 7s. `CADB` v16 — an Intersect (`CAD-INTERSECT-R1`)
+
+Version 16 is v15's layout (§7r) byte for byte, in which a LATER feature's
+operation code may be **4, Intersect** — a feature that keeps only the
+material its tool shares with the body. Below v16 the code is
+`InvalidSemanticValue` (and the v5 layout never carries it). It is legal
+wherever Add and Cut are, Extrude or Revolve, and nowhere a New Body is. A
+pattern of an Intersect is `PatternTargetUnsupported`, a Fillet or Chamfer of
+one of its edges `EdgeFinishTargetUnsupported`. Regeneration applies it as one
+kernel Intersection: a result with no material is `IntersectRemovesBody`, one
+that removes less than `1e-9 ×` the body's volume is `IntersectNoEffect`. v16 is
+written exactly when some later feature intersects; a v16 section without one
+is refused. The fingerprint needs no block of its own: it already mixes every
+feature's operation index, and 3 is new. No v16 corpus fixture exists yet: the
+round trip and the version rule are host evidence (`IX_03_*`).
+
 ## 7j. `FRFM` v1 — the Freeform bodies (`MODELING-FOUNDATIONS-R1` B)
 
 A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is

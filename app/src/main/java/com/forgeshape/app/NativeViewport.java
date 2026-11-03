@@ -2394,6 +2394,10 @@ final class NativeViewport {
     static final int CAD_SKETCH_PLANE_INVALID = 119;
     /** `CAD-PRIMITIVES-R1`: the body has no CAD part (or the act cannot run now). */
     static final int CAD_PRIMITIVE_NOT_CONVERTIBLE = 120;
+    /** `CAD-INTERSECT-R1`: the tool shares no material with the body. */
+    static final int CAD_INTERSECT_REMOVES_BODY = 121;
+    /** `CAD-INTERSECT-R1`: the tool contains the whole body. */
+    static final int CAD_INTERSECT_NO_EFFECT = 122;
 
     // --- Chamfer and Fillet (`CAD-EDGE-FINISH-R1`) ------------------------
 
@@ -2643,10 +2647,13 @@ final class NativeViewport {
     static final int OPERATION_NEW_BODY = 0;
     static final int OPERATION_ADD = 1;
     static final int OPERATION_CUT = 2;
+    /** `CAD-INTERSECT-R1`: keeps only what the tool shares with the body. */
+    static final int OPERATION_INTERSECT = 3;
     /** Bits of {@link #CAD_EXTRUDE_OPERATIONS_AVAILABLE}. */
     static final int OPERATION_BIT_NEW_BODY = 1;
     static final int OPERATION_BIT_ADD = 2;
     static final int OPERATION_BIT_CUT = 4;
+    static final int OPERATION_BIT_INTERSECT = 8;
 
     /** The three principal workplanes, as the native Workplane index. */
     static final int WORKPLANE_XY = 0;

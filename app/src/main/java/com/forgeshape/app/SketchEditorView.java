@@ -70,6 +70,7 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     private final TextView operationNewBody;
     private final TextView operationAdd;
     private final TextView operationCut;
+    private final TextView operationIntersect;
     private final NumericPropertyRow depthField;
     /** What the depth field was last filled with, so an untouched one is known. */
     private String shownDepthText = "";
@@ -309,7 +310,10 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
                 R.string.sketch_operation_cut, NativeViewport.OPERATION_CUT);
         operationChips.addView(operationNewBody, EditorControlStyles.evenShare(0));
         operationChips.addView(operationAdd, EditorControlStyles.evenShare(smallGap));
+        operationIntersect = operationChip(context, R.id.sketch_operation_intersect,
+                R.string.sketch_operation_intersect, NativeViewport.OPERATION_INTERSECT);
         operationChips.addView(operationCut, EditorControlStyles.evenShare(smallGap));
+        operationChips.addView(operationIntersect, EditorControlStyles.evenShare(smallGap));
         operationRow.addView(operationChips, EditorControlStyles.rowParams(smallGap));
         readySection.addView(operationRow, EditorControlStyles.rowParams(sectionGap));
         // "Revolve…" (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): the SAME chosen areas,
@@ -778,14 +782,18 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
                 (available & NativeViewport.OPERATION_BIT_ADD) != 0 ? VISIBLE : GONE);
         operationCut.setVisibility(
                 (available & NativeViewport.OPERATION_BIT_CUT) != 0 ? VISIBLE : GONE);
+        operationIntersect.setVisibility(
+                (available & NativeViewport.OPERATION_BIT_INTERSECT) != 0 ? VISIBLE : GONE);
         // A row with one choice is not a choice; the canvas badge still says
         // what the extrusion does.
-        final int offered = Integer.bitCount(available & 7);
+        final int offered = Integer.bitCount(available & 15);
         operationRow.setVisibility(offered > 1 ? VISIBLE : GONE);
         EditorControlStyles.setChipActive(operationNewBody,
                 operation == NativeViewport.OPERATION_NEW_BODY);
         EditorControlStyles.setChipActive(operationAdd, operation == NativeViewport.OPERATION_ADD);
         EditorControlStyles.setChipActive(operationCut, operation == NativeViewport.OPERATION_CUT);
+        EditorControlStyles.setChipActive(operationIntersect,
+                operation == NativeViewport.OPERATION_INTERSECT);
     }
 
     /** Shows the direction the SESSION holds. The panel remembers none. */

@@ -6562,6 +6562,7 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
             if (session.operationAvailable(forgeshape::CadFeatureOperation::NewBody)) mask |= 1;
             if (session.operationAvailable(forgeshape::CadFeatureOperation::Add)) mask |= 2;
             if (session.operationAvailable(forgeshape::CadFeatureOperation::Cut)) mask |= 4;
+            if (session.operationAvailable(forgeshape::CadFeatureOperation::Intersect)) mask |= 8;
             values[23] = mask;
             values[26] = static_cast<double>(session.operationTargetId());
             values[28] = static_cast<double>(session.regions().regions.size());

@@ -5130,7 +5130,10 @@ final class EditorWorkspaceView extends FrameLayout
             // An Add or a Cut changed the body the sketch stood on, IN PLACE:
             // the id native returns is that body's, and no second one exists.
             showStatus(context.getString(operation == NativeViewport.OPERATION_CUT
-                            ? R.string.status_feature_cut : R.string.status_feature_added,
+                            ? R.string.status_feature_cut
+                            : operation == NativeViewport.OPERATION_INTERSECT
+                                    ? R.string.status_feature_intersected
+                                    : R.string.status_feature_added,
                             BodyLabels.of(context, created)),
                     R.attr.fsTextSuccess);
             return;

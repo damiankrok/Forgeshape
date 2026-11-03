@@ -510,9 +510,8 @@ on the host, with no device, and is the fast native loop.
   says on every refresh, so the canvas Flip and the panel chips cannot become
   two answers. Add, Cut, the feature list and `CADB` v5 arrived with
   `CAD-VERTICAL-SLICE-R1` (the rules below), Revolve New Body with
-  `CAD-V6-REVOLVE-NEWBODY-E2E-R1`. **Still not delivered:** a Revolve Add or
-  Cut, `Intersect`, a Hole feature, a constraint solver, and multi-feature
-  reuse of one sketch.
+  `CAD-V6-REVOLVE-NEWBODY-E2E-R1`, a Revolve Add or Cut, a Hole and Intersect
+  in the stages below. **Still not delivered:** a constraint solver.
 - **An extrusion's EXTENT is TWO non-negative DISTANCES, and a mode names which
   of them the controls author** (`CAD-EXT-R1`). The durable truth is how far
   the solid reaches along `+N` and along `-N`, of which at least one is
@@ -586,7 +585,7 @@ on the host, with no device, and is the fast native loop.
   side, Flip takes the nearest on the other, and a Ready tap beside every
   region that lands on a face of the same body retargets it. **`CADB` v13**
   (§7p) is written only for a To Face feature or an edge-placed hole. **Still
-  not delivered:** `Intersect`, `To Object`, To Face on a non-parallel face,
+  not delivered:** `To Object`, To Face on a non-parallel face,
   taper or draft, and a
   total-length presentation of Symmetric — the durable value stays the distance
   per side whatever a later UI chooses to show.
@@ -774,7 +773,17 @@ on the host, with no device, and is the fast native loop.
   rules are measured on the kernel's own result: a union that adds a shell is
   `AddDisjoint`, one that gains < 1e-9 × tool volume is `AddNoEffect`, an empty
   difference is `CutRemovesBody`, one that removes < 1e-9 × tool volume is
-  `CutNoIntersection`. Every input triangle carries a face tag the kernel keeps
+  `CutNoIntersection`. **An Intersect** (`CAD-INTERSECT-R1`,
+  `CadFeatureOperation::Intersect`, appended at index 3) is a third later
+  operation through the kernel's `Intersection`: it keeps only what its tool
+  shares with the body, an empty result is `IntersectRemovesBody` and one that
+  removes < 1e-9 × the body's volume `IntersectNoEffect`; it is offered on a
+  face sketch exactly where Add and Cut are, grows INTO the body as a Cut does,
+  takes no push-through (its arrow sets a depth and nothing else), is never
+  a pattern target or a finish target, its faces support a sketch only where
+  they survived (as a Cut's), and it is drawn by its own glyph (two outlines
+  and their shared lens) with the measure role as a second carrier. **`CADB`
+  v16** (§7s) is written only for one. Every input triangle carries a face tag the kernel keeps
   through the boolean, so a triangle of the result still names
   `(feature, face token)` — which is how the support chooser and dependents
   read faces; a triangle index is never identity. **A sketch on a planar face of
@@ -839,6 +848,24 @@ on the host, with no device, and is the fast native loop.
   `cad_bad_feature_kind_v7`). **Not this stage:** a later feature on a revolved
   part, a sketch on a revolved face, an axis that is not a
   sketch edge, a two-sided or symmetric sweep, and a constraint solver.
+- **A Construction primitive may BECOME a CAD part, by one replacement act**
+  (`CAD-PRIMITIVES-R1`, `forgeshape_cad_from_primitive.{h,cpp}`). A Box and a
+  Cylinder are a Symmetric extrusion of a rectangle / circle on XZ by half the
+  height, a Sphere and a Cone a full-turn Revolve on XY of a half-disc /
+  right triangle about its own edge on the Y axis — authored CAD truth built
+  from the primitive's PARAMETERS, never from its vertices, so the part is the
+  same size where the primitive stood. `convertPrimitiveToCadPart` is ONE
+  `ScopedConstructionEdit`: a fresh `ObjectId` carrying the primitive's
+  transform, name, visibility and lock, published and made active, and the
+  primitive DETACHED and held by the history, so one Undo brings back the
+  same id and Redo the same part. A Capsule, a Plane, a sculpted body and any
+  other representation are refused by name (`PrimitiveNotConvertible`), the
+  Shape panel's Make CAD part is drawn only where native says it can succeed
+  (`sceneActiveHasCadPart`), and the act is refused while sculpting or
+  sketching. No format, section or version changed: the part is an ordinary
+  CAD body. **Not this stage:** a Capsule or Plane part, ready-made CAD
+  presets with no primitive behind them (torus, tube), and a link back from
+  the part to the primitive.
 - **A Chamfer or a Fillet is a NAMED edge plus a distance, applied after the
   chain** (`CAD-EDGE-FINISH-R1`, `forgeshape_cad_edge_finish.{h,cpp}`).
   `CadBodyState::edgeFinishes` is the authored truth: per finish an id minted

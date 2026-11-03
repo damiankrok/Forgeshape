@@ -135,6 +135,9 @@ void cadOperationPreviewTint(CadFeatureOperation operation, float out[4]) {
         case CadFeatureOperation::NewBody:
             out[0] = 0.42f; out[1] = 0.66f; out[2] = 0.98f; out[3] = 0.22f;
             return;
+        case CadFeatureOperation::Intersect:
+            out[0] = 0.62f; out[1] = 0.42f; out[2] = 0.95f; out[3] = 0.30f;
+            return;
     }
     out[0] = out[1] = out[2] = out[3] = 0.0f;
 }

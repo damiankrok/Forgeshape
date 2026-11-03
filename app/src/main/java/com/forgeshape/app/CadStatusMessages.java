@@ -75,6 +75,10 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_cad_cut_no_intersection);
             case NativeViewport.CAD_CUT_REMOVES_BODY:
                 return context.getString(R.string.status_cad_cut_removes_body);
+            case NativeViewport.CAD_INTERSECT_REMOVES_BODY:
+                return context.getString(R.string.status_cad_intersect_removes_body);
+            case NativeViewport.CAD_INTERSECT_NO_EFFECT:
+                return context.getString(R.string.status_cad_intersect_no_effect);
             case NativeViewport.CAD_KERNEL_FAILED:
                 return context.getString(R.string.status_cad_kernel_failed);
             // `CAD-V6-S2-CORRECTION-FILL-HUD-R1`: why crossing curves could not

@@ -238,7 +238,8 @@ CadStatus ConstructionScene::validateCadFaceSupport(const TopoRef& support) cons
     // published regeneration, the mesh the user sees and picks.
     CadFeatureView view;
     if (findCadFeature(producer->cadOrNull()->state(), support.producerLocalFeatureId, &view)
-        && view.operation == CadFeatureOperation::Cut) {
+        && (view.operation == CadFeatureOperation::Cut
+            || view.operation == CadFeatureOperation::Intersect)) {
         std::shared_ptr<const CadBodyMesh> mesh;
         if (producer->cadOrNull()->regenerated(&mesh) != CadStatus::Ok || mesh == nullptr
             || !cadMeshCarriesFace(*mesh, face)) {

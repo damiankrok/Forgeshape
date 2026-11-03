@@ -352,6 +352,7 @@ final class CadFeatureEditorView extends LinearLayout
         switch (operation) {
             case NativeViewport.OPERATION_ADD: return R.string.sketch_operation_add;
             case NativeViewport.OPERATION_CUT: return R.string.sketch_operation_cut;
+            case NativeViewport.OPERATION_INTERSECT: return R.string.sketch_operation_intersect;
             default: return R.string.sketch_operation_new_body;
         }
     }

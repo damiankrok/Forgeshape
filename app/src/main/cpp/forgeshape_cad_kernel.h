@@ -84,6 +84,7 @@ const char* cadKernelStatusName(CadKernelStatus status);
 enum class CadBooleanOp : uint8_t {
     Union,
     Difference,
+    Intersection,  // `CAD-INTERSECT-R1`: the material both solids hold
 };
 
 // What the operation rules measure about a solid. Derived, never stored.

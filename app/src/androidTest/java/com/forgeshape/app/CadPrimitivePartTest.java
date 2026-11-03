@@ -2,7 +2,6 @@ package com.forgeshape.app;
 
 import static com.forgeshape.app.WorkspaceTestSupport.doOnWorkspace;
 import static com.forgeshape.app.WorkspaceTestSupport.onWorkspace;
-import static com.forgeshape.app.WorkspaceTestSupport.precisionToggle;
 import static com.forgeshape.app.WorkspaceTestSupport.resetToBaselineConstruction;
 import static com.forgeshape.app.WorkspaceTestSupport.settleLayout;
 import static org.junit.Assert.assertEquals;
@@ -142,9 +141,7 @@ public final class CadPrimitivePartTest {
     private void openShapePanel() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             workspace.onNativeStateChanged();
-            if (!workspace.uiState().precisionOpen(false)) {
-                precisionToggle(workspace).performClick();
-            }
+            WorkspaceTestSupport.openPrecision(workspace);
             return null;
         });
         settleLayout();

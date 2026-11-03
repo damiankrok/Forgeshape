@@ -255,8 +255,9 @@ CadKernelStatus cadKernelBoolean(const CadSolid& a, const CadSolid& b, CadBoolea
     if (status != CadKernelStatus::Ok) {
         return status;
     }
-    const manifold::OpType kernelOp =
-            op == CadBooleanOp::Union ? manifold::OpType::Add : manifold::OpType::Subtract;
+    const manifold::OpType kernelOp = op == CadBooleanOp::Union          ? manifold::OpType::Add
+                                      : op == CadBooleanOp::Intersection ? manifold::OpType::Intersect
+                                                                         : manifold::OpType::Subtract;
     const manifold::Manifold result = left.Boolean(right, kernelOp);
     CadSolid solid;
     status = fromKernelResult(result, &solid);

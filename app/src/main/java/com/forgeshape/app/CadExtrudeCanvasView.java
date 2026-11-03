@@ -171,7 +171,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
     /** The operation choices, in {@link CadHudPresentation#OPERATIONS} order. */
     private static final int[] OPERATION_CHOICE_IDS = {
             R.id.cad_extrude_operation_new_body, R.id.cad_extrude_operation_add,
-            R.id.cad_extrude_operation_cut};
+            R.id.cad_extrude_operation_cut, R.id.cad_extrude_operation_intersect};
 
     /**
      * One palette control: a container whose box is at least the 48 dp hit
