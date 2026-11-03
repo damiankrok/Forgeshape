@@ -35,7 +35,8 @@ were split off as stage 5b.
   faces; v11 round trip and bad bytes; acts and Undo; History rows; seeds).
   JVM `HolePresentationTest`. `CI FAST` `41664577122` success. `CI DEVICE`
   `HoleTest` run `41665942679` success (2/2, 25/25 startup tokens);
-  regression run with PatternTest and EdgeFinishTest recorded on completion.
+  run `41667901946` `HoleTest` + `PatternTest` + `EdgeFinishTest` success
+  (6/6), so the face bar's new Hole action broke neither neighbour.
   Physical-device behaviour UNVERIFIED.
 - **Not this stage:** threaded or tapered holes, a drill-point bottom, holes
   on curved faces, positioning by dimensions to edges, a pattern of a hole,
