@@ -976,6 +976,30 @@ Verified on the emulator (`PatternTest`): a boss's Pattern applies its seeded
 values as one Undo and Undo takes it back; Mirror reflects it; the History
 reopens and deletes it.
 
+## Where the face's actions and editors stand
+
+Tapping a flat face of a CAD part leaves a small hollow ring at the point you
+touched, and the face's actions — **Sketch here**, round or bevel its edges,
+**Hole**, **Pattern** and **Mirror** — stand in a column beside the controls
+on the trailing edge (beside the precision surface when it is open there),
+not over the model. The Hole, Pattern and Fillet/Chamfer editors open in the
+same place and scroll there when they are taller than the room. The ring
+takes no touch: a drag that starts on it, or anywhere on the model, still
+orbits the view while an editor is open.
+
+**Only an outside edge of the part is rounded or bevelled.** Where two
+features meet — the foot of a boss standing on a block, or an edge under a
+face that continues flush into another feature — there is no outside corner
+to round, so a tap there offers nothing, *Round edges* / *Bevel edges* of a
+face leaves such edges out, and a finish whose edge a later feature has
+buried is refused by name rather than cut into the part.
+
+Verified on the emulator (`CadDockTest`): after a face tap the actions and the
+Hole editor stand on the inner side of the trailing controls, overlap neither
+them nor the tapped point, and a drag from the tapped point orbits the view
+with the editor still open. The outside-edge rule is verified on the host
+(`EF2_*`).
+
 ## Drafting inside a sketch
 
 **Undo and Redo while drawing.** While a sketch is being drawn, the Undo and
@@ -2329,9 +2353,8 @@ and splines on one of the three principal planes or on a flat face of a CAD
 body; its regions may have holes; a CAD body is a first New Body extrusion plus
 up to fifteen Add and Cut extrusions on its own flat faces, each reopenable, or
 a single Revolve New Body about a straight sketch edge. There
-is no Through All or Up To Face extent, no Intersect, no deleting or reordering
-a feature, and no fillet, chamfer, shell, sweep, loft, pattern, feature
-mirror or constraint solver on a CAD body (a Surface body has its own loft —
+is no Up To Face extent, no Intersect, no deleting or reordering
+a feature, and no shell, sweep, loft or constraint solver on a CAD body (a Surface body has its own loft —
 see *Surface bodies* — and sketch Trim, Extend, Offset and Mirror exist —
 see *Drafting inside a sketch*), no custom construction plane, no
 sketch on the inside of a Cut, and no sketch on a

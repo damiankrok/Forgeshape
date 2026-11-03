@@ -1,7 +1,40 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.113.0
+**Status Version:** 0.114.0
 **Updated:** 2026-11-03
+**Latest stage:** **`CAD-EDGE-FINISH-R2` + `CAD-UI-DOCK-R1` — only outside
+edges are finished; the face's acts and editors dock beside the trailing
+controls** (2026-11-03). **TECH PASS (emulator) / OWNER PHYSICAL REVIEW
+REQUIRED / NOT MERGED.** Branch `claude/new-session-g87rge`, product at
+`fda3d77`. OWNER feedback on the `CAD-EXTENT-R1` APK: rounding where two
+features meet looked wrong, and CAD chrome covered the model and got in the
+way of orbiting.
+
+- **Edges (R2).** A finish's edge was a feature prism's edge whether or not it
+  was still an outside edge of the part — a boss's foot, or an edge under a
+  face continuing flush into another feature, was "rounded" into the
+  material. `cadEdgeIsOutsideEdgeOfBody` now samples the edge (0.3/0.5/0.7 of
+  its length) against the solid built so far: open space beyond both faces,
+  material in the corner. Regeneration refuses a failing one as
+  `EdgeNotOnBody` (CadStatus 112, `kCadStatusCount` 113), and the tap offer
+  (`pickEdgeFinishOfferLocked`) filters lone edges and a face's edges by the
+  same test against the published mesh. No format byte changed.
+- **UI audit (dock).** What covered the model: the face bar (Sketch here,
+  Round/Bevel edges, Hole, Pattern, Mirror) stood above the touched point, and
+  the Hole, Pattern and Fillet/Chamfer editors opened at the model, so a drag
+  meant to orbit landed on chrome. Now all of them stand in one column on the
+  inner side of the trailing host (and of a side-seated precision surface),
+  the editors scroll within the dock and were narrowed (two rows for the
+  finish editor and the hole position), and the touched point keeps a hollow
+  non-clickable marker (`cad_canvas_offer_marker`). The extrude cluster's own
+  value editors stay at their geometry.
+- **Evidence.** Host `HOST_SELFTESTS_OK` (4647 checks) with `EF2_01..04`
+  (a boss's foot refused, its top and an uncovered block edge finished, the
+  offer agrees, a flush full-width boss's covered and foot edges refused);
+  `EF_08`'s consumed edge now reads `EdgeNotOnBody`. CI_EVIDENCE_PLACEHOLDER
+  Physical-device behaviour UNVERIFIED.
+
+**Previous stage:** `CAD-EXTENT-R1` (record below, unchanged).
 **Latest stage:** **`CAD-EXTENT-R1` — the Through All extent of a Cut**
 (2026-11-03). **TECH PASS (emulator) / OWNER PHYSICAL REVIEW REQUIRED / NOT
 MERGED.** Branch `claude/new-session-g87rge`, product at `7006e54`. Stage 5b of
@@ -2427,8 +2460,9 @@ stroke history, with Undo and Redo on the existing controls) sits on top of
 **Next Stage:** `CAD-TO-FACE-R1` — the To Face extent for Add and Cut and
 positioning a hole by distances to edges (stage 5c of
 `docs/FEATURE_PARITY_PLAN.md`), after the OWNER physical-device review of the
-`CAD-EXTENT-R1` APK (Through All, holes, patterns, sketch Undo/Redo, the knife,
-push-through to Cut, Fillet/Chamfer); the Delete → Undo → Redo owner
+`CAD-EXTENT-R1` + `CAD-UI-DOCK-R1` APK (Through All, holes, patterns, sketch
+Undo/Redo, the knife, push-through to Cut, Fillet/Chamfer on outside edges,
+the docked face actions); the Delete → Undo → Redo owner
 verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See *Next Stage*.
 
 ## Current state

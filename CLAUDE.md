@@ -332,15 +332,22 @@ on the host, with no device, and is the fast native loop.
   (`STARTUP-FACE-ICONS-R1`): an ordinary Construction tap that lands on an
   eligible planar face of a CAD body (`resolveFaceSupportFromHit`, the chooser's
   own triangle-to-`TopoRef` rule) OFFERS a sketch there — a captioned "Sketch
-  here" chip on the canvas extrude cluster, standing above the touched point
-  re-projected every refresh — and the chip begins the sketch through the
+  here" chip on the canvas extrude cluster — and the chip begins the sketch through the
   chooser's own confirm (`faceSketchOfferBegin`), so the face is re-validated
   and the view framed exactly as a chooser tap does. The offer is session
   presentation: a TopoRef plus the point in the face's own `(u, v)`, never a
   triangle index, never a history step, a `.forge` byte or the fingerprint; a
   tap that hits no eligible face, a load and a close withdraw it, every read
   re-validates it, and it is absent while a sketch, the chooser, Sculpt or a
-  Freeform cage edit owns the viewport.
+  Freeform cage edit owns the viewport. **The face's acts and the feature
+  editors are DOCKED, never over the model** (`CAD-UI-DOCK-R1`): Sketch here,
+  the face's Round/Bevel edges, Hole, Pattern and Mirror stand in one column
+  on the inner side of the trailing host (and of a side-seated precision
+  surface), and the Hole, Pattern and Fillet/Chamfer editors open there and
+  scroll within it; the touched point keeps only a hollow, non-clickable
+  marker re-projected every refresh, so a drag from the model — the marker
+  included — still orbits while an editor is open. The value editors of the
+  extrude cluster stay at their geometry.
 - **The ForgeShape mark is the one project door, and its drawer owns no act**
   (`MODELING-R1-OWNER-CORRECTION`). The mark leads the Global Toolbar row, in
   a capsule of its own, a 48 dp target whose width `ToolbarRowBudget` reserves
@@ -833,10 +840,16 @@ on the host, with no device, and is the fast native loop.
   a tool derived from the edge alone — a prism whose section is the corner the
   finish removes, widened outside the material, its Fillet arc at the circle
   density (32 per turn) — that runs on past an end where the material ends and
-  stops flush where it continues (`cadSolidContainsPoint`); a finish that
-  removes nothing is `EdgeFinishNoEffect` and names the finish, so a later
-  Add or Cut that consumes a finished edge refuses rather than silently
-  sharpening it. Finish triangles carry their own INELIGIBLE face-table entry,
+  stops flush where it continues (`cadSolidContainsPoint`). **Only an OUTSIDE
+  edge of the part as it stands is finished** (`CAD-EDGE-FINISH-R2`):
+  `cadEdgeIsOutsideEdgeOfBody` samples the edge at 0.3/0.5/0.7 of its length
+  against the solid the chain has built so far — open space just beyond BOTH
+  faces and material in the corner between them — so a boss's foot, an edge
+  under a face that continues flush into another feature, or one a later
+  feature buried is `EdgeNotOnBody` at regeneration, and the offer filters by
+  the same test against the published mesh; a finish that removes nothing is
+  still `EdgeFinishNoEffect` and names the finish, so a later Add or Cut that
+  consumes a finished edge refuses rather than silently sharpening it. Finish triangles carry their own INELIGIBLE face-table entry,
   so a bevel is never a sketch support. **The offer is presentation**: a
   Construction tap beside a straight edge (36 px on screen AND within 35 % of
   the narrower face's room in the world, so a back edge is never chosen)
