@@ -34,8 +34,10 @@ face-wide variant and History editing.
   `13200945155` holds `app-debug.apk`). `CI DEVICE` `41568430756`: attempt 1
   died installing the SDK image before any build (infrastructure); attempt 2
   **PASS** — 25/25 tokens, `EdgeFinishTest` OK (2/2: Fillet of one edge and its
-  Undo; Chamfer of a whole face, edit and Delete from History). Physical-device
-  behaviour UNVERIFIED.
+  Undo; Chamfer of a whole face, edit and Delete from History); regression
+  `CI DEVICE` `41569686985` PASS, `FaceSketchOfferTest` OK (Sketch here still
+  opens a face sketch with the new bar beside it). Physical-device behaviour
+  UNVERIFIED.
 - **Not this stage:** curved, concave, Cut and Revolve edges, edges between two
   features, asymmetric chamfers, a rolling-ball blend where three filleted
   edges meet (R1 leaves the intersection of the cuts), a drag handle, Shell,
