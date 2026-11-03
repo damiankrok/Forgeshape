@@ -142,6 +142,21 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_cad_sketch_in_use);
             case NativeViewport.CAD_SKETCH_IS_ROOT:
                 return context.getString(R.string.status_cad_sketch_is_root);
+            // `CAD-EDGE-FINISH-R1`: Chamfer and Fillet.
+            case NativeViewport.CAD_EDGE_NOT_FOUND:
+                return context.getString(R.string.status_edge_not_found);
+            case NativeViewport.CAD_EDGE_NOT_ELIGIBLE:
+                return context.getString(R.string.status_edge_not_eligible);
+            case NativeViewport.CAD_EDGE_FINISH_TARGET_UNSUPPORTED:
+                return context.getString(R.string.status_edge_finish_target_unsupported);
+            case NativeViewport.CAD_EDGE_FINISH_INVALID:
+                return context.getString(R.string.status_edge_finish_invalid);
+            case NativeViewport.CAD_EDGE_FINISH_TOO_LARGE:
+                return context.getString(R.string.status_edge_finish_too_large);
+            case NativeViewport.CAD_EDGE_FINISH_NO_EFFECT:
+                return context.getString(R.string.status_edge_finish_no_effect);
+            case NativeViewport.CAD_TOO_MANY_EDGE_FINISHES:
+                return context.getString(R.string.status_edge_finish_too_many);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));

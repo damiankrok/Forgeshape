@@ -103,6 +103,17 @@ final class CadExtrudeCanvasView extends FrameLayout {
          * the whole decision; the chip only asks.
          */
         void onCanvasSketchOnFaceRequested();
+
+        /**
+         * Apply a Chamfer or a Fillet ({@link NativeViewport#EDGE_FINISH_CHAMFER}
+         * or {@code _FILLET}) of {@code meters}: over the offered edges when
+         * {@code finishId} is 0, or as an edit of that committed finish.
+         * Returns whether native accepted it, so the editor closes only then.
+         */
+        boolean onCanvasEdgeFinishApply(int kind, double meters, long bodyId, long finishId);
+
+        /** Remove committed finish {@code finishId} of body {@code bodyId}. */
+        boolean onCanvasEdgeFinishDelete(long bodyId, long finishId);
     }
 
     /** The extent choices, in {@link CadHudPresentation#EXTENTS} order. */
@@ -210,6 +221,29 @@ final class CadExtrudeCanvasView extends FrameLayout {
      */
     private final LinearLayout sketchOnFace;
     private final float[] faceOfferPoint = new float[2];
+    /**
+     * The Fillet / Chamfer offer (`CAD-EDGE-FINISH-R1`): two captioned buttons
+     * beside the edge the finger landed by, or below the face it landed on
+     * (then they finish every edge of that face), and the one editor both open.
+     */
+    private final LinearLayout edgeFinishBar;
+    private final View edgeFillet;
+    private final View edgeChamfer;
+    private final TextView edgeFilletCaption;
+    private final TextView edgeChamferCaption;
+    private final LinearLayout edgeFinishEditor;
+    private final TextView edgeFinishLabel;
+    private final EditText edgeFinishField;
+    private final TextView edgeFinishDelete;
+    private final double[] edgeOffer = new double[NativeViewport.EDGE_OFFER_SIZE];
+    private final double[] edgeFinishInfo = new double[NativeViewport.EDGE_FINISH_INFO_SIZE];
+    /** The kind the open editor applies, or -1 while it is closed. */
+    private int edgeEditorKind = -1;
+    /** 0 for a new finish over the offer, else the committed finish edited. */
+    private long edgeEditorFinishId;
+    private long edgeEditorBodyId = NativeViewport.NO_OBJECT;
+    private float edgeEditorX;
+    private float edgeEditorY;
 
     /** Whether the action palette is open. Presentation only; never a domain value. */
     private boolean paletteOpen;
@@ -490,7 +524,143 @@ final class CadExtrudeCanvasView extends FrameLayout {
             }
         });
         addView(sketchOnFace, wrapParams());
+
+        // --- The Fillet / Chamfer offer --------------------------------------
+        edgeFinishBar = new LinearLayout(context);
+        edgeFinishBar.setId(R.id.cad_canvas_edge_finish_bar);
+        edgeFinishBar.setOrientation(LinearLayout.HORIZONTAL);
+        edgeFinishBar.setGravity(Gravity.CENTER_VERTICAL);
+        edgeFinishBar.setBackgroundResource(R.drawable.bg_hud_lone_control);
+        edgeFinishBar.setElevation(EditorControlStyles.dimen(context, R.dimen.elevation_floating));
+        edgeFinishBar.setClickable(true);
+        edgeFilletCaption = new TextView(context);
+        edgeChamferCaption = new TextView(context);
+        edgeFillet = captionedAction(context, R.id.cad_canvas_edge_fillet,
+                R.drawable.ic_edge_fillet, edgeFilletCaption);
+        edgeChamfer = captionedAction(context, R.id.cad_canvas_edge_chamfer,
+                R.drawable.ic_edge_chamfer, edgeChamferCaption);
+        edgeFillet.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openEdgeFinishEditor(NativeViewport.EDGE_FINISH_FILLET);
+            }
+        });
+        edgeChamfer.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openEdgeFinishEditor(NativeViewport.EDGE_FINISH_CHAMFER);
+            }
+        });
+        edgeFinishBar.addView(edgeFillet, EditorControlStyles.wrap(0));
+        edgeFinishBar.addView(edgeChamfer, EditorControlStyles.wrap(0));
+        edgeFinishBar.setVisibility(GONE);
+        addView(edgeFinishBar, wrapParams());
+
+        edgeFinishEditor = editorSurface(context, R.id.cad_canvas_edge_finish_editor);
+        edgeFinishEditor.setElevation(
+                EditorControlStyles.dimen(context, R.dimen.elevation_floating));
+        edgeFinishLabel = new TextView(context);
+        edgeFinishLabel.setSingleLine(true);
+        edgeFinishLabel.setTextColor(contentTint);
+        edgeFinishLabel.setTextSize(TypedValue.COMPLEX_UNIT_PX,
+                EditorControlStyles.dimen(context, R.dimen.text_label));
+        EditorControlStyles.applyMediumWeight(edgeFinishLabel);
+        edgeFinishEditor.addView(edgeFinishLabel, EditorControlStyles.wrap(0));
+        edgeFinishField = distanceField(context, R.id.field_edge_finish_distance);
+        edgeFinishField.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override
+            public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+                    submitEdgeFinish();
+                    return true;
+                }
+                return false;
+            }
+        });
+        edgeFinishEditor.addView(edgeFinishField, EditorControlStyles.wrap(editorGap));
+        final TextView applyFinish = applyButton(context, R.id.apply_edge_finish);
+        applyFinish.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                submitEdgeFinish();
+            }
+        });
+        edgeFinishEditor.addView(applyFinish, EditorControlStyles.wrap(editorGap));
+        edgeFinishDelete = plainButton(context, R.id.delete_edge_finish,
+                R.string.edge_finish_delete);
+        edgeFinishDelete.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (edgeEditorFinishId > 0L && CadExtrudeCanvasView.this.actions
+                        .onCanvasEdgeFinishDelete(edgeEditorBodyId, edgeEditorFinishId)) {
+                    closeEdgeFinishEditor();
+                }
+            }
+        });
+        edgeFinishEditor.addView(edgeFinishDelete, EditorControlStyles.wrap(editorGap));
+        final TextView cancelFinish = plainButton(context, R.id.cancel_edge_finish,
+                R.string.edge_finish_cancel);
+        cancelFinish.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                closeEdgeFinishEditor();
+                refreshFromNative();
+            }
+        });
+        edgeFinishEditor.addView(cancelFinish, EditorControlStyles.wrap(editorGap));
+        addView(edgeFinishEditor, wrapParams());
         setAnnotationVisible(false, false);
+    }
+
+    /** An icon and a caption beside it, as one 48 dp target. */
+    private View captionedAction(Context context, int id, int iconRes, TextView caption) {
+        final LinearLayout view = new LinearLayout(context);
+        view.setId(id);
+        view.setOrientation(LinearLayout.HORIZONTAL);
+        view.setGravity(Gravity.CENTER_VERTICAL);
+        view.setMinimumHeight(hitPx);
+        view.setMinimumWidth(hitPx);
+        view.setPadding(captionPadH, 0, captionPadH, 0);
+        view.setBackgroundResource(R.drawable.bg_hud_member);
+        view.setClickable(true);
+        view.setFocusable(true);
+        final ImageView glyph = new ImageView(context);
+        glyph.setImageResource(iconRes);
+        glyph.setImageTintList(contentTint);
+        glyph.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        glyph.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        view.addView(glyph, new LinearLayout.LayoutParams(referenceGlyphPx, referenceGlyphPx));
+        caption.setSingleLine(true);
+        caption.setIncludeFontPadding(false);
+        caption.setTextColor(contentTint);
+        caption.setTextSize(TypedValue.COMPLEX_UNIT_PX,
+                EditorControlStyles.dimen(context, R.dimen.text_label));
+        EditorControlStyles.applyMediumWeight(caption);
+        caption.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.leftMargin = captionPadH / 2;
+        view.addView(caption, params);
+        return view;
+    }
+
+    /** A quiet text button with the 48 dp floor. */
+    private TextView plainButton(Context context, int id, int textRes) {
+        final TextView button = new TextView(context);
+        button.setId(id);
+        button.setText(textRes);
+        button.setGravity(Gravity.CENTER);
+        button.setMinimumHeight(hitPx);
+        button.setMinimumWidth(hitPx);
+        button.setPadding(captionPadH, 0, captionPadH, 0);
+        button.setBackgroundResource(R.drawable.bg_control);
+        button.setTextColor(contentTint);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_PX,
+                EditorControlStyles.dimen(context, R.dimen.text_label));
+        EditorControlStyles.applyMediumWeight(button);
+        button.setClickable(true);
+        button.setFocusable(true);
+        return button;
     }
 
     // -----------------------------------------------------------------------
@@ -629,8 +799,11 @@ final class CadExtrudeCanvasView extends FrameLayout {
             if (child == editor || child == secondEditor) {
                 return CadHudTouchAttribution.EDITOR;
             }
-            if (child == editSketch.view || child == sketchOnFace) {
+            if (child == editSketch.view || child == sketchOnFace || child == edgeFinishBar) {
                 return CadHudTouchAttribution.EDIT_SKETCH;
+            }
+            if (child == edgeFinishEditor) {
+                return CadHudTouchAttribution.EDITOR;
             }
         }
         return CadHudTouchAttribution.NONE;
@@ -837,6 +1010,8 @@ final class CadExtrudeCanvasView extends FrameLayout {
         sketchBodyId = NativeViewport.NO_OBJECT;
         editSketch.view.setVisibility(GONE);
         sketchOnFace.setVisibility(GONE);
+        edgeFinishBar.setVisibility(GONE);
+        closeEdgeFinishEditor();
         final Context context = getContext();
         final LengthUnit unit = host.uiState().displayUnit();
         final int extent = extentMode();
@@ -1070,10 +1245,11 @@ final class CadExtrudeCanvasView extends FrameLayout {
         } else {
             sketchOnFace.setVisibility(GONE);
         }
+        final boolean finishShown = refreshEdgeFinishOffer();
         if (!NativeViewport.cadBodySketchAnchor(body, bodyAnchor)) {
             editSketch.view.setVisibility(GONE);
             sketchBodyId = NativeViewport.NO_OBJECT;
-            if (!faceOffered) {
+            if (!faceOffered && !finishShown) {
                 hide();
             }
             return;
@@ -1320,8 +1496,181 @@ final class CadExtrudeCanvasView extends FrameLayout {
         secondReading.setVisibility(GONE);
         editSketch.view.setVisibility(GONE);
         sketchOnFace.setVisibility(GONE);
+        edgeFinishBar.setVisibility(GONE);
+        closeEdgeFinishEditor();
         sketchBodyId = NativeViewport.NO_OBJECT;
         setVisibility(GONE);
+    }
+
+    // -----------------------------------------------------------------------
+    // Fillet / Chamfer (`CAD-EDGE-FINISH-R1`)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Shows the offer bar, or keeps the open editor on its anchor. Returns
+     * whether anything of it is shown. Native decides whether there is an offer
+     * at all and re-validates it on every read.
+     */
+    private boolean refreshEdgeFinishOffer() {
+        if (edgeEditorKind >= 0) {
+            if (edgeEditorFinishId == 0L) {
+                // A NEW finish follows its offer; an offer that went away
+                // (an Undo, another tap) takes the editor with it.
+                if (!anchorSpace.ready() || !NativeViewport.edgeFinishOfferState(edgeOffer)) {
+                    closeEdgeFinishEditor();
+                    edgeFinishBar.setVisibility(GONE);
+                    return false;
+                }
+                edgeEditorX = (float) edgeOffer[NativeViewport.EDGE_OFFER_X];
+                edgeEditorY = (float) edgeOffer[NativeViewport.EDGE_OFFER_Y];
+            } else if (NativeViewport.cadEdgeFinishInfo(edgeEditorBodyId, edgeEditorFinishId,
+                    edgeFinishInfo)
+                    && edgeFinishInfo[NativeViewport.EDGE_FINISH_INFO_ON_SCREEN] != 0.0) {
+                edgeEditorX = (float) edgeFinishInfo[NativeViewport.EDGE_FINISH_INFO_X];
+                edgeEditorY = (float) edgeFinishInfo[NativeViewport.EDGE_FINISH_INFO_Y];
+            }
+            edgeFinishBar.setVisibility(GONE);
+            edgeFinishEditor.setVisibility(VISIBLE);
+            setVisibility(VISIBLE);
+            placeAt(edgeFinishEditor, edgeEditorX, edgeEditorY + hitPx);
+            return true;
+        }
+        if (!anchorSpace.ready() || !NativeViewport.edgeFinishOfferState(edgeOffer)) {
+            edgeFinishBar.setVisibility(GONE);
+            return false;
+        }
+        final Context context = getContext();
+        final boolean face =
+                edgeOffer[NativeViewport.EDGE_OFFER_MODE] == NativeViewport.EDGE_OFFER_FACE;
+        final int count = (int) edgeOffer[NativeViewport.EDGE_OFFER_COUNT];
+        edgeFilletCaption.setText(face ? R.string.edge_finish_fillet_face
+                : R.string.edge_finish_fillet);
+        edgeChamferCaption.setText(face ? R.string.edge_finish_chamfer_face
+                : R.string.edge_finish_chamfer);
+        edgeFillet.setContentDescription(face
+                ? context.getString(R.string.edge_finish_fillet_face_description, count)
+                : context.getString(R.string.edge_finish_fillet_description));
+        edgeChamfer.setContentDescription(face
+                ? context.getString(R.string.edge_finish_chamfer_face_description, count)
+                : context.getString(R.string.edge_finish_chamfer_description));
+        edgeFinishBar.setVisibility(VISIBLE);
+        setVisibility(VISIBLE);
+        // A face's bar stands BELOW the finger (its Sketch here chip is above);
+        // a lone edge's stands above it.
+        final float x = (float) edgeOffer[NativeViewport.EDGE_OFFER_X];
+        final float y = (float) edgeOffer[NativeViewport.EDGE_OFFER_Y];
+        placeAt(edgeFinishBar, x, face ? y + hitPx : y - hitPx);
+        return true;
+    }
+
+    /** Opens the editor for a NEW finish over the offer, seeded with native's suggestion. */
+    private void openEdgeFinishEditor(int kind) {
+        if (!NativeViewport.edgeFinishOfferState(edgeOffer)) {
+            refreshFromNative();
+            return;
+        }
+        edgeEditorKind = kind;
+        edgeEditorFinishId = 0L;
+        edgeEditorBodyId = NativeViewport.sceneActiveBodyId();
+        edgeEditorX = (float) edgeOffer[NativeViewport.EDGE_OFFER_X];
+        edgeEditorY = (float) edgeOffer[NativeViewport.EDGE_OFFER_Y];
+        final double suggested = edgeOffer[kind == NativeViewport.EDGE_FINISH_FILLET
+                ? NativeViewport.EDGE_OFFER_SUGGEST_FILLET
+                : NativeViewport.EDGE_OFFER_SUGGEST_CHAMFER];
+        showEdgeFinishEditor(kind, suggested, false);
+    }
+
+    /**
+     * Opens the editor over a COMMITTED finish, from the History: its value,
+     * Apply as an edit, and Delete. Returns false for a finish native lacks.
+     */
+    boolean beginEdgeFinishEdit(long bodyId, long finishId) {
+        if (!NativeViewport.cadEdgeFinishInfo(bodyId, finishId, edgeFinishInfo)) {
+            return false;
+        }
+        edgeEditorKind = (int) edgeFinishInfo[NativeViewport.EDGE_FINISH_INFO_KIND];
+        edgeEditorFinishId = finishId;
+        edgeEditorBodyId = bodyId;
+        if (edgeFinishInfo[NativeViewport.EDGE_FINISH_INFO_ON_SCREEN] != 0.0) {
+            edgeEditorX = (float) edgeFinishInfo[NativeViewport.EDGE_FINISH_INFO_X];
+            edgeEditorY = (float) edgeFinishInfo[NativeViewport.EDGE_FINISH_INFO_Y];
+        } else {
+            edgeEditorX = getWidth() * 0.5f;
+            edgeEditorY = getHeight() * 0.5f;
+        }
+        showEdgeFinishEditor(edgeEditorKind,
+                edgeFinishInfo[NativeViewport.EDGE_FINISH_INFO_DISTANCE], true);
+        return true;
+    }
+
+    private void showEdgeFinishEditor(int kind, double meters, boolean editing) {
+        final Context context = getContext();
+        final LengthUnit unit = host.uiState().displayUnit();
+        final int labelRes = kind == NativeViewport.EDGE_FINISH_FILLET
+                ? R.string.edge_finish_label_radius : R.string.edge_finish_label_distance;
+        edgeFinishLabel.setText(labelRes);
+        edgeFinishField.setText(meters > 0.0 ? unit.format(meters) : "");
+        edgeFinishField.selectAll();
+        edgeFinishField.setContentDescription(context.getString(
+                R.string.edge_finish_field_description, context.getString(labelRes),
+                context.getString(kind == NativeViewport.EDGE_FINISH_FILLET
+                        ? R.string.edge_finish_fillet : R.string.edge_finish_chamfer),
+                unit.label()));
+        edgeFinishDelete.setVisibility(editing ? VISIBLE : GONE);
+        edgeFinishBar.setVisibility(GONE);
+        edgeFinishEditor.setVisibility(VISIBLE);
+        setVisibility(VISIBLE);
+        placeAt(edgeFinishEditor, edgeEditorX, edgeEditorY + hitPx);
+        edgeFinishField.requestFocus();
+        final InputMethodManager ime = (InputMethodManager)
+                context.getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (ime != null) {
+            ime.showSoftInput(edgeFinishField, InputMethodManager.SHOW_IMPLICIT);
+        }
+    }
+
+    /** Closes the finish editor without applying anything. */
+    void closeEdgeFinishEditor() {
+        edgeEditorKind = -1;
+        edgeEditorFinishId = 0L;
+        if (edgeFinishEditor.getVisibility() != VISIBLE) {
+            return;
+        }
+        edgeFinishEditor.setVisibility(GONE);
+        edgeFinishField.clearFocus();
+        hideIme();
+    }
+
+    /** Whether the finish editor is open; verification. */
+    boolean edgeFinishEditorOpen() {
+        return edgeEditorKind >= 0;
+    }
+
+    private void submitEdgeFinish() {
+        if (edgeEditorKind < 0) {
+            return;
+        }
+        final Context context = getContext();
+        final int labelRes = edgeEditorKind == NativeViewport.EDGE_FINISH_FILLET
+                ? R.string.edge_finish_label_radius : R.string.edge_finish_label_distance;
+        final String raw = edgeFinishField.getText().toString();
+        final BigDecimal typed;
+        try {
+            typed = LengthUnit.parse(raw);
+        } catch (NumberFormatException notANumber) {
+            host.showStatus(raw.trim().isEmpty()
+                    ? context.getString(R.string.field_empty, context.getString(labelRes))
+                    : context.getString(R.string.field_not_a_number,
+                                        context.getString(labelRes), raw.trim()),
+                    R.attr.fsTextError);
+            edgeFinishField.requestFocus();
+            return;
+        }
+        final double meters = host.uiState().displayUnit().toMeters(typed).doubleValue();
+        if (actions.onCanvasEdgeFinishApply(edgeEditorKind, meters, edgeEditorBodyId,
+                edgeEditorFinishId)) {
+            closeEdgeFinishEditor();
+        }
     }
 
     /**

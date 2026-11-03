@@ -3418,6 +3418,16 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         final long bodyId = NativeViewport.sceneActiveBodyId();
+        if (row.isFinish()) {
+            // A Chamfer or a Fillet has no sketch to reopen: its editor is the
+            // canvas one, over its first edge, with Delete beside Apply.
+            setFeatureHistoryOpen(false);
+            if (!cadExtrudeCanvas.beginEdgeFinishEdit(bodyId, row.id)) {
+                showStatus(CadStatusMessages.describe(context, NativeViewport.CAD_EDGE_NOT_FOUND),
+                        R.attr.fsTextError);
+            }
+            return;
+        }
         final boolean sketchRow = row.isSketch();
         final int status = NativeViewport.sketchBeginEditFeature(bodyId, row.editTarget, !sketchRow);
         if (status != NativeViewport.CAD_OK) {
@@ -4214,6 +4224,72 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onCanvasEditSketchRequested(long bodyId) {
         onEditCadSketchRequested();
+    }
+
+    /**
+     * The canvas Fillet / Chamfer editor's Apply (`CAD-EDGE-FINISH-R1`): a new
+     * finish over the offered edges, or an edit of a committed one. Native
+     * judges the whole body and the act is one Undo; a refusal is said by name
+     * and the editor stays open so the value can be corrected.
+     */
+    @Override
+    public boolean onCanvasEdgeFinishApply(int kind, double meters, long bodyId, long finishId) {
+        final Context context = getContext();
+        final int status = finishId > 0L
+                ? NativeViewport.cadEdgeFinishEdit(bodyId, finishId, kind, meters)
+                : NativeViewport.edgeFinishOfferApply(kind, meters);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return false;
+        }
+        final String name = context.getString(kind == NativeViewport.EDGE_FINISH_FILLET
+                ? R.string.edge_finish_fillet : R.string.edge_finish_chamfer);
+        final String value = uiState.displayUnit().formatWithUnit(meters);
+        onNativeStateChanged();
+        if (finishId > 0L) {
+            showStatus(context.getString(R.string.status_edge_finish_edited, name, value),
+                    R.attr.fsTextSecondary);
+        } else {
+            showStatus(context.getString(R.string.status_edge_finish_applied, name, value,
+                    lastEdgeFinishEdgeCount(bodyId)), R.attr.fsTextSecondary);
+        }
+        return true;
+    }
+
+    /** How many edges the body's newest finish covers, for the status line. */
+    private int lastEdgeFinishEdgeCount(long bodyId) {
+        final double[] header = new double[NativeViewport.TIMELINE_HEADER_SIZE];
+        final double[] rows =
+                new double[NativeViewport.TIMELINE_MAX_ROWS * NativeViewport.TIMELINE_ROW_SIZE];
+        final int count = NativeViewport.cadTimeline(bodyId, false, header, rows);
+        int edges = 0;
+        for (int i = 0; i < count && i < NativeViewport.TIMELINE_MAX_ROWS; i++) {
+            final int at = i * NativeViewport.TIMELINE_ROW_SIZE;
+            if ((int) rows[at + NativeViewport.TIMELINE_ROW_KIND]
+                    == NativeViewport.TIMELINE_KIND_FINISH) {
+                edges = (int) rows[at + NativeViewport.TIMELINE_ROW_REGIONS];
+            }
+        }
+        return edges;
+    }
+
+    @Override
+    public boolean onCanvasEdgeFinishDelete(long bodyId, long finishId) {
+        final Context context = getContext();
+        final double[] info = new double[NativeViewport.EDGE_FINISH_INFO_SIZE];
+        final boolean known = NativeViewport.cadEdgeFinishInfo(bodyId, finishId, info);
+        final int status = NativeViewport.cadEdgeFinishDelete(bodyId, finishId);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return false;
+        }
+        onNativeStateChanged();
+        final String name = context.getString(known
+                && (int) info[NativeViewport.EDGE_FINISH_INFO_KIND] == NativeViewport.EDGE_FINISH_CHAMFER
+                ? R.string.edge_finish_chamfer : R.string.edge_finish_fillet);
+        showStatus(context.getString(R.string.status_edge_finish_deleted, name),
+                R.attr.fsTextSecondary);
+        return true;
     }
 
     /**

@@ -59,6 +59,7 @@
 #include "forgeshape_gltf_export_selftest.h"
 #include "forgeshape_gltf_import_selftest.h"
 #include "forgeshape_cad_body.h"
+#include "forgeshape_cad_edge_finish.h"
 #include "forgeshape_cad_extrude_tool.h"
 #include "forgeshape_cad_feature.h"
 #include "forgeshape_cad_sketch_inventory.h"
@@ -320,6 +321,192 @@ constexpr float kChooserTapSlopPixels = 24.0f;
 forgeshape::ChosenSupport g_faceSketchOffer;
 float g_faceSketchOfferU = 0.0f;
 float g_faceSketchOfferV = 0.0f;
+
+// The Chamfer / Fillet offer (`CAD-EDGE-FINISH-R1`): the straight edge an
+// ordinary Construction tap landed beside, or every finishable edge of the
+// planar face it landed on. Session presentation on the face offer's terms --
+// semantic edge refs and a parameter, never a triangle index, never a history
+// step, a `.forge` byte or the fingerprint -- and re-resolved on every read,
+// so an Undo or an edit that removes an edge withdraws the offer. Guarded by
+// g_stateMutex.
+struct EdgeFinishOffer {
+    forgeshape::ObjectId body = forgeshape::kNoObject;
+    std::vector<forgeshape::CadEdgeRef> edges;
+    // True when the edges are a tapped face's; false for one tapped edge.
+    bool fromFace = false;
+    // Where along a single edge the finger was (0 start .. 1 end).
+    double anchorT = 0.5;
+};
+EdgeFinishOffer g_edgeFinishOffer;
+
+// How close, in pixels, a tap must land to a projected edge to choose it rather
+// than the face under it. A fixed pixel distance like the sketch's own 24 px
+// tap slop; a little wider, because an edge is a line and not an area.
+constexpr float kEdgePickPixels = 36.0f;
+
+// Whether the offer may be shown or acted on now, its body and its edges
+// resolved against the body AS IT IS NOW. A stale offer is dropped. The caller
+// holds g_stateMutex.
+bool edgeFinishOfferLiveLocked(const forgeshape::CadBody** outBody,
+                               std::vector<forgeshape::CadFeatureEdge>* outEdges,
+                               forgeshape::Mat4* outModel) {
+    if (g_edgeFinishOffer.edges.empty()) {
+        return false;
+    }
+    forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    if (!scene.hasProject() || forgeshape::sculptSession().inSculptMode()
+        || forgeshape::sketchSession().active() || forgeshape::supportChooser().active()
+        || forgeshape::constructionHistory().editInProgress()
+        || forgeshape::freeformEditSession().active()) {
+        return false;
+    }
+    const forgeshape::SceneObject* object = scene.findBody(g_edgeFinishOffer.body);
+    const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    forgeshape::Mat4 model;
+    if (body == nullptr || !object->visible() || !scene.resolveWorldModel(object->objectId(), &model)) {
+        g_edgeFinishOffer = EdgeFinishOffer{};
+        return false;
+    }
+    std::vector<forgeshape::CadFeatureEdge> edges;
+    if (forgeshape::resolveCadFinishEdges(body->state(), g_edgeFinishOffer.edges, &edges)
+        != forgeshape::CadStatus::Ok) {
+        g_edgeFinishOffer = EdgeFinishOffer{};
+        return false;
+    }
+    if (outBody != nullptr) *outBody = body;
+    if (outEdges != nullptr) *outEdges = std::move(edges);
+    if (outModel != nullptr) *outModel = model;
+    return true;
+}
+
+forgeshape::Vec3 edgeWorldPoint(const forgeshape::Mat4& model, const forgeshape::DVec3& local) {
+    return forgeshape::mat4TransformPoint(model, forgeshape::vec3FromDVec3(local));
+}
+
+// The offered edges as a highlight in the sketch overlay slot: each edge as a
+// small bundle of parallel lines lifted off the material along the bisector of
+// its two outward normals, so it reads as a stroke and is not buried in the
+// surface. Its revision is a hash of its own vertices, so it re-uploads exactly
+// when the offer, the body's placement or the body changed.
+forgeshape::SketchOverlayPtr edgeFinishOfferOverlayLocked() {
+    std::vector<forgeshape::CadFeatureEdge> edges;
+    forgeshape::Mat4 model;
+    if (!edgeFinishOfferLiveLocked(nullptr, &edges, &model)) {
+        return forgeshape::SketchOverlayPtr{};
+    }
+    auto built = std::make_shared<forgeshape::SketchOverlay>();
+    std::vector<forgeshape::GizmoVertex>& v = built->vertices;
+    for (const forgeshape::CadFeatureEdge& edge : edges) {
+        forgeshape::DVec3 lift;
+        if (!forgeshape::dvec3Normalized(forgeshape::dvec3Add(edge.normalA, edge.normalB), &lift)) {
+            continue;
+        }
+        const double step = 0.004 * std::max(edge.length, 1.0e-3);
+        for (int k = 0; k < 3; ++k) {
+            const forgeshape::DVec3 off = forgeshape::dvec3Scale(lift, step * static_cast<double>(k));
+            const forgeshape::Vec3 a =
+                    edgeWorldPoint(model, forgeshape::dvec3Add(edge.start, off));
+            const forgeshape::Vec3 b = edgeWorldPoint(model, forgeshape::dvec3Add(edge.end, off));
+            v.push_back(forgeshape::GizmoVertex{{a.x, a.y, a.z}, 0.0f, 1.0f});
+            v.push_back(forgeshape::GizmoVertex{{b.x, b.y, b.z}, 0.0f, 1.0f});
+        }
+    }
+    forgeshape::SketchOverlayRange range;
+    range.firstVertex = 0;
+    range.vertexCount = static_cast<uint32_t>(v.size());
+    range.style = forgeshape::SketchOverlayStyle::Entities;
+    built->ranges.push_back(range);
+    uint64_t hash = 0xCBF29CE484222325ull;
+    const unsigned char* bytes = reinterpret_cast<const unsigned char*>(v.data());
+    for (size_t i = 0; i < v.size() * sizeof(forgeshape::GizmoVertex); ++i) {
+        hash ^= bytes[i];
+        hash *= 0x100000001B3ull;
+    }
+    built->revision = hash | 0x8000000000000000ull;
+    return built;
+}
+
+// Chooses what a Construction tap on a CAD body offers to finish: the edge the
+// finger landed beside (it then replaces the face offer), or every finishable
+// edge of the face it landed on. The caller holds g_stateMutex.
+void pickEdgeFinishOfferLocked(const forgeshape::CameraSnapshot& camera, int viewWidth,
+                               int viewHeight, const forgeshape::SceneHit& hit) {
+    g_edgeFinishOffer = EdgeFinishOffer{};
+    if (!hit.hit) {
+        return;
+    }
+    forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    const forgeshape::SceneObject* object = scene.findBody(hit.objectId);
+    const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    forgeshape::Mat4 model;
+    if (body == nullptr || !scene.resolveWorldModel(hit.objectId, &model)) {
+        return;
+    }
+    float hx = 0.0f;
+    float hy = 0.0f;
+    std::vector<forgeshape::CadFeatureEdge> edges;
+    if (forgeshape::projectWorldToScreen(camera, hit.position, viewWidth, viewHeight, &hx, &hy)
+        && forgeshape::enumerateCadFinishableEdges(body->state(), &edges)
+                   == forgeshape::CadStatus::Ok) {
+        float best = kEdgePickPixels;
+        int bestIndex = -1;
+        double bestT = 0.5;
+        for (size_t i = 0; i < edges.size(); ++i) {
+            const forgeshape::CadFeatureEdge& edge = edges[i];
+            const forgeshape::Vec3 a = edgeWorldPoint(model, edge.start);
+            const forgeshape::Vec3 b = edgeWorldPoint(model, edge.end);
+            const forgeshape::Vec3 ab = forgeshape::vec3Sub(b, a);
+            const float len2 = forgeshape::vec3Dot(ab, ab);
+            if (!(len2 > 0.0f)) continue;
+            float t = forgeshape::vec3Dot(forgeshape::vec3Sub(hit.position, a), ab) / len2;
+            t = std::max(0.0f, std::min(1.0f, t));
+            const forgeshape::Vec3 q = forgeshape::vec3Add(a, forgeshape::vec3Scale(ab, t));
+            // The finger is on a visible face; the edge it means is one that
+            // face ends at, close in the WORLD too -- so a back edge whose
+            // projection merely passes nearby is never chosen.
+            const forgeshape::Vec3 wa = edgeWorldPoint(
+                    model, forgeshape::dvec3Add(edge.start, forgeshape::dvec3Scale(edge.inwardA, edge.widthA)));
+            const forgeshape::Vec3 wb = edgeWorldPoint(
+                    model, forgeshape::dvec3Add(edge.start, forgeshape::dvec3Scale(edge.inwardB, edge.widthB)));
+            const forgeshape::Vec3 da = forgeshape::vec3Sub(wa, a);
+            const forgeshape::Vec3 db = forgeshape::vec3Sub(wb, a);
+            const float room = std::sqrt(std::min(forgeshape::vec3Dot(da, da), forgeshape::vec3Dot(db, db)));
+            const forgeshape::Vec3 pq = forgeshape::vec3Sub(hit.position, q);
+            if (std::sqrt(forgeshape::vec3Dot(pq, pq)) > 0.35f * room) continue;
+            float qx = 0.0f;
+            float qy = 0.0f;
+            if (!forgeshape::projectWorldToScreen(camera, q, viewWidth, viewHeight, &qx, &qy)) continue;
+            const float d = std::hypot(qx - hx, qy - hy);
+            if (d <= best) {
+                best = d;
+                bestIndex = static_cast<int>(i);
+                bestT = t;
+            }
+        }
+        if (bestIndex >= 0) {
+            g_edgeFinishOffer.body = hit.objectId;
+            g_edgeFinishOffer.edges = {edges[static_cast<size_t>(bestIndex)].ref};
+            g_edgeFinishOffer.fromFace = false;
+            g_edgeFinishOffer.anchorT = bestT;
+            // The edge is what the finger meant; the face behind it is not.
+            g_faceSketchOffer = forgeshape::ChosenSupport{};
+            return;
+        }
+    }
+    if (g_faceSketchOffer.kind == forgeshape::ChosenSupport::Kind::Face
+        && g_faceSketchOffer.faceRef.producerObjectId == hit.objectId) {
+        std::vector<forgeshape::CadEdgeRef> faceEdges;
+        if (forgeshape::cadFinishableEdgesOfFace(body->state(),
+                                                 g_faceSketchOffer.faceRef.producerLocalFeatureId,
+                                                 g_faceSketchOffer.faceRef.face, &faceEdges)
+                    == forgeshape::CadStatus::Ok
+            && !faceEdges.empty()) {
+            g_edgeFinishOffer.body = hit.objectId;
+            g_edgeFinishOffer.edges = std::move(faceEdges);
+            g_edgeFinishOffer.fromFace = true;
+        }
+    }
+}
 
 // Frames the camera EXACTLY normal to the active sketch -- no pitch-clamp
 // approximation, and correct for a face frame at any orientation (`CAD-A3` B3)
@@ -2056,10 +2243,20 @@ void renderThreadMain() {
                         // grid and the snap marker are sized from, so the drawn
                         // head is the head the hit test grabs.
                         forgeshape::SketchSession& session = forgeshape::sketchSession();
-                        forgeshape::CadExtrudeViewFacts view;
-                        session.extrudeViewFacts(g_camera.snapshot(), g_camera.viewportWidth(),
-                                                 g_camera.viewportHeight(), &view);
-                        renderer.setSketchOverlay(session.overlay(worldPerUnit, view));
+                        // Outside a sketch the one slot may carry the Fillet /
+                        // Chamfer offer's edge highlight (`CAD-EDGE-FINISH-R1`).
+                        forgeshape::SketchOverlayPtr edgeHighlight;
+                        if (!session.active()) {
+                            edgeHighlight = edgeFinishOfferOverlayLocked();
+                        }
+                        if (edgeHighlight) {
+                            renderer.setSketchOverlay(edgeHighlight);
+                        } else {
+                            forgeshape::CadExtrudeViewFacts view;
+                            session.extrudeViewFacts(g_camera.snapshot(), g_camera.viewportWidth(),
+                                                     g_camera.viewportHeight(), &view);
+                            renderer.setSketchOverlay(session.overlay(worldPerUnit, view));
+                        }
                     }
                 }
             }
@@ -4477,6 +4674,209 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_faceSketchOfferDis
     JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
     g_faceSketchOffer = forgeshape::ChosenSupport{};
+}
+
+// ---------------------------------------------------------------------------
+// Chamfer and Fillet (`CAD-EDGE-FINISH-R1`)
+// ---------------------------------------------------------------------------
+
+namespace {
+// Defined with the retained-sketch acts below; the finish acts are refused on
+// exactly their terms (no project, Sculpt, a sketch open, an edit open).
+forgeshape::CadStatus retainedSketchActRefusal();
+}  // namespace
+
+// The finish offer, into out[0..5]: [0] 0 none, 1 one tapped edge, 2 a tapped
+// face's edges; [1..2] the screen point the chip stands on (the touched point
+// of the edge, or of the face); [3] how many edges; [4] the suggested Chamfer
+// distance and [5] the suggested Fillet radius, in metres. False with nothing
+// written when there is no live offer or its point does not project.
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_edgeFinishOfferState(
+    JNIEnv* env, jclass, jdoubleArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 6) {
+        return JNI_FALSE;
+    }
+    jdouble values[6] = {0, 0, 0, 0, 0, 0};
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        std::vector<forgeshape::CadFeatureEdge> edges;
+        forgeshape::Mat4 model;
+        if (edgeFinishOfferLiveLocked(nullptr, &edges, &model)) {
+            forgeshape::Vec3 anchor;
+            bool anchored = false;
+            if (g_edgeFinishOffer.fromFace) {
+                forgeshape::ChosenSupport fresh;
+                if (g_faceSketchOffer.kind == forgeshape::ChosenSupport::Kind::Face
+                    && forgeshape::refreshChosenSupport(forgeshape::constructionScene(),
+                                                        g_faceSketchOffer, &fresh)
+                               == forgeshape::CadStatus::Ok) {
+                    const forgeshape::SketchFrame& f = fresh.worldFrame;
+                    anchor = forgeshape::vec3Add(
+                            f.origin, forgeshape::vec3Add(forgeshape::vec3Scale(f.u, g_faceSketchOfferU),
+                                                          forgeshape::vec3Scale(f.v, g_faceSketchOfferV)));
+                    anchored = true;
+                }
+            } else {
+                const forgeshape::CadFeatureEdge& edge = edges.front();
+                anchor = edgeWorldPoint(
+                        model, forgeshape::dvec3Add(edge.start,
+                                                    forgeshape::dvec3Scale(edge.direction,
+                                                                           edge.length * g_edgeFinishOffer.anchorT)));
+                anchored = true;
+            }
+            float sx = 0.0f;
+            float sy = 0.0f;
+            if (anchored
+                && forgeshape::projectWorldToScreen(g_camera.snapshot(), anchor, g_camera.viewportWidth(),
+                                                    g_camera.viewportHeight(), &sx, &sy)) {
+                values[0] = g_edgeFinishOffer.fromFace ? 2.0 : 1.0;
+                values[1] = sx;
+                values[2] = sy;
+                values[3] = static_cast<jdouble>(edges.size());
+                values[4] = forgeshape::suggestCadEdgeFinishDistance(
+                        forgeshape::CadEdgeFinishKind::Chamfer, edges);
+                values[5] = forgeshape::suggestCadEdgeFinishDistance(
+                        forgeshape::CadEdgeFinishKind::Fillet, edges);
+                found = true;
+            }
+        }
+    }
+    if (!found) {
+        return JNI_FALSE;
+    }
+    env->SetDoubleArrayRegion(out, 0, 6, values);
+    return JNI_TRUE;
+}
+
+// Applies the offer: a Chamfer (kind 0) or a Fillet (kind 1) of `meters` over
+// the offered edges, as ONE Undo. Returns a CAD status; the offer is spent on
+// success and kept on a refusal so the value can be corrected.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_edgeFinishOfferApply(
+    JNIEnv*, jclass, jint kind, jdouble meters) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::NotSketching;
+    uint32_t finishId = 0;
+    size_t edgeCount = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::CadEdgeFinishKind finishKind;
+        if (!forgeshape::cadEdgeFinishKindFromIndex(static_cast<int>(kind), &finishKind)) {
+            status = forgeshape::CadStatus::EdgeFinishInvalid;
+        } else if (edgeFinishOfferLiveLocked(nullptr, nullptr, nullptr)) {
+            edgeCount = g_edgeFinishOffer.edges.size();
+            status = forgeshape::addCadEdgeFinishToBody(
+                    forgeshape::constructionScene(), forgeshape::constructionHistory(),
+                    g_edgeFinishOffer.body, finishKind, static_cast<double>(meters),
+                    g_edgeFinishOffer.edges, &finishId);
+            if (status == forgeshape::CadStatus::Ok) {
+                g_edgeFinishOffer = EdgeFinishOffer{};
+                g_faceSketchOffer = forgeshape::ChosenSupport{};
+            }
+        }
+    }
+    FS_LOGI("FORGESHAPE_EDGE_FINISH_APPLY kind=%d edges=%d %s finish=%u", (int)kind, (int)edgeCount,
+            forgeshape::cadStatusName(status), finishId);
+    return cadCode(status);
+}
+
+// Withdraws the finish offer.
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_edgeFinishOfferDismiss(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    g_edgeFinishOffer = EdgeFinishOffer{};
+}
+
+// Finish `finishId` of body `bodyId`, into out[0..5]: [0] kind (0 Chamfer,
+// 1 Fillet), [1] distance in metres, [2] edge count, [3..4] the screen point
+// of its first edge's midpoint, [5] 1 when that point projects. False for a
+// finish the body does not carry.
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_cadEdgeFinishInfo(
+    JNIEnv* env, jclass, jlong bodyId, jlong finishId, jdoubleArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 6) {
+        return JNI_FALSE;
+    }
+    jdouble values[6] = {0, 0, 0, 0, 0, 0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        const forgeshape::SceneObject* object = scene.findBody(static_cast<forgeshape::ObjectId>(bodyId));
+        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        const forgeshape::CadEdgeFinish* finish =
+                body != nullptr && finishId > 0
+                        ? forgeshape::findCadEdgeFinish(body->state(), static_cast<uint32_t>(finishId))
+                        : nullptr;
+        if (finish == nullptr) {
+            return JNI_FALSE;
+        }
+        values[0] = forgeshape::cadEdgeFinishKindIndex(finish->kind);
+        values[1] = finish->distance;
+        values[2] = static_cast<jdouble>(finish->edges.size());
+        forgeshape::CadFeatureEdge edge;
+        forgeshape::Mat4 model;
+        float sx = 0.0f;
+        float sy = 0.0f;
+        if (!finish->edges.empty()
+            && forgeshape::resolveCadFinishEdge(body->state(), finish->edges.front(), &edge)
+                       == forgeshape::CadStatus::Ok
+            && scene.resolveWorldModel(object->objectId(), &model)
+            && forgeshape::projectWorldToScreen(
+                    g_camera.snapshot(),
+                    edgeWorldPoint(model, forgeshape::dvec3Scale(forgeshape::dvec3Add(edge.start, edge.end), 0.5)),
+                    g_camera.viewportWidth(), g_camera.viewportHeight(), &sx, &sy)) {
+            values[3] = sx;
+            values[4] = sy;
+            values[5] = 1.0;
+        }
+    }
+    env->SetDoubleArrayRegion(out, 0, 6, values);
+    return JNI_TRUE;
+}
+
+// Changes finish `finishId`'s kind and distance as ONE Undo.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadEdgeFinishEdit(
+    JNIEnv*, jclass, jlong bodyId, jlong finishId, jint kind, jdouble meters) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = retainedSketchActRefusal();
+        forgeshape::CadEdgeFinishKind finishKind;
+        if (status == forgeshape::CadStatus::Ok
+            && !forgeshape::cadEdgeFinishKindFromIndex(static_cast<int>(kind), &finishKind)) {
+            status = forgeshape::CadStatus::EdgeFinishInvalid;
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            status = finishId <= 0 || finishId > 0xFFFFFFFFll
+                             ? forgeshape::CadStatus::EdgeNotFound
+                             : forgeshape::editCadEdgeFinishOfBody(
+                                       forgeshape::constructionScene(), forgeshape::constructionHistory(),
+                                       static_cast<forgeshape::ObjectId>(bodyId),
+                                       static_cast<uint32_t>(finishId), finishKind,
+                                       static_cast<double>(meters));
+        }
+    }
+    FS_LOGI("FORGESHAPE_EDGE_FINISH_EDIT finish=%lld kind=%d %s", (long long)finishId, (int)kind,
+            forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// Removes finish `finishId` as ONE Undo.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_cadEdgeFinishDelete(
+    JNIEnv*, jclass, jlong bodyId, jlong finishId) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = retainedSketchActRefusal();
+        if (status == forgeshape::CadStatus::Ok) {
+            status = finishId <= 0 || finishId > 0xFFFFFFFFll
+                             ? forgeshape::CadStatus::EdgeNotFound
+                             : forgeshape::deleteCadEdgeFinishOfBody(
+                                       forgeshape::constructionScene(), forgeshape::constructionHistory(),
+                                       static_cast<forgeshape::ObjectId>(bodyId),
+                                       static_cast<uint32_t>(finishId));
+        }
+    }
+    FS_LOGI("FORGESHAPE_EDGE_FINISH_DELETE finish=%lld %s", (long long)finishId,
+            forgeshape::cadStatusName(status));
+    return cadCode(status);
 }
 
 // Read-only projection of a world point to screen through the current camera.
@@ -8683,6 +9083,7 @@ Java_com_forgeshape_app_NativeViewport_loadProject(JNIEnv* env, jclass, jbyteArr
             endSketchView();
         }
         g_faceSketchOffer = forgeshape::ChosenSupport{};
+        g_edgeFinishOffer = EdgeFinishOffer{};
         status = forgeshape::loadProjectDocument(document, forgeshape::constructionScene(),
                                                  forgeshape::sculptSession(),
                                                  forgeshape::constructionHistory(), &report);
@@ -9195,6 +9596,7 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_closeProject(JNIEn
         forgeshape::gizmoSession().setActive(false);
         g_selection.resetGesture();
         g_faceSketchOffer = forgeshape::ChosenSupport{};
+        g_edgeFinishOffer = EdgeFinishOffer{};
         forgeshape::constructionHistory().clear();
         scene.closeProject();
     }
@@ -10396,6 +10798,9 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 } else {
                     g_faceSketchOffer = forgeshape::ChosenSupport{};
                 }
+                // ...and a tap beside a straight edge, or on a face whose edges
+                // may be rounded, offers a Fillet or a Chamfer there.
+                pickEdgeFinishOfferLocked(g_camera.snapshot(), viewWidth, viewHeight, hit);
             } else {
                 tapResolved = false;
             }

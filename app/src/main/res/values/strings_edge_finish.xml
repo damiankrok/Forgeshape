@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chamfer and Fillet (`CAD-EDGE-FINISH-R1`). -->
+<resources>
+    <string name="edge_finish_fillet">Fillet</string>
+    <string name="edge_finish_chamfer">Chamfer</string>
+    <string name="edge_finish_fillet_face">Round edges</string>
+    <string name="edge_finish_chamfer_face">Bevel edges</string>
+    <string name="edge_finish_fillet_description">Round this edge with a fillet</string>
+    <string name="edge_finish_chamfer_description">Cut this edge back with a chamfer</string>
+    <string name="edge_finish_fillet_face_description">Round all %1$d edges of this face with fillets</string>
+    <string name="edge_finish_chamfer_face_description">Cut all %1$d edges of this face back with chamfers</string>
+    <string name="edge_finish_label_radius">Radius</string>
+    <string name="edge_finish_label_distance">Distance</string>
+    <string name="edge_finish_apply">Apply</string>
+    <string name="edge_finish_delete">Delete</string>
+    <string name="edge_finish_cancel">Cancel</string>
+    <string name="edge_finish_field_description">%1$s of the %2$s, in %3$s</string>
+    <string name="status_edge_finish_applied">%1$s %2$s on %3$d edge(s). Undo takes it back.</string>
+    <string name="status_edge_finish_edited">%1$s changed to %2$s.</string>
+    <string name="status_edge_finish_deleted">%1$s removed. Undo brings it back.</string>
+    <string name="history_row_fillet">Fillet %1$d</string>
+    <string name="history_row_chamfer">Chamfer %1$d</string>
+    <string name="history_detail_fillet">Radius %1$s, %2$d edge(s)</string>
+    <string name="history_detail_chamfer">Distance %1$s, %2$d edge(s)</string>
+    <string name="status_edge_not_found">That edge is no longer on the body, so the finish cannot find it.</string>
+    <string name="status_edge_not_eligible">Only straight, outward edges between two flat faces can be rounded or bevelled.</string>
+    <string name="status_edge_finish_target_unsupported">Edges of a cut or a revolve cannot be rounded or bevelled yet.</string>
+    <string name="status_edge_finish_invalid">Type a positive size for the finish.</string>
+    <string name="status_edge_finish_too_large">That size does not fit: it is wider than one of the faces at the edge.</string>
+    <string name="status_edge_finish_no_effect">The finished edge is gone: a later step removed it.</string>
+    <string name="status_edge_finish_too_many">This body already has the most finishes it can hold.</string>
+</resources>

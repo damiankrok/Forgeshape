@@ -2344,6 +2344,69 @@ final class NativeViewport {
     // `CAD-R2`: retained sketch management. APPENDED.
     static final int CAD_SKETCH_IN_USE = 91;
     static final int CAD_SKETCH_IS_ROOT = 92;
+    // `CAD-EDGE-FINISH-R1`: Chamfer and Fillet. APPENDED.
+    static final int CAD_EDGE_NOT_FOUND = 93;
+    static final int CAD_EDGE_NOT_ELIGIBLE = 94;
+    static final int CAD_EDGE_FINISH_TARGET_UNSUPPORTED = 95;
+    static final int CAD_EDGE_FINISH_INVALID = 96;
+    static final int CAD_EDGE_FINISH_TOO_LARGE = 97;
+    static final int CAD_EDGE_FINISH_NO_EFFECT = 98;
+    static final int CAD_TOO_MANY_EDGE_FINISHES = 99;
+
+    // --- Chamfer and Fillet (`CAD-EDGE-FINISH-R1`) ------------------------
+
+    /** The finish kinds, in the native enum's order. */
+    static final int EDGE_FINISH_CHAMFER = 0;
+    static final int EDGE_FINISH_FILLET = 1;
+
+    /** Slots of {@link #edgeFinishOfferState}. */
+    static final int EDGE_OFFER_SIZE = 6;
+    /** 0 none, {@link #EDGE_OFFER_EDGE} or {@link #EDGE_OFFER_FACE}. */
+    static final int EDGE_OFFER_MODE = 0;
+    static final int EDGE_OFFER_X = 1;
+    static final int EDGE_OFFER_Y = 2;
+    static final int EDGE_OFFER_COUNT = 3;
+    static final int EDGE_OFFER_SUGGEST_CHAMFER = 4;
+    static final int EDGE_OFFER_SUGGEST_FILLET = 5;
+    /** One straight edge the tap landed beside. */
+    static final int EDGE_OFFER_EDGE = 1;
+    /** Every finishable edge of the planar face the tap landed on. */
+    static final int EDGE_OFFER_FACE = 2;
+
+    /**
+     * The Chamfer / Fillet offer an ordinary viewport tap on a CAD body made:
+     * the edge beside the finger, or the edges of the face under it. Read-only
+     * and re-validated on every call; false when there is no live offer.
+     */
+    static native boolean edgeFinishOfferState(double[] out);
+
+    /**
+     * Applies the offer: {@link #EDGE_FINISH_CHAMFER} or {@link
+     * #EDGE_FINISH_FILLET} of {@code meters} over the offered edges, as ONE
+     * Undo. Returns a CAD status; a refusal changes nothing.
+     */
+    static native int edgeFinishOfferApply(int kind, double meters);
+
+    /** Withdraws the offer. Mutates nothing in the project. */
+    static native void edgeFinishOfferDismiss();
+
+    /** Slots of {@link #cadEdgeFinishInfo}. */
+    static final int EDGE_FINISH_INFO_SIZE = 6;
+    static final int EDGE_FINISH_INFO_KIND = 0;
+    static final int EDGE_FINISH_INFO_DISTANCE = 1;
+    static final int EDGE_FINISH_INFO_EDGES = 2;
+    static final int EDGE_FINISH_INFO_X = 3;
+    static final int EDGE_FINISH_INFO_Y = 4;
+    static final int EDGE_FINISH_INFO_ON_SCREEN = 5;
+
+    /** A committed finish's kind, distance, edge count and screen anchor. */
+    static native boolean cadEdgeFinishInfo(long bodyId, long finishId, double[] out);
+
+    /** Changes a finish's kind and distance as ONE Undo. Returns a CAD status. */
+    static native int cadEdgeFinishEdit(long bodyId, long finishId, int kind, double meters);
+
+    /** Removes a finish as ONE Undo. Returns a CAD status. */
+    static native int cadEdgeFinishDelete(long bodyId, long finishId);
 
     /**
      * What an extrusion does to material (`CAD-VERTICAL-SLICE-R1`), in the

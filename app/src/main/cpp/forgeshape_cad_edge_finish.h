@@ -112,6 +112,15 @@ CadStatus cadFinishableEdgesOfFace(const CadBodyState& state, uint32_t featureId
 // first Apply always succeeds. Zero when no edge resolves.
 double suggestCadEdgeFinishDistance(const CadBodyState& state, CadEdgeFinishKind kind,
                                     const std::vector<CadEdgeRef>& edges);
+// The same over edges already resolved.
+double suggestCadEdgeFinishDistance(CadEdgeFinishKind kind,
+                                    const std::vector<CadFeatureEdge>& edges);
+
+// Resolves several refs with ONE enumeration per feature: what a per-frame
+// read of an offer needs. Fails closed on the first ref that does not resolve
+// eligible, by that ref's own reason.
+CadStatus resolveCadFinishEdges(const CadBodyState& state, const std::vector<CadEdgeRef>& refs,
+                                std::vector<CadFeatureEdge>* out);
 
 // --- the three user acts, each ONE `ScopedConstructionEdit` (one Undo) -----
 //

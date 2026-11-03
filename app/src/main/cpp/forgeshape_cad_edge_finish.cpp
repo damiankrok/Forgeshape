@@ -389,16 +389,12 @@ CadStatus cadFinishableEdgesOfFace(const CadBodyState& state, uint32_t featureId
     return CadStatus::Ok;
 }
 
-double suggestCadEdgeFinishDistance(const CadBodyState& state, CadEdgeFinishKind kind,
-                                    const std::vector<CadEdgeRef>& edges) {
+double suggestCadEdgeFinishDistance(CadEdgeFinishKind kind,
+                                    const std::vector<CadFeatureEdge>& edges) {
     double room = 0.0;
     bool any = false;
     double angle = 90.0;
-    for (const CadEdgeRef& ref : edges) {
-        CadFeatureEdge edge;
-        if (resolveCadFinishEdge(state, ref, &edge) != CadStatus::Ok) {
-            continue;
-        }
+    for (const CadFeatureEdge& edge : edges) {
         const double fit = std::min(edge.widthA, edge.widthB);
         if (!any || fit < room) {
             room = fit;
@@ -427,6 +423,59 @@ double suggestCadEdgeFinishDistance(const CadBodyState& state, CadEdgeFinishKind
         return 0.0;
     }
     return std::min(value, kMaxEdgeFinishDistance);
+}
+
+double suggestCadEdgeFinishDistance(const CadBodyState& state, CadEdgeFinishKind kind,
+                                    const std::vector<CadEdgeRef>& edges) {
+    std::vector<CadFeatureEdge> resolved;
+    for (const CadEdgeRef& ref : edges) {
+        CadFeatureEdge edge;
+        if (resolveCadFinishEdge(state, ref, &edge) == CadStatus::Ok) {
+            resolved.push_back(edge);
+        }
+    }
+    return suggestCadEdgeFinishDistance(kind, resolved);
+}
+
+CadStatus resolveCadFinishEdges(const CadBodyState& state, const std::vector<CadEdgeRef>& refs,
+                                std::vector<CadFeatureEdge>* out) {
+    if (out == nullptr) {
+        return CadStatus::RegenerationFailed;
+    }
+    std::map<uint32_t, std::vector<CadFeatureEdge>> byFeature;
+    std::vector<CadFeatureEdge> resolved;
+    for (const CadEdgeRef& ref : refs) {
+        auto it = byFeature.find(ref.featureId);
+        if (it == byFeature.end()) {
+            const CadStatus target = finishTargetStatus(state, ref.featureId);
+            if (target != CadStatus::Ok) {
+                return target;
+            }
+            std::vector<CadFeatureEdge> edges;
+            const CadStatus why = enumerateCadFeatureEdges(state, ref.featureId, &edges);
+            if (why != CadStatus::Ok) {
+                return why;
+            }
+            it = byFeature.emplace(ref.featureId, std::move(edges)).first;
+        }
+        const CadEdgeRef wanted = canonicalCadEdgeRef(ref);
+        bool found = false;
+        for (const CadFeatureEdge& edge : it->second) {
+            if (sameCadEdgeRef(edge.ref, wanted)) {
+                if (!edge.eligible) {
+                    return edge.why;
+                }
+                resolved.push_back(edge);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return CadStatus::EdgeNotFound;
+        }
+    }
+    *out = std::move(resolved);
+    return CadStatus::Ok;
 }
 
 namespace {

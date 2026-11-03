@@ -66,6 +66,8 @@ final class FeatureHistoryPresentation {
         final double negative;
         final double angle;
         final int revolveDirection;
+        /** A finish row's edge count; the region count for a feature row. */
+        final int edges;
 
         Row(int domain, double[] v, int at) {
             this.domain = domain;
@@ -89,10 +91,21 @@ final class FeatureHistoryPresentation {
             negative = v[at + NativeViewport.TIMELINE_ROW_NEGATIVE];
             angle = v[at + NativeViewport.TIMELINE_ROW_ANGLE];
             revolveDirection = (int) v[at + NativeViewport.TIMELINE_ROW_REVOLVE_DIRECTION];
+            edges = (int) v[at + NativeViewport.TIMELINE_ROW_REGIONS];
         }
 
         boolean isSketch() {
             return kind == NativeViewport.TIMELINE_KIND_SKETCH;
+        }
+
+        /** A Chamfer or a Fillet (`CAD-EDGE-FINISH-R1`). */
+        boolean isFinish() {
+            return kind == NativeViewport.TIMELINE_KIND_FINISH;
+        }
+
+        /** A finish row's edge count (the regions slot carries it). */
+        int finishEdges() {
+            return edges;
         }
 
         boolean isFailed() {
