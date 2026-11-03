@@ -824,14 +824,20 @@ on the host, with no device, and is the fast native loop.
   region's. The angle label is chrome at the projected half-angle point and is
   hidden, never guessed, when that point does not project. Commit, Edit and
   the first-project bootstrap are each ONE transaction, and none of the
-  session's revolve intent is truth until then. **`CADB` gains version 7**
+  session's revolve intent is truth until then. **A LATER feature may revolve
+  too** (`CAD-REVOLVE-FEATURE-R1`): `CadFeature::kind` / `::revolve`, one
+  payload per feature (`RevolvePayloadMismatch`), an Add or a Cut of an
+  Extrude part from a sketch on one of its faces, through the base Revolve's
+  own generator and the one kernel boolean; a body whose FIRST feature
+  revolves still takes no later feature, and a pattern of a Revolve is
+  refused. **`CADB` v15** (§7r) is written only for one. **`CADB` gains version 7**
   (a kind byte after every feature id, and the Revolve payload), written ONLY
   when a body revolves; every v1..v6-representable project keeps its bytes
   and its fingerprint. `CAD-V6-REVOLVE-NEWBODY-E2E-R1` added the four v7
   fixtures (`cad_revolve_full_v7`, `cad_revolve_partial_v7`, and the two the
   decoder must refuse, `cad_revolve_bad_axis_v7` and
-  `cad_bad_feature_kind_v7`). **Not this stage:** a Revolve Add or Cut, a
-  later Revolve feature, a sketch on a revolved face, an axis that is not a
+  `cad_bad_feature_kind_v7`). **Not this stage:** a later feature on a revolved
+  part, a sketch on a revolved face, an axis that is not a
   sketch edge, a two-sided or symmetric sweep, and a constraint solver.
 - **A Chamfer or a Fillet is a NAMED edge plus a distance, applied after the
   chain** (`CAD-EDGE-FINISH-R1`, `forgeshape_cad_edge_finish.{h,cpp}`).

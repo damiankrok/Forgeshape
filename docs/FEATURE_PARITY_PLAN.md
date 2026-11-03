@@ -39,11 +39,11 @@ Status: ✅ zrobione · 🔜 w realizacji · ⏳ zaplanowane
 | 5c | Do ściany i wymiary położenia | extent Do ściany dla Add i Cut; położenie otworu wymiarami od krawędzi | ✅ |
 | 6 | **Płaszczyzny konstrukcyjne** | szkic na płaszczyźnie odsuniętej od ściany i pod kątem (✅); przez 3 punkty, od płaszczyzny świata (⏳) | 🔜 |
 | 7 | Skorupa i ściany | Skorupa, Wciśnij/wyciągnij ścianę, Odsuń ścianę, Usuń ścianę, Pochylenie | ⏳ |
-| 8 | Obrót i bryły | Obrót Add/Cut, bryły gotowe CAD (prostopadłościan, walec, sfera, stożek, torus, rura) | ⏳ |
+| 8 | Obrót i bryły | Obrót Add/Cut (✅); bryły gotowe CAD (prostopadłościan, walec, sfera, stożek, torus, rura) (⏳) | 🔜 |
 | 9 | Przeciągnięcie i Wyciągnięcie złożone | Sweep wzdłuż ścieżki, Loft brył, Spirala | ⏳ |
 | 10 | Kombinacja brył | suma, różnica, część wspólna dwóch brył; Podziel bryłę | ⏳ |
 | 11 | Parametry | nazwane wartości, wzory w polach, Tabela konfiguracji | ⏳ |
-| 12 | Sprawdź | pomiar odległości/kąta, objętość, masa, środek ciężkości, przekrój | ⏳ |
+| 12 | Sprawdź | objętość, pole, masa, środek ciężkości (✅); pomiar odległości/kąta, przekrój (⏳) | 🔜 |
 | 13 | Krawędzie 2 | zaokrąglenia krawędzi łukowych i wklęsłych, zmienna faza | ⏳ |
 | 14 | Historia 2 | suwak cofania w historii, wyłączanie operacji, zmiana kolejności | ⏳ |
 | 15 | Detale części | Gwint, Żebro, Siatka żeber, Wytłoczenie, Występ, Zakładka, Zatrzask, Podparcie | ⏳ |
