@@ -53,6 +53,7 @@ bool extrudeExtentModeFromIndex(int index, ExtrudeExtentMode* out) {
         case 0: *out = ExtrudeExtentMode::OneSide; return true;
         case 1: *out = ExtrudeExtentMode::Symmetric; return true;
         case 2: *out = ExtrudeExtentMode::TwoSides; return true;
+        case 3: *out = ExtrudeExtentMode::ThroughAll; return true;
         default: return false;
     }
 }

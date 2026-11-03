@@ -394,6 +394,16 @@ void runCadThroughAllSelfTests(std::vector<ArrangementSelfTestCheck>* out, std::
                                          ExtrudeExtentMode::ThroughAll, ExtrudeDirection::AlongNormal);
         const ExtrudeFeature typed =
                 extrudeFeatureWithPrimary(in, 0.7, ExtrudeDirection::AgainstNormal);
+        // Every mode crosses the index boundary (JNI, the History) and back.
+        bool indices = true;
+        for (int i = 0; i < kExtrudeExtentModeCount; ++i) {
+            ExtrudeExtentMode mode = ExtrudeExtentMode::OneSide;
+            indices = indices && extrudeExtentModeFromIndex(i, &mode)
+                      && extrudeExtentModeIndex(mode) == i;
+        }
+        ExtrudeExtentMode none = ExtrudeExtentMode::OneSide;
+        r.check("TA_05_every_extent_mode_round_trips_its_index",
+                indices && !extrudeExtentModeFromIndex(kExtrudeExtentModeCount, &none));
         r.check("TA_05_transitions_keep_the_side_and_never_invent_a_distance",
                 in.extent == ExtrudeExtentMode::ThroughAll && in.depth == 0.0
                         && in.direction == ExtrudeDirection::AgainstNormal
