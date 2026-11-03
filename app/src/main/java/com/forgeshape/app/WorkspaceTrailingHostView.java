@@ -567,7 +567,7 @@ final class WorkspaceTrailingHostView extends FrameLayout
         showingSketchEntries = sketching;
         final Context context = getContext();
         if (sketching) {
-            // The seven sketch tools (CAD-R0-A1A2, plus Arc and Spline from
+            // The eight sketch tools (CAD-R0-A1A2, plus Arc and Spline from
             // `SKETCH-UX-R1` D). Select is a tool so that a tap in the viewport
             // has exactly one meaning at a time. Arc and Spline are APPENDED, so
             // the five that were here keep their order and their indices.
@@ -592,6 +592,11 @@ final class WorkspaceTrailingHostView extends FrameLayout
                     new ToolRailView.Entry(R.id.tool_rail_spline, R.drawable.ic_tool_spline,
                             context.getString(R.string.tool_spline),
                             NativeViewport.SKETCH_TOOL_SPLINE),
+                    // The knife (`SKETCH-KNIFE-UNDO-R1`), after the drawing
+                    // tools because it takes geometry away rather than adding it.
+                    new ToolRailView.Entry(R.id.tool_rail_trim, R.drawable.ic_tool_trim,
+                            context.getString(R.string.tool_trim),
+                            NativeViewport.SKETCH_TOOL_TRIM),
             });
             return;
         }

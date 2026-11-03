@@ -529,6 +529,13 @@ public:
     bool updateDrag(int32_t pointerId, const CameraSnapshot& camera, float x, float y,
                     int viewportWidth, int viewportHeight, Meters* outDistance);
 
+    // The same sample WITHOUT the millimetre floor: the signed distance along
+    // the frozen axis, negative once the finger has pulled the arrow back
+    // through the sketch plane (`SKETCH-KNIFE-UNDO-R1` push-through). False,
+    // writing nothing, exactly where `updateDrag` is.
+    bool updateDragSigned(int32_t pointerId, const CameraSnapshot& camera, float x, float y,
+                          int viewportWidth, int viewportHeight, double* outSigned);
+
     // Ends the drag, keeping whatever distance was last written.
     void endDrag();
 

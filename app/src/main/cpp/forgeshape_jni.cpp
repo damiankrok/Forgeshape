@@ -8842,6 +8842,19 @@ Java_com_forgeshape_app_NativeViewport_sculptRedo(JNIEnv*, jclass) {
     return runSculptHistoryStep("redo", true);
 }
 
+// The staged sketch's own Undo / Redo (`SKETCH-KNIFE-UNDO-R1`). The caller
+// holds g_stateMutex. Volatile session state only: no Construction step, no
+// project byte, nothing published -- the overlay follows the session's own
+// revision on the next frame.
+static jint runSketchHistoryStepLocked(bool forward) {
+    forgeshape::SketchSession& session = forgeshape::sketchSession();
+    const bool moved = forward ? session.redoSketchEdit() : session.undoSketchEdit();
+    FS_LOGI("FORGESHAPE_SKETCH_HISTORY:%s moved=%d undo=%d redo=%d entities=%d",
+            forward ? "redo" : "undo", moved ? 1 : 0, (int)session.sketchUndoDepth(),
+            (int)session.sketchRedoDepth(), (int)session.sketch().entities.size());
+    return moved ? kHistoryOk : kHistoryNothingToDo;
+}
+
 // --- what the two chrome controls mean, decided here ------------------------
 //
 // The mode owns the answer, so the dispatch lives beside the mode. In Sculpt
@@ -8852,6 +8865,9 @@ Java_com_forgeshape_app_NativeViewport_sculptRedo(JNIEnv*, jclass) {
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_historyUndoAvailable(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (forgeshape::sketchSession().active()) {
+        return forgeshape::sketchSession().canUndoSketchEdit() ? JNI_TRUE : JNI_FALSE;
+    }
     if (forgeshape::sculptSession().inSculptMode()) {
         return forgeshape::sculptSession().canUndoSculpt() ? JNI_TRUE : JNI_FALSE;
     }
@@ -8861,6 +8877,9 @@ Java_com_forgeshape_app_NativeViewport_historyUndoAvailable(JNIEnv*, jclass) {
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_historyRedoAvailable(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (forgeshape::sketchSession().active()) {
+        return forgeshape::sketchSession().canRedoSketchEdit() ? JNI_TRUE : JNI_FALSE;
+    }
     if (forgeshape::sculptSession().inSculptMode()) {
         return forgeshape::sculptSession().canRedoSculpt() ? JNI_TRUE : JNI_FALSE;
     }
@@ -8875,6 +8894,9 @@ Java_com_forgeshape_app_NativeViewport_historyUndo(JNIEnv*, jclass) {
     bool sculpting = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (forgeshape::sketchSession().active()) {
+            return runSketchHistoryStepLocked(false);
+        }
         sculpting = forgeshape::sculptSession().inSculptMode();
     }
     return sculpting ? runSculptHistoryStep("undo", false) : runHistoryStep("undo", false);
@@ -8885,6 +8907,9 @@ Java_com_forgeshape_app_NativeViewport_historyRedo(JNIEnv*, jclass) {
     bool sculpting = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (forgeshape::sketchSession().active()) {
+            return runSketchHistoryStepLocked(true);
+        }
         sculpting = forgeshape::sculptSession().inSculptMode();
     }
     return sculpting ? runSculptHistoryStep("redo", true) : runHistoryStep("redo", true);

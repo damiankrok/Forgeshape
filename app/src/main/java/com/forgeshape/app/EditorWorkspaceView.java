@@ -102,12 +102,12 @@ final class EditorWorkspaceView extends FrameLayout
     private static final int[] SKETCH_TOOL_NAMES = {
             R.string.tool_select, R.string.tool_line, R.string.tool_polyline,
             R.string.tool_rectangle, R.string.tool_circle, R.string.tool_arc,
-            R.string.tool_spline
+            R.string.tool_spline, R.string.tool_trim
     };
     private static final int[] SKETCH_TOOL_HINTS = {
             R.string.hint_select, R.string.hint_line, R.string.hint_polyline,
             R.string.hint_rectangle, R.string.hint_circle, R.string.hint_arc,
-            R.string.hint_spline
+            R.string.hint_spline, R.string.hint_trim
     };
     /** The seven sculpt tools by name, indexed by {@code TOOL_*}. */
     private static final int[] SCULPT_TOOL_NAMES = {
@@ -3171,9 +3171,16 @@ final class EditorWorkspaceView extends FrameLayout
      * the other.
      */
     private void refreshHistoryControls() {
-        // Withdrawn while sketching: a sketch in progress is not in the
-        // history yet, and a Construction step under it is refused below JNI.
-        historyGroup.setVisibility(isSketching() ? GONE : VISIBLE);
+        // While a sketch is being DRAWN the pair steps the staged sketch's own
+        // history (`SKETCH-KNIFE-UNDO-R1`): native decides, from the session,
+        // which history a tap means, exactly as it does for Sculpt. In Ready
+        // there is no sketch step to take (the drawing is done and the
+        // extrusion is adjusted at the arrow), so the capsule is withdrawn
+        // there, as it always was for the whole sketch. A Construction step
+        // under a sketch stays refused below JNI.
+        historyGroup.setVisibility(isSketching()
+                && nativeSketch[NativeViewport.SKETCH_STATE] != NativeViewport.SKETCH_EDITING
+                ? GONE : VISIBLE);
         undoAction.setEnabled(NativeViewport.historyUndoAvailable());
         redoAction.setEnabled(NativeViewport.historyRedoAvailable());
         refreshHistoryNavigator();
@@ -4327,6 +4334,9 @@ final class EditorWorkspaceView extends FrameLayout
     /** A sketch gesture ended: the entity list, the selection or a refusal. */
     private void onSketchGestureSettled() {
         sketchEditor.refreshFromNative();
+        // A gesture that placed, trimmed or extended something is one sketch
+        // Undo step: the pair says so at once (`SKETCH-KNIFE-UNDO-R1`).
+        refreshHistoryControls();
         NativeViewport.sketchState(nativeSketch);
         final int lastStatus = (int) nativeSketch[NativeViewport.SKETCH_LAST_STATUS];
         if (nativeSketch[NativeViewport.SKETCH_STATE] == NativeViewport.SKETCH_READY

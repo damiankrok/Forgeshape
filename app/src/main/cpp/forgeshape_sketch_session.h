@@ -44,6 +44,7 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <vector>
 
 #include "forgeshape_cad_body.h"
@@ -105,6 +106,12 @@ const char* sketchSessionStateName(SketchSessionState state);
 // Arc and Spline are APPENDED (`SKETCH-UX-R1` D): the existing five keep their
 // indices, so a stored tool index, a test and the rail's own order do not move
 // under them.
+//
+// Trim is APPENDED too (`SKETCH-KNIFE-UNDO-R1`): the knife on the rail. It is
+// not a second trim implementation -- holding it IS the Trim modify mode
+// (`SketchModifyMode::Trim`), so a tap removes the interval under the finger
+// up to the nearest intersections, and a SWIPE removes every interval the
+// stroke crosses, as one act.
 enum class SketchTool : uint8_t {
     Select,
     Line,
@@ -113,9 +120,19 @@ enum class SketchTool : uint8_t {
     Circle,
     Arc,
     Spline,
+    Trim,
 };
 
-constexpr int kSketchToolCount = 7;
+constexpr int kSketchToolCount = 8;
+
+// How many staged-sketch states the in-sketch Undo keeps
+// (`SKETCH-KNIFE-UNDO-R1`). Each is one copy of the sketch's entities and
+// dimensions, which `kMaxSketchEntities` already bounds.
+constexpr size_t kMaxSketchUndoEntries = 64;
+
+// The knife's bounds: the points one swipe keeps, and the samples it walks.
+constexpr size_t kMaxKnifePathPoints = 2048;
+constexpr size_t kMaxKnifeSamples = 8192;
 
 const char* sketchToolName(SketchTool tool);
 bool sketchToolFromIndex(int index, SketchTool* out);
@@ -490,6 +507,28 @@ public:
     bool active() const { return state_ != SketchSessionState::Inactive; }
     Workplane plane() const { return sketch_.plane; }
 
+    // --- in-sketch Undo / Redo (`SKETCH-KNIFE-UNDO-R1`) ------------------
+    //
+    // The STAGED sketch's own history while it is being drawn: one entry per
+    // act that changed the entities or dimensions (one gesture, one Trim
+    // swipe, one Delete, one typed value...), each a copy of the sketch as it
+    // was before the act. VOLATILE in the strongest sense the session has:
+    // never persisted, never a Construction step, never in a checkpoint or the
+    // fingerprint, and gone with the session -- Finish is still the ONE
+    // transaction that reaches the project, and Construction Undo is still
+    // refused while a sketch is open. Only in Editing; a new act clears Redo.
+    // Undo while a polyline or spline is being placed takes back its last
+    // vertex first; a pending arc chord is dropped.
+    bool canUndoSketchEdit() const;
+    bool canRedoSketchEdit() const;
+    bool undoSketchEdit();
+    bool redoSketchEdit();
+    size_t sketchUndoDepth() const { return sketchUndo_.size(); }
+    size_t sketchRedoDepth() const { return sketchRedo_.size(); }
+
+    // How many intervals the last knife swipe removed (0 for a tap).
+    uint32_t lastKnifeTrimCount() const { return lastKnifeTrims_; }
+
     // --- tools -----------------------------------------------------------
 
     bool setTool(SketchTool tool);
@@ -557,7 +596,11 @@ public:
     // offsettable entity selected takes it as the source; entering Dimension
     // with ONE entity selected takes it as the target.
     CadStatus setModifyMode(SketchModifyMode mode);
-    SketchModifyMode modifyMode() const { return modifyMode_; }
+    // The mode a viewport tap means now. Only while the sketch is being drawn:
+    // in Ready the finger belongs to the extrusion, whatever tool is held.
+    SketchModifyMode modifyMode() const {
+        return state_ == SketchSessionState::Editing ? modifyMode_ : SketchModifyMode::None;
+    }
 
     // Dimension mode: the edge chosen to dimension, if any, and the kinds it
     // supports. `beginDimensionAngle` makes the next straight-edge tap the
@@ -728,6 +771,9 @@ public:
     // feature or Add/Cut over a first one.
     CadStatus setOperation(CadFeatureOperation operation);
     CadFeatureOperation operation() const { return operation_; }
+    // Whether the arrow drag now in progress may cross the sketch plane and
+    // switch to Cut (or back): see `pushThrough_`. Diagnostics and tests.
+    bool pushThroughActive() const { return extrudeDrag_.capturing() && pushThrough_; }
 
     // The body an Add or a Cut modifies, or an edit rewrites; kNoObject when
     // the candidate is a new body.
@@ -1146,6 +1192,41 @@ private:
     // finger belongs to the drawing, and an arrow that competed with it would
     // be a second meaning for one gesture.
     CadExtrudeManipulator extrudeDrag_;
+    // Push-through (`SKETCH-KNIFE-UNDO-R1`): a NEW One Side feature on a face
+    // of a CAD body may be dragged back THROUGH its sketch plane, and crossing
+    // it switches the side and the operation together -- into the material is
+    // a Cut, out of it the outward operation the user last chose (New Body or
+    // Add) -- the way a CAD sketcher's arrow behaves. Decided at pointer-down
+    // and frozen with the basis; the extrusion and the operation the drag
+    // started from are what a cancel puts back. Volatile.
+    bool pushThrough_ = false;
+    // In-sketch Undo / Redo (`SKETCH-KNIFE-UNDO-R1`). `UndoScope` records at
+    // the OUTERMOST mutating entry point only, so an act made of nested calls
+    // is one entry; a gesture's entry is measured from its Down.
+    class UndoScope;
+    friend class UndoScope;
+    std::deque<CadSketch> sketchUndo_;
+    std::deque<CadSketch> sketchRedo_;
+    int undoScopeDepth_ = 0;
+    CadSketch gestureBefore_;
+    bool gestureArmed_ = false;
+    void recordSketchUndo(const CadSketch& before);
+    void clearSketchUndo();
+    void restoreSketchContent(const CadSketch& from);
+    bool onTouchUnrecorded(TouchAction action, int32_t actionPointerId,
+                           const TouchPointer* pointers, int count, const CameraSnapshot& camera,
+                           int viewportWidth, int viewportHeight);
+    // The knife: the stroke the finger drew in Trim (sketch coordinates), and
+    // how many intervals the last swipe removed.
+    std::vector<SketchPoint> knifePath_;
+    uint32_t lastKnifeTrims_ = 0;
+    void applyKnifeStroke(double toleranceMeters);
+    ExtrudeFeature dragStartExtrude_;
+    CadFeatureOperation dragStartOperation_ = CadFeatureOperation::NewBody;
+    CadFeatureOperation outwardOperation_ = CadFeatureOperation::NewBody;
+    bool pushThroughAllowed() const;
+    ExtrudeDirection cutIntoDirection() const;
+    void applyPushThrough(double signedDistance);
 
     // The one captured pointer, or -1.
     int32_t pointerId_ = -1;

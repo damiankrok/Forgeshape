@@ -408,6 +408,7 @@
     <string name="tool_circle">Circle</string>
     <string name="tool_arc">Arc</string>
     <string name="tool_spline">Spline</string>
+    <string name="tool_trim">Trim</string>
     <string name="hint_select">tap an entity to select it, then edit or delete it</string>
     <string name="hint_line">drag from one point to another</string>
     <string name="hint_polyline">tap point by point; tap the first point again to close</string>
@@ -415,6 +416,7 @@
     <string name="hint_circle">drag from the centre out to the radius</string>
     <string name="hint_arc">drag the two ends, then tap the point the arc passes through</string>
     <string name="hint_spline">tap each point; tap the last one again to finish</string>
+    <string name="hint_trim">swipe across lines to cut them back to the nearest intersection, or tap one piece</string>
     <string name="context_sketch">Sketch %1$s</string>
     <string name="context_cad_body">CAD Body</string>
     <string name="finish_sketch">Finish Sketch</string>

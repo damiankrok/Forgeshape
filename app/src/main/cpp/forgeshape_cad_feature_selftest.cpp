@@ -22,6 +22,7 @@
 #include "forgeshape_cad_multiface_selftest.h"
 #include "forgeshape_owner_shell_selftest.h"
 #include "forgeshape_cad_edge_finish_selftest.h"
+#include "forgeshape_sketch_knife_undo_selftest.h"
 #include "forgeshape_cad_revolve_selftest.h"
 #include "forgeshape_cad_timeline_selftest.h"
 #include "forgeshape_sketch_drafting_selftest.h"
@@ -5836,6 +5837,15 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + edgeFinishPerformance;
+    // Sketch ergonomics (`SKETCH-KNIFE-UNDO-R1`): push-through to Cut, the
+    // staged sketch's own Undo / Redo, and the knife.
+    std::vector<ArrangementSelfTestCheck> knifeUndo;
+    std::string knifeUndoPerformance;
+    runSketchKnifeUndoSelfTests(&knifeUndo, &knifeUndoPerformance);
+    for (const ArrangementSelfTestCheck& check : knifeUndo) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + knifeUndoPerformance;
     // Revolve New Body (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): the feature kind, the
     // solid, the session and `CADB` v7, beside the chain they extend.
     std::vector<ArrangementSelfTestCheck> revolve;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 
 #include "forgeshape_cad_face.h"
 #include "forgeshape_cad_feature.h"
@@ -11,6 +12,37 @@
 #include "forgeshape_picking.h"
 
 namespace forgeshape {
+
+// Records one Undo entry around a mutating entry point: the sketch as it was
+// when the OUTERMOST scope opened (or the gesture's Down, when one is given),
+// pushed only if the entities or dimensions actually changed. `silent` scopes
+// count depth and record nothing -- the moves of a gesture whose entry lands
+// when it ends.
+class SketchSession::UndoScope {
+public:
+    UndoScope(SketchSession& session, const CadSketch* before = nullptr, bool silent = false)
+        : session_(session) {
+        outer_ = session_.undoScopeDepth_++ == 0 && !silent
+                 && session_.state_ == SketchSessionState::Editing;
+        if (outer_) {
+            before_ = before != nullptr ? *before : session_.sketch_;
+        }
+    }
+    ~UndoScope() {
+        --session_.undoScopeDepth_;
+        if (outer_ && session_.state_ != SketchSessionState::Inactive) {
+            session_.recordSketchUndo(before_);
+        }
+    }
+    UndoScope(const UndoScope&) = delete;
+    UndoScope& operator=(const UndoScope&) = delete;
+
+private:
+    SketchSession& session_;
+    bool outer_ = false;
+    CadSketch before_;
+};
+
 
 const char* sketchTapOutcomeName(SketchTapOutcome outcome) {
     switch (outcome) {
@@ -55,6 +87,7 @@ const char* sketchToolName(SketchTool tool) {
         case SketchTool::Circle: return "Circle";
         case SketchTool::Arc: return "Arc";
         case SketchTool::Spline: return "Spline";
+        case SketchTool::Trim: return "Trim";
     }
     return "unknown";
 }
@@ -205,6 +238,8 @@ CadStatus SketchSession::begin(Workplane plane) {
     revolveDragPointer_ = -1;
     revolveDragLive_ = false;
     operation_ = CadFeatureOperation::NewBody;
+    outwardOperation_ = CadFeatureOperation::NewBody;
+    pushThrough_ = false;
     targetBodyId_ = kNoObject;
     targetBaseState_ = CadBodyState{};
     hasTargetState_ = false;
@@ -215,6 +250,8 @@ CadStatus SketchSession::begin(Workplane plane) {
     regionTapArmed_ = false;
     regionTapOnHead_ = false;
     tool_ = SketchTool::Rectangle;
+    modifyMode_ = SketchModifyMode::None;  // a held knife does not outlive its sketch
+    clearSketchUndo();
     resetGesture();
     polylineInProgress_ = false;
     polylineVertices_.clear();
@@ -234,6 +271,7 @@ CadStatus SketchSession::begin(Workplane plane) {
 
 void SketchSession::cancel() {
     resetGesture();
+    clearSketchUndo();
     polylineInProgress_ = false;
     polylineVertices_.clear();
     arcPending_ = false;
@@ -260,6 +298,8 @@ void SketchSession::cancel() {
     reuseSketchId_ = kNoCadSketch;
     editingSketchId_ = kNoCadSketch;
     operation_ = CadFeatureOperation::NewBody;
+    outwardOperation_ = CadFeatureOperation::NewBody;
+    pushThrough_ = false;
     targetBodyId_ = kNoObject;
     targetBaseState_ = CadBodyState{};
     hasTargetState_ = false;
@@ -815,6 +855,7 @@ bool SketchSession::selectedLineDimensionAnchor(double worldPerUnit, SketchPoint
 }
 
 CadStatus SketchSession::applyLineLength(SketchEntityId id, Meters length) {
+    UndoScope undo(*this);
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
     }
@@ -872,9 +913,10 @@ bool SketchSession::setTool(SketchTool tool) {
     // a drag in progress is dropped.
     arcPending_ = false;
     // A drawing tool and a modify mode are two meanings for one tap: choosing
-    // the tool ends the mode (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`).
-    resetModifyState();
+    // the tool ends the mode (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`). The knife
+    // IS the Trim mode, so holding it leaves exactly that mode on.
     tool_ = tool;
+    resetModifyState();
     touchOverlay();
     return true;
 }
@@ -1042,6 +1084,15 @@ bool SketchSession::restoreCancelledExtrudeDrag() {
     if (!extrudeDrag_.cancelDrag(&restore)) {
         return false;
     }
+    if (pushThrough_) {
+        // A push-through may have changed the side and the operation too:
+        // everything the drag started from comes back, in one write.
+        pushThrough_ = false;
+        extrude_ = dragStartExtrude_;
+        operation_ = dragStartOperation_;
+        touchCandidate();
+        return true;
+    }
     // Written directly rather than through the validating door: this is the
     // value the extrusion HAD a moment ago, so it needs no re-validation, and
     // routing it through one would let a refusal strand the gesture's undo.
@@ -1105,6 +1156,9 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                                         viewportHeight)) {
                 return false;
             }
+            pushThrough_ = pushThroughAllowed();
+            dragStartExtrude_ = extrude_;
+            dragStartOperation_ = operation_;
             touchOverlay();
             return true;
         }
@@ -1129,6 +1183,15 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             if (regionTapArmed_) {
                 // Still possibly a tap: the depth holds until the finger has
                 // travelled past the tap slop, so a tap leaves nothing behind.
+                return true;
+            }
+            if (pushThrough_) {
+                double signedDistance = 0.0;
+                if (extrudeDrag_.updateDragSigned(pointers[0].id, camera, pointers[0].x,
+                                                  pointers[0].y, viewportWidth, viewportHeight,
+                                                  &signedDistance)) {
+                    applyPushThrough(signedDistance);
+                }
                 return true;
             }
             Meters distance = 0.0;
@@ -1199,9 +1262,151 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
     }
 }
 
+// ---------------------------------------------------------------------------
+// In-sketch Undo / Redo (`SKETCH-KNIFE-UNDO-R1`)
+// ---------------------------------------------------------------------------
+
+namespace {
+// The part of a sketch its in-sketch history restores: the entities, the
+// dimensions and their allocators. The plane and the support are where the
+// sketch stands, not what was drawn, and are never moved by an Undo.
+bool sameSketchContent(const CadSketch& a, const CadSketch& b) {
+    if (a.nextEntityId != b.nextEntityId || a.nextDimensionId != b.nextDimensionId
+        || a.entities.size() != b.entities.size() || a.dimensions.size() != b.dimensions.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.entities.size(); ++i) {
+        if (!sameSketchEntity(a.entities[i], b.entities[i])) return false;
+    }
+    for (size_t i = 0; i < a.dimensions.size(); ++i) {
+        if (!sameSketchDimension(a.dimensions[i], b.dimensions[i])) return false;
+    }
+    return true;
+}
+}  // namespace
+
+void SketchSession::recordSketchUndo(const CadSketch& before) {
+    if (sameSketchContent(before, sketch_)) {
+        return;  // an act that changed nothing records nothing
+    }
+    sketchUndo_.push_back(before);
+    while (sketchUndo_.size() > kMaxSketchUndoEntries) {
+        sketchUndo_.pop_front();  // oldest first, never the newest
+    }
+    sketchRedo_.clear();  // a new act ends the branch Redo would have walked
+}
+
+void SketchSession::clearSketchUndo() {
+    sketchUndo_.clear();
+    sketchRedo_.clear();
+    gestureArmed_ = false;
+}
+
+void SketchSession::restoreSketchContent(const CadSketch& from) {
+    sketch_.entities = from.entities;
+    sketch_.nextEntityId = from.nextEntityId;
+    sketch_.dimensions = from.dimensions;
+    sketch_.nextDimensionId = from.nextDimensionId;
+    // Whatever names an entity that is gone lets go of it.
+    selectedIds_.erase(std::remove_if(selectedIds_.begin(), selectedIds_.end(),
+                                      [this](SketchEntityId id) {
+                                          return findSketchEntity(sketch_, id) == nullptr;
+                                      }),
+                       selectedIds_.end());
+    resetModifyState();
+    touchCandidate();
+}
+
+bool SketchSession::canUndoSketchEdit() const {
+    return state_ == SketchSessionState::Editing
+           && (!sketchUndo_.empty() || arcPending_
+               || (polylineInProgress_ && !polylineVertices_.empty()));
+}
+
+bool SketchSession::canRedoSketchEdit() const {
+    return state_ == SketchSessionState::Editing && !sketchRedo_.empty();
+}
+
+bool SketchSession::undoSketchEdit() {
+    if (state_ != SketchSessionState::Editing) {
+        fail(CadStatus::NotSketching);
+        return false;
+    }
+    resetGesture();
+    // What is being placed right now goes back first, a vertex at a time,
+    // exactly as a CAD sketcher's Undo takes back the last click.
+    if (arcPending_) {
+        arcPending_ = false;
+        touchOverlay();
+        fail(CadStatus::Ok);
+        return true;
+    }
+    if (polylineInProgress_ && !polylineVertices_.empty()) {
+        polylineVertices_.pop_back();
+        if (polylineVertices_.empty()) {
+            polylineInProgress_ = false;
+        }
+        touchOverlay();
+        fail(CadStatus::Ok);
+        return true;
+    }
+    if (sketchUndo_.empty()) {
+        return false;
+    }
+    sketchRedo_.push_back(sketch_);
+    const CadSketch previous = std::move(sketchUndo_.back());
+    sketchUndo_.pop_back();
+    restoreSketchContent(previous);
+    fail(CadStatus::Ok);
+    return true;
+}
+
+bool SketchSession::redoSketchEdit() {
+    if (state_ != SketchSessionState::Editing || sketchRedo_.empty()) {
+        return false;
+    }
+    resetGesture();
+    // A run being placed is not on the branch Redo walks: it is dropped.
+    polylineInProgress_ = false;
+    polylineVertices_.clear();
+    arcPending_ = false;
+    sketchUndo_.push_back(sketch_);
+    const CadSketch next = std::move(sketchRedo_.back());
+    sketchRedo_.pop_back();
+    restoreSketchContent(next);
+    fail(CadStatus::Ok);
+    return true;
+}
+
 bool SketchSession::onTouch(TouchAction action, int32_t actionPointerId,
                             const TouchPointer* pointers, int count, const CameraSnapshot& camera,
                             int viewportWidth, int viewportHeight) {
+    // One gesture is one Undo entry, measured from its Down: whatever the
+    // gesture placed, trimmed or extended lands when it ENDS, and a nested
+    // mutator's own scope stays silent inside this one.
+    if (state_ == SketchSessionState::Editing && action == TouchAction::Down && count == 1) {
+        gestureBefore_ = sketch_;
+        gestureArmed_ = true;
+    }
+    const bool closing = action == TouchAction::Up || action == TouchAction::PointerUp
+                         || action == TouchAction::Cancel || action == TouchAction::PointerDown
+                         || count > 1;
+    bool consumed = false;
+    {
+        UndoScope scope(*this, gestureArmed_ ? &gestureBefore_ : nullptr, !closing);
+        consumed = onTouchUnrecorded(action, actionPointerId, pointers, count, camera,
+                                     viewportWidth, viewportHeight);
+    }
+    if (closing) {
+        gestureArmed_ = false;
+    }
+    return consumed;
+}
+
+bool SketchSession::onTouchUnrecorded(TouchAction action, int32_t actionPointerId,
+                                      const TouchPointer* pointers, int count,
+                                      const CameraSnapshot& camera, int viewportWidth,
+                                      int viewportHeight) {
     if (viewportWidth <= 0 || viewportHeight <= 0) {
         return false;
     }
@@ -1343,6 +1548,8 @@ bool SketchSession::onTouch(TouchAction action, int32_t actionPointerId,
                         placeFromDrag();
                     }
                     break;
+                case SketchTool::Trim:
+                    break;  // the knife is the Trim mode; it never reaches here
             }
             pointerId_ = -1;
             travelled_ = false;
@@ -1475,6 +1682,7 @@ void SketchSession::placePolylineVertex(const SnapResult& at) {
 }
 
 void SketchSession::endPolylineInProgress() {
+    UndoScope undo(*this);
     if (!polylineInProgress_) {
         return;
     }
@@ -1545,6 +1753,7 @@ void SketchSession::setMultiSelect(bool on) {
 }
 
 CadStatus SketchSession::deleteSelected() {
+    UndoScope undo(*this);
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
     }
@@ -1563,6 +1772,7 @@ CadStatus SketchSession::deleteSelected() {
 }
 
 CadStatus SketchSession::replaceEntity(SketchEntityId id, SketchEntity::Payload payload) {
+    UndoScope undo(*this);
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
     }
@@ -1583,7 +1793,9 @@ CadStatus SketchSession::replaceEntity(SketchEntityId id, SketchEntity::Payload 
 // simply re-read at the next Finish or preview.
 
 void SketchSession::resetModifyState() {
-    modifyMode_ = SketchModifyMode::None;
+    // The knife on the rail IS the Trim mode; any other tool means none.
+    modifyMode_ = tool_ == SketchTool::Trim ? SketchModifyMode::Trim : SketchModifyMode::None;
+    knifePath_.clear();
     dimensionTargetSet_ = false;
     dimensionFirst_ = CadSketchEdgeRef{};
     dimensionAwaitSecond_ = false;
@@ -1602,6 +1814,7 @@ SketchEntityRole SketchSession::selectionConstructionTarget() const {
 }
 
 CadStatus SketchSession::toggleSelectionConstruction(SketchEntityRole* outApplied) {
+    UndoScope undo(*this);
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
     }
@@ -1632,6 +1845,13 @@ CadStatus SketchSession::setModifyMode(SketchModifyMode mode) {
     endPolylineInProgress();
     arcPending_ = false;
     resetGesture();
+    // The rail follows the mode: Trim from the palette holds the knife, and
+    // any other mode (or none) puts the knife down for Select.
+    if (mode == SketchModifyMode::Trim) {
+        tool_ = SketchTool::Trim;
+    } else if (tool_ == SketchTool::Trim) {
+        tool_ = SketchTool::Select;
+    }
     resetModifyState();
     modifyMode_ = mode;
     const SketchEntityId single = selectedEntityId();
@@ -1710,6 +1930,7 @@ CadStatus SketchSession::beginDimensionAngle() {
 
 CadStatus SketchSession::addDimension(SketchDimensionKind kind, SketchDimensionMode mode,
                                       SketchDimensionId* outId) {
+    UndoScope undo(*this);
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
     }
@@ -1730,6 +1951,7 @@ CadStatus SketchSession::addDimension(SketchDimensionKind kind, SketchDimensionM
 }
 
 CadStatus SketchSession::removeDimension(SketchDimensionId id) {
+    UndoScope undo(*this);
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
     }
@@ -1741,6 +1963,7 @@ CadStatus SketchSession::removeDimension(SketchDimensionId id) {
 }
 
 CadStatus SketchSession::applyDimensionValue(SketchDimensionId id, double value) {
+    UndoScope undo(*this);
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
     }
@@ -1795,6 +2018,7 @@ std::vector<SketchDimensionAnnotation> SketchSession::visibleDimensionAnnotation
 
 CadStatus SketchSession::trimAt(const SketchPoint& point, double toleranceMeters,
                                 SketchTrimPlan* outPlan) {
+    UndoScope undo(*this);
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
     }
@@ -1822,6 +2046,7 @@ CadStatus SketchSession::trimAt(const SketchPoint& point, double toleranceMeters
 
 CadStatus SketchSession::extendAt(const SketchPoint& point, double toleranceMeters,
                                   SketchExtendPlan* outPlan) {
+    UndoScope undo(*this);
     if (state_ != SketchSessionState::Editing) {
         return fail(CadStatus::NotSketching);
     }
@@ -1883,6 +2108,7 @@ CadStatus SketchSession::offsetPreviewStatus() const {
 }
 
 CadStatus SketchSession::confirmOffset(std::vector<SketchEntityId>* outIds) {
+    UndoScope undo(*this);
     if (state_ != SketchSessionState::Editing || modifyMode_ != SketchModifyMode::Offset) {
         return fail(CadStatus::NotSketching);
     }
@@ -1925,6 +2151,7 @@ bool SketchSession::mirrorAxis(CadSketchEdgeRef* out) const {
 }
 
 CadStatus SketchSession::confirmMirror(std::vector<SketchEntityId>* outIds) {
+    UndoScope undo(*this);
     if (state_ != SketchSessionState::Editing || modifyMode_ != SketchModifyMode::Mirror) {
         return fail(CadStatus::NotSketching);
     }
@@ -2019,6 +2246,35 @@ void SketchSession::applyModifyTap(const SketchPoint& raw) {
     setMirrorAxis(ref);
 }
 
+void SketchSession::applyKnifeStroke(double toleranceMeters) {
+    // The stroke is walked in steps a quarter of the hit tolerance long, and a
+    // sample trims only what lies within 0.6 of a step of it: a stroke that
+    // CROSSES a curve always has a sample within half a step of the crossing,
+    // while one that merely passes near a curve at the ordinary tap tolerance
+    // does not cut it. Each cut goes through `trimAt`, the one Trim, so a
+    // swipe removes exactly what the same taps at those points would have, in
+    // stroke order.
+    const double step = std::max(toleranceMeters * 0.25, 1.0e-9);
+    const double reach = step * 0.6;
+    uint32_t trims = 0;
+    size_t samples = 0;
+    for (size_t i = 1; i < knifePath_.size() && samples < kMaxKnifeSamples; ++i) {
+        const SketchPoint a = knifePath_[i - 1];
+        const SketchPoint b = knifePath_[i];
+        const double length = std::hypot(b.u - a.u, b.v - a.v);
+        const int n = std::max(1, static_cast<int>(std::ceil(length / step)));
+        for (int k = (i == 1 ? 0 : 1); k <= n && samples < kMaxKnifeSamples; ++k, ++samples) {
+            const double t = static_cast<double>(k) / static_cast<double>(n);
+            const SketchPoint p{a.u + (b.u - a.u) * t, a.v + (b.v - a.v) * t};
+            if (trimAt(p, reach) == CadStatus::Ok) {
+                ++trims;
+            }
+        }
+    }
+    lastKnifeTrims_ = trims;
+    fail(trims > 0 ? CadStatus::Ok : CadStatus::DraftingNoTarget);
+}
+
 bool SketchSession::onModifyTouch(TouchAction action, int32_t actionPointerId,
                                   const TouchPointer* pointers, int count,
                                   const CameraSnapshot& camera, int viewportWidth,
@@ -2051,6 +2307,10 @@ bool SketchSession::onModifyTouch(TouchAction action, int32_t actionPointerId,
             rawCursor_ = raw;
             cursor_ = raw;
             anchor_ = raw;
+            knifePath_.clear();
+            if (modifyMode_ == SketchModifyMode::Trim) {
+                knifePath_.push_back(raw);
+            }
             updateModifyPreview(raw);
             touchOverlay();
             return true;
@@ -2071,6 +2331,10 @@ bool SketchSession::onModifyTouch(TouchAction action, int32_t actionPointerId,
             }
             rawCursor_ = raw;
             cursor_ = raw;
+            if (modifyMode_ == SketchModifyMode::Trim && !knifePath_.empty()
+                && knifePath_.size() < kMaxKnifePathPoints) {
+                knifePath_.push_back(raw);
+            }
             if (modifyMode_ == SketchModifyMode::Offset && travelled_
                 && offsetSource_ != kNoSketchEntity) {
                 // The offset FOLLOWS THE FINGER: its signed distance is the
@@ -2098,13 +2362,18 @@ bool SketchSession::onModifyTouch(TouchAction action, int32_t actionPointerId,
             }
             const bool offsetDrag = modifyMode_ == SketchModifyMode::Offset && travelled_
                                     && offsetSource_ != kNoSketchEntity;
-            // Trim and Extend apply what the preview showed under the finger;
-            // the choosing modes take only a still tap.
-            if (!offsetDrag
-                && (!travelled_ || modifyMode_ == SketchModifyMode::Trim
-                    || modifyMode_ == SketchModifyMode::Extend)) {
+            // A Trim SWIPE is the knife: every interval the stroke crossed
+            // goes, as one act. A still Trim tap, Extend and the choosing modes
+            // apply at the finger as they always have.
+            lastKnifeTrims_ = 0;
+            if (modifyMode_ == SketchModifyMode::Trim && travelled_ && knifePath_.size() >= 2u) {
+                applyKnifeStroke(kSketchHitToleranceUnits * worldPerUnit_);
+            } else if (!offsetDrag
+                       && (!travelled_ || modifyMode_ == SketchModifyMode::Trim
+                           || modifyMode_ == SketchModifyMode::Extend)) {
                 applyModifyTap(rawCursor_);
             }
+            knifePath_.clear();
             pointerId_ = -1;
             travelled_ = false;
             dragValid_ = false;
@@ -2962,6 +3231,9 @@ CadStatus SketchSession::setOperation(CadFeatureOperation operation) {
         return fail(addOrCut && editingFeatureId_ == 0 ? CadStatus::OperationNeedsTarget
                                                        : CadStatus::InvalidFeatureOperation);
     }
+    if (operation != CadFeatureOperation::Cut) {
+        outwardOperation_ = operation;  // what a push-through back out becomes
+    }
     if (operation_ != operation) {
         operation_ = operation;
         touchCandidate();
@@ -2975,8 +3247,7 @@ CadStatus SketchSession::setOperation(CadFeatureOperation operation) {
         const bool reuse = reuseSketchId_ != kNoCadSketch;
         if (editingFeatureId_ == 0 && (sketch_.hasFaceSupport || reuse)
             && extrude_.extent == ExtrudeExtentMode::OneSide) {
-            const ExtrudeDirection cutInto =
-                    reuse ? reuseCutDirection_ : ExtrudeDirection::AgainstNormal;
+            const ExtrudeDirection cutInto = cutIntoDirection();
             const ExtrudeDirection addOut = cutInto == ExtrudeDirection::AgainstNormal
                                                     ? ExtrudeDirection::AlongNormal
                                                     : ExtrudeDirection::AgainstNormal;
@@ -2991,6 +3262,54 @@ CadStatus SketchSession::setOperation(CadFeatureOperation operation) {
         }
     }
     return fail(CadStatus::Ok);
+}
+
+ExtrudeDirection SketchSession::cutIntoDirection() const {
+    // Every face frame's normal points OUT of the producer, so a new face
+    // sketch cuts against it; a reuse knows its own side from where it stands.
+    return reuseSketchId_ != kNoCadSketch ? reuseCutDirection_ : ExtrudeDirection::AgainstNormal;
+}
+
+bool SketchSession::pushThroughAllowed() const {
+    // Only where the operation follows the side -- a NEW One Side extrusion
+    // standing on a CAD body, which both Cut and an outward operation can
+    // modify. An edit keeps the operation and the side the user chose, and a
+    // world-plane sketch has no material to push into.
+    return state_ == SketchSessionState::Ready && featureKind_ == CadFeatureKind::Extrude
+           && extrude_.extent == ExtrudeExtentMode::OneSide && editingFeatureId_ == 0
+           && editingSketchId_ == kNoCadSketch
+           && operationAvailable(CadFeatureOperation::Cut)
+           && (operationAvailable(CadFeatureOperation::Add)
+               || operationAvailable(CadFeatureOperation::NewBody));
+}
+
+void SketchSession::applyPushThrough(double signedDistance) {
+    // Measured along the axis frozen at pointer-down, so the sign says which
+    // side of the sketch plane the finger is on relative to where it started.
+    const bool crossed = signedDistance <= -kCadExtrudeMinDragDepthMeters;
+    const double depth = std::max(std::fabs(signedDistance), kCadExtrudeMinDragDepthMeters);
+    const ExtrudeDirection startDirection = dragStartExtrude_.direction;
+    const ExtrudeDirection direction =
+            crossed ? (startDirection == ExtrudeDirection::AlongNormal
+                               ? ExtrudeDirection::AgainstNormal
+                               : ExtrudeDirection::AlongNormal)
+                    : startDirection;
+    CadFeatureOperation operation = dragStartOperation_;
+    if (crossed) {
+        operation = direction == cutIntoDirection() ? CadFeatureOperation::Cut : outwardOperation_;
+        if (!operationAvailable(operation)) {
+            operation = dragStartOperation_;
+        }
+    }
+    // Through the one writer, so a pushed distance passes exactly the
+    // validation a typed one does; a refusal holds the last good value.
+    if (setExtrude(depth, direction) != CadStatus::Ok) {
+        return;
+    }
+    if (operation_ != operation) {
+        operation_ = operation;
+        touchCandidate();
+    }
 }
 
 ObjectId SketchSession::operationTargetId() const {
@@ -4069,6 +4388,12 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
     // results in the highlight, with the mirror axis in the third hue.
     if (state_ == SketchSessionState::Editing && modifyMode_ != SketchModifyMode::None) {
         const float previewHue = modifyMode_ == SketchModifyMode::Trim ? 1.0f : 2.0f;
+        // The knife's own stroke, in the destructive hue at the entity weight.
+        if (modifyMode_ == SketchModifyMode::Trim && pointerId_ >= 0 && travelled_) {
+            for (size_t i = 1; i < knifePath_.size(); ++i) {
+                pushLine(&v, local(knifePath_[i - 1]), local(knifePath_[i]), 1.0f, 0.0f);
+            }
+        }
         for (size_t i = 1; i < modifyPreview_.size(); ++i) {
             pushLine(&v, local(modifyPreview_[i - 1]), local(modifyPreview_[i]), previewHue, 1.0f);
         }

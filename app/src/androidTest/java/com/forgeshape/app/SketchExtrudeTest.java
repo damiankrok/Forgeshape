@@ -145,8 +145,12 @@ public final class SketchExtrudeTest {
                     workspace.findViewById(R.id.cancel_sketch).getVisibility());
             assertEquals("Back to Sketch is not, yet", View.GONE,
                     workspace.findViewById(R.id.back_to_sketch).getVisibility());
-            assertEquals("Undo and Redo are withdrawn while sketching", View.GONE,
+            // `SKETCH-KNIFE-UNDO-R1`: while the sketch is DRAWN the pair steps
+            // the staged sketch, and with nothing drawn there is nothing to undo.
+            assertEquals("Undo and Redo step the sketch while it is drawn", View.VISIBLE,
                     workspace.historyGroup().getVisibility());
+            assertFalse("with nothing drawn there is nothing to undo",
+                    workspace.undoAction().isEnabled());
             assertFalse("creation is withdrawn while sketching",
                     workspace.objectsCapsule().creationAvailable());
             for (int id : new int[]{R.id.tool_rail_select, R.id.tool_rail_line,

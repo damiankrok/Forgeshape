@@ -2439,6 +2439,12 @@ final class NativeViewport {
     static final int SKETCH_TOOL_CIRCLE = 4;
     static final int SKETCH_TOOL_ARC = 5;
     static final int SKETCH_TOOL_SPLINE = 6;
+    /**
+     * The knife (`SKETCH-KNIFE-UNDO-R1`): holding it IS the Trim modify mode —
+     * a swipe cuts every stroke it crosses back to the nearest intersection,
+     * a tap the one under the finger. Appended, so the seven keep their index.
+     */
+    static final int SKETCH_TOOL_TRIM = 7;
 
     /** Which way an extrusion grows, as the native ExtrudeDirection index. */
     static final int EXTRUDE_ALONG_NORMAL = 0;

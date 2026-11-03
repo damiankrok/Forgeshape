@@ -349,6 +349,7 @@
     <item name="tool_rail_circle" type="id" />
     <item name="tool_rail_arc" type="id" />
     <item name="tool_rail_spline" type="id" />
+    <item name="tool_rail_trim" type="id" />
     <!-- The sketch's own group under the rail: the way out of a sketch that
          keeps nothing, and the way back from the profile choice to editing.
          Both act on the one native sketch session. -->

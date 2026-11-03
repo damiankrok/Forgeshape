@@ -758,7 +758,23 @@ bool CadExtrudeManipulator::beginDrag(int32_t pointerId, const CadExtrudeAnchors
 bool CadExtrudeManipulator::updateDrag(int32_t pointerId, const CameraSnapshot& camera, float x,
                                        float y, int viewportWidth, int viewportHeight,
                                        Meters* outDistance) {
-    if (pointerId_ < 0 || pointerId != pointerId_ || outDistance == nullptr || viewportWidth <= 0
+    double depth = 0.0;
+    if (outDistance == nullptr
+        || !updateDragSigned(pointerId, camera, x, y, viewportWidth, viewportHeight, &depth)) {
+        return false;
+    }
+    if (depth < kCadExtrudeMinDragDepthMeters) {
+        depth = kCadExtrudeMinDragDepthMeters;
+    }
+    lastGoodDepth_ = depth;
+    *outDistance = depth;
+    return true;
+}
+
+bool CadExtrudeManipulator::updateDragSigned(int32_t pointerId, const CameraSnapshot& camera,
+                                             float x, float y, int viewportWidth,
+                                             int viewportHeight, double* outSigned) {
+    if (pointerId_ < 0 || pointerId != pointerId_ || outSigned == nullptr || viewportWidth <= 0
         || viewportHeight <= 0) {
         return false;
     }
@@ -777,15 +793,11 @@ bool CadExtrudeManipulator::updateDrag(int32_t pointerId, const CameraSnapshot& 
         return false;  // hold the last good value
     }
     const double moved = static_cast<double>(t) - static_cast<double>(axisAtDown_);
-    double depth = depthAtDown_ + moved;
+    const double depth = depthAtDown_ + moved;
     if (!std::isfinite(depth)) {
         return false;
     }
-    if (depth < kCadExtrudeMinDragDepthMeters) {
-        depth = kCadExtrudeMinDragDepthMeters;
-    }
-    lastGoodDepth_ = depth;
-    *outDistance = depth;
+    *outSigned = depth;
     return true;
 }
 

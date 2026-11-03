@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Trim tool (the knife): a blade cutting a stroke, with the piece it
+  removes dashed off beyond the cut. A swipe cuts every stroke it crosses back
+  to the nearest intersection; a tap cuts the one under the finger.
+
+  Drawn white and tinted at use; see EditorControlStyles.icon().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- The stroke that stays. -->
+    <path
+        android:pathData="M2,17H9"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round" />
+    <!-- The interval the cut removes, dashed. -->
+    <path
+        android:pathData="M15,17h2M20,17h2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round" />
+    <!-- The blade, edge down, its tip on the stroke. -->
+    <path
+        android:pathData="M12,18.5L20.2,4.3c0.5,-0.9 -0.3,-1.9 -1.2,-1.5L16.6,4.1L9.8,15.8Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>
