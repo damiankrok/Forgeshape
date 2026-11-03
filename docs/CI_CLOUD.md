@@ -101,7 +101,12 @@ or `DEVICE_STARTUP_UNRESOLVED` (evidence ambiguous — read the logcat).
 
 GitHub → **Actions** → `CI FAST` or `CI DEVICE` → **Run workflow**, pick the
 branch. `CI DEVICE` takes an optional `test_class` input for a different
-focused class; it is still focused evidence.
+focused class (a comma-separated list runs several); it is still focused
+evidence. Its optional `lane` input names a concurrency lane: dispatches on
+different lanes run side by side, so a long class list can be split across
+several emulators at once, while a second dispatch on the same lane still
+cancels the first. Lanes are subset evidence and never assemble a
+`FULL_SHARDED_SUITE_PASS`.
 
 ### FULL SHARDED — the milestone aggregate, in the cloud
 

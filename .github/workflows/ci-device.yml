@@ -18,14 +18,23 @@ on:
         description: Fully-qualified instrumentation class to run (focused evidence only)
         required: false
         default: com.forgeshape.app.Ui3dStateCorrectionTest
+      lane:
+        description: >-
+          Concurrency lane. Dispatches on DIFFERENT lanes run side by side (a
+          long class list split across emulators); a new dispatch on the SAME
+          lane cancels the one before it, as every run did before lanes.
+        required: false
+        default: '0'
 
 # Read-only token; no secret is used. `pull_request`, never
 # `pull_request_target`, so fork code never runs with elevated permissions.
 permissions:
   contents: read
 
+# A push and a lane-less dispatch share lane 0, exactly the one group every
+# run used before lanes existed.
 concurrency:
-  group: ci-device-${{ github.ref }}
+  group: ci-device-${{ github.ref }}-lane-${{ github.event.inputs.lane || '0' }}
   cancel-in-progress: true
 
 env:
