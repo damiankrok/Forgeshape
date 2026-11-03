@@ -453,7 +453,8 @@ void testFaceSupport(Checks& r) {
 
     // OSS-10: a partial Revolve's caps are NOT supports: R1 derives no exact
     // planar frame for a revolved cap (its frame is the sketch's), so nothing
-    // pretends one is.
+    // pretends one is. (Since `CAD-REVOLVE-FACES-R1` the flat discs its
+    // straight edges square to the axis sweep are; the caps still are not.)
     {
         CadSketch profile;
         addRect(&profile, 1.0, 0.5, 0.5, 1.0);
@@ -472,7 +473,9 @@ void testFaceSupport(Checks& r) {
                               && enumerateCadFeatureFaces(revolved, kCadFeatureId, &faces)
                                          == CadStatus::Ok
                               && faces.size() >= 2u;
-        for (const CadFace& f : faces) capsIneligible = capsIneligible && !f.eligible;
+        for (const CadFace& f : faces) {
+            if (f.token.kind != CadFaceKind::Side) capsIneligible = capsIneligible && !f.eligible;
+        }
         r.check("OSS_10_partial_revolve_caps_stay_ineligible_without_an_exact_frame", capsIneligible);
     }
 }

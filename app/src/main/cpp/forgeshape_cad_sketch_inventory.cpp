@@ -74,9 +74,6 @@ CadStatus cadSketchReuseRefusal(const CadBodyState& state, CadSketchId sketchId)
     if (record == nullptr) {
         return CadStatus::SketchNotFound;
     }
-    if (state.baseKind == CadFeatureKind::Revolve) {
-        return CadStatus::RevolveLaterFeatureUnsupported;
-    }
     if (cadFeatureCount(state) >= kMaxCadFeatures) {
         return CadStatus::TooManyFeatures;
     }

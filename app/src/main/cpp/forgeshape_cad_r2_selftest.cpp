@@ -384,7 +384,9 @@ void testInventory(Checks& r) {
         const CadSketchInventoryRow* mine = rowFor(inv, row.id);
         sameOrdinals = sameOrdinals && mine != nullptr && mine->ordinal == row.ordinal;
     }
-    // A revolved body: Edit offered, reuse refused by the R1 rule's own name.
+    // A revolved body: Edit offered, and since `CAD-REVOLVE-FACES-R1` a
+    // revolved part takes later features, so its sketch is no longer refused
+    // reuse by the old R1 rule.
     CadSketch revolveSketch;
     const SketchEntityId square = add(&revolveSketch, rect(1.5, 0.5, 1.0, 1.0));
     add(&revolveSketch, lineOf(0.0, -1.0, 0.0, 2.0));
@@ -397,8 +399,7 @@ void testInventory(Checks& r) {
     r.check("R2_SK_04_legacy_and_revolve_bodies_read_with_timeline_ordinals_and_named_refusals",
             sameOrdinals && revolved.rows.size() == 1u
                     && (revolved.rows[0].acts & kCadSketchActEdit) != 0u
-                    && (revolved.rows[0].acts & kCadSketchActReuseAdd) == 0u
-                    && revolved.rows[0].reuseRefusal == CadStatus::RevolveLaterFeatureUnsupported);
+                    && revolved.rows[0].reuseRefusal != CadStatus::RevolveLaterFeatureUnsupported);
 }
 
 void testKeepAndEdit(Checks& r, double* keepMicros) {
@@ -1120,7 +1121,9 @@ void testSupport(Checks& r) {
         std::vector<CadFace> faces;
         const CadStatus enumerated = enumerateCadFeatureFaces(quarter, kCadFeatureId, &faces);
         bool none = true;
-        for (const CadFace& f : faces) none = none && !f.eligible;
+        for (const CadFace& f : faces) {
+            if (f.token.kind != CadFaceKind::Side) none = none && !f.eligible;
+        }
         CadBodyState withSketch = quarter;
         CadSketch extra;
         add(&extra, rect(0.0, 0.0, 0.2, 0.2));

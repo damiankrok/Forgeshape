@@ -684,7 +684,6 @@ bool keepsOnProducer(bool hasTargetState, ObjectId targetBodyId, const CadSketch
                      const CadBodyState& target) {
     return hasTargetState && sketch.hasFaceSupport
            && targetBodyId == sketch.faceSupport.producerObjectId
-           && target.baseKind == CadFeatureKind::Extrude
            && target.sketches.size() < kMaxCadSketches;
 }
 
@@ -3484,8 +3483,9 @@ bool SketchSession::operationAvailable(CadFeatureOperation operation) const {
     // of it, and an edit of a later one stays an Add or a Cut. A revolved part
     // carries no later feature, so nothing is offered over one.
     if (featureKind_ == CadFeatureKind::Revolve) {
+        // Any part's flat face (`CAD-REVOLVE-FACES-R1`: a revolved part's
+        // too) takes a revolved Add, Cut or Intersect.
         const bool laterRevolveOk = hasTargetState_ && sketch_.hasFaceSupport
-                                    && targetBaseState_.baseKind == CadFeatureKind::Extrude
                                     && cadFeatureCount(targetBaseState_) < kMaxCadFeatures;
         if (editingFeatureId_ == kCadFeatureId) {
             return operation == CadFeatureOperation::NewBody;

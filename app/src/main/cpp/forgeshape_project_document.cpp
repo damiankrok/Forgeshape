@@ -533,6 +533,17 @@ bool cadDocumentNeedsV8(const ProjectDocument& document) {
     return false;
 }
 
+// Whether any CAD body needs the v17 section (`CAD-REVOLVE-FACES-R1`): a
+// revolved part built on.
+bool cadDocumentNeedsV17(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (cadBodyStateBuildsOnRevolve(body.state)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Whether any CAD body needs the v16 section (`CAD-INTERSECT-R1`): a later
 // Intersect.
 bool cadDocumentNeedsV16(const ProjectDocument& document) {
@@ -1731,7 +1742,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
 
     // The section is written at the LOWEST version that can carry it, so every
     // project that predates a feature keeps the bytes it always had.
-    const bool cadV16 = document.hasCad && cadDocumentNeedsV16(document);
+    const bool cadV17 = document.hasCad && cadDocumentNeedsV17(document);
+    const bool cadV16 = document.hasCad && (cadV17 || cadDocumentNeedsV16(document));
     const bool cadV15 = document.hasCad && (cadV16 || cadDocumentNeedsV15(document));
     const bool cadV14 = document.hasCad && (cadV15 || cadDocumentNeedsV14(document));
     const bool cadV13 = document.hasCad && (cadV14 || cadDocumentNeedsV13(document));
@@ -1910,7 +1922,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
         appendSection(file, kSectionTagCad,
-                      cadV16  ? kCadSectionVersionV16
+                      cadV17  ? kCadSectionVersionV17
+                      : cadV16 ? kCadSectionVersionV16
                       : cadV15 ? kCadSectionVersionV15
                       : cadV14 ? kCadSectionVersionV14
                       : cadV13 ? kCadSectionVersionV13
@@ -2983,7 +2996,7 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         || version == kCadSectionVersionV10 || version == kCadSectionVersionV11
         || version == kCadSectionVersionV12 || version == kCadSectionVersionV13
         || version == kCadSectionVersionV14 || version == kCadSectionVersionV15
-        || version == kCadSectionVersionV16) {
+        || version == kCadSectionVersionV16 || version == kCadSectionVersionV17) {
         uint32_t bodyCount = 0;
         if (!in.u32(&bodyCount)) {
             return ProjectCodecStatus::Truncated;
@@ -3044,6 +3057,16 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
             if (!anyLaterRevolve) {
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
+        }
+        // A revolved part built on has no encoding below v17, and a v17
+        // section exists only for one (`CAD-REVOLVE-FACES-R1`).
+        bool anyBuiltOnRevolve = false;
+        for (const ProjectCadBody& body : record->bodies) {
+            anyBuiltOnRevolve = anyBuiltOnRevolve || cadBodyStateBuildsOnRevolve(body.state);
+        }
+        if ((anyBuiltOnRevolve && version < kCadSectionVersionV17)
+            || (!anyBuiltOnRevolve && version == kCadSectionVersionV17)) {
+            return ProjectCodecStatus::InvalidSemanticValue;
         }
         // A v16 section exists only for an Intersect (`CAD-INTERSECT-R1`).
         if (version == kCadSectionVersionV16) {
@@ -3385,7 +3408,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
                         || sectionVersion == kCadSectionVersionV13
                         || sectionVersion == kCadSectionVersionV14
                         || sectionVersion == kCadSectionVersionV15
-                        || sectionVersion == kCadSectionVersionV16;
+                        || sectionVersion == kCadSectionVersionV16
+                        || sectionVersion == kCadSectionVersionV17;
         } else if (isScene) {
             // SCNE became the second multi-version section at Stage 018A: v1 as
             // every build before it wrote, and v2 carrying per-body visibility,

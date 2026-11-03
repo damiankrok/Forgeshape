@@ -1036,6 +1036,12 @@ bool cadBodyStateUsesLaterRevolve(const CadBodyState& state) {
     return false;
 }
 
+bool cadBodyStateBuildsOnRevolve(const CadBodyState& state) {
+    return state.baseKind == CadFeatureKind::Revolve
+           && (!state.laterFeatures.empty() || !state.edgeFinishes.empty()
+               || !state.patterns.empty() || !state.holes.empty());
+}
+
 bool cadBodyStateUsesIntersect(const CadBodyState& state) {
     for (const CadFeature& feature : state.laterFeatures) {
         if (feature.operation == CadFeatureOperation::Intersect) return true;
@@ -1624,21 +1630,11 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
         if (!sameExtrudeFeature(state.extrude, ExtrudeFeature{})) {
             return CadStatus::RevolvePayloadMismatch;
         }
-        if (!state.laterFeatures.empty()) {
-            return CadStatus::RevolveLaterFeatureUnsupported;
-        }
-        // A revolved face is never flat enough to finish in R1.
-        if (!state.edgeFinishes.empty()) {
-            return CadStatus::EdgeFinishTargetUnsupported;
-        }
-        // A Revolve has no later feature to repeat.
-        if (!state.patterns.empty()) {
-            return CadStatus::PatternTargetUnsupported;
-        }
-        // Nor a flat face to drill into.
-        if (!state.holes.empty()) {
-            return CadStatus::HoleSupportInvalid;
-        }
+        // `CAD-REVOLVE-FACES-R1`: a revolved part takes later features,
+        // finishes, patterns and holes on the terms an extruded one does --
+        // each judged below on its own rule, so a support must still be one
+        // of the flat faces its straight edges square to the axis sweep, and
+        // a finish of a revolved edge is still refused by its own rule.
         const CadStatus revolveWhy =
                 validateRevolveFeatureGeometry(cadBaseSketch(state), state.revolve, &baseRegions);
         if (revolveWhy != CadStatus::Ok) {
@@ -1651,6 +1647,18 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
         const CadStatus chainWhy = validateCadChain(state);
         if (chainWhy != CadStatus::Ok) {
             return chainWhy;
+        }
+        const CadStatus revolveFinishWhy = validateCadEdgeFinishes(state);
+        if (revolveFinishWhy != CadStatus::Ok) {
+            return revolveFinishWhy;
+        }
+        const CadStatus revolvePatternWhy = validateCadFeaturePatterns(state);
+        if (revolvePatternWhy != CadStatus::Ok) {
+            return revolvePatternWhy;
+        }
+        const CadStatus revolveHoleWhy = validateCadFeatureHoles(state);
+        if (revolveHoleWhy != CadStatus::Ok) {
+            return revolveHoleWhy;
         }
         if (outProfiles != nullptr) {
             *outProfiles = std::move(baseRegions.loops);

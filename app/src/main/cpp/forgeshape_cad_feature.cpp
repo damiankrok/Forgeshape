@@ -58,6 +58,23 @@ CadFrame64 materialOutward(const CadFeatureGeometry& g, CadFrame64 frame) {
     return frame;
 }
 
+// Whether the straight edge a -> b of a Revolve's profile sweeps a FLAT face
+// (`CAD-REVOLVE-FACES-R1`): an edge square to the axis sweeps a disc or a ring
+// in the plane through it square to the axis. Every other revolved face is
+// curved (a cylinder, a cone, a torus) and never a support.
+bool revolveSweepsFlatFace(const CadFeatureGeometry& g, const SketchPoint& a, const SketchPoint& b) {
+    if (g.kind != CadFeatureKind::Revolve) {
+        return false;
+    }
+    const double du = b.u - a.u;
+    const double dv = b.v - a.v;
+    const double length = std::sqrt(du * du + dv * dv);
+    if (!(length > 1.0e-9)) {
+        return false;
+    }
+    return std::fabs(du * g.revolveAxis.du + dv * g.revolveAxis.dv) <= 1.0e-9 * length;
+}
+
 // The face of one loop edge in sketch-local terms, placed into the body.
 CadFeatureFace sideFace(const CadFeatureGeometry& g, const ClosedProfile& loop, uint32_t k,
                         bool hole, bool lineageFeatureEligible) {
@@ -67,9 +84,13 @@ CadFeatureFace sideFace(const CadFeatureGeometry& g, const ClosedProfile& loop, 
     face.token.edgeEntityId = loop.edgeEntityId.size() == n ? loop.edgeEntityId[k] : loop.anchorEntityId;
     face.token.edgeLocalIndex = loop.edgeLocalIndex.size() == n ? loop.edgeLocalIndex[k] : k;
     const bool curved = loop.fromCircle || (loop.edgeCurved.size() == n && loop.edgeCurved[k] != 0u);
-    face.eligible = g.kind == CadFeatureKind::Extrude && !curved;
+    const SketchPoint& a = loop.polygon[k];
+    const SketchPoint& b = loop.polygon[(k + 1u) % n];
+    face.eligible = !curved && (g.kind == CadFeatureKind::Extrude || revolveSweepsFlatFace(g, a, b));
     face.lineageEligible = lineageFeatureEligible && !curved;
-    face.frame = materialOutward(g, sideFrame(g, loop.polygon[k], loop.polygon[(k + 1u) % n], hole));
+    // A swept disc's plane holds the edge and the sketch normal, and its
+    // normal is the edge's own outward one: the side frame IS its frame.
+    face.frame = materialOutward(g, sideFrame(g, a, b, hole));
     return face;
 }
 
@@ -220,7 +241,8 @@ void appendFragmentSides(CadFeatureGeometry* g, const PlanarProfileLoop& loop, b
         }
         CadFeatureFace face;
         face.token = fragmentSideToken(loop.fragments[k]);
-        face.eligible = g->kind == CadFeatureKind::Extrude && loop.fragmentCurved[k] == 0u;
+        face.eligible = loop.fragmentCurved[k] == 0u
+                        && (g->kind == CadFeatureKind::Extrude || revolveSweepsFlatFace(*g, a, b));
         face.lineageEligible = lineageFeatureEligible && loop.fragmentCurved[k] == 0u;
         face.frame = materialOutward(*g, sideFrame(*g, a, b, hole));
         g->faces.push_back(face);

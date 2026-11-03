@@ -268,7 +268,7 @@ CadStatus validateCadFeaturePatterns(const CadBodyState& state, uint32_t* outFai
         for (uint32_t id : p.featureIds) {
             if (id <= last) return fail(CadStatus::PatternInvalid, p.patternId);
             last = id;
-            if (id == kCadFeatureId || state.baseKind == CadFeatureKind::Revolve) {
+            if (id == kCadFeatureId) {
                 return fail(CadStatus::PatternTargetUnsupported, p.patternId);
             }
             bool found = false;

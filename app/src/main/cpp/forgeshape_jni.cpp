@@ -5398,7 +5398,6 @@ bool holeOfferLocked(forgeshape::ChosenSupport* fresh, const forgeshape::SceneOb
             forgeshape::constructionScene().findBody(fresh->faceRef.producerObjectId);
     const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
     if (body == nullptr || object->locked()
-        || body->state().baseKind != forgeshape::CadFeatureKind::Extrude
         || body->state().holes.size() >= forgeshape::kMaxCadHoles) {
         return false;
     }

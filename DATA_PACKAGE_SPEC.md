@@ -1665,6 +1665,22 @@ is refused. The fingerprint needs no block of its own: it already mixes every
 feature's operation index, and 3 is new. No v16 corpus fixture exists yet: the
 round trip and the version rule are host evidence (`IX_03_*`).
 
+## 7t. `CADB` v17 — a revolved part built on (`CAD-REVOLVE-FACES-R1`)
+
+Version 17 is v16's layout (§7s) byte for byte, in which a body whose FIRST
+feature revolves may carry later features, edge finishes, patterns and holes.
+Each is held to its own rule exactly as on an extruded part: a support must be
+an eligible face, and a revolved part's eligible faces are the flat discs and
+rings its straight profile edges square to the axis sweep (their frame is the
+edge's side frame: in the disc's plane, normal along the axis). The revolve's
+caps, its curved faces and the edges lying on the axis stay ineligible, a
+finish of a revolved edge is `EdgeFinishTargetUnsupported` and a pattern of
+the revolve itself `PatternTargetUnsupported`. The lineage bit of a revolved
+face stays 0, so no lineage token moved. Below v17 such a body is
+`InvalidSemanticValue`; v17 is written exactly when some body is one, and a
+v17 section with none is refused. No v17 corpus fixture exists yet: the round
+trip and the version rule are host evidence (`RF_03_*`).
+
 ## 7j. `FRFM` v1 — the Freeform bodies (`MODELING-FOUNDATIONS-R1` B)
 
 A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is

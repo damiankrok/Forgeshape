@@ -1,6 +1,7 @@
 #include "forgeshape_cad_intersect_selftest.h"
 
 #include "forgeshape_measure.h"
+#include "forgeshape_sketch_region.h"
 
 #include "forgeshape_mass_properties.h"
 
@@ -583,6 +584,124 @@ void runCadIntersectSelfTests(std::vector<ArrangementSelfTestCheck>* out, std::s
         r.check("MS_03_a_tap_beside_a_corner_measures_the_corner_exactly",
                 projected && snapped && corner.x == 1.0f && corner.y == 1.0f && !centred
                         && middle.x == 0.2f && middle.y == -0.1f);
+    }
+    // --- RF_01..04: a revolved part's flat faces (`CAD-REVOLVE-FACES-R1`) ---------
+    {
+        // A cylinder r 1, h 2: a 1 x 2 rectangle of four lines on XY whose last
+        // line lies on the Y axis, revolved a full turn about it.
+        CadSketch profile;
+        SketchEntityId ignored = kNoSketchEntity;
+        SketchEntityId axisId = kNoSketchEntity;
+        const SketchPoint corner[4] = {{0.0, 0.0}, {1.0, 0.0}, {1.0, 2.0}, {0.0, 2.0}};
+        for (int k = 0; k < 4; ++k) {
+            SketchLine line;
+            line.start = corner[k];
+            line.end = corner[(k + 1) % 4];
+            addSketchEntity(&profile, line, k == 3 ? &axisId : &ignored);
+        }
+        const SketchRegionExtraction regions = extractSketchRegions(profile);
+        RevolveFeature revolve;
+        revolve.profileEntityId =
+                regions.regions.empty() ? kNoSketchEntity : regions.regions.front().outerAnchorId;
+        revolve.axis = CadSketchEdgeRef{axisId, 0u};
+        revolve.angleDegrees = kMaxRevolveAngleDegrees;
+        const CadBodyState cylinder = makeCadRevolveBodyState(profile, revolve);
+        std::vector<CadFeatureGeometry> chain;
+        const CadStatus built = buildCadChainGeometry(cylinder, &chain);
+        std::vector<CadFeatureFace> flat;
+        int curvedOrOnAxis = 0;
+        if (built == CadStatus::Ok && !chain.empty()) {
+            for (const CadFeatureFace& face : chain.front().faces) {
+                if (face.eligible) flat.push_back(face);
+                else ++curvedOrOnAxis;
+            }
+        }
+        r.check("RF_01_the_discs_a_revolve_sweeps_are_flat_supports_and_its_walls_are_not",
+                built == CadStatus::Ok && flat.size() == 2u && curvedOrOnAxis == 2
+                        && !flat[0].lineageEligible && !flat[1].lineageEligible);
+        // The top disc: the flat face whose normal points up the axis.
+        CadFeatureSupport top;
+        top.featureId = kCadFeatureId;
+        for (const CadFeatureFace& face : flat) {
+            if (face.frame.n.y > 0.5) top.face = face.token;
+        }
+        top.lineageToken = cadFeatureTopologySignature(cylinder, kCadFeatureId);
+        const double cylinderVolume = 2.0 * disk(1.0);
+        CadBodyState drilled = cylinder;
+        CadFeatureHole hole;
+        hole.support = top;
+        hole.diameter = 0.4;
+        CadFrame64 topFrame;
+        const bool framed = resolveCadFeatureSupportFrame(chain, top, &topFrame);
+        if (framed) {
+            // At the axis: (0, 2, 0) in the body, in the face's own frame.
+            const DVec3 d = dvec3Sub(DVec3{0.0, 2.0, 0.0}, topFrame.origin);
+            hole.u = dvec3Dot(d, topFrame.u);
+            hole.v = dvec3Dot(d, topFrame.v);
+        }
+        appendCadFeatureHole(&drilled, hole);
+        const Regen bored = regen(drilled);
+        r.check("RF_02_a_hole_drills_through_a_revolved_parts_top_disc",
+                framed && near(topFrame.n.y, 1.0, 1e-9) && bored.why == CadStatus::Ok
+                        && bored.mesh.volume < cylinderVolume - 0.2
+                        && bored.mesh.volume > cylinderVolume - 0.3);
+        // A later Cut drawn on the top disc.
+        CadBodyState cut = cylinder;
+        appendCadLaterFeatureWithSketch(&cut, CadFeatureOperation::Cut, top,
+                                        circleSketch(0.0, 0.0, 0.3),
+                                        oneSide(0.5, ExtrudeDirection::AgainstNormal));
+        const Regen pocket = regen(cut);
+        r.check("RF_02_a_later_cut_on_the_disc_pockets_the_revolved_part",
+                pocket.why == CadStatus::Ok && near(pocket.mesh.volume,
+                                                    cylinderVolume - circleArea(0.3) * 0.5, 1e-6));
+        // CADB v17 carries it; a plain revolve keeps its version.
+        ProjectCodecStatus why = ProjectCodecStatus::Ok;
+        const std::vector<uint8_t> bytes = encodeProjectV1(documentFor(cut), &why);
+        uint16_t version = 0;
+        uint64_t length = 0;
+        const size_t at = why == ProjectCodecStatus::Ok ? cadPayloadAt(bytes, &version, &length) : 0;
+        ProjectDocument decoded;
+        const bool back = decodeProject(bytes.data(), bytes.size(), &decoded) == ProjectCodecStatus::Ok
+                          && decoded.cad.bodies.size() == 1
+                          && sameCadBodyState(decoded.cad.bodies[0].state, cut);
+        const std::vector<uint8_t> plainBytes = encodeProjectV1(documentFor(cylinder), &why);
+        uint16_t plainVersion = 0;
+        cadPayloadAt(plainBytes, &plainVersion, &length);
+        bool refusedLow = false;
+        if (at != 0) {
+            std::vector<uint8_t> lowered = bytes;
+            const size_t versionAt = at - kForgeSectionHeaderBytes + 4;
+            lowered[versionAt] = static_cast<uint8_t>(kCadSectionVersionV16 & 0xFF);
+            lowered[versionAt + 1] = static_cast<uint8_t>(kCadSectionVersionV16 >> 8);
+            ProjectDocument ignoredDoc;
+            refusedLow = decodeProject(lowered.data(), lowered.size(), &ignoredDoc)
+                         != ProjectCodecStatus::Ok;
+        }
+        r.check("RF_03_a_revolved_part_built_on_is_cadb_v17_and_reads_back",
+                version == kCadSectionVersionV17 && back && plainVersion != 0
+                        && plainVersion < kCadSectionVersionV17 && refusedLow
+                        && cadBodyStateBuildsOnRevolve(cut) && !cadBodyStateBuildsOnRevolve(cylinder));
+        // Still refused: a pattern of the revolve itself, and a sketch on its
+        // curved wall.
+        CadBodyState patterned = cut;
+        CadFeaturePattern pattern;
+        pattern.patternId = patterned.nextFeatureId++;
+        pattern.featureIds = {kCadFeatureId};
+        pattern.count = 2;
+        pattern.spacing = 3.0;
+        patterned.patterns.push_back(pattern);
+        CadFeatureSupport wall = top;
+        for (const CadFeatureFace& face : chain.empty() ? std::vector<CadFeatureFace>{}
+                                                        : chain.front().faces) {
+            if (!face.eligible) wall.face = face.token;
+        }
+        CadBodyState onWall = cylinder;
+        appendCadLaterFeatureWithSketch(&onWall, CadFeatureOperation::Cut, wall,
+                                        circleSketch(0.0, 0.0, 0.2),
+                                        oneSide(0.2, ExtrudeDirection::AgainstNormal));
+        r.check("RF_04_a_pattern_of_the_revolve_and_a_sketch_on_a_curved_face_stay_refused",
+                validateCadBodyState(patterned) == CadStatus::PatternTargetUnsupported
+                        && validateCadBodyState(onWall) != CadStatus::Ok);
     }
     if (performance != nullptr) {
         char line[96];

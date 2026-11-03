@@ -802,9 +802,14 @@ on the host, with no device, and is the fast native loop.
   feature has a KIND (`CadFeatureKind::Extrude` or `Revolve`, on
   `CadBodyState::baseKind`) and exactly the payload of that kind — a Revolve
   carrying extrude values, or the reverse, is refused
-  (`RevolvePayloadMismatch`). R1 is **New Body only**: a revolved body has no
-  later features (`RevolveLaterFeatureUnsupported`) and its faces are all
-  INELIGIBLE supports, so nothing stands on one. What is swept is the SAME
+  (`RevolvePayloadMismatch`). A revolved FIRST feature is a New Body, and
+  since `CAD-REVOLVE-FACES-R1` the part is built on like any other: the flat
+  discs and rings its straight profile edges square to the axis sweep are
+  eligible supports (`revolveSweepsFlatFace`; their frame is the edge's side
+  frame), so a sketch, a later feature, a hole or a pattern of a later feature
+  stands on one, while its caps, its curved faces and its on-axis edges stay
+  INELIGIBLE, a finish of a revolved edge is refused and the lineage bit stays
+  0. **`CADB` v17** (§7t) is written only for a revolved part built on. What is swept is the SAME
   selection an Extrude makes (regions with holes, or exact `PlanarFaceRef`s),
   held in the Revolve's own fields and lent to the region code through a
   transient carrier — never stored as an Extrude. The axis is
@@ -835,18 +840,16 @@ on the host, with no device, and is the fast native loop.
   the first-project bootstrap are each ONE transaction, and none of the
   session's revolve intent is truth until then. **A LATER feature may revolve
   too** (`CAD-REVOLVE-FEATURE-R1`): `CadFeature::kind` / `::revolve`, one
-  payload per feature (`RevolvePayloadMismatch`), an Add or a Cut of an
-  Extrude part from a sketch on one of its faces, through the base Revolve's
-  own generator and the one kernel boolean; a body whose FIRST feature
-  revolves still takes no later feature, and a pattern of a Revolve is
-  refused. **`CADB` v15** (§7r) is written only for one. **`CADB` gains version 7**
+  payload per feature (`RevolvePayloadMismatch`), an Add or a Cut of a part
+  from a sketch on one of its flat faces, through the base Revolve's own
+  generator and the one kernel boolean; a pattern of a Revolve is refused. **`CADB` v15** (§7r) is written only for one. **`CADB` gains version 7**
   (a kind byte after every feature id, and the Revolve payload), written ONLY
   when a body revolves; every v1..v6-representable project keeps its bytes
   and its fingerprint. `CAD-V6-REVOLVE-NEWBODY-E2E-R1` added the four v7
   fixtures (`cad_revolve_full_v7`, `cad_revolve_partial_v7`, and the two the
   decoder must refuse, `cad_revolve_bad_axis_v7` and
-  `cad_bad_feature_kind_v7`). **Not this stage:** a later feature on a revolved
-  part, a sketch on a revolved face, an axis that is not a
+  `cad_bad_feature_kind_v7`). **Not this stage:** a sketch on a revolved cap
+  or a curved revolved face, an axis that is not a
   sketch edge, a two-sided or symmetric sweep, and a constraint solver.
 - **A Construction primitive may BECOME a CAD part, by one replacement act**
   (`CAD-PRIMITIVES-R1`, `forgeshape_cad_from_primitive.{h,cpp}`). A Box and a
@@ -965,7 +968,8 @@ on the host, with no device, and is the fast native loop.
   away `SupportFaceLost`, a hole that removes nothing `HoleNoEffect`. Bore
   triangles wear the hole's own INELIGIBLE face-table entry. **The offer is
   presentation**: a Construction tap on an eligible face of an unlocked
-  Extrude CAD body offers Hole in the face bar beside Sketch here; taking it
+  CAD body (a revolved part's flat disc included) offers Hole in the face bar
+  beside Sketch here; taking it
   captures the face in a session draft (`holeOfferBegin`, never a `.forge`
   byte, a history step or the fingerprint) and opens `HoleEditorPanel` on
   native's seeds — a 1/2/5 diameter a fifth of the part's thinnest extent,

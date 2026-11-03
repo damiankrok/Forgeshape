@@ -259,6 +259,11 @@ constexpr uint16_t kCadSectionVersionV15 = 15;
 // which a later feature's operation code may be 4, an Intersect. Written ONLY
 // when a later feature intersects, so every v1..v15 project keeps its bytes.
 constexpr uint16_t kCadSectionVersionV16 = 16;
+// v17 (`CAD-REVOLVE-FACES-R1`, DATA_PACKAGE_SPEC.md §7t): the v16 layout, in
+// which a body whose first feature REVOLVES may carry later features,
+// finishes, patterns and holes. Written ONLY then, so every v1..v16 project
+// keeps its bytes.
+constexpr uint16_t kCadSectionVersionV17 = 17;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.

@@ -979,6 +979,10 @@ bool cadBodyStateUsesLaterRevolve(const CadBodyState& state);
 // `CAD-INTERSECT-R1`: whether any later feature is an Intersect, the thing
 // `CADB` v16 exists to carry.
 bool cadBodyStateUsesIntersect(const CadBodyState& state);
+// `CAD-REVOLVE-FACES-R1`: whether a body whose FIRST feature revolves carries
+// anything after it -- a later feature, a finish, a pattern or a hole -- the
+// thing `CADB` v17 exists to carry.
+bool cadBodyStateBuildsOnRevolve(const CadBodyState& state);
 // Appends a later Revolve Add or Cut on a NEW sketch record on `support`, the
 // way `appendCadLaterFeatureWithSketch` appends an extrusion. 0 when the chain
 // or the table is full.
