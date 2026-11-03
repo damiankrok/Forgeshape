@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Intersect: two overlapping outlines with the LENS they share filled --
+<!-- Intersect: two overlapping outlines with the LENS they share filled:
      only the material both hold is kept. A shape unlike Add's boss and Cut's
      notch, so the three never depend on their colours. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
