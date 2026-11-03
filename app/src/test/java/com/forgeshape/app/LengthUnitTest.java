@@ -67,6 +67,10 @@ public final class LengthUnitTest {
         // The area label is the same rule, which is where it came from.
         assertEquals("11.2 m²", LengthUnit.formatArea(LengthUnit.METERS, 11.2));
         assertEquals("0.499 m²", LengthUnit.formatArea(LengthUnit.METERS, 0.49935));
+        // And a measured volume, three times the shift (`CAD-INSPECT-R1`).
+        assertEquals("4 m³", LengthUnit.formatVolume(LengthUnit.METERS, 4.0));
+        assertEquals("2000000 cm³", LengthUnit.formatVolume(LengthUnit.CENTIMETERS, 2.0));
+        assertEquals("1 mm³", LengthUnit.formatVolume(LengthUnit.MILLIMETERS, 1.0e-9));
     }
 
     @Test

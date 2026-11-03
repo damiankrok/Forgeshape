@@ -62,6 +62,7 @@
 #include "forgeshape_cad_edge_finish.h"
 #include "forgeshape_cad_pattern.h"
 #include "forgeshape_cad_hole.h"
+#include "forgeshape_mass_properties.h"
 #include "forgeshape_cad_extrude_tool.h"
 #include "forgeshape_cad_feature.h"
 #include "forgeshape_cad_sketch_inventory.h"
@@ -8105,6 +8106,55 @@ Java_com_forgeshape_app_NativeViewport_sketchRotateView(JNIEnv*, jclass, jint qu
         FS_LOGI("FORGESHAPE_SKETCH_VIEW_ROTATED quarters=%d", turns);
     }
     return cadCode(status);
+}
+
+// ---------------------------------------------------------------------------
+// What a body measures (`CAD-INSPECT-R1`)
+// ---------------------------------------------------------------------------
+
+// Body `bodyId`'s mass properties from the mesh it draws, in world space, into
+// out[0..11]: [0] 1 when the mesh is closed (only then are [1] the volume in m³
+// and [3..5] the centre of mass meaningful), [2] the surface area in m²,
+// [6..8] the world bounding box's size and [9..11] its lowest corner. A READ:
+// nothing moves. False for no such body or no published mesh.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_bodyMassProperties(JNIEnv* env, jclass, jlong bodyId,
+                                                          jdoubleArray out) {
+    constexpr jsize kSlots = 12;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) {
+        return JNI_FALSE;
+    }
+    jdouble v[kSlots] = {0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        const forgeshape::SceneObject* object =
+                scene.findBody(static_cast<forgeshape::ObjectId>(bodyId));
+        const forgeshape::RuntimeMeshPtr mesh =
+                object != nullptr ? object->meshStore().current() : nullptr;
+        forgeshape::Mat4 model;
+        forgeshape::MassProperties m;
+        if (mesh == nullptr || !scene.resolveWorldModel(object->objectId(), &model)
+            || !forgeshape::computeMassProperties(mesh->vertices(), mesh->vertexCount(),
+                                                  mesh->indices(), mesh->indexCount(), model,
+                                                  &m)) {
+            return JNI_FALSE;
+        }
+        v[0] = m.closed ? 1.0 : 0.0;
+        v[1] = m.volume;
+        v[2] = m.area;
+        v[3] = m.centroid.x;
+        v[4] = m.centroid.y;
+        v[5] = m.centroid.z;
+        v[6] = m.boundsMax.x - m.boundsMin.x;
+        v[7] = m.boundsMax.y - m.boundsMin.y;
+        v[8] = m.boundsMax.z - m.boundsMin.z;
+        v[9] = m.boundsMin.x;
+        v[10] = m.boundsMin.y;
+        v[11] = m.boundsMin.z;
+    }
+    env->SetDoubleArrayRegion(out, 0, kSlots, v);
+    return JNI_TRUE;
 }
 
 // ---------------------------------------------------------------------------

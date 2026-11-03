@@ -103,6 +103,17 @@ enum LengthUnit {
         return present(shifted) + " " + unit.label + "²";
     }
 
+    /**
+     * Renders a volume in this unit cubed, for a read-only measurement
+     * (`CAD-INSPECT-R1`): three times the length shift, at the display
+     * precision.
+     */
+    static String formatVolume(LengthUnit unit, double cubicMeters) {
+        final BigDecimal shifted = atDisplayPrecision(BigDecimal.valueOf(cubicMeters)
+                .movePointRight(3 * unit.decimalExponent));
+        return present(shifted) + " " + unit.label + "³";
+    }
+
     /** Converts a value written in this unit into authoritative meters, exactly. */
     BigDecimal toMeters(BigDecimal display) {
         return display.movePointLeft(decimalExponent);

@@ -26,4 +26,11 @@
     <string name="sketch_plane_apply">Move plane</string>
     <string name="status_sketch_plane_moved">The sketch plane moved; the drawing moved with it.</string>
     <string name="status_sketch_plane_invalid">That plane cannot be used: the angle must be within 90° and the offset within the sketch\'s reach, and only a sketch on a face of the part can stand off it.</string>
+    <string name="measure_section">Measure</string>
+    <string name="label_density">Density (kg/m³)</string>
+    <string name="apply_density">Recompute mass</string>
+    <string name="measure_size">Size %1$s × %2$s × %3$s</string>
+    <string name="measure_area">Area %1$s</string>
+    <string name="measure_closed">Volume %1$s\n%2$s\n%3$s\nCentre of mass (%4$s, %5$s, %6$s)\nMass %7$s</string>
+    <string name="measure_open">Open surface: no volume\n%1$s\n%2$s</string>
 </resources>

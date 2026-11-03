@@ -1,5 +1,7 @@
 #include "forgeshape_cad_plane_selftest.h"
 
+#include "forgeshape_mass_properties.h"
+
 #include "forgeshape_cad_hole.h"
 
 #include <chrono>
@@ -455,6 +457,51 @@ void runCadPlaneSelfTests(std::vector<ArrangementSelfTestCheck>* out, std::strin
         r.check("PL_04_the_fingerprint_reads_the_plane",
                 fingerprintOf(state) != 0u && fingerprintOf(state) != fingerprintOf(plain)
                         && fingerprintOf(state) == fingerprintOf(state));
+    }
+
+    // --- MP_01..02: what a body measures (`CAD-INSPECT-R1`) --------------------------
+    {
+        CadBodyState block;
+        cadBaseSketch(block) = rectSketch(0.0, 0.0, 4.0, 2.0);
+        block.extrude = oneSide(1.0);
+        const Regen g = regen(block);
+        MassProperties m;
+        const bool measured =
+                g.why == CadStatus::Ok
+                && computeMassProperties(g.mesh.mesh.vertices.data(),
+                                         static_cast<uint32_t>(g.mesh.mesh.vertices.size()),
+                                         g.mesh.mesh.indices.data(),
+                                         static_cast<uint32_t>(g.mesh.mesh.indices.size()),
+                                         mat4Identity(), &m);
+        r.check("MP_01_a_block_measures_its_volume_area_centre_and_size",
+                measured && m.closed && near(m.volume, 8.0, 1e-5) && near(m.area, 28.0, 1e-5)
+                        && near(m.centroid.x, 0.0, 1e-5) && near(m.centroid.y, 0.0, 1e-5)
+                        && near(m.centroid.z, 0.5, 1e-5)
+                        && near(m.boundsMax.x - m.boundsMin.x, 4.0, 1e-6)
+                        && near(m.boundsMax.y - m.boundsMin.y, 2.0, 1e-6)
+                        && near(m.boundsMax.z - m.boundsMin.z, 1.0, 1e-6));
+        // Placed elsewhere and scaled, it is measured where it stands.
+        Mat4 moved = mat4Identity();
+        moved.m[0] = 2.0f;      // x scaled by 2
+        moved.m[12] = 10.0f;    // moved 10 along x
+        MassProperties w;
+        const bool placed =
+                g.why == CadStatus::Ok
+                && computeMassProperties(g.mesh.mesh.vertices.data(),
+                                         static_cast<uint32_t>(g.mesh.mesh.vertices.size()),
+                                         g.mesh.mesh.indices.data(),
+                                         static_cast<uint32_t>(g.mesh.mesh.indices.size()), moved,
+                                         &w);
+        r.check("MP_02_the_world_placement_is_what_is_measured",
+                placed && w.closed && near(w.volume, 16.0, 1e-4) && near(w.centroid.x, 10.0, 1e-4));
+        // An open sheet has no volume to claim.
+        const uint32_t tri[3] = {0, 1, 2};
+        MassProperties open;
+        const bool sheet = g.why == CadStatus::Ok && g.mesh.mesh.vertices.size() >= 3
+                           && computeMassProperties(g.mesh.mesh.vertices.data(), 3, tri, 3,
+                                                    mat4Identity(), &open);
+        r.check("MP_02_an_open_surface_reports_no_volume",
+                sheet && !open.closed && open.volume == 0.0 && open.area > 0.0);
     }
 
     // --- PL_05: the session ---------------------------------------------------------

@@ -668,6 +668,9 @@
     <item name="field_hole_v" type="id" />
     <item name="field_hole_edge_a" type="id" />
     <item name="sketch_plane_section" type="id" />
+    <item name="cad_mass_properties" type="id" />
+    <item name="field_density" type="id" />
+    <item name="apply_density" type="id" />
     <item name="field_sketch_plane_offset" type="id" />
     <item name="field_sketch_plane_angle" type="id" />
     <item name="sketch_plane_apply" type="id" />

@@ -2584,6 +2584,20 @@ final class NativeViewport {
      */
     static native void sketchFacePlaneState(double[] out);
 
+    /** {@link #bodyMassProperties} slots (`CAD-INSPECT-R1`). */
+    static final int MASS_SIZE = 12;
+    static final int MASS_CLOSED = 0;
+    static final int MASS_VOLUME = 1;
+    static final int MASS_AREA = 2;
+    static final int MASS_CENTROID_X = 3;
+    static final int MASS_SIZE_X = 6;
+
+    /**
+     * A body's volume (m³, when closed), surface area (m²), centre of mass and
+     * world bounding box, from the mesh it draws. A read; nothing moves.
+     */
+    static native boolean bodyMassProperties(long bodyId, double[] out);
+
     /** {@link #cadHoleInfo} slots. */
     static final int HOLE_INFO_SIZE = 16;
     static final int HOLE_INFO_KIND = 0;

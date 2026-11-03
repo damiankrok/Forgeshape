@@ -66,6 +66,11 @@ final class CadFeatureEditorView extends LinearLayout
     private int draftDirection = NativeViewport.EXTRUDE_ALONG_NORMAL;
     private int profileKind = NativeViewport.CAD_PROFILE_NONE;
 
+    private final TextView measureText;
+    private final NumericPropertyRow densityField;
+    /** kg/m³; presentation only, session-scoped, the density of water to start. */
+    private double density = MassPresentation.DEFAULT_DENSITY;
+
     CadFeatureEditorView(Context context, final InspectorHost host) {
         super(context);
         this.host = host;
@@ -143,6 +148,38 @@ final class CadFeatureEditorView extends LinearLayout
         featureList.setOrientation(VERTICAL);
         addView(featureList, EditorControlStyles.rowParams(sectionGap));
 
+        // Measure (`CAD-INSPECT-R1`): what the part is, read off what it
+        // draws -- never typed, never stored. Mass is the volume at a density
+        // the user types here, which is presentation and reaches no file.
+        addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.measure_section)),
+                EditorControlStyles.rowParams(sectionGap));
+        measureText = EditorControlStyles.titleText(context, R.id.cad_mass_properties, "");
+        addView(measureText, EditorControlStyles.rowParams(smallGap));
+        densityField = new NumericPropertyRow(context, R.id.field_density,
+                context.getString(R.string.label_density), true);
+        densityField.setText(MassPresentation.formatDensity(density));
+        addView(densityField, EditorControlStyles.rowParams(gap));
+        final TextView recompute = EditorControlStyles.secondaryActionChip(context,
+                R.id.apply_density, context.getString(R.string.apply_density));
+        recompute.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    final double typed = LengthUnit.parse(densityField.text()).doubleValue();
+                    if (typed > 0.0 && !Double.isInfinite(typed)) {
+                        density = typed;
+                    }
+                } catch (NumberFormatException notANumber) {
+                    // the shown mass keeps the density it had
+                }
+                densityField.setText(MassPresentation.formatDensity(density));
+                refreshMeasure();
+            }
+        });
+        final LinearLayout.LayoutParams recomputeParams = EditorControlStyles.rowParams(smallGap);
+        recomputeParams.width = LayoutParams.MATCH_PARENT;
+        addView(recompute, recomputeParams);
+
         addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.unit_selector)),
                 EditorControlStyles.rowParams(sectionGap));
         unitChips = new UnitChipsView(context, new UnitChipsView.OnUnitSelected() {
@@ -184,11 +221,24 @@ final class CadFeatureEditorView extends LinearLayout
         return apply;
     }
 
+    /** The Measure section's text, from the active body's mesh. */
+    private void refreshMeasure() {
+        final double[] mass = new double[NativeViewport.MASS_SIZE];
+        final long body = NativeViewport.sceneActiveBodyId();
+        if (body <= 0L || !NativeViewport.bodyMassProperties(body, mass)) {
+            measureText.setText("");
+            return;
+        }
+        measureText.setText(MassPresentation.describe(getContext(), host.uiState().displayUnit(),
+                mass, density));
+    }
+
     /** Rewrites every field from the active CAD Body. A no-op for any other body. */
     void refreshFromNative() {
         if (!NativeViewport.cadState(nativeCad)) {
             return;
         }
+        refreshMeasure();
         final Context context = getContext();
         final LengthUnit unit = host.uiState().displayUnit();
         final int plane = (int) nativeCad[NativeViewport.CAD_PLANE];
