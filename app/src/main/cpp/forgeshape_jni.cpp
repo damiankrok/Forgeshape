@@ -9642,6 +9642,18 @@ Java_com_forgeshape_app_NativeViewport_debugSetCameraPose(JNIEnv*, jclass, jfloa
 #endif
 }
 
+// Debug: the orbit target back at the origin, out of any sketch view (the
+// pose and the projection kept). The tests' baseline reset; a release build
+// does nothing.
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_debugResetCameraTarget(JNIEnv*,
+                                                                                   jclass) {
+#ifndef NDEBUG
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    g_camera.resetTarget();
+    g_sketchPoseSaved = false;
+#endif
+}
+
 // The production session-initialization boundary.
 //
 // The Android shell answers the start question by driving the SAME entry points

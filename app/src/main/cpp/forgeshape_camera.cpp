@@ -125,6 +125,12 @@ void CameraController::resetCamera() {
     resetGesture();
 }
 
+void CameraController::resetTarget() {
+    sketchView_ = false;
+    target_ = Vec3{0.0f, 0.0f, 0.0f};
+    resetGesture();
+}
+
 CameraController::Pose CameraController::capturePose() const {
     Pose pose;
     pose.target = target_;

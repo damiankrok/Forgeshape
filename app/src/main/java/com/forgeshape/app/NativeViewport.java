@@ -1151,6 +1151,9 @@ final class NativeViewport {
      */
     static native boolean debugSetCameraPose(float yaw, float pitch, float distance);
 
+    /** Debug: the orbit target back at the origin, out of any sketch view. A test seam. */
+    static native void debugResetCameraTarget();
+
     // -----------------------------------------------------------------------
     // Project persistence
     // -----------------------------------------------------------------------

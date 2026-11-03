@@ -131,6 +131,10 @@ final class WorkspaceTestSupport {
                 // this, a case that orbited or dollied would silently change
                 // what the NEXT case can grab — an order dependency that reads
                 // as a flaky solver rather than as inherited state.
+                // The pose alone kept the TARGET an earlier case panned or
+                // framed to, so a stroke aimed at the viewport centre could
+                // miss a body standing at the origin.
+                NativeViewport.debugResetCameraTarget();
                 NativeViewport.debugSetCameraPose(BASELINE_CAMERA_YAW, BASELINE_CAMERA_PITCH,
                         BASELINE_CAMERA_DISTANCE);
                 NativeViewport.setSculptTool(NativeViewport.TOOL_GRAB);

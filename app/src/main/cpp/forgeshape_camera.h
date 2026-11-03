@@ -205,6 +205,11 @@ public:
 
     // Restores the initial pose. Not wired to any gesture; used by self-tests.
     void resetCamera();
+    // The orbit target back at the world origin, out of any sketch view, with
+    // the pose, the projection and the counters kept. A debug test seam the
+    // baseline reset uses, so a case never inherits where an earlier one
+    // panned or framed the view.
+    void resetTarget();
 
     // Everything a sketch view has to put back when it ends: the pose, the
     // projection and the orthographic span. Plain data so the sketch owner can
