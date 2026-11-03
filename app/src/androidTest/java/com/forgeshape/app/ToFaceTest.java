@@ -176,9 +176,12 @@ public final class ToFaceTest {
         return body;
     }
 
-    /** Taps the block's top at (x, y) and takes Sketch here. */
+    /**
+     * Taps the block's top at (x, y) and takes Sketch here. Seen from nearly
+     * straight above, so a post standing on the top cannot hide the point.
+     */
     private void sketchOnTop(double x, double y) {
-        setCamera(0.7f, 0.9f, 8.0f);
+        setCamera(0.7f, 1.35f, 8.0f);
         realTap(worldToWindow(x, y, 1.0));
         assertTrue("the top face offers a sketch", shown(R.id.cad_canvas_sketch_on_face));
         press(R.id.cad_canvas_sketch_on_face);
