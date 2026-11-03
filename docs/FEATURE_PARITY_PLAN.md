@@ -34,7 +34,8 @@ Status: ✅ zrobione · 🔜 w realizacji · ⏳ zaplanowane
 | 2 | Krawędzie | Zaokrąglenie, Faza prostych krawędzi | ✅ |
 | 3 | Wygoda szkicu | Cofnij/Ponów w szkicu, nóż (Trim), przepychanie strzałki do Cut | ✅ |
 | 4 | Szyk i Lustro operacji | szyk liniowy (1–2 kierunki), kołowy, lustro operacji Add/Cut względem płaszczyzny bryły | ✅ |
-| 5 | **Otwór i „przez wszystko”** | Otwór (prosty, pogłębienie walcowe/stożkowe) z dotknięcia ściany; extent Through All / Do ściany | 🔜 |
+| 5 | Otwór | Otwór prosty, z pogłębieniem walcowym lub stożkowym, na głębokość albo przez wszystko, z dotknięcia ściany | ✅ |
+| 5b | **Wyciągnięcie „przez wszystko” i „do ściany”** | extent Through All / Do ściany dla Add i Cut; otwór z wymiarami od krawędzi | 🔜 |
 | 6 | Płaszczyzny konstrukcyjne | płaszczyzna odsunięta od płaszczyzny lub ściany, pod kątem, przez 3 punkty | ⏳ |
 | 7 | Skorupa i ściany | Skorupa, Wciśnij/wyciągnij ścianę, Odsuń ścianę, Usuń ścianę, Pochylenie | ⏳ |
 | 8 | Obrót i bryły | Obrót Add/Cut, bryły gotowe CAD (prostopadłościan, walec, sfera, stożek, torus, rura) | ⏳ |

@@ -872,6 +872,39 @@ on the host, with no device, and is the fast native loop.
   the base, a pattern along a sketch edge or a curve, a pattern of a pattern,
   per-instance suppression, an arbitrary mirror plane, and a body-to-body
   pattern.
+- **A Hole is a NAMED face, a point on it and its numbers** (`CAD-HOLE-R1`,
+  `forgeshape_cad_hole.{h,cpp}`). `CadBodyState::holes` is the authored
+  truth: per hole an id minted from `nextFeatureId` (the id space features,
+  finishes and patterns share), a kind (Simple, Counterbore, Countersink), the
+  face it is drilled into as a `CadFeatureSupport` (feature with a smaller
+  id, face token, lineage) resolved through `resolveCadFeatureSupportFrame`
+  — the ONE rule a later feature's sketch is placed by — the axis point in
+  that face's own frame, the diameter, Through All or a blind depth, and the
+  counterbore's or the cone's two values, in ONE canonical form per kind
+  (unused fields exactly 0, Through All stores no depth; refused, never
+  masked: `HoleInvalid`). The tool is DERIVED: a solid of revolution about
+  the face's inward normal at the circle density, starting a margin above the
+  face, one kernel `Difference`; Through All runs as far as the body reaches
+  below the face AT THAT POINT OF THE CHAIN, so a later Add is not pierced and
+  an upstream size edit lengthens the bore. Holes sit in the chain BY ID,
+  interleaved with patterns; a face that does not resolve is
+  `HoleSupportInvalid` (never retargeted), a face an earlier feature carved
+  away `SupportFaceLost`, a hole that removes nothing `HoleNoEffect`. Bore
+  triangles wear the hole's own INELIGIBLE face-table entry. **The offer is
+  presentation**: a Construction tap on an eligible face of an unlocked
+  Extrude CAD body offers Hole in the face bar beside Sketch here; taking it
+  captures the face in a session draft (`holeOfferBegin`, never a `.forge`
+  byte, a history step or the fingerprint) and opens `HoleEditorPanel` on
+  native's seeds — a 1/2/5 diameter a fifth of the part's thinnest extent,
+  Through All, the tapped point snapped to a quarter-diameter grid — drawing
+  only the rows its kind uses; Apply, an edit and a Delete are each ONE
+  `ScopedConstructionEdit`, and an edit keeps the face. The History lists
+  holes by id and reopens one in the editor. **`CADB` gains version 11**
+  (§7n), written ONLY when a body carries a hole; every v1..v10 project keeps
+  its bytes and its fingerprint. **Not this stage:** a threaded or tapered
+  hole, a drill-point bottom, a hole on a curved face, a hole positioned by
+  dimensions to edges, a pattern of a hole, an extrusion extent of Through All
+  or To Face, and a live preview while typing.
 - **A body's History is a VIEW of its feature chain, and an edit of an earlier
   step is STAGED** (`MODELING-FOUNDATIONS-R1` A). The History control in the
   history capsule is drawn exactly when the active body is a CAD or a Surface
@@ -1766,6 +1799,9 @@ coincident edges / making a closed solid of one),
   *Linear* / *Circular*), *Mirror* of a feature (one reflected copy of a
   feature across a plane of the part — never the body Mirror, which creates a
   new body),
+  *Hole* (a round hole drilled into a face where it was tapped; *Simple*,
+  *Counterbore*, *Countersink*), *Through All* (a hole as deep as the part
+  reaches below its face),
   *Fillet* / *Chamfer* (rounding a body's edge to an arc / cutting it back to
   a flat bevel; never "bevel" alone for the round), *Round edges* / *Bevel
   edges* (the same over every edge of a tapped face),

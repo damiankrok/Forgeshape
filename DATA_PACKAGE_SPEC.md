@@ -1460,6 +1460,68 @@ file rather than opening the part with its copies silently missing. No v10
 corpus fixture exists yet: the round trip and the refusals are host evidence
 (`PT_14_*` in the CAD-feature suite).
 
+## 7n. `CADB` v11 — Holes (`CAD-HOLE-R1`)
+
+Version 11 records one more fact of a BODY: its holes. v11 is v10's layout
+(§7m) with two changes, both at the END of every body record:
+
+1. the pattern list keeps its layout but a section in which no body carries a
+   pattern is no longer refused for that reason (in v10 it was a second
+   encoding of v9; in v11 the holes that follow are what made it v11);
+2. after the pattern list:
+
+```
+u32  holeCount                  0 .. 32 (a whole section in which no body carries
+                                a hole is a second encoding of v10:
+                                InvalidSemanticValue)
+repeat holeCount times, strictly ascending holeId:
+  u32  holeId                   != 0, below nextFeatureId, no feature's,
+                                finish's or pattern's id
+  u8   kindCode                 1 Simple, 2 Counterbore, 3 Countersink (else
+                                InvalidSemanticValue)
+  u32  supportFeatureId         the feature whose face the hole is drilled
+                                into; below holeId
+  FACE supportFace              the v6 face token (§7g: code 1..4 and, for a
+                                fragment, its two cuts)
+  u64  supportLineage           that feature's topology signature (§7c/§7f)
+  f64  u, v                     the axis point in the face's own frame,
+                                metres, |x| <= 1000
+  f64  diameter                 metres, 1e-4 .. 100
+  u8   throughAll               0 / 1 (else InvalidSemanticValue)
+  f64  depth                    blind: metres, 1e-5 .. 1000; Through All: 0
+  f64  boreDiameter, boreDepth  Counterbore: wider than the hole, and (blind)
+                                shallower than it; else 0
+  f64  sinkDiameter             Countersink: wider than the hole; else 0
+  f64  sinkAngleDegrees         Countersink: the included angle, 30 .. 150; its
+                                cone, (sink - diameter) / 2 / tan(angle / 2)
+                                deep, ends above a blind hole's bottom; else 0
+```
+
+A hole is NAMED, never stored as geometry: its tool is a solid of revolution
+about the face's inward normal through `(u, v)`, at the circle density (32
+steps), starting a margin above the face; a Through All tool runs as far as the
+body reaches below the face AT THAT POINT OF THE CHAIN, plus the margin, so a
+later Add is not pierced and an upstream size edit lengthens the bore. It is
+applied as one kernel Difference. Each kind has ONE canonical form — the fields
+it does not use hold exactly 0, and Through All stores no depth — so one hole
+has one encoding. Holes are applied in the chain BY ID, interleaved with
+patterns. Load refuses by name, through `validateCadBodyState`, values out of
+bounds or not canonical (`HoleInvalid`), a face that does not resolve — an
+unknown feature, a stale lineage, a token the feature lacks, a face no sketch
+may stand on, or a Revolve body (`HoleSupportInvalid`), and more than 32 holes
+(`TooManyHoles`); regeneration refuses a hole that removes nothing
+(`HoleNoEffect`) and a face an earlier feature carved away (`SupportFaceLost`).
+
+### When v11 is written, and what an older reader does
+
+v11 is written exactly when some body carries a hole; every other project keeps
+whichever of v1..v10 it already used, byte for byte, and its fingerprint (the
+hole block is mixed in only when present). A reader built before v11 meets a
+required `CADB` section at an unknown version and refuses the whole file rather
+than opening the part with its holes silently filled. No v11 corpus fixture
+exists yet: the round trip and the refusals are host evidence (`HO_12_*` in the
+CAD-feature suite).
+
 ## 7j. `FRFM` v1 — the Freeform bodies (`MODELING-FOUNDATIONS-R1` B)
 
 A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is
