@@ -962,7 +962,9 @@ finger offers **Hole**.
   placement. **From edges** places it instead by its distances from the two
   nearest edges of the face (highlighted on the model), starting from where
   it stands so nothing moves; a later change that moves those edges carries
-  the hole with them.
+  the hole with them (verified on the emulator, `ToFaceTest`'s hole case in
+  CI DEVICE `41712407765`: its two rows are seeded inside the face and Apply
+  keeps the hole placed from them).
 - A hole that would remove nothing is refused and the editor keeps your
   values. The **History** lists each hole; tapping it reopens the editor with
   **Delete**.
@@ -1006,7 +1008,7 @@ with it — and the plane stays derived from the face, so resizing the part
 moves it too. A sketch off a face makes an Add or a Cut (not a new body). The
 History lists its sketch as "Off a face by …".
 
-UNVERIFIED on the device yet — the emulator run is pending (`SketchPlaneTest`) is to show: on a block's top the plane
+Verified on the emulator (`SketchPlaneTest`, CI DEVICE `41712407765`): on a block's top the plane
 moves 0.5 m off the face, a Cut drawn there commits as one Undo step, and the
 History reports the sketch 0.5 m off the face.
 
@@ -1017,7 +1019,7 @@ surface area, overall size and centre of mass, read off the part as it is
 placed, and its mass at a density you type (water, 1000 kg/m³, to start). An
 open surface reports no volume. Nothing here is saved with the project.
 
-UNVERIFIED on the device yet — the emulator run is pending (`SketchPlaneTest`) is to show: a 2 × 2 × 1 m block measures
+Verified on the emulator (`SketchPlaneTest`, CI DEVICE `41712407765`): a 2 × 2 × 1 m block measures
 4 m³, 16 m², centre of mass 0.5 m up and 2 m across.
 
 ## Where the face's actions and editors stand
