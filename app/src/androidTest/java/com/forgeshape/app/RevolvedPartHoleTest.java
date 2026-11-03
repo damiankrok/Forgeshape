@@ -40,6 +40,16 @@ public final class RevolvedPartHoleTest {
 
     @Before
     public void startFromABox() {
+        // A FRESH project: the baseline body may carry a sculpt mesh an earlier
+        // class left (the reset cannot un-freeze one), and a sculpted body has
+        // no CAD part by design.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.sketchCancel();
+            NativeViewport.supportChooserCancel();
+            NativeViewport.enterConstructionMode();
+            NativeViewport.closeProject();
+            return null;
+        });
         resetToBaselineConstruction(rule.getScenario());
     }
 

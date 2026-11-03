@@ -12,6 +12,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import android.os.SystemClock;
 import android.view.MotionEvent;
 
 import androidx.test.ext.junit.rules.ActivityScenarioRule;
@@ -390,6 +391,19 @@ public final class JniBoundaryHardeningTest {
                 });
             }
         } finally {
+            // Both readers must have READ while the mutations ran, not merely
+            // been started: on a loaded emulator a thread can still be waiting
+            // for its first slice when the last batch ends. Bounded, so a
+            // reader that never runs still fails below rather than hanging.
+            final long deadline = SystemClock.uptimeMillis() + JOIN_TIMEOUT_MS;
+            while ((first.reads.get() == 0 || second.reads.get() == 0)
+                    && first.failure == null && second.failure == null
+                    && SystemClock.uptimeMillis() < deadline) {
+                doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+                    NativeViewport.setSculptBrush(40.0, 0.5);
+                    return null;
+                });
+            }
             first.stop.set(true);
             second.stop.set(true);
         }
