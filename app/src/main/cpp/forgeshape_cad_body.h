@@ -527,6 +527,81 @@ struct CadFeature {
 
 bool sameCadFeature(const CadFeature& a, const CadFeature& b);
 
+// ---------------------------------------------------------------------------
+// Edge finishes: Chamfer and Fillet (`CAD-EDGE-FINISH-R1`)
+// ---------------------------------------------------------------------------
+//
+// A Chamfer cuts a straight convex edge back to a flat bevel; a Fillet rounds
+// it to a circular arc tangent to both faces. Both REMOVE material from the
+// SAME body, so each is applied as one kernel Difference with a derived tool
+// along the edge -- never a stored mesh, never a triangle-index identity.
+//
+// The edge is named SEMANTICALLY: the feature whose OWN extrusion produced it
+// and the two planar faces of that extrusion that meet along it, by their face
+// tokens (`CadEdgeRef`). The edge's line, its two faces' frames and the dihedral
+// angle are derived from that feature's prism in binary64 on every
+// regeneration, so a size edit upstream carries a finish along while a
+// structural edit that removes either face refuses by name -- never retargeted
+// to the nearest edge.
+//
+// R1 rules (refused by name otherwise): the edge is STRAIGHT, between two FLAT
+// faces of an Extrude feature that ADDS material (the base New Body or a later
+// Add), CONVEX in that feature's prism, with an interior angle of at least
+// `kMinEdgeFinishAngleDegrees`; the distance is finite and in range and the
+// tangent setback fits inside both faces. Finishes are applied in order AFTER
+// every extrusion of the chain, so a later Add or Cut that removes a finished
+// edge refuses by the finish's name rather than silently dropping it.
+
+enum class CadEdgeFinishKind : uint8_t {
+    Chamfer,
+    Fillet,
+};
+
+constexpr int kCadEdgeFinishKindCount = 2;
+
+const char* cadEdgeFinishKindName(CadEdgeFinishKind kind);
+bool cadEdgeFinishKindFromIndex(int index, CadEdgeFinishKind* out);
+int cadEdgeFinishKindIndex(CadEdgeFinishKind kind);
+
+// One straight edge of one feature's own extrusion: the two faces meeting along
+// it, in CANONICAL order (`cadEdgeRefCanonical`), so one edge has one encoding.
+struct CadEdgeRef {
+    uint32_t featureId = kCadFeatureId;
+    CadFaceToken faceA{};
+    CadFaceToken faceB{};
+};
+
+bool sameCadEdgeRef(const CadEdgeRef& a, const CadEdgeRef& b);
+// Whether faceA sorts strictly before faceB in the token order the codec and
+// the canonical form use (kind, entity, local index, then the fragment cuts).
+bool cadEdgeRefCanonical(const CadEdgeRef& edge);
+// The same edge with its faces in canonical order.
+CadEdgeRef canonicalCadEdgeRef(CadEdgeRef edge);
+
+// The bounds of one finish. The distance is the Chamfer's setback along each
+// face, or the Fillet's radius, in metres.
+constexpr double kMinEdgeFinishDistance = 1.0e-5;
+constexpr double kMaxEdgeFinishDistance = 100.0;
+// Sharper edges are refused: the tool would be a sliver the kernel cannot
+// resolve and no phone part needs one.
+constexpr double kMinEdgeFinishAngleDegrees = 15.0;
+// How many edges one finish names (a whole face's loop is one finish), and how
+// many finishes one body carries.
+constexpr uint32_t kMaxEdgesPerFinish = 32;
+constexpr uint32_t kMaxCadEdgeFinishes = 16;
+
+struct CadEdgeFinish {
+    // Minted from `CadBodyState::nextFeatureId` like a feature's, so a finish
+    // and a feature never share an id and a failure can name either.
+    uint32_t finishId = 0;
+    CadEdgeFinishKind kind = CadEdgeFinishKind::Fillet;
+    double distance = 0.001;
+    // 1..kMaxEdgesPerFinish distinct edges, in the order they are applied.
+    std::vector<CadEdgeRef> edges;
+};
+
+bool sameCadEdgeFinish(const CadEdgeFinish& a, const CadEdgeFinish& b);
+
 // The whole authored truth of one CAD Body. Plain, copyable, comparable,
 // BOUNDED (the sketch caps its entities and every polyline's vertices, the
 // table caps its sketches and the chain caps its features), and carrying
@@ -564,6 +639,10 @@ struct CadBodyState {
     // (the audit's id-reuse finding; lifetime: see `CadSketchId`). Derived as
     // `last + 1` for v1..v5.
     uint32_t nextFeatureId = kCadFeatureId + 1u;
+    // Chamfers and Fillets (`CAD-EDGE-FINISH-R1`), applied in order after
+    // every extrusion. Empty for every body any earlier version created; a body
+    // with one is written `CADB` v9 alone.
+    std::vector<CadEdgeFinish> edgeFinishes;
 };
 
 // The record with `sketchId`, or null.
@@ -633,6 +712,20 @@ bool cadBodyStateUsesDrafting(const CadBodyState& state);
 // Whether any feature is a Revolve (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`). Such a
 // state round-trips only through `CADB` v7, and is never legacy-representable.
 bool cadBodyStateUsesRevolve(const CadBodyState& state);
+
+// Whether the body carries a Chamfer or a Fillet. Such a state round-trips
+// only through `CADB` v9, and is never legacy-representable.
+bool cadBodyStateUsesEdgeFinishes(const CadBodyState& state);
+
+// Appends a finish of `kind` and `distance` over `edges`, minting its id from
+// `nextFeatureId`. Returns the id, or 0 with nothing added when the body holds
+// kMaxCadEdgeFinishes already or the list is empty or too long. Validates
+// nothing else: `validateCadBodyState` and the regeneration are the judges.
+uint32_t appendCadEdgeFinish(CadBodyState* state, CadEdgeFinishKind kind, double distance,
+                             std::vector<CadEdgeRef> edges);
+
+// The finish with `finishId`, or null.
+const CadEdgeFinish* findCadEdgeFinish(const CadBodyState& state, uint32_t finishId);
 
 // The number of features in the chain, the base included.
 inline uint32_t cadFeatureCount(const CadBodyState& state) {

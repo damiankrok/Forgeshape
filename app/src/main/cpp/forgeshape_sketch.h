@@ -331,6 +331,28 @@ enum class CadStatus : uint8_t {
     // The act would remove or detach the body's ROOT sketch -- the one the base
     // feature extrudes, which says where the body is.
     SketchIsRoot,
+    // --- `CAD-EDGE-FINISH-R1`: Chamfer and Fillet. APPENDED. ---
+    //
+    // The named edge is not an edge of the named feature's own extrusion (a
+    // face token that does not resolve, two faces that do not meet, a feature
+    // the chain lacks). Never retargeted to the nearest edge.
+    EdgeNotFound,
+    // The edge exists but cannot be finished: curved, between a curved and a
+    // flat face, concave, or sharper than kMinEdgeFinishAngleDegrees.
+    EdgeNotEligible,
+    // The feature that produced the edge removes material (a Cut) or sweeps it
+    // (a Revolve): R1 finishes edges of New Body and Add extrusions only.
+    EdgeFinishTargetUnsupported,
+    // The distance is not finite, not positive, or outside the finish bounds;
+    // an empty, oversized or duplicated edge list; an unknown kind.
+    EdgeFinishInvalid,
+    // The setback does not fit inside one of the two faces.
+    EdgeFinishTooLarge,
+    // The finish removed nothing from the body: the edge is no longer there
+    // (an earlier feature consumed it).
+    EdgeFinishNoEffect,
+    // The body already carries kMaxCadEdgeFinishes finishes.
+    TooManyEdgeFinishes,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts

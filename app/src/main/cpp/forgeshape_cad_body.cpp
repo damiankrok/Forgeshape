@@ -6,6 +6,7 @@
 #include <cstring>
 #include <numeric>
 
+#include "forgeshape_cad_edge_finish.h"
 #include "forgeshape_cad_feature.h"
 #include "forgeshape_cad_kernel.h"
 
@@ -447,6 +448,120 @@ bool sameCadFeature(const CadFeature& a, const CadFeature& b) {
 }
 
 // ---------------------------------------------------------------------------
+// Edge finishes (`CAD-EDGE-FINISH-R1`)
+// ---------------------------------------------------------------------------
+
+const char* cadEdgeFinishKindName(CadEdgeFinishKind kind) {
+    switch (kind) {
+        case CadEdgeFinishKind::Chamfer: return "Chamfer";
+        case CadEdgeFinishKind::Fillet: return "Fillet";
+    }
+    return "unknown";
+}
+
+bool cadEdgeFinishKindFromIndex(int index, CadEdgeFinishKind* out) {
+    if (out == nullptr) {
+        return false;
+    }
+    switch (index) {
+        case 0: *out = CadEdgeFinishKind::Chamfer; return true;
+        case 1: *out = CadEdgeFinishKind::Fillet; return true;
+        default: return false;
+    }
+}
+
+int cadEdgeFinishKindIndex(CadEdgeFinishKind kind) { return static_cast<int>(kind); }
+
+namespace {
+
+// A total order over face tokens: kind, entity, local index, then -- for a
+// fragment -- each cut's kind, partner and ordinal. Field-wise, never through
+// `cadFaceTokenCode`, whose fragment branch is a hash.
+int compareEdgeTokenCut(const ArrangementCut& a, const ArrangementCut& b) {
+    if (a.kind != b.kind) return a.kind < b.kind ? -1 : 1;
+    if (a.partnerEntityId != b.partnerEntityId) return a.partnerEntityId < b.partnerEntityId ? -1 : 1;
+    if (a.partnerEdgeLocalIndex != b.partnerEdgeLocalIndex) {
+        return a.partnerEdgeLocalIndex < b.partnerEdgeLocalIndex ? -1 : 1;
+    }
+    if (a.ordinal != b.ordinal) return a.ordinal < b.ordinal ? -1 : 1;
+    return 0;
+}
+
+int compareCadFaceToken(const CadFaceToken& a, const CadFaceToken& b) {
+    if (a.kind != b.kind) return a.kind < b.kind ? -1 : 1;
+    if (a.edgeEntityId != b.edgeEntityId) return a.edgeEntityId < b.edgeEntityId ? -1 : 1;
+    if (a.edgeLocalIndex != b.edgeLocalIndex) return a.edgeLocalIndex < b.edgeLocalIndex ? -1 : 1;
+    if (a.fragment != b.fragment) return a.fragment ? 1 : -1;
+    if (!a.fragment) return 0;
+    const int start = compareEdgeTokenCut(a.fragmentStart, b.fragmentStart);
+    if (start != 0) return start;
+    return compareEdgeTokenCut(a.fragmentEnd, b.fragmentEnd);
+}
+
+}  // namespace
+
+bool sameCadEdgeRef(const CadEdgeRef& a, const CadEdgeRef& b) {
+    return a.featureId == b.featureId && sameCadFaceToken(a.faceA, b.faceA)
+           && sameCadFaceToken(a.faceB, b.faceB);
+}
+
+bool cadEdgeRefCanonical(const CadEdgeRef& edge) {
+    return compareCadFaceToken(edge.faceA, edge.faceB) < 0;
+}
+
+CadEdgeRef canonicalCadEdgeRef(CadEdgeRef edge) {
+    if (compareCadFaceToken(edge.faceA, edge.faceB) > 0) {
+        std::swap(edge.faceA, edge.faceB);
+    }
+    return edge;
+}
+
+bool sameCadEdgeFinish(const CadEdgeFinish& a, const CadEdgeFinish& b) {
+    if (a.finishId != b.finishId || a.kind != b.kind || a.distance != b.distance
+        || a.edges.size() != b.edges.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.edges.size(); ++i) {
+        if (!sameCadEdgeRef(a.edges[i], b.edges[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool cadBodyStateUsesEdgeFinishes(const CadBodyState& state) {
+    return !state.edgeFinishes.empty();
+}
+
+uint32_t appendCadEdgeFinish(CadBodyState* state, CadEdgeFinishKind kind, double distance,
+                             std::vector<CadEdgeRef> edges) {
+    if (state == nullptr || state->edgeFinishes.size() >= kMaxCadEdgeFinishes || edges.empty()
+        || edges.size() > kMaxEdgesPerFinish || state->nextFeatureId == 0xFFFFFFFFu) {
+        return 0;
+    }
+    CadEdgeFinish finish;
+    finish.finishId = state->nextFeatureId;
+    finish.kind = kind;
+    finish.distance = distance;
+    for (CadEdgeRef& edge : edges) {
+        edge = canonicalCadEdgeRef(edge);
+    }
+    finish.edges = std::move(edges);
+    state->edgeFinishes.push_back(std::move(finish));
+    state->nextFeatureId += 1u;
+    return state->edgeFinishes.back().finishId;
+}
+
+const CadEdgeFinish* findCadEdgeFinish(const CadBodyState& state, uint32_t finishId) {
+    for (const CadEdgeFinish& finish : state.edgeFinishes) {
+        if (finish.finishId == finishId) {
+            return &finish;
+        }
+    }
+    return nullptr;
+}
+
+// ---------------------------------------------------------------------------
 // The retained sketch table (`CAD-V6-S1`)
 // ---------------------------------------------------------------------------
 
@@ -606,6 +721,10 @@ bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
     if (state.baseKind != CadFeatureKind::Extrude) {
         return false;
     }
+    // A Chamfer or a Fillet has no encoding below v9 (`CAD-EDGE-FINISH-R1`).
+    if (cadBodyStateUsesEdgeFinishes(state)) {
+        return false;
+    }
     // A Construction role or a sketch dimension has no encoding below v8
     // (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`).
     if (cadBodyStateUsesDrafting(state)) {
@@ -729,8 +848,14 @@ bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b) {
         || a.baseSketchId != b.baseSketchId || a.nextFeatureId != b.nextFeatureId
         || a.baseKind != b.baseKind || !sameExtrudeFeature(a.extrude, b.extrude)
         || !sameRevolveFeature(a.revolve, b.revolve)
-        || a.laterFeatures.size() != b.laterFeatures.size()) {
+        || a.laterFeatures.size() != b.laterFeatures.size()
+        || a.edgeFinishes.size() != b.edgeFinishes.size()) {
         return false;
+    }
+    for (size_t i = 0; i < a.edgeFinishes.size(); ++i) {
+        if (!sameCadEdgeFinish(a.edgeFinishes[i], b.edgeFinishes[i])) {
+            return false;
+        }
     }
     for (size_t i = 0; i < a.sketches.size(); ++i) {
         if (!sameCadSketchRecord(a.sketches[i], b.sketches[i])) {
@@ -1196,6 +1321,10 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
         if (!state.laterFeatures.empty()) {
             return CadStatus::RevolveLaterFeatureUnsupported;
         }
+        // A revolved face is never flat enough to finish in R1.
+        if (!state.edgeFinishes.empty()) {
+            return CadStatus::EdgeFinishTargetUnsupported;
+        }
         const CadStatus revolveWhy =
                 validateRevolveFeatureGeometry(cadBaseSketch(state), state.revolve, &baseRegions);
         if (revolveWhy != CadStatus::Ok) {
@@ -1230,6 +1359,13 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
         if (chainWhy != CadStatus::Ok) {
             return chainWhy;
         }
+    }
+    // Chamfers and Fillets (`CAD-EDGE-FINISH-R1`): every edge resolves
+    // exactly and eligible, and every setback fits -- judged without the
+    // kernel, so a file or a candidate is refused by name before it regenerates.
+    const CadStatus finishWhy = validateCadEdgeFinishes(state);
+    if (finishWhy != CadStatus::Ok) {
+        return finishWhy;
     }
     if (outProfiles != nullptr) {
         *outProfiles = std::move(baseRegions.loops);
@@ -1408,8 +1544,20 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
         }
     }
 
+    // Every finish's tool triangles carry one table entry of their own: never a
+    // support (a bevel or a round is not flat in R1's sense), named by the
+    // finish id so a pick or a failure can say which finish made it.
+    std::vector<uint32_t> finishTag;
+    for (const CadEdgeFinish& finish : state.edgeFinishes) {
+        finishTag.push_back(static_cast<uint32_t>(faces.size()));
+        CadFaceToken token;
+        token.kind = CadFaceKind::Side;
+        faces.push_back(CadMeshFace{finish.finishId, token, false});
+    }
+    const bool finished = !state.edgeFinishes.empty();
+
     // Every body any earlier version created: R0's path, bit for bit.
-    if (chain.size() == 1u && base.kind == CadFeatureKind::Extrude
+    if (!finished && chain.size() == 1u && base.kind == CadFeatureKind::Extrude
         && extrudeSelectsSingleSimpleProfile(base.extrude)) {
         const SketchRegion& region = base.regions.regions[base.chosen.front()];
         const ClosedProfile& profile = base.regions.loops.profiles[region.outerLoop];
@@ -1459,7 +1607,7 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
         components = measure.components;
         volume = measure.volume;
     }
-    if (chain.size() > 1u) {
+    if (chain.size() > 1u || finished) {
         const auto t0 = std::chrono::steady_clock::now();
         CadSolidMeasure measure;
         if (cadKernelValidateSolid(body, &measure) != CadKernelStatus::Ok) {
@@ -1521,6 +1669,47 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
             body = std::move(result);
             components = resultMeasure.components;
             volume = resultMeasure.volume;
+        }
+        // Chamfers and Fillets, in order, after every extrusion: one kernel
+        // Difference per edge with a tool derived from the edge alone.
+        for (size_t f = 0; f < state.edgeFinishes.size(); ++f) {
+            const CadEdgeFinish& edgeFinish = state.edgeFinishes[f];
+            for (const CadEdgeRef& ref : edgeFinish.edges) {
+                CadFeatureEdge edge;
+                why = resolveCadFinishEdge(state, ref, &edge);
+                if (why != CadStatus::Ok) {
+                    return finish(why, edgeFinish.finishId);
+                }
+                CadSolid tool;
+                why = buildCadEdgeFinishTool(edge, edgeFinish.kind, edgeFinish.distance, body,
+                                             finishTag[f], &tool);
+                if (why != CadStatus::Ok) {
+                    return finish(why, edgeFinish.finishId);
+                }
+                CadSolidMeasure toolMeasure;
+                if (cadKernelValidateSolid(tool, &toolMeasure) != CadKernelStatus::Ok) {
+                    return finish(CadStatus::KernelFailed, edgeFinish.finishId);
+                }
+                CadSolid result;
+                if (cadKernelBoolean(body, tool, CadBooleanOp::Difference, &result)
+                    != CadKernelStatus::Ok) {
+                    return finish(CadStatus::KernelFailed, edgeFinish.finishId);
+                }
+                CadSolidMeasure resultMeasure;
+                if (cadKernelMeasure(result, &resultMeasure) != CadKernelStatus::Ok) {
+                    return finish(CadStatus::KernelFailed, edgeFinish.finishId);
+                }
+                if (result.empty()) {
+                    return finish(CadStatus::CutRemovesBody, edgeFinish.finishId);
+                }
+                if (volume - resultMeasure.volume
+                    <= kCadOperationEffectFraction * toolMeasure.volume) {
+                    return finish(CadStatus::EdgeFinishNoEffect, edgeFinish.finishId);
+                }
+                body = std::move(result);
+                components = resultMeasure.components;
+                volume = resultMeasure.volume;
+            }
         }
         local.kernelMicros = std::chrono::duration<double, std::micro>(
                                      std::chrono::steady_clock::now() - t0)

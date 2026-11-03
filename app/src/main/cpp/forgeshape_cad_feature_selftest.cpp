@@ -21,6 +21,7 @@
 #include "forgeshape_cad_kernel.h"
 #include "forgeshape_cad_multiface_selftest.h"
 #include "forgeshape_owner_shell_selftest.h"
+#include "forgeshape_cad_edge_finish_selftest.h"
 #include "forgeshape_cad_revolve_selftest.h"
 #include "forgeshape_cad_timeline_selftest.h"
 #include "forgeshape_sketch_drafting_selftest.h"
@@ -5826,6 +5827,15 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + multifacePerformance;
+    // Chamfer and Fillet (`CAD-EDGE-FINISH-R1`): the edges, the tools, the
+    // exact removed volumes, the refusals and `CADB` v9, beside the chain.
+    std::vector<ArrangementSelfTestCheck> edgeFinish;
+    std::string edgeFinishPerformance;
+    runCadEdgeFinishSelfTests(&edgeFinish, &edgeFinishPerformance);
+    for (const ArrangementSelfTestCheck& check : edgeFinish) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + edgeFinishPerformance;
     // Revolve New Body (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): the feature kind, the
     // solid, the session and `CADB` v7, beside the chain they extend.
     std::vector<ArrangementSelfTestCheck> revolve;

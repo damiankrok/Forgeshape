@@ -112,6 +112,13 @@ const char* cadStatusName(CadStatus status) {
         case CadStatus::MirrorNothingSelected: return "MirrorNothingSelected";
         case CadStatus::SketchInUse: return "SketchInUse";
         case CadStatus::SketchIsRoot: return "SketchIsRoot";
+        case CadStatus::EdgeNotFound: return "EdgeNotFound";
+        case CadStatus::EdgeNotEligible: return "EdgeNotEligible";
+        case CadStatus::EdgeFinishTargetUnsupported: return "EdgeFinishTargetUnsupported";
+        case CadStatus::EdgeFinishInvalid: return "EdgeFinishInvalid";
+        case CadStatus::EdgeFinishTooLarge: return "EdgeFinishTooLarge";
+        case CadStatus::EdgeFinishNoEffect: return "EdgeFinishNoEffect";
+        case CadStatus::TooManyEdgeFinishes: return "TooManyEdgeFinishes";
     }
     return "unknown";
 }
