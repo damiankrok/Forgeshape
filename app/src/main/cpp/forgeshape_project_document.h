@@ -218,6 +218,10 @@ constexpr uint16_t kCadSectionVersionV7 = 7;
 // section at an unknown version rather than extruding a construction line or
 // dropping a driving dimension.
 constexpr uint16_t kCadSectionVersionV8 = 8;
+// v9 (`CAD-EDGE-FINISH-R1`, DATA_PACKAGE_SPEC.md §7l): the v8 layout with each
+// body's Chamfer / Fillet list after its features. Written ONLY when a body
+// carries one, so every v1..v8 project keeps its bytes.
+constexpr uint16_t kCadSectionVersionV9 = 9;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.

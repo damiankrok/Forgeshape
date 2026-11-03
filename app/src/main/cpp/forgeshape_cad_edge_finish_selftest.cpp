@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -10,6 +11,8 @@
 #include "forgeshape_cad_edge_finish.h"
 #include "forgeshape_cad_face.h"
 #include "forgeshape_cad_feature.h"
+#include "forgeshape_project_bytes.h"
+#include "forgeshape_project_document.h"
 #include "forgeshape_sketch.h"
 
 namespace forgeshape {
@@ -128,6 +131,38 @@ CadStatus finishWith(CadBodyState* state, CadEdgeFinishKind kind, double distanc
         return valid;
     }
     return regenerateCadBody(*state, &mesh, &report);
+}
+
+ProjectDocument documentFor(const CadBodyState& state) {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 2;
+    document.scene.activeObjectId = 1;
+    ProjectBodyPlacement placement;
+    placement.objectId = 1;
+    document.scene.bodies.push_back(placement);
+    document.hasCad = true;
+    ProjectCadBody body;
+    body.objectId = 1;
+    body.state = state;
+    document.cad.bodies.push_back(std::move(body));
+    return document;
+}
+
+// Where the CADB payload starts, its version and its length.
+size_t cadPayloadAt(const std::vector<uint8_t>& bytes, uint16_t* version, uint64_t* length) {
+    size_t offset = kForgeHeaderBytes;
+    while (offset + kForgeSectionHeaderBytes <= bytes.size()) {
+        uint64_t payloadBytes = 0;
+        std::memcpy(&payloadBytes, &bytes[offset + 8], 8);
+        if (std::memcmp(&bytes[offset], kSectionTagCad, 4) == 0) {
+            *version = static_cast<uint16_t>(bytes[offset + 4] | (bytes[offset + 5] << 8));
+            *length = payloadBytes;
+            return offset + kForgeSectionHeaderBytes;
+        }
+        offset += kForgeSectionHeaderBytes + static_cast<size_t>(payloadBytes);
+    }
+    return 0;
 }
 
 }  // namespace
@@ -377,6 +412,53 @@ void runCadEdgeFinishSelfTests(std::vector<ArrangementSelfTestCheck>* out,
         r.check("EF_09_point_containment_reads_inside_and_outside",
                 cadSolidContainsPoint(body, DVec3{0.1, 0.2, 0.3})
                         && !cadSolidContainsPoint(body, DVec3{3.0, 0.0, 0.5}));
+    }
+
+    // EF_11: `CADB` v9 -- written only for a finished body, round-tripped
+    // exactly, and an unknown finish kind refused by name.
+    {
+        CadBodyState plain = blockState();
+        CadBodyState state = plain;
+        CadFeatureEdge edge;
+        edgeNear(state, kCadFeatureId, topFront, &edge);
+        appendCadEdgeFinish(&state, CadEdgeFinishKind::Fillet, 0.125, {edge.ref});
+        ProjectCodecStatus why = ProjectCodecStatus::Ok;
+        const std::vector<uint8_t> bytes = encodeProjectV1(documentFor(state), &why);
+        const std::vector<uint8_t> plainBytes = encodeProjectV1(documentFor(plain), &why);
+        uint16_t version = 0, plainVersion = 0;
+        uint64_t length = 0, plainLength = 0;
+        const size_t base = cadPayloadAt(bytes, &version, &length);
+        cadPayloadAt(plainBytes, &plainVersion, &plainLength);
+        r.check("EF_11_a_finished_body_is_written_cadb_v9",
+                base != 0 && version == kCadSectionVersionV9);
+        r.check("EF_11_a_body_without_finishes_keeps_its_version", plainVersion < kCadSectionVersionV6);
+        ProjectDocument decoded;
+        const ProjectCodecStatus decodedWhy = decodeProject(bytes.data(), bytes.size(), &decoded);
+        r.check("EF_11_v9_round_trips_the_finish_exactly",
+                decodedWhy == ProjectCodecStatus::Ok && decoded.cad.bodies.size() == 1u
+                        && sameCadBodyState(decoded.cad.bodies[0].state, state));
+        // The kind byte: the payload's tail is finish id, kind, distance, edge
+        // count, then one edge of a feature id and two 9-byte tokens.
+        std::vector<uint8_t> bad = bytes;
+        bool refused = false;
+        if (base != 0 && length > 35u) {
+            const size_t kindAt = base + static_cast<size_t>(length) - 22u - 4u - 8u - 1u;
+            bad[kindAt] = 9u;
+            const uint32_t crc = crc32IsoHdlc(&bad[base], static_cast<size_t>(length));
+            std::memcpy(&bad[base - kForgeSectionHeaderBytes + 16], &crc, 4);
+            ProjectDocument scratch;
+            refused = decodeProject(bad.data(), bad.size(), &scratch)
+                      == ProjectCodecStatus::InvalidSemanticValue;
+        }
+        r.check("EF_11_an_unknown_finish_kind_is_refused_by_name", refused);
+        // A stored edge that does not resolve is refused at load, never opened.
+        CadBodyState stale = state;
+        stale.edgeFinishes[0].edges[0].faceB.edgeLocalIndex = 77;
+        stale.edgeFinishes[0].edges[0] = canonicalCadEdgeRef(stale.edgeFinishes[0].edges[0]);
+        ProjectCodecStatus staleWhy = ProjectCodecStatus::Ok;
+        const std::vector<uint8_t> staleBytes = encodeProjectV1(documentFor(stale), &staleWhy);
+        r.check("EF_11_a_document_naming_a_missing_edge_is_not_encoded",
+                staleWhy != ProjectCodecStatus::Ok || staleBytes.empty());
     }
 
     // Bounded single-shot timing: a block's top loop filleted.

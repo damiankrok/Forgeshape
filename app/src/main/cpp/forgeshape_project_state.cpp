@@ -701,6 +701,36 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
             }
         }
     }
+    // `CAD-EDGE-FINISH-R1`: every Chamfer and Fillet -- id, kind, the exact
+    // distance bits and each edge's feature and two face tokens. Mixed only
+    // when the body has one, so every project without keeps its fingerprint.
+    if (cadBodyStateUsesEdgeFinishes(state)) {
+        mixU64(hash, 0x45464739ull);  // "EFG9"
+        mixU64(hash, state.edgeFinishes.size());
+        for (const CadEdgeFinish& finish : state.edgeFinishes) {
+            mixU64(hash, finish.finishId);
+            mixU64(hash, static_cast<uint64_t>(finish.kind));
+            uint64_t bits = 0;
+            std::memcpy(&bits, &finish.distance, sizeof bits);
+            mixU64(hash, bits);
+            mixU64(hash, finish.edges.size());
+            for (const CadEdgeRef& edge : finish.edges) {
+                mixU64(hash, edge.featureId);
+                for (const CadFaceToken* face : {&edge.faceA, &edge.faceB}) {
+                    mixU64(hash, cadFaceTokenCode(*face));
+                    mixU64(hash, face->fragment ? 1u : 0u);
+                    if (face->fragment) {
+                        for (const ArrangementCut* cut : {&face->fragmentStart, &face->fragmentEnd}) {
+                            mixU64(hash, static_cast<uint64_t>(cut->kind));
+                            mixU64(hash, cut->partnerEntityId);
+                            mixU64(hash, cut->partnerEdgeLocalIndex);
+                            mixU64(hash, cut->ordinal);
+                        }
+                    }
+                }
+            }
+        }
+    }
     // `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: a Revolve's whole authored truth -- its
     // selection, its axis ref, the exact angle bits and the direction. Mixed
     // only for a Revolve, so every Extrude project keeps the fingerprint it
