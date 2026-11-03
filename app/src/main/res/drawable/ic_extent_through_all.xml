@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Through All: the sketch plane on top, a block below it, and one arrow
      running from the plane right out of the block's far side. Its silhouette
-     -- an arrow that passes the second line -- separates it from One Side,
+     (an arrow that passes the second line) separates it from One Side,
      whose arrow stops in the open, in monochrome as well as in colour. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
