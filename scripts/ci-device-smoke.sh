@@ -209,9 +209,14 @@ cp "$ANDROID_AVD_HOME/$AVD.avd/config.ini" "$OUT/avd-config.ini"
 # 3. Boot headless on the explicit port. No window, no audio, no snapshot.
 # ---------------------------------------------------------------------------
 PHASE="boot"
+# The data partition is sized explicitly. The device profile's default asks
+# for ~7.2 GB of free disk at boot, which a hosted runner does not always have
+# ("Not enough space to create userdata partition"); 4 GB holds both APKs, the
+# app's files and the evidence many times over.
 EMULATOR_ARGS=(-avd "$AVD" -port "$PORT" -no-window -no-audio -no-boot-anim
                -no-snapshot -wipe-data -gpu "$GPU_MODE" -accel on
-               -camera-back none -camera-front none -memory 4096 -cores 4)
+               -camera-back none -camera-front none -memory 4096 -cores 4
+               -partition-size 4096)
 echo "$EMULATOR ${EMULATOR_ARGS[*]}" > "$OUT/emulator-command.txt"
 echo "Emulator command: $(cat "$OUT/emulator-command.txt")"
 "$EMULATOR" -accel-check > "$OUT/accel-check.txt" 2>&1 || true
