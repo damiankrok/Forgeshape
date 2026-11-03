@@ -1047,7 +1047,10 @@ square ones). The points and the line between them are drawn on the model; a
 third tap starts again. **Stop measuring**, or closing the panel, gives the
 taps back. Nothing here is saved with the project.
 
-UNVERIFIED on the emulator until `MeasureDistanceTest` runs green.
+Verified on the emulator (`MeasureDistanceTest`, CI DEVICE `41730759995`): two
+taps just inside two adjacent top corners of a 2 × 2 × 1 m block snap onto the
+corners and read exactly 2 m along one axis and 0° between the faces, the
+active part does not change, and Stop measuring gives the taps back.
 
 ## Keeping only what an extrusion passes through
 
@@ -1058,7 +1061,10 @@ commit keeps only the material the extrusion passes through — the rest of the
 part is removed — as one Undo step on the same part. An extrusion that misses
 the part, or one that holds all of it, is refused with the reason.
 
-UNVERIFIED on the emulator until `IntersectTest` runs green.
+Verified on the emulator (`IntersectTest`, CI DEVICE `41730759995`): a circle
+on a block's top offers Intersect, the precision surface lists it, the
+extrusion grows into the block, and the commit keeps only the disc under the
+circle, 0.5 m deep, as one Undo step on the same part.
 
 ## Building on a revolved part
 
@@ -1070,7 +1076,9 @@ drill a hole there. Its curved faces and the ends of a part turned through
 less than a full circle still offer nothing, and its round edges are not
 filleted.
 
-UNVERIFIED on the emulator until `RevolvedPartHoleTest` runs green.
+Verified on the emulator (`RevolvedPartHoleTest`, CI DEVICE `41730759995`): a
+cone made a CAD part offers Hole on its flat base, and Apply drills it as one
+Undo step.
 
 ## Turning a shape into a CAD part
 
@@ -1080,15 +1088,19 @@ visibility and lock, so holes, fillets, patterns and later features can be
 added to it. One Undo brings the shape back. A plane, or a shape that has
 been sculpted, has no CAD part and the button is not shown.
 
-UNVERIFIED on the emulator until `CadPrimitivePartTest` runs green.
+Verified on the emulator (`CadPrimitivePartTest`, CI DEVICE `41730759995`): a
+2 × 1 × 3 m box placed and turned becomes a CAD part of 6 m³ standing where it
+stood, as one Undo step, and Undo brings back the box by its own id; a
+sphere, a cone and a capsule convert to parts of their volume; a plane shows
+no button and is refused.
 
 ## Sums in number fields
 
 A number field also takes simple arithmetic — `40+2.5`, `120/3`, `(10-4)*2` —
 typed on a hardware keyboard or pasted; a plain number reads exactly as
 before. The phone's number keypad has no `*` or `/` key, so on-screen entry of
-a sum is not offered yet. UNVERIFIED until the JVM unit tests
-(`LengthUnitTest`) run green; on-device keyboard entry UNVERIFIED.
+a sum is not offered yet. Verified by the JVM unit tests (`LengthUnitTest`,
+CI FAST `41730755247`); on-device keyboard entry UNVERIFIED.
 
 ## Where the face's actions and editors stand
 
