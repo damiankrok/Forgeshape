@@ -62,6 +62,7 @@
 #include "forgeshape_cad_edge_finish.h"
 #include "forgeshape_cad_pattern.h"
 #include "forgeshape_cad_hole.h"
+#include "forgeshape_cad_from_primitive.h"
 #include "forgeshape_mass_properties.h"
 #include "forgeshape_cad_extrude_tool.h"
 #include "forgeshape_cad_feature.h"
@@ -3956,6 +3957,53 @@ Java_com_forgeshape_app_NativeViewport_sceneDuplicateBody(JNIEnv*, jclass, jlong
             (unsigned long long)report.newBodyId, (unsigned long long)report.sourceBodyId,
             (int)report.newIndex, (int)report.bodyCount, report.clonedSculptMesh ? 1 : 0);
     return kObjCmdOk;
+}
+
+// ---------------------------------------------------------------------------
+// A primitive becomes a CAD part (`CAD-PRIMITIVES-R1`)
+// ---------------------------------------------------------------------------
+
+// Replaces Construction body `objectId` by a CAD part of the same size and
+// placement as ONE Undo; the part becomes active. Refused (nothing changes)
+// while sculpting or sketching, and for a body with no CAD part. Returns the
+// CadStatus code.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneConvertToCadPart(JNIEnv*, jclass, jlong objectId) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::PrimitiveNotConvertible;
+    forgeshape::ObjectId part = forgeshape::kNoObject;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (!objectCommandsBlockedByMode()) {
+            status = forgeshape::convertPrimitiveToCadPart(
+                    forgeshape::constructionScene(), forgeshape::constructionHistory(),
+                    static_cast<forgeshape::ObjectId>(objectId), &part);
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            g_faceSketchOffer = forgeshape::ChosenSupport{};
+            g_edgeFinishOffer = EdgeFinishOffer{};
+        }
+    }
+    FS_LOGI("FORGESHAPE_SCENE_CAD_PART from=%lld part=%llu %s", (long long)objectId,
+            (unsigned long long)part, forgeshape::cadStatusName(status));
+    return static_cast<jint>(forgeshape::cadStatusCode(status));
+}
+
+// Whether the ACTIVE body is a Construction primitive with a CAD part, so the
+// shell draws "Make CAD part" only where it can succeed.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneActiveHasCadPart(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    if (!scene.hasProject() || objectCommandsBlockedByMode()) {
+        return JNI_FALSE;
+    }
+    const forgeshape::SceneObject* body = scene.findBody(scene.activeBodyId());
+    const forgeshape::ConstructionObject* construction =
+            body != nullptr ? body->constructionOrNull() : nullptr;
+    return construction != nullptr && !body->frozenSculpt().mesh.frozen()
+                           && forgeshape::primitiveHasCadPart(construction->spec())
+                   ? JNI_TRUE
+                   : JNI_FALSE;
 }
 
 // ---------------------------------------------------------------------------

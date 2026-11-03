@@ -411,11 +411,15 @@ enum class CadStatus : uint8_t {
     // offset or a tilt on a root sketch, a non-finite value, an offset past
     // the sketch bound or a tilt past `kMaxSketchPlaneAngleDegrees`.
     SketchPlaneInvalid,
+    // `CAD-PRIMITIVES-R1`. The body is not a Construction primitive with a CAD
+    // part (a Capsule, a Plane, another representation, a sculpted body), or
+    // an edit is in progress.
+    PrimitiveNotConvertible,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 120;
+constexpr int kCadStatusCount = 121;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);

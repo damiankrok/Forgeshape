@@ -1,5 +1,8 @@
 #include "forgeshape_cad_revolve_feature_selftest.h"
 
+#include "forgeshape_cad_from_primitive.h"
+#include "forgeshape_mass_properties.h"
+
 
 #include "forgeshape_cad_hole.h"
 
@@ -449,6 +452,89 @@ void runCadRevolveFeatureSelfTests(std::vector<ArrangementSelfTestCheck>* out,
         turned.laterFeatures[0].revolve.angleDegrees = 180.0;
         r.check("RV_03_the_fingerprint_reads_the_revolve",
                 fingerprintOf(state) != 0u && fingerprintOf(state) != fingerprintOf(turned));
+    }
+
+    // --- PR_01..03: a primitive becomes a CAD part (`CAD-PRIMITIVES-R1`) -----------
+    {
+        auto measure = [](const PrimitiveSpec& spec, MassProperties* m) {
+            CadBodyState state;
+            if (cadBodyStateFromPrimitive(spec, &state) != CadStatus::Ok) return false;
+            const Regen g = regen(state);
+            return g.why == CadStatus::Ok
+                   && computeMassProperties(g.mesh.mesh.vertices.data(),
+                                            static_cast<uint32_t>(g.mesh.mesh.vertices.size()),
+                                            g.mesh.mesh.indices.data(),
+                                            static_cast<uint32_t>(g.mesh.mesh.indices.size()),
+                                            mat4Identity(), m)
+                   && m->closed;
+        };
+        MassProperties box, cylinder, sphere, cone;
+        BoxDimensionsMeters b;
+        b.width = 2.0;
+        b.height = 1.0;
+        b.depth = 3.0;
+        const bool boxOk = measure(PrimitiveSpec::of(b), &box);
+        r.check("PR_01_a_box_part_is_the_box_exactly_where_it_stood",
+                boxOk && near(box.volume, 6.0, 1e-5) && near(box.boundsMin.x, -1.0, 1e-6)
+                        && near(box.boundsMax.y, 0.5, 1e-6) && near(box.boundsMin.z, -1.5, 1e-6)
+                        && near(box.centroid.y, 0.0, 1e-5));
+        CylinderDimensionsMeters c;
+        c.diameter = 1.0;
+        c.height = 2.0;
+        const bool cylOk = measure(PrimitiveSpec::of(c), &cylinder);
+        r.check("PR_01_a_cylinder_part_stands_on_the_y_axis",
+                cylOk && near(cylinder.volume, circleArea(0.5) * 2.0, 1e-5)
+                        && near(cylinder.boundsMax.y - cylinder.boundsMin.y, 2.0, 1e-6)
+                        && near(cylinder.boundsMax.x, 0.5, 1e-6));
+        SphereDimensionsMeters sd;
+        sd.diameter = 2.0;
+        ConeDimensionsMeters cd;
+        cd.bottomDiameter = 2.0;
+        cd.height = 3.0;
+        const bool sphOk = measure(PrimitiveSpec::of(sd), &sphere);
+        const bool coneOk = measure(PrimitiveSpec::of(cd), &cone);
+        r.check("PR_02_a_sphere_and_a_cone_are_revolved_parts_of_their_size",
+                sphOk && std::fabs(sphere.volume - 4.0 / 3.0 * kPi) < 0.03 * 4.0 / 3.0 * kPi
+                        && near(sphere.boundsMax.y, 1.0, 1e-5) && coneOk
+                        && std::fabs(cone.volume - kPi * 3.0 / 3.0) < 0.03 * kPi
+                        && near(cone.boundsMax.y, 1.5, 1e-5) && near(cone.boundsMin.y, -1.5, 1e-5));
+        CapsuleDimensionsMeters cap;
+        CadBodyState none;
+        r.check("PR_02_a_capsule_has_no_cad_part_yet",
+                cadBodyStateFromPrimitive(PrimitiveSpec::of(cap), &none)
+                        == CadStatus::PrimitiveNotConvertible
+                        && !primitiveHasCadPart(PrimitiveSpec::of(cap)));
+    }
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        SceneObject& primitive = scene.addBody();
+        const ObjectId primitiveId = primitive.objectId();
+        TransformValues placed;
+        placed.positionX = 1.0;
+        placed.positionY = 2.0;
+        placed.positionZ = 3.0;
+        placed.rotationY = 30.0;
+        primitive.transform().setValues(placed);
+        primitive.setName("Bracket");
+        publishSceneObject(primitive);
+        const size_t bodies = scene.bodyCount();
+        const size_t depth = history.undoDepth();
+        ObjectId partId = kNoObject;
+        const CadStatus converted = convertPrimitiveToCadPart(scene, history, primitiveId, &partId);
+        const SceneObject* part = scene.findBody(partId);
+        r.check("PR_03_the_act_replaces_the_primitive_with_a_part_as_one_step",
+                converted == CadStatus::Ok && part != nullptr && part->cadOrNull() != nullptr
+                        && scene.findBody(primitiveId) == nullptr && scene.bodyCount() == bodies
+                        && history.undoDepth() == depth + 1 && part->name() == "Bracket"
+                        && near(part->transform().values().positionX, 1.0)
+                        && near(part->transform().values().rotationY, 30.0)
+                        && scene.activeBodyId() == partId);
+        const bool undone = history.undo();
+        r.check("PR_03_one_undo_brings_the_same_primitive_back",
+                undone && scene.findBody(primitiveId) != nullptr
+                        && scene.findBody(primitiveId)->constructionOrNull() != nullptr
+                        && scene.findBody(partId) == nullptr);
     }
 
     // --- RV_04: the session ---------------------------------------------------------

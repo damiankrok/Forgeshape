@@ -2392,6 +2392,8 @@ final class NativeViewport {
     static final int CAD_HOLE_EDGES_PARALLEL = 118;
     /** `CAD-PLANE-R1`: a sketch plane off its face that cannot be. */
     static final int CAD_SKETCH_PLANE_INVALID = 119;
+    /** `CAD-PRIMITIVES-R1`: the body has no CAD part (or the act cannot run now). */
+    static final int CAD_PRIMITIVE_NOT_CONVERTIBLE = 120;
 
     // --- Chamfer and Fillet (`CAD-EDGE-FINISH-R1`) ------------------------
 
@@ -2597,6 +2599,15 @@ final class NativeViewport {
      * world bounding box, from the mesh it draws. A read; nothing moves.
      */
     static native boolean bodyMassProperties(long bodyId, double[] out);
+
+    /**
+     * `CAD-PRIMITIVES-R1`: replaces a Box, Cylinder, Sphere or Cone body by a CAD
+     * part of the same size and placement as ONE Undo. Returns a CAD status.
+     */
+    static native int sceneConvertToCadPart(long bodyId);
+
+    /** Whether the active body is a primitive with a CAD part, right now. */
+    static native boolean sceneActiveHasCadPart();
 
     /** {@link #cadHoleInfo} slots. */
     static final int HOLE_INFO_SIZE = 16;

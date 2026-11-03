@@ -65,6 +65,8 @@ final class ConstructionShapeEditorView extends LinearLayout
     /** Apply. Lives in the panel footer rather than in this stack; see
      *  {@link #commitControl()}. */
     private final TextView apply;
+    /** `CAD-PRIMITIVES-R1`: "Make CAD part", drawn only where native can. */
+    private final TextView makeCadPart;
 
     /** Reused across reads; native fills this with authoritative values. */
     private final double[] nativePrimitive = new double[NativeViewport.PRIMITIVE_STATE_SIZE];
@@ -128,6 +130,21 @@ final class ConstructionShapeEditorView extends LinearLayout
         });
         addView(unitChips, EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
+        // A Box, a Cylinder, a Sphere or a Cone becomes a CAD part of the same
+        // size and placement -- then holes, fillets and later features apply.
+        makeCadPart = EditorControlStyles.secondaryActionChip(context, R.id.make_cad_part,
+                context.getString(R.string.make_cad_part));
+        makeCadPart.setContentDescription(context.getString(R.string.make_cad_part_description));
+        makeCadPart.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onMakeCadPart();
+            }
+        });
+        final LinearLayout.LayoutParams makeParams = EditorControlStyles.rowParams(sectionGap);
+        makeParams.width = LayoutParams.MATCH_PARENT;
+        addView(makeCadPart, makeParams);
 
         // Apply is NOT added to this stack: it is handed to the panel, which
         // pins it below the scrolling body. See commitControl(), and the same
@@ -292,10 +309,23 @@ final class ConstructionShapeEditorView extends LinearLayout
      * defaulted here. It also resets the draft kind to what the object actually
      * is, so the chooser can never be left claiming a shape the object is not.
      */
+    private void onMakeCadPart() {
+        final long body = NativeViewport.sceneActiveBodyId();
+        final int status = NativeViewport.sceneConvertToCadPart(body);
+        if (status != NativeViewport.CAD_OK) {
+            host.showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            return;
+        }
+        host.onNativeStateChanged();
+        host.showStatus(getContext().getString(R.string.status_made_cad_part), R.attr.fsTextSecondary);
+        host.finishEditing();
+    }
+
     void refreshFromNative() {
         // The Objects list is refreshed by the workspace, which owns it: this
         // panel is one of three places it can be parented and must not be the
         // only one that keeps it current.
+        makeCadPart.setVisibility(NativeViewport.sceneActiveHasCadPart() ? VISIBLE : GONE);
         NativeViewport.constructionPrimitive(nativePrimitive);
         final LengthUnit unit = host.uiState().displayUnit();
         host.uiState().setDraftPrimitiveKind((int) nativePrimitive[0]);
