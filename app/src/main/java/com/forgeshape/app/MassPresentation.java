@@ -60,10 +60,15 @@ final class MassPresentation {
         if (count < 2) {
             return context.getString(R.string.measure_distance_points, count);
         }
-        return context.getString(R.string.measure_distance_result,
+        final String distance = context.getString(R.string.measure_distance_result,
                 unit.formatWithUnit(measure[NativeViewport.MEASURE_DISTANCE]),
                 unit.formatWithUnit(measure[NativeViewport.MEASURE_DX]),
                 unit.formatWithUnit(measure[NativeViewport.MEASURE_DX + 1]),
                 unit.formatWithUnit(measure[NativeViewport.MEASURE_DX + 2]));
+        if (measure[NativeViewport.MEASURE_HAS_ANGLE] == 0.0) {
+            return distance;
+        }
+        return distance + "\n" + context.getString(R.string.measure_angle_result,
+                CadRevolvePresentation.formatDegrees(measure[NativeViewport.MEASURE_ANGLE]));
     }
 }

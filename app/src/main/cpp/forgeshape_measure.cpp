@@ -1,24 +1,28 @@
 #include "forgeshape_measure.h"
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 
 namespace forgeshape {
 
-void measureRecordPoint(MeasureState* state, const Vec3& point, bool snapped) {
+void measureRecordPoint(MeasureState* state, const Vec3& point, bool snapped, const Vec3& normal) {
     if (state == nullptr) {
         return;
     }
     if (state->count == 1) {
         state->b = point;
         state->snappedB = snapped;
+        state->normalB = normal;
         state->count = 2;
         return;
     }
     state->a = point;
     state->snappedA = snapped;
+    state->normalA = normal;
     state->b = Vec3{0.0f, 0.0f, 0.0f};
     state->snappedB = false;
+    state->normalB = Vec3{0.0f, 0.0f, 0.0f};
     state->count = 1;
 }
 
@@ -32,6 +36,14 @@ MeasureResult measureResult(const MeasureState& state) {
     result.dz = static_cast<double>(state.b.z) - static_cast<double>(state.a.z);
     result.distance = std::sqrt(result.dx * result.dx + result.dy * result.dy + result.dz * result.dz);
     result.complete = std::isfinite(result.distance);
+    const double la = std::sqrt(static_cast<double>(vec3Dot(state.normalA, state.normalA)));
+    const double lb = std::sqrt(static_cast<double>(vec3Dot(state.normalB, state.normalB)));
+    if (la > 1.0e-6 && lb > 1.0e-6) {
+        double c = static_cast<double>(vec3Dot(state.normalA, state.normalB)) / (la * lb);
+        c = std::max(-1.0, std::min(1.0, c));
+        result.angleDegrees = std::acos(c) * 180.0 / 3.14159265358979323846;
+        result.hasAngle = std::isfinite(result.angleDegrees);
+    }
     return result;
 }
 
@@ -70,6 +82,29 @@ Vec3 measureSnapPoint(const CameraSnapshot& camera, int viewportWidth, int viewp
         *snapped = found;
     }
     return chosen;
+}
+
+bool measureTriangleNormal(const RuntimeMesh& mesh, const Mat4& model, int triangle, Vec3* out) {
+    if (out == nullptr || triangle < 0 || static_cast<uint32_t>(triangle) >= mesh.triangleCount()) {
+        return false;
+    }
+    Vec3 corner[3];
+    for (int k = 0; k < 3; ++k) {
+        const uint32_t index =
+                mesh.indices()[static_cast<uint32_t>(triangle) * 3u + static_cast<uint32_t>(k)];
+        if (index >= mesh.vertexCount()) {
+            return false;
+        }
+        const float* p = mesh.vertices()[index].position;
+        corner[k] = mat4TransformPoint(model, Vec3{p[0], p[1], p[2]});
+    }
+    const Vec3 n = vec3Cross(vec3Sub(corner[1], corner[0]), vec3Sub(corner[2], corner[0]));
+    const float length = std::sqrt(vec3Dot(n, n));
+    if (!(length > 1.0e-12f) || !std::isfinite(length)) {
+        return false;
+    }
+    *out = vec3Scale(n, 1.0f / length);
+    return true;
 }
 
 SketchOverlayPtr measureOverlay(const MeasureState& state, float markerSize) {

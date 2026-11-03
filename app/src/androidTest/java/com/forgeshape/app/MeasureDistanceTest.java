@@ -96,6 +96,9 @@ public final class MeasureDistanceTest {
         assertEquals("snapped to the two corners, the edge is exactly 2 m", 2.0,
                 measure[NativeViewport.MEASURE_DISTANCE], 1e-4);
         assertEquals("along X", 2.0, Math.abs(measure[NativeViewport.MEASURE_DX]), 1e-4);
+        assertEquals("both on the top face: the faces are parallel", 0.0,
+                measure[NativeViewport.MEASURE_ANGLE], 0.1);
+        assertEquals(1.0, measure[NativeViewport.MEASURE_HAS_ANGLE], 0.0);
         assertEquals("the active body did not move", active, NativeViewport.sceneActiveBodyId());
         final String shown = onWorkspace(rule.getScenario(), (activity, workspace) -> {
             final android.widget.TextView text = activity.findViewById(R.id.measure_distance_result);

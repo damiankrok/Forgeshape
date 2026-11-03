@@ -2629,7 +2629,11 @@ final class NativeViewport {
     /** Test seam: records a measured point as a tap would. */
     static native void debugMeasureRecord(double x, double y, double z);
 
-    static final int MEASURE_SIZE = 16;
+    static final int MEASURE_SIZE = 18;
+    /** 1 when the angle between the two picked surfaces is known. */
+    static final int MEASURE_HAS_ANGLE = 16;
+    /** That angle, degrees in [0, 180]. */
+    static final int MEASURE_ANGLE = 17;
     /** Points picked, 0..2. */
     static final int MEASURE_COUNT = 0;
     /** The distance, metres, once both points are picked. */

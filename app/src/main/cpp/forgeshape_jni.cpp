@@ -8258,17 +8258,19 @@ JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_measureActive(
     return measureLiveLocked() ? JNI_TRUE : JNI_FALSE;
 }
 
-// The measurement, into out[0..15]: [0] points picked (0..2); [1..3] the first
+// The measurement, into out[0..17]: [0] points picked (0..2); [1..3] the first
 // and [4..6] the second, world metres; [7] the distance; [8..10] dX, dY, dZ;
 // [11] / [12] 1 when the first / second point snapped to a corner; [13..14]
-// the screen point of the line's middle and [15] 1 when it projects. False
-// with nothing written while Measure does not own the tap.
+// the screen point of the line's middle and [15] 1 when it projects; [16] 1
+// when the angle between the two picked surfaces is known and [17] that
+// angle in degrees. False with nothing written while Measure does not own the
+// tap.
 JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_measureState(JNIEnv* env, jclass,
                                                                               jdoubleArray out) {
-    if (out == nullptr || env->GetArrayLength(out) < 16) {
+    if (out == nullptr || env->GetArrayLength(out) < 18) {
         return JNI_FALSE;
     }
-    jdouble v[16] = {};
+    jdouble v[18] = {};
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         if (!measureLiveLocked()) {
@@ -8288,6 +8290,8 @@ JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_measureState(J
         v[10] = result.dz;
         v[11] = g_measure.snappedA ? 1.0 : 0.0;
         v[12] = g_measure.snappedB ? 1.0 : 0.0;
+        v[16] = result.hasAngle ? 1.0 : 0.0;
+        v[17] = result.angleDegrees;
         if (result.complete) {
             const forgeshape::Vec3 mid = forgeshape::vec3Scale(
                     forgeshape::vec3Add(g_measure.a, g_measure.b), 0.5f);
@@ -8301,7 +8305,7 @@ JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_measureState(J
             }
         }
     }
-    env->SetDoubleArrayRegion(out, 0, 16, v);
+    env->SetDoubleArrayRegion(out, 0, 18, v);
     return JNI_TRUE;
 }
 
@@ -11935,16 +11939,19 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 hit = forgeshape::pickScene(g_camera.snapshot(), tapX, tapY, viewWidth, viewHeight);
                 if (hit.hit) {
                     forgeshape::Vec3 point = hit.position;
+                    forgeshape::Vec3 normal{0.0f, 0.0f, 0.0f};
                     bool snapped = false;
                     for (const forgeshape::SceneDrawItem& item : forgeshape::viewSceneSnapshot()) {
                         if (item.objectId == hit.objectId && item.mesh) {
                             point = forgeshape::measureSnapPoint(
                                     g_camera.snapshot(), viewWidth, viewHeight, tapX, tapY, *item.mesh,
                                     item.model, hit.triangleIndex, hit.position, &snapped);
+                            forgeshape::measureTriangleNormal(*item.mesh, item.model,
+                                                              hit.triangleIndex, &normal);
                             break;
                         }
                     }
-                    forgeshape::measureRecordPoint(&g_measure, point, snapped);
+                    forgeshape::measureRecordPoint(&g_measure, point, snapped, normal);
                     FS_LOGI("FORGESHAPE_MEASURE_POINT count=%d snapped=%d", g_measure.count,
                             snapped ? 1 : 0);
                 }

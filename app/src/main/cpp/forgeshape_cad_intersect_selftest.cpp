@@ -568,6 +568,18 @@ void runCadIntersectSelfTests(std::vector<ArrangementSelfTestCheck>* out, std::s
                                                     mat4Identity(), 0, Vec3{0.2f, -0.1f, 0.0f},
                                                     &centred)
                                  : Vec3{};
+        // Two picks on square faces read 90 degrees; one without a normal reads none.
+        MeasureState square;
+        measureRecordPoint(&square, Vec3{0.0f, 0.0f, 1.0f}, false, Vec3{0.0f, 0.0f, 1.0f});
+        measureRecordPoint(&square, Vec3{1.0f, 0.0f, 0.5f}, false, Vec3{1.0f, 0.0f, 0.0f});
+        MeasureState unknown;
+        measureRecordPoint(&unknown, Vec3{0.0f, 0.0f, 0.0f}, false);
+        measureRecordPoint(&unknown, Vec3{1.0f, 0.0f, 0.0f}, false, Vec3{1.0f, 0.0f, 0.0f});
+        Vec3 n;
+        const bool normal = mesh && measureTriangleNormal(*mesh, mat4Identity(), 0, &n);
+        r.check("MS_03_two_square_faces_read_ninety_degrees_and_a_triangle_knows_its_normal",
+                measureResult(square).hasAngle && near(measureResult(square).angleDegrees, 90.0, 1e-4)
+                        && !measureResult(unknown).hasAngle && normal && near(n.z, 1.0, 1e-6));
         r.check("MS_03_a_tap_beside_a_corner_measures_the_corner_exactly",
                 projected && snapped && corner.x == 1.0f && corner.y == 1.0f && !centred
                         && middle.x == 0.2f && middle.y == -0.1f);

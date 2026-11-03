@@ -43,4 +43,5 @@
     <string name="measure_distance_stop">Stop measuring</string>
     <string name="measure_distance_points">Points %1$d of 2</string>
     <string name="measure_distance_result">Distance %1$s\nΔX %2$s · ΔY %3$s · ΔZ %4$s</string>
+    <string name="measure_angle_result">Angle between the faces %1$s°</string>
 </resources>
