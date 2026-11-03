@@ -1,7 +1,54 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.114.0
+**Status Version:** 0.115.0
 **Updated:** 2026-11-03
+**Latest stage:** **`CAD-TO-FACE-R1` + `CAD-PLANE-R1` + `CAD-INSPECT-R1` — To
+Face, a hole placed from edges, a sketch plane off a face, and Measure**
+(2026-11-03). **TECH PASS (emulator) / OWNER PHYSICAL REVIEW REQUIRED / NOT
+MERGED.** Branch `claude/new-session-g87rge`, product at `29254ca`. Stages
+5c and 6 (offset and angle) of `docs/FEATURE_PARITY_PLAN.md`, and the first
+piece of stage 12 (Inspect).
+
+- **To Face** (`ExtrudeExtentMode::ToFace`, index 4): a later Add or Cut ends
+  on a named planar face of an earlier feature (`ExtrudeFeature::toFace`),
+  parallel to the sketch; the distance is derived (`cadToFaceDistance`) and
+  follows upstream edits. The session offers it where a face can be reached
+  (`cadToFaceCandidates`), seeds the nearest face on the growing side, Flip
+  takes the other side, a Ready tap on another face of the body retargets
+  (`FORGESHAPE_CAD_TO_FACE_TAP`), a drag sets a depth and a second finger
+  restores it. CadStatus 113..116.
+- **A hole from two edges**: `CadFeatureHole::byEdges` with two edge faces and
+  distances (`cadHolePoint`, `suggestCadHoleEdges`); the editor's At point /
+  From edges chips, the two edges highlighted; CadStatus 117..118.
+- **A sketch plane off a face** (`CadSketchRecord::planeOffset`,
+  `planeAngleDegrees`, `cadSketchPlaneFrame`): the precision surface's Sketch
+  plane section; New Body withdrawn off a face; the support-face check reads
+  the face; the History reads "Off a face by …"; CadStatus 119.
+- **Measure** (`computeMassProperties`): volume, area, size and centre of mass
+  of the active CAD part from its drawn mesh in world space, and a mass at a
+  typed density; a read, no truth.
+- **Format.** `CADB` v13 (§7p: the To Face target, the hole placement byte)
+  and v14 (§7q: the plane after each feature-face sketch record), each written
+  only when needed; v1..v12 keep their bytes and fingerprints.
+- **Found on the way.** The device tests set depths below JNI and then pressed
+  the precision surface's Extrude, which submits its own (stale) field: fixed
+  in the tests by the refresh the shell does after every act. The first To
+  Face run tapped a point a 1 m post hid from the camera (fixed by a near-top
+  view).
+- **Evidence.** Host `HOST_SELFTESTS_OK` (4676 checks before Measure; the
+  CAD-feature suite 857/857 with 29 `TF_`/`HE_`, 9 `PL_` and 3 `MP_` checks).
+  JVM `CadHudPresentationTest` (five extents, To Face offered only where it
+  applies), `LengthUnitTest` (volume). `CI FAST` `41710831341` success.
+  `CI DEVICE` `41712407765` (`SketchPlaneTest` 2/2, the hole case, `HoleTest`,
+  `ThroughAllTest`, `CadExtrudeExtentTest`, `CadDockTest`; 12/13) and
+  `41715271445` (`ToFaceTest` 2/2) success. Two earlier runs failed on the
+  runner (no disk for the AVD; the system image did not install) before any
+  test ran. Physical-device behaviour UNVERIFIED.
+- **Not this stage:** To Face on a non-parallel face, To Object, a plane
+  through three points or off a world plane, a reusable construction-plane
+  object, measuring between two picked points.
+
+**Previous stage:** `CAD-EDGE-FINISH-R2` + `CAD-UI-DOCK-R1` (record below, unchanged).
 **Latest stage:** **`CAD-EDGE-FINISH-R2` + `CAD-UI-DOCK-R1` — only outside
 edges are finished; the face's acts and editors dock beside the trailing
 controls** (2026-11-03). **TECH PASS (emulator) / OWNER PHYSICAL REVIEW
@@ -2460,9 +2507,8 @@ lives in Git history; only what still constrains the code is kept here.
 `SCULPT-UNDO-R0` (`ARCH-OWNER-12` — a dedicated bounded volatile per-body Sculpt
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
-**Next Stage:** `CAD-TO-FACE-R1` — the To Face extent for Add and Cut and
-positioning a hole by distances to edges (stage 5c of
-`docs/FEATURE_PARITY_PLAN.md`), after the OWNER physical-device review of the
+**Next Stage:** `CAD-REVOLVE-FEATURE-R1` — a later Revolve Add or Cut (stage 8
+of `docs/FEATURE_PARITY_PLAN.md`), after the OWNER physical-device review of the
 `CAD-EXTENT-R1` + `CAD-UI-DOCK-R1` APK (Through All, holes, patterns, sketch
 Undo/Redo, the knife, push-through to Cut, Fillet/Chamfer on outside edges,
 the docked face actions); the Delete → Undo → Redo owner

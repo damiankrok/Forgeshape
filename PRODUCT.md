@@ -938,7 +938,7 @@ of the same part, beside the sketch's regions, makes that face the end
 instead. Dragging the arrow sets a depth, and a second finger gives To Face
 back. The History lists the feature as To Face.
 
-UNVERIFIED on the device yet — the emulator run is pending (`ToFaceTest`) is to show: absent for New Body, offered for an
+Verified on the emulator (`ToFaceTest`, CI DEVICE `41715271445`): absent for New Body, offered for an
 Add; on a part with a 1 m post it ends the boss on the post's top (1 m), the
 precision surface's Extrude commits it as one Undo step, and it stays To Face
 in the History.
