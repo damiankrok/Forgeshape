@@ -9,6 +9,7 @@ const char* cadTimelineRowKindName(CadTimelineRowKind kind) {
     switch (kind) {
         case CadTimelineRowKind::Sketch: return "Sketch";
         case CadTimelineRowKind::Feature: return "Feature";
+        case CadTimelineRowKind::Finish: return "Finish";
     }
     return "unknown";
 }
@@ -143,6 +144,34 @@ CadTimeline buildCadTimeline(const CadBodyState& state, const CadRegenerationRep
         timeline.rows.push_back(row);
     }
 
+    // Chamfers and Fillets, in application order, after every extrusion. A
+    // staged edit of any feature re-derives them too, so they are Pending until
+    // its candidate is evaluated.
+    uint32_t finishOrdinal = 0;
+    for (const CadEdgeFinish& finish : state.edgeFinishes) {
+        if (timeline.rows.size() >= kMaxCadTimelineRows) {
+            break;
+        }
+        CadTimelineRow row;
+        row.kind = CadTimelineRowKind::Finish;
+        row.id = finish.finishId;
+        row.editFeatureId = finish.finishId;
+        row.ordinal = ++finishOrdinal;
+        row.finishKind = finish.kind;
+        row.finishDistance = finish.distance;
+        row.finishEdgeCount = static_cast<uint32_t>(finish.edges.size());
+        if (!evaluated) {
+            row.state = pastEdit ? CadTimelineRowState::Pending : CadTimelineRowState::Ok;
+        } else if (pastFailure) {
+            row.state = CadTimelineRowState::NotRegenerated;
+        } else if (report.status != CadStatus::Ok && report.failedFeatureId == finish.finishId) {
+            row.state = CadTimelineRowState::Failed;
+            row.status = report.status;
+            pastFailure = true;
+        }
+        timeline.rows.push_back(row);
+    }
+
     // Retained sketches no feature consumes, ascending by id (the table's own
     // order), after everything that builds the body.
     for (const CadSketchRecord& record : state.sketches) {
@@ -182,7 +211,11 @@ std::string cadTimelineRowSummary(const CadTimelineRow& row) {
                       cadTimelineRowStateName(row.state));
         return buffer;
     }
-    if (row.featureKind == CadFeatureKind::Revolve) {
+    if (row.kind == CadTimelineRowKind::Finish) {
+        std::snprintf(buffer, sizeof(buffer), "%s #%u %.6g on %u edges %s",
+                      cadEdgeFinishKindName(row.finishKind), row.id, row.finishDistance,
+                      row.finishEdgeCount, cadTimelineRowStateName(row.state));
+    } else if (row.featureKind == CadFeatureKind::Revolve) {
         std::snprintf(buffer, sizeof(buffer), "Revolve %s #%u sketch %u angle %.6g %s axis %u:%u %s",
                       cadFeatureOperationName(row.operation), row.id, row.sketchId,
                       row.angleDegrees, revolveDirectionName(row.revolveDirection),

@@ -364,6 +364,154 @@ CadStatus validateCadEdgeFinishes(const CadBodyState& state, uint32_t* outFailed
     return CadStatus::Ok;
 }
 
+CadStatus cadFinishableEdgesOfFace(const CadBodyState& state, uint32_t featureId,
+                                   const CadFaceToken& face, std::vector<CadEdgeRef>* out) {
+    if (out == nullptr) {
+        return CadStatus::RegenerationFailed;
+    }
+    const CadStatus target = finishTargetStatus(state, featureId);
+    if (target != CadStatus::Ok) {
+        return target;
+    }
+    std::vector<CadFeatureEdge> edges;
+    const CadStatus why = enumerateCadFeatureEdges(state, featureId, &edges);
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    out->clear();
+    for (const CadFeatureEdge& edge : edges) {
+        if (edge.eligible
+            && (sameCadFaceToken(edge.ref.faceA, face) || sameCadFaceToken(edge.ref.faceB, face))
+            && out->size() < kMaxEdgesPerFinish) {
+            out->push_back(edge.ref);
+        }
+    }
+    return CadStatus::Ok;
+}
+
+double suggestCadEdgeFinishDistance(const CadBodyState& state, CadEdgeFinishKind kind,
+                                    const std::vector<CadEdgeRef>& edges) {
+    double room = 0.0;
+    bool any = false;
+    double angle = 90.0;
+    for (const CadEdgeRef& ref : edges) {
+        CadFeatureEdge edge;
+        if (resolveCadFinishEdge(state, ref, &edge) != CadStatus::Ok) {
+            continue;
+        }
+        const double fit = std::min(edge.widthA, edge.widthB);
+        if (!any || fit < room) {
+            room = fit;
+            angle = edge.angleDegrees;
+        }
+        any = true;
+    }
+    if (!any || !(room > 0.0)) {
+        return 0.0;
+    }
+    // The setback a fifth of the room; a Fillet's radius is that setback times
+    // tan(alpha / 2).
+    double target = 0.2 * room;
+    if (kind == CadEdgeFinishKind::Fillet) {
+        target *= std::tan(angle * kPi / 360.0);
+    }
+    // Round DOWN to 1, 2 or 5 x 10^k, so the value reads as typed.
+    const double exponent = std::floor(std::log10(target));
+    const double unit = std::pow(10.0, exponent);
+    const double mantissa = target / unit;
+    // A hair of slack, so tan(45 deg) = 0.9999999999999999 still reads as 1.
+    const double slack = 1.0e-9;
+    const double nice = mantissa >= 5.0 - slack ? 5.0 : (mantissa >= 2.0 - slack ? 2.0 : 1.0);
+    const double value = nice * unit;
+    if (!std::isfinite(value) || value < kMinEdgeFinishDistance) {
+        return 0.0;
+    }
+    return std::min(value, kMaxEdgeFinishDistance);
+}
+
+namespace {
+
+// The shared shape of the three acts: refuse an edit already open, find the CAD
+// body, let `change` build the requested state from the current one, then one
+// transaction around one `applyState`.
+template <typename Change>
+CadStatus applyEdgeFinishAct(ConstructionScene& scene, ConstructionHistory& history,
+                             ObjectId bodyId, Change change) {
+    if (history.editInProgress()) {
+        return CadStatus::RefusedEditInProgress;
+    }
+    SceneObject* object = scene.findBody(bodyId);
+    CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    if (body == nullptr) {
+        return CadStatus::NotCadBody;
+    }
+    CadBodyState next = body->state();
+    const CadStatus built = change(&next);
+    if (built != CadStatus::Ok) {
+        return built;
+    }
+    const CadStatus valid = validateCadBodyState(next);
+    if (valid != CadStatus::Ok) {
+        return valid;
+    }
+    CadStatus why = CadStatus::Ok;
+    {
+        ScopedConstructionEdit edit(history);
+        why = body->applyState(next);
+        if (why == CadStatus::Ok) {
+            publishSceneObject(*object);
+        }
+    }
+    return why;
+}
+
+}  // namespace
+
+CadStatus addCadEdgeFinishToBody(ConstructionScene& scene, ConstructionHistory& history,
+                                 ObjectId bodyId, CadEdgeFinishKind kind, double distance,
+                                 std::vector<CadEdgeRef> edges, uint32_t* outFinishId) {
+    uint32_t minted = 0;
+    const CadStatus why = applyEdgeFinishAct(scene, history, bodyId, [&](CadBodyState* next) {
+        if (next->edgeFinishes.size() >= kMaxCadEdgeFinishes) {
+            return CadStatus::TooManyEdgeFinishes;
+        }
+        minted = appendCadEdgeFinish(next, kind, distance, std::move(edges));
+        return minted != 0 ? CadStatus::Ok : CadStatus::EdgeFinishInvalid;
+    });
+    if (why == CadStatus::Ok && outFinishId != nullptr) {
+        *outFinishId = minted;
+    }
+    return why;
+}
+
+CadStatus editCadEdgeFinishOfBody(ConstructionScene& scene, ConstructionHistory& history,
+                                  ObjectId bodyId, uint32_t finishId, CadEdgeFinishKind kind,
+                                  double distance) {
+    return applyEdgeFinishAct(scene, history, bodyId, [&](CadBodyState* next) {
+        for (CadEdgeFinish& finish : next->edgeFinishes) {
+            if (finish.finishId == finishId) {
+                finish.kind = kind;
+                finish.distance = distance;
+                return CadStatus::Ok;
+            }
+        }
+        return CadStatus::EdgeNotFound;
+    });
+}
+
+CadStatus deleteCadEdgeFinishOfBody(ConstructionScene& scene, ConstructionHistory& history,
+                                    ObjectId bodyId, uint32_t finishId) {
+    return applyEdgeFinishAct(scene, history, bodyId, [&](CadBodyState* next) {
+        for (size_t i = 0; i < next->edgeFinishes.size(); ++i) {
+            if (next->edgeFinishes[i].finishId == finishId) {
+                next->edgeFinishes.erase(next->edgeFinishes.begin() + static_cast<long>(i));
+                return CadStatus::Ok;
+            }
+        }
+        return CadStatus::EdgeNotFound;
+    });
+}
+
 bool cadSolidContainsPoint(const CadSolid& solid, const DVec3& point) {
     // An irrational-looking direction, so the ray almost never grazes an edge
     // or a vertex of a generated prism; parity of the crossings.

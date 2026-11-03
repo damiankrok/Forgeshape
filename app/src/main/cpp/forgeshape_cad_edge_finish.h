@@ -35,7 +35,9 @@
 
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_kernel.h"
+#include "forgeshape_history.h"
 #include "forgeshape_math.h"
+#include "forgeshape_scene.h"
 
 namespace forgeshape {
 
@@ -98,6 +100,38 @@ CadStatus validateCadEdgeFinishes(const CadBodyState& state, uint32_t* outFailed
 CadStatus buildCadEdgeFinishTool(const CadFeatureEdge& edge, CadEdgeFinishKind kind,
                                  double distance, const CadSolid& body, uint32_t tag,
                                  CadSolid* out);
+
+// The eligible edges of ONE planar face of `featureId`'s own extrusion: what
+// "finish every edge of this face" means. Empty, with Ok, for a face none of
+// whose edges may be finished.
+CadStatus cadFinishableEdgesOfFace(const CadBodyState& state, uint32_t featureId,
+                                   const CadFaceToken& face, std::vector<CadEdgeRef>* out);
+
+// A readable default distance for a new finish over `edges`: a 1/2/5 x 10^k
+// value near a fifth of the narrowest face the setback must fit in, so the
+// first Apply always succeeds. Zero when no edge resolves.
+double suggestCadEdgeFinishDistance(const CadBodyState& state, CadEdgeFinishKind kind,
+                                    const std::vector<CadEdgeRef>& edges);
+
+// --- the three user acts, each ONE `ScopedConstructionEdit` (one Undo) -----
+//
+// Each judges the whole requested state through `CadBody::applyState`, which
+// validates and regenerates it and writes nothing unless all of it passes, so a
+// refusal leaves the body and the history exactly as they were.
+
+// Adds a finish of `kind` and `distance` over `edges` to body `bodyId`.
+CadStatus addCadEdgeFinishToBody(ConstructionScene& scene, ConstructionHistory& history,
+                                 ObjectId bodyId, CadEdgeFinishKind kind, double distance,
+                                 std::vector<CadEdgeRef> edges, uint32_t* outFinishId = nullptr);
+
+// Changes finish `finishId`'s kind and distance; its edges stay.
+CadStatus editCadEdgeFinishOfBody(ConstructionScene& scene, ConstructionHistory& history,
+                                  ObjectId bodyId, uint32_t finishId, CadEdgeFinishKind kind,
+                                  double distance);
+
+// Removes finish `finishId`. Its id is never minted again on this branch.
+CadStatus deleteCadEdgeFinishOfBody(ConstructionScene& scene, ConstructionHistory& history,
+                                    ObjectId bodyId, uint32_t finishId);
 
 // Whether a point lies inside a closed solid (ray parity). Derived geometry
 // only; used to decide where a tool may run past its edge.

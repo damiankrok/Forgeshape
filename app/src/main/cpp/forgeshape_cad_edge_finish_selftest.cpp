@@ -11,6 +11,10 @@
 #include "forgeshape_cad_edge_finish.h"
 #include "forgeshape_cad_face.h"
 #include "forgeshape_cad_feature.h"
+#include "forgeshape_cad_timeline.h"
+#include "forgeshape_history.h"
+#include "forgeshape_project_state.h"
+#include "forgeshape_scene.h"
 #include "forgeshape_project_bytes.h"
 #include "forgeshape_project_document.h"
 #include "forgeshape_sketch.h"
@@ -459,6 +463,73 @@ void runCadEdgeFinishSelfTests(std::vector<ArrangementSelfTestCheck>* out,
         const std::vector<uint8_t> staleBytes = encodeProjectV1(documentFor(stale), &staleWhy);
         r.check("EF_11_a_document_naming_a_missing_edge_is_not_encoded",
                 staleWhy != ProjectCodecStatus::Ok || staleBytes.empty());
+    }
+
+    // EF_12: the three user acts, each one Undo, and the History rows.
+    {
+        ConstructionScene scene{NoProjectTag{}};
+        ConstructionHistory history{scene};
+        SceneObject* added = scene.addCadBody(blockState());
+        const ObjectId id = added != nullptr ? added->objectId() : kNoObject;
+        if (added != nullptr) publishSceneObject(*added);
+        auto stateOf = [&scene, id]() -> const CadBodyState& {
+            return scene.findBody(id)->cadOrNull()->state();
+        };
+        const uint64_t before = projectSemanticFingerprint(scene, ProjectKind::Construction);
+        // The whole top face's edges in one finish.
+        std::vector<CadEdgeRef> top;
+        CadFaceToken cap;
+        cap.kind = CadFaceKind::CapFar;
+        const bool listed = cadFinishableEdgesOfFace(stateOf(), kCadFeatureId, cap, &top)
+                                    == CadStatus::Ok
+                            && top.size() == 4u;
+        r.check("EF_12_a_face_lists_its_four_finishable_edges", listed);
+        const double suggested = suggestCadEdgeFinishDistance(stateOf(), CadEdgeFinishKind::Fillet, top);
+        r.check("EF_12_the_suggested_distance_is_readable_and_fits",
+                std::fabs(suggested - 0.2) < 1e-12);
+        uint32_t finishId = 0;
+        const CadStatus addWhy = addCadEdgeFinishToBody(scene, history, id, CadEdgeFinishKind::Fillet,
+                                                        suggested, top, &finishId);
+        const bool added1 = addWhy == CadStatus::Ok && stateOf().edgeFinishes.size() == 1u
+                            && history.undoDepth() == 1u;
+        r.check("EF_12_add_is_one_undo_step", added1);
+        r.check("EF_12_a_finish_moves_the_fingerprint",
+                projectSemanticFingerprint(scene, ProjectKind::Construction) != before);
+        const CadTimeline timeline = buildCadTimelineFor(stateOf());
+        bool finishRow = false;
+        for (const CadTimelineRow& row : timeline.rows) {
+            if (row.kind == CadTimelineRowKind::Finish && row.id == finishId
+                && row.finishEdgeCount == 4u && row.state == CadTimelineRowState::Ok) {
+                finishRow = true;
+            }
+        }
+        r.check("EF_12_history_lists_the_finish_after_the_features", finishRow
+                && timeline.rows.back().kind == CadTimelineRowKind::Finish);
+        const CadStatus editWhy = editCadEdgeFinishOfBody(scene, history, id, finishId,
+                                                          CadEdgeFinishKind::Chamfer, 0.1);
+        r.check("EF_12_edit_changes_kind_and_distance_as_one_step",
+                editWhy == CadStatus::Ok && history.undoDepth() == 2u
+                        && stateOf().edgeFinishes[0].kind == CadEdgeFinishKind::Chamfer
+                        && stateOf().edgeFinishes[0].distance == 0.1);
+        const CadStatus tooBig = editCadEdgeFinishOfBody(scene, history, id, finishId,
+                                                         CadEdgeFinishKind::Chamfer, 5.0);
+        r.check("EF_12_a_refused_edit_changes_nothing",
+                tooBig == CadStatus::EdgeFinishTooLarge && history.undoDepth() == 2u
+                        && stateOf().edgeFinishes[0].distance == 0.1);
+        const CadStatus deleteWhy = deleteCadEdgeFinishOfBody(scene, history, id, finishId);
+        r.check("EF_12_delete_is_one_step_and_restores_the_sharp_body",
+                deleteWhy == CadStatus::Ok && stateOf().edgeFinishes.empty()
+                        && history.undoDepth() == 3u
+                        && projectSemanticFingerprint(scene, ProjectKind::Construction) != before);
+        history.undo();
+        history.undo();
+        history.undo();
+        r.check("EF_12_undo_returns_to_the_unfinished_body_exactly",
+                stateOf().edgeFinishes.empty()
+                        && projectSemanticFingerprint(scene, ProjectKind::Construction) == before);
+        history.redo();
+        r.check("EF_12_redo_restores_the_same_finish",
+                stateOf().edgeFinishes.size() == 1u && stateOf().edgeFinishes[0].finishId == finishId);
     }
 
     // Bounded single-shot timing: a block's top loop filleted.

@@ -33,6 +33,9 @@ namespace forgeshape {
 enum class CadTimelineRowKind : uint8_t {
     Sketch,
     Feature,
+    // A Chamfer or a Fillet (`CAD-EDGE-FINISH-R1`), listed after every feature
+    // because it is applied after every extrusion.
+    Finish,
 };
 
 const char* cadTimelineRowKindName(CadTimelineRowKind kind);
@@ -105,6 +108,11 @@ struct CadTimelineRow {
     double angleDegrees = 0.0;
     RevolveDirection revolveDirection = RevolveDirection::Positive;
     CadSketchEdgeRef axis{};
+
+    // --- a finish row (`CAD-EDGE-FINISH-R1`) ---
+    CadEdgeFinishKind finishKind = CadEdgeFinishKind::Fillet;
+    Meters finishDistance = 0.0;
+    uint32_t finishEdgeCount = 0;
 };
 
 struct CadTimeline {
@@ -121,7 +129,7 @@ struct CadTimeline {
 };
 
 // How many rows a timeline can have: one per feature and one per sketch.
-constexpr uint32_t kMaxCadTimelineRows = kMaxCadFeatures + kMaxCadSketches;
+constexpr uint32_t kMaxCadTimelineRows = kMaxCadFeatures + kMaxCadSketches + kMaxCadEdgeFinishes;
 
 // THE timeline of `state`.
 //

@@ -5587,7 +5587,9 @@ Java_com_forgeshape_app_NativeViewport_cadTimeline(JNIEnv* env, jclass, jlong bo
         for (jsize i = 0; i < count; ++i) {
             const forgeshape::CadTimelineRow& row = timeline.rows[static_cast<size_t>(i)];
             jdouble* v = &values[static_cast<size_t>(i) * kRowSlots];
-            v[0] = row.kind == forgeshape::CadTimelineRowKind::Feature ? 1.0 : 0.0;
+            v[0] = row.kind == forgeshape::CadTimelineRowKind::Finish    ? 2.0
+                   : row.kind == forgeshape::CadTimelineRowKind::Feature ? 1.0
+                                                                         : 0.0;
             v[1] = row.id;
             v[2] = row.sketchId;
             v[3] = row.editFeatureId;
@@ -5614,6 +5616,15 @@ Java_com_forgeshape_app_NativeViewport_cadTimeline(JNIEnv* env, jclass, jlong bo
             v[24] = forgeshape::revolveDirectionIndex(row.revolveDirection);
             v[25] = row.axis.entityId;
             v[26] = row.axis.edgeLocalIndex;
+            if (row.kind == forgeshape::CadTimelineRowKind::Finish) {
+                // A finish row reuses three slots rather than widening every
+                // row: the operation slot is the finish kind (0 Chamfer,
+                // 1 Fillet), the positive distance its distance and the region
+                // count its edge count.
+                v[15] = forgeshape::cadEdgeFinishKindIndex(row.finishKind);
+                v[17] = row.finishEdgeCount;
+                v[21] = row.finishDistance;
+            }
         }
         if (count > 0) {
             env->SetDoubleArrayRegion(rows, 0, count * kRowSlots, values.data());

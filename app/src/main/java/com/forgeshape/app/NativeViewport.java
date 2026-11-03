@@ -3321,6 +3321,13 @@ final class NativeViewport {
 
     static final int TIMELINE_KIND_SKETCH = 0;
     static final int TIMELINE_KIND_FEATURE = 1;
+    /**
+     * A Chamfer or a Fillet. Such a row reuses three slots: {@link
+     * #TIMELINE_ROW_OPERATION} is the finish kind ({@link #EDGE_FINISH_CHAMFER}
+     * or {@link #EDGE_FINISH_FILLET}), {@link #TIMELINE_ROW_POSITIVE} its
+     * distance in metres and {@link #TIMELINE_ROW_REGIONS} its edge count.
+     */
+    static final int TIMELINE_KIND_FINISH = 2;
 
     static final int TIMELINE_STATE_OK = 0;
     static final int TIMELINE_STATE_FAILED = 1;
@@ -3328,8 +3335,11 @@ final class NativeViewport {
     static final int TIMELINE_STATE_PENDING = 3;
     static final int TIMELINE_STATE_UNUSED = 4;
 
-    /** The most rows a CAD timeline can have: one per feature and one per sketch. */
-    static final int TIMELINE_MAX_ROWS = 32;
+    /**
+     * The most rows a CAD timeline can have: one per feature, one per sketch
+     * and one per Chamfer or Fillet.
+     */
+    static final int TIMELINE_MAX_ROWS = 48;
 
     /**
      * A CAD body's feature chain as a TIMELINE of sketch and feature rows in
