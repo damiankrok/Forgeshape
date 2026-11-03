@@ -38,8 +38,8 @@ knife that trims sketch lines to the nearest intersection.
   success. `CI DEVICE` `41583947747` PASS — `SketchKnifeUndoTest` 2/2 (the
   first run, `41581126865`, failed 2/2 because the capsule was not on screen
   in the bootstrap sketch; fixed in `022df5d`); regression `41582251731`
-  `SketchUxTest` PASS; `SketchExtrudeTest` (assertion updated for the capsule
-  now drawn while sketching) EXTRUDE_EVIDENCE. Physical-device behaviour
+  `SketchUxTest` PASS; `41584871399` `SketchExtrudeTest` PASS (assertion
+  updated for the capsule now drawn while sketching). Physical-device behaviour
   UNVERIFIED.
 - **Not this stage:** a Revolve push-through, push-through on an edit, power
   trim of splines (Trim refuses a spline as before), and a sketch history that
