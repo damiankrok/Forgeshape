@@ -412,8 +412,8 @@ enum class CadStatus : uint8_t {
     // the sketch bound or a tilt past `kMaxSketchPlaneAngleDegrees`.
     SketchPlaneInvalid,
     // `CAD-PRIMITIVES-R1`. The body is not a Construction primitive with a CAD
-    // part (a Capsule, a Plane, another representation, a sculpted body), or
-    // an edit is in progress.
+    // part (a Plane, another representation, a sculpted body), or an edit is
+    // in progress.
     PrimitiveNotConvertible,
     // `CAD-INTERSECT-R1`. An Intersect whose tool shares no material with
     // the body (it would keep nothing), and one whose tool contains the whole

@@ -43,8 +43,8 @@ bool primitiveHasCadPart(const PrimitiveSpec& spec) {
         case PrimitiveKind::Cylinder:
         case PrimitiveKind::Sphere:
         case PrimitiveKind::Cone:
-            return true;
         case PrimitiveKind::Capsule:
+            return true;
         case PrimitiveKind::Plane:
             return false;
     }
@@ -124,7 +124,41 @@ CadStatus cadBodyStateFromPrimitive(const PrimitiveSpec& spec, CadBodyState* out
             if (why == CadStatus::Ok) why = fullTurn(sketch, id, &state);
             break;
         }
-        case PrimitiveKind::Capsule:
+        case PrimitiveKind::Capsule: {
+            // Half a capsule's outline on XY: a quarter arc from the bottom
+            // pole out to the radius, the straight middle (absent when the
+            // capsule has none), a quarter arc up to the top pole, and the
+            // axis -- revolved a full turn about the axis.
+            const CapsuleDimensionsMeters& capsule = *spec.capsule();
+            const double r = 0.5 * capsule.diameter;
+            const double half = 0.5 * capsule.totalHeight;
+            const double m = half - r;  // half the straight middle, >= 0
+            const double s = 0.70710678118654752440 * r;
+            sketch.plane = Workplane::XY;
+            SketchEntityId ignored = kNoSketchEntity;
+            SketchArc bottom;
+            bottom.start = SketchPoint{0.0, -half};
+            bottom.mid = SketchPoint{s, -m - s};
+            bottom.end = SketchPoint{r, -m};
+            why = addSketchEntity(&sketch, bottom, &ignored);
+            if (why == CadStatus::Ok && m > 0.0) {
+                SketchLine middle;
+                middle.start = SketchPoint{r, -m};
+                middle.end = SketchPoint{r, m};
+                why = addSketchEntity(&sketch, middle, &ignored);
+            }
+            SketchArc top;
+            top.start = SketchPoint{r, m};
+            top.mid = SketchPoint{s, m + s};
+            top.end = SketchPoint{0.0, half};
+            if (why == CadStatus::Ok) why = addSketchEntity(&sketch, top, &ignored);
+            SketchLine axis;
+            axis.start = SketchPoint{0.0, half};
+            axis.end = SketchPoint{0.0, -half};
+            if (why == CadStatus::Ok) why = addSketchEntity(&sketch, axis, &id);
+            if (why == CadStatus::Ok) why = fullTurn(sketch, id, &state);
+            break;
+        }
         case PrimitiveKind::Plane:
             return CadStatus::PrimitiveNotConvertible;
     }

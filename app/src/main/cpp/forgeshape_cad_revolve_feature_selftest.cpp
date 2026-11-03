@@ -498,12 +498,32 @@ void runCadRevolveFeatureSelfTests(std::vector<ArrangementSelfTestCheck>* out,
                         && near(sphere.boundsMax.y, 1.0, 1e-5) && coneOk
                         && std::fabs(cone.volume - kPi * 3.0 / 3.0) < 0.03 * kPi
                         && near(cone.boundsMax.y, 1.5, 1e-5) && near(cone.boundsMin.y, -1.5, 1e-5));
+        // A capsule is a revolved outline of two quarter arcs and its middle,
+        // and one with no middle (as tall as it is wide) is a ball.
         CapsuleDimensionsMeters cap;
+        cap.diameter = 1.0;
+        cap.totalHeight = 3.0;
+        MassProperties capsule;
+        const bool capOk = measure(PrimitiveSpec::of(cap), &capsule);
+        const double capVolume = kPi * 0.25 * 2.0 + 4.0 / 3.0 * kPi * 0.125;
+        CapsuleDimensionsMeters ball;
+        ball.diameter = 1.0;
+        ball.totalHeight = 1.0;
+        MassProperties round;
+        const bool ballOk = measure(PrimitiveSpec::of(ball), &round);
+        r.check("PR_02_a_capsule_is_a_revolved_part_of_its_size",
+                primitiveHasCadPart(PrimitiveSpec::of(cap)) && capOk
+                        && std::fabs(capsule.volume - capVolume) < 0.03 * capVolume
+                        && near(capsule.boundsMax.y, 1.5, 1e-5) && near(capsule.boundsMin.y, -1.5, 1e-5)
+                        && ballOk
+                        && std::fabs(round.volume - 4.0 / 3.0 * kPi * 0.125)
+                                   < 0.03 * 4.0 / 3.0 * kPi * 0.125);
+        PlaneDimensionsMeters plane;
         CadBodyState none;
-        r.check("PR_02_a_capsule_has_no_cad_part_yet",
-                cadBodyStateFromPrimitive(PrimitiveSpec::of(cap), &none)
+        r.check("PR_02_a_plane_has_no_cad_part",
+                cadBodyStateFromPrimitive(PrimitiveSpec::of(plane), &none)
                         == CadStatus::PrimitiveNotConvertible
-                        && !primitiveHasCadPart(PrimitiveSpec::of(cap)));
+                        && !primitiveHasCadPart(PrimitiveSpec::of(plane)));
     }
     {
         ConstructionScene scene;

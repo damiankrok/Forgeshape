@@ -24,8 +24,8 @@ import org.junit.runner.RunWith;
  * `CAD-PRIMITIVES-R1` on the device: the Shape panel of a Construction Box
  * offers Make CAD part; taking it replaces the box by a CAD part of the same
  * size and placement as ONE undo step, and Undo brings the box back by the same
- * id. A Sphere and a Cone convert too; a Capsule has no CAD part, so the control
- * is not drawn for one and native refuses it by name.
+ * id. A Sphere, a Cone and a Capsule convert too; a Plane has no CAD part, so the
+ * control is not drawn for one and native refuses it by name.
  *
  * <p>Results are asserted from native truth (the representation, the measured
  * volume, the undo depth). Emulator evidence closes no physical-device gate.
@@ -88,7 +88,7 @@ public final class CadPrimitivePartTest {
     }
 
     @Test
-    public void a_sphere_and_a_cone_convert_and_a_capsule_is_refused() {
+    public void a_sphere_a_cone_and_a_capsule_convert_and_a_plane_is_refused() {
         applied(NativeViewport.applyConstructionSphere(2.0));
         long part = convertActive();
         final double[] mass = new double[NativeViewport.MASS_SIZE];
@@ -104,14 +104,22 @@ public final class CadPrimitivePartTest {
                 Math.PI, mass[NativeViewport.MASS_VOLUME], 0.03 * Math.PI);
         assertEquals(NativeViewport.HISTORY_OK, NativeViewport.constructionUndo());
 
-        applied(NativeViewport.applyConstructionCapsule(1.0, 2.0));
-        assertFalse("a capsule has no CAD part", NativeViewport.sceneActiveHasCadPart());
+        applied(NativeViewport.applyConstructionCapsule(1.0, 3.0));
+        part = convertActive();
+        assertTrue(NativeViewport.bodyMassProperties(part, mass));
+        final double capsuleVolume = Math.PI * 0.25 * 2.0 + 4.0 / 3.0 * Math.PI * 0.125;
+        assertEquals("the capsule's part is a capsule of its volume (tessellated)",
+                capsuleVolume, mass[NativeViewport.MASS_VOLUME], 0.03 * capsuleVolume);
+        assertEquals(NativeViewport.HISTORY_OK, NativeViewport.constructionUndo());
+
+        applied(NativeViewport.applyConstructionPlane(2.0, 2.0));
+        assertFalse("a plane has no CAD part", NativeViewport.sceneActiveHasCadPart());
         openShapePanel();
         assertFalse("so the control is not drawn", shown(R.id.make_cad_part));
-        final long capsule = NativeViewport.sceneActiveBodyId();
+        final long plane = NativeViewport.sceneActiveBodyId();
         assertEquals("and native refuses it by name", NativeViewport.CAD_PRIMITIVE_NOT_CONVERTIBLE,
-                NativeViewport.sceneConvertToCadPart(capsule));
-        assertEquals("nothing changed", capsule, NativeViewport.sceneActiveBodyId());
+                NativeViewport.sceneConvertToCadPart(plane));
+        assertEquals("nothing changed", plane, NativeViewport.sceneActiveBodyId());
     }
 
     // -----------------------------------------------------------------------

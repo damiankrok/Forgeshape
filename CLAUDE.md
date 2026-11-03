@@ -851,19 +851,20 @@ on the host, with no device, and is the fast native loop.
 - **A Construction primitive may BECOME a CAD part, by one replacement act**
   (`CAD-PRIMITIVES-R1`, `forgeshape_cad_from_primitive.{h,cpp}`). A Box and a
   Cylinder are a Symmetric extrusion of a rectangle / circle on XZ by half the
-  height, a Sphere and a Cone a full-turn Revolve on XY of a half-disc /
-  right triangle about its own edge on the Y axis — authored CAD truth built
+  height, a Sphere, a Cone and a Capsule a full-turn Revolve on XY of a
+  half-disc / right triangle / two quarter arcs and their straight middle about
+  the outline's own edge on the Y axis — authored CAD truth built
   from the primitive's PARAMETERS, never from its vertices, so the part is the
   same size where the primitive stood. `convertPrimitiveToCadPart` is ONE
   `ScopedConstructionEdit`: a fresh `ObjectId` carrying the primitive's
   transform, name, visibility and lock, published and made active, and the
   primitive DETACHED and held by the history, so one Undo brings back the
-  same id and Redo the same part. A Capsule, a Plane, a sculpted body and any
-  other representation are refused by name (`PrimitiveNotConvertible`), the
+  same id and Redo the same part. A Plane, a sculpted body and any other
+  representation are refused by name (`PrimitiveNotConvertible`), the
   Shape panel's Make CAD part is drawn only where native says it can succeed
   (`sceneActiveHasCadPart`), and the act is refused while sculpting or
   sketching. No format, section or version changed: the part is an ordinary
-  CAD body. **Not this stage:** a Capsule or Plane part, ready-made CAD
+  CAD body. **Not this stage:** a Plane part, ready-made CAD
   presets with no primitive behind them (torus, tube), and a link back from
   the part to the primitive.
 - **A Chamfer or a Fillet is a NAMED edge plus a distance, applied after the
