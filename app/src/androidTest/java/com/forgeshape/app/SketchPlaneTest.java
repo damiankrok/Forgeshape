@@ -175,6 +175,14 @@ public final class SketchPlaneTest {
 
     private void commitFromPrecisionSurface() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            // The pinned Extrude SUBMITS its depth field first: refresh it
+            // from native, as the shell does after every act, so a depth set
+            // below JNI is the one it submits.
+            workspace.onNativeStateChanged();
+            return null;
+        });
+        settleLayout();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             workspace.findViewById(R.id.sketch_extrude_commit).performClick();
             return null;
         });
