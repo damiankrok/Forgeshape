@@ -241,27 +241,6 @@ final class CadFeatureEditorView extends LinearLayout
         return apply;
     }
 
-    /**
-     * Measure owns the model's taps only while its reading can be seen: a panel
-     * that closes, or a part that stops being shown here, turns it off, so a
-     * tap never measures behind the user's back.
-     */
-    @Override
-    public void onVisibilityAggregated(boolean isVisible) {
-        super.onVisibilityAggregated(isVisible);
-        if (!isVisible && NativeViewport.measureActive()) {
-            NativeViewport.measureSetActive(false);
-        }
-    }
-
-    @Override
-    protected void onDetachedFromWindow() {
-        if (NativeViewport.measureActive()) {
-            NativeViewport.measureSetActive(false);
-        }
-        super.onDetachedFromWindow();
-    }
-
     /** The Measure distance toggle and reading, from native. */
     void refreshMeasureDistance() {
         final boolean on = NativeViewport.measureState(nativeMeasure);

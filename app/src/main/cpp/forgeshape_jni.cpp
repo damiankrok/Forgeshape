@@ -8245,6 +8245,7 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_measureSetActive(J
     std::lock_guard<std::mutex> lock(g_stateMutex);
     g_measureActive = active == JNI_TRUE;
     g_measure = forgeshape::MeasureState{};
+    FS_LOGI("FORGESHAPE_MEASURE_ACTIVE:%d", g_measureActive ? 1 : 0);
     if (g_measureActive) {
         g_faceSketchOffer = forgeshape::ChosenSupport{};
         g_edgeFinishOffer = EdgeFinishOffer{};

@@ -113,8 +113,12 @@ public final class IntersectTest {
         assertEquals("as deep as the extrusion", 0.5, mass[NativeViewport.MASS_SIZE_X + 2], 1e-4);
         assertTrue("as wide as the circle", mass[NativeViewport.MASS_SIZE_X] < 1.3
                 && mass[NativeViewport.MASS_SIZE_X] > 0.7);
-        assertEquals("a disc of the circle's volume", Math.PI * 0.25 * 0.5,
-                mass[NativeViewport.MASS_VOLUME], 0.12);
+        // The drawn circle's own radius is what the finger made it; the kept
+        // piece is the disc of that radius, 0.5 deep.
+        final double radius = 0.5 * mass[NativeViewport.MASS_SIZE_X];
+        assertEquals("a disc of the circle's volume", Math.PI * radius * radius * 0.5,
+                mass[NativeViewport.MASS_VOLUME], 0.05 * Math.PI * radius * radius * 0.5);
+        assertTrue("far less than the 4 m³ block", mass[NativeViewport.MASS_VOLUME] < 1.5);
     }
 
     // -----------------------------------------------------------------------

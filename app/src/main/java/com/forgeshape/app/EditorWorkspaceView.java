@@ -3897,6 +3897,11 @@ final class EditorWorkspaceView extends FrameLayout
             // Typing is over; the keyboard and the focus belong back on the
             // model rather than on a field that has just left the window.
             finishEditing();
+            // Measure owns the model's taps only while its reading can be
+            // seen (`CAD-MEASURE-R1`): closing the panel gives them back.
+            if (NativeViewport.measureActive()) {
+                NativeViewport.measureSetActive(false);
+            }
             // Stage 020M: closing the surface gives it back to the placement
             // editor, which is what the Transform tool's precision toggle means
             // by default. Relative Scale is opened by its own control and is
@@ -6752,6 +6757,15 @@ final class EditorWorkspaceView extends FrameLayout
         lastKnownActiveBodyId = NativeViewport.sceneActiveBodyId();
         lastKnownSculptUndoDepth = NativeViewport.sculptUndoDepth();
         syncFromNative();
+        // ...and once the chrome is re-read, a Measure whose panel is no
+        // longer the part's (another body, a sketch, Sculpt) is turned off,
+        // so a tap never measures behind the user's back.
+        if (NativeViewport.measureActive()
+                && (!inspector.isOpen() || !cadEditor.isAttachedToWindow()
+                        || !NativeViewport.sceneActiveBodyIsCad())) {
+            NativeViewport.measureSetActive(false);
+            cadEditor.refreshMeasureDistance();
+        }
     }
 
     /**

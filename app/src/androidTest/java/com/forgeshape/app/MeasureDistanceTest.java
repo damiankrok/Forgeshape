@@ -75,7 +75,7 @@ public final class MeasureDistanceTest {
     @Test
     public void two_taps_beside_two_corners_measure_the_edge_between_them() {
         block();
-        setCamera(0.7f, 0.9f, 8.0f);
+        setCamera(0.7f, 0.9f, 10.0f);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             workspace.onNativeStateChanged();
             WorkspaceTestSupport.openPrecision(workspace);
@@ -88,14 +88,34 @@ public final class MeasureDistanceTest {
         assertTrue("Measure owns the taps", NativeViewport.measureActive());
         final long active = NativeViewport.sceneActiveBodyId();
 
-        realTap(worldToWindow(-0.97, -0.97, 1.0));
-        realTap(worldToWindow(0.97, -0.97, 1.0));
+        // Two ADJACENT top corners, the pair standing highest on screen, so
+        // neither lies under a bottom-sheet panel; each tap lands just inside
+        // its corner and must snap onto it.
+        final double[][] corners = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
+        int best = 0;
+        float bestLow = Float.MAX_VALUE;
+        for (int k = 0; k < 4; k++) {
+            final float[] p = worldToWindow(corners[k][0], corners[k][1], 1.0);
+            final float[] q = worldToWindow(corners[(k + 1) % 4][0], corners[(k + 1) % 4][1], 1.0);
+            final float low = Math.max(p[1], q[1]);
+            if (low < bestLow) {
+                bestLow = low;
+                best = k;
+            }
+        }
+        final double[] first = corners[best];
+        final double[] second = corners[(best + 1) % 4];
         final double[] measure = new double[NativeViewport.MEASURE_SIZE];
-        assertTrue(NativeViewport.measureState(measure));
+        tapOnModel(worldToWindow(0.97 * first[0], 0.97 * first[1], 1.0));
+        assertTrue("still measuring after the first point", NativeViewport.measureState(measure));
+        assertEquals("the first point picked", 1, (int) measure[NativeViewport.MEASURE_COUNT]);
+        tapOnModel(worldToWindow(0.97 * second[0], 0.97 * second[1], 1.0));
+        assertTrue("still measuring after the second point", NativeViewport.measureState(measure));
         assertEquals("both points picked", 2, (int) measure[NativeViewport.MEASURE_COUNT]);
         assertEquals("snapped to the two corners, the edge is exactly 2 m", 2.0,
                 measure[NativeViewport.MEASURE_DISTANCE], 1e-4);
-        assertEquals("along X", 2.0, Math.abs(measure[NativeViewport.MEASURE_DX]), 1e-4);
+        assertEquals("along one axis", 2.0, Math.abs(measure[NativeViewport.MEASURE_DX])
+                + Math.abs(measure[NativeViewport.MEASURE_DX + 1]), 1e-4);
         assertEquals("both on the top face: the faces are parallel", 0.0,
                 measure[NativeViewport.MEASURE_ANGLE], 0.1);
         assertEquals(1.0, measure[NativeViewport.MEASURE_HAS_ANGLE], 0.0);
@@ -112,6 +132,14 @@ public final class MeasureDistanceTest {
     }
 
     // -----------------------------------------------------------------------
+
+    /** A real tap on the model, refused up front if a panel stands on that point. */
+    private void tapOnModel(float[] window) {
+        final Rect panel = windowRect(R.id.property_inspector);
+        assertFalse("the point " + window[0] + "," + window[1] + " is under the panel " + panel,
+                panel.contains((int) window[0], (int) window[1]));
+        realTap(window);
+    }
 
     /** A 2 x 2 x 1 CAD block. */
     private long block() {
