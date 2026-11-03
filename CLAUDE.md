@@ -573,8 +573,21 @@ on the host, with no device, and is the fast native loop.
   Through All back; the palette draws the choice only where native says it
   applies; and the precision surface's Extrude does not submit the shown
   number over it. **`CADB` v12** (§7o) is written only when a feature is
-  Through All. **Still not delivered:** `Intersect`,
-  `To Object` / To Face, taper or draft, and a
+  Through All. **To Face is the second derived extent** (`CAD-TO-FACE-R1`):
+  `ExtrudeExtentMode::ToFace` stores no distance and names a planar face of an
+  EARLIER feature of the same body (`ExtrudeFeature::toFace`, a
+  `CadFeatureSupport`, canonically default in every other mode); legal on a
+  later Add or Cut alone (`ToFaceUnsupported`), the face must resolve
+  (`ToFaceTargetInvalid`, never retargeted), be parallel to the sketch plane
+  (`ToFaceNotParallel`) and stand strictly beyond it (`ToFaceBehind`), and
+  the chain resolves it (`cadToFaceDistance`) into One Side before anything
+  reads a distance. The session offers it only where a candidate face exists
+  (`cadToFaceCandidates`, nearest first), seeds the nearest on the growing
+  side, Flip takes the nearest on the other, and a Ready tap beside every
+  region that lands on a face of the same body retargets it. **`CADB` v13**
+  (§7p) is written only for a To Face feature or an edge-placed hole. **Still
+  not delivered:** `Intersect`, `To Object`, To Face on a non-parallel face,
+  taper or draft, and a
   total-length presentation of Symmetric — the durable value stays the distance
   per side whatever a later UI chooses to show.
 - **What an extrusion extrudes is a REGION, named by semantic identity**
@@ -924,13 +937,33 @@ on the host, with no device, and is the fast native loop.
   native's seeds — a 1/2/5 diameter a fifth of the part's thinnest extent,
   Through All, the tapped point snapped to a quarter-diameter grid — drawing
   only the rows its kind uses; Apply, an edit and a Delete are each ONE
-  `ScopedConstructionEdit`, and an edit keeps the face. The History lists
+  `ScopedConstructionEdit`, and an edit keeps the face. **A hole may be placed
+  from two EDGES of its face** (`CAD-TO-FACE-R1`): each edge is named by the
+  other flat face of the support feature that meets the face along it, and
+  `edgeDistanceA/B` are measured in the face's plane, so the hole follows an
+  upstream size edit that moves its edges (`cadHolePoint`; `HoleEdgeNotFound`,
+  `HoleEdgesParallel`); one encoding each (`u`, `v` exactly 0 then). From
+  edges is seeded by `suggestCadHoleEdges` from where the hole stands, so
+  switching moves nothing; the two edges are highlighted in the sketch-overlay
+  slot and their tokens never cross JNI. The History lists
   holes by id and reopens one in the editor. **`CADB` gains version 11**
   (§7n), written ONLY when a body carries a hole; every v1..v10 project keeps
   its bytes and its fingerprint. **Not this stage:** a threaded or tapered
   hole, a drill-point bottom, a hole on a curved face, a hole positioned by
   dimensions to edges, a pattern of a hole, an extrusion extent of Through All
   or To Face, and a live preview while typing.
+- **A sketch may stand on a construction plane OFF a face of its own body**
+  (`CAD-PLANE-R1`). `CadSketchRecord::planeOffset` / `planeAngleDegrees` move
+  a feature-face record's plane along the face's normal and tilt it about the
+  face frame's `u` axis (`cadSketchPlaneFrame`), derived from the face on every
+  regeneration; a root record stands on its plane (`SketchPlaneInvalid`), as
+  does a tilt past 90°, a non-finite value or an offset past the sketch bound.
+  The support face must still carry material, judged on the FACE. The session
+  holds the plane as intent (`setFacePlane`, the precision surface's Sketch
+  plane section) until the commit stamps it into the record; New Body is
+  withdrawn off a face. **`CADB` v14** (§7q) is written only then. **Not this
+  stage:** a plane through three points, a plane on a world plane or a curved
+  face, and a named, reusable construction-plane object.
 - **A body's History is a VIEW of its feature chain, and an edit of an earlier
   step is STAGED** (`MODELING-FOUNDATIONS-R1` A). The History control in the
   history capsule is drawn exactly when the active body is a CAD or a Surface
