@@ -926,6 +926,23 @@ Verified on the emulator (`ThroughAllTest`): absent for New Body, offered for
 Cut, it reports the derived reach of the 1 m part, the precision surface's
 Extrude commits it as one Undo step, and it stays Through All in the History.
 
+## Extruding up to a face
+
+When a sketch on a face of a CAD part is set to **Add** or **Cut**, the extrude
+palette offers **To Face** wherever the part has a flat face parallel to the
+sketch beyond it. Choosing it ends the extrusion on the nearest such face on
+the side it grows; the value at the arrow reads "To face (…)" with how far
+that is now, so a later change that moves the face moves the end with it.
+**Flip** ends it on the nearest face on the other side. Tapping another face
+of the same part, beside the sketch's regions, makes that face the end
+instead. Dragging the arrow sets a depth, and a second finger gives To Face
+back. The History lists the feature as To Face.
+
+UNVERIFIED on the device yet — the emulator run is pending (`ToFaceTest`) is to show: absent for New Body, offered for an
+Add; on a part with a 1 m post it ends the boss on the post's top (1 m), the
+precision surface's Extrude commits it as one Undo step, and it stays To Face
+in the History.
+
 ## Drilling a hole
 
 Tap a flat face of a CAD part and, beside **Sketch here**, the bar under your
@@ -942,7 +959,10 @@ finger offers **Hole**.
   goes as deep as the part reaches under that face, so making the part
   thicker later makes the hole longer.
 - *At* gives the hole's position on the face as two numbers, for an exact
-  placement.
+  placement. **From edges** places it instead by its distances from the two
+  nearest edges of the face (highlighted on the model), starting from where
+  it stands so nothing moves; a later change that moves those edges carries
+  the hole with them.
 - A hole that would remove nothing is refused and the editor keeps your
   values. The **History** lists each hole; tapping it reopens the editor with
   **Delete**.
@@ -975,6 +995,30 @@ here**, the bar under your finger offers **Pattern** and **Mirror**.
 Verified on the emulator (`PatternTest`): a boss's Pattern applies its seeded
 values as one Undo and Undo takes it back; Mirror reflects it; the History
 reopens and deletes it.
+
+## A sketch plane off a face
+
+While drawing a sketch on a face of a CAD part (a new Add or Cut, or an edit
+of one), the precision surface shows **Sketch plane**: an **Offset** along the
+face's normal and an **Angle** that tilts the plane about the face's first
+axis. **Move plane** stands the sketch there — the drawing and the view move
+with it — and the plane stays derived from the face, so resizing the part
+moves it too. A sketch off a face makes an Add or a Cut (not a new body). The
+History lists its sketch as "Off a face by …".
+
+UNVERIFIED on the device yet — the emulator run is pending (`SketchPlaneTest`) is to show: on a block's top the plane
+moves 0.5 m off the face, a Cut drawn there commits as one Undo step, and the
+History reports the sketch 0.5 m off the face.
+
+## Measuring a part
+
+The precision surface of a CAD part has a **Measure** section: its volume,
+surface area, overall size and centre of mass, read off the part as it is
+placed, and its mass at a density you type (water, 1000 kg/m³, to start). An
+open surface reports no volume. Nothing here is saved with the project.
+
+UNVERIFIED on the device yet — the emulator run is pending (`SketchPlaneTest`) is to show: a 2 × 2 × 1 m block measures
+4 m³, 16 m², centre of mass 0.5 m up and 2 m across.
 
 ## Where the face's actions and editors stand
 
