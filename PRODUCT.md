@@ -911,6 +911,21 @@ stays a useful size, and a value you type is never nudged to it.
 Not yet: sketching on an imported or sculpted surface; a curved face as a
 sketch support; and moving a face-attached body on its own.
 
+## Cutting through the whole part
+
+When a sketch on a face of a CAD part is set to **Cut**, the extrude palette
+offers a fourth choice beside One Side, Symmetric and Two Sides: **Through
+All**. The cut then goes right through the part on its side, however thick the
+part is now or becomes after a later edit; the value at the arrow reads
+"Through all (…)" with where it reaches now. **Flip** sends it the other way
+(where there is no material it is refused by name). Dragging the arrow sets a
+depth instead, and a second finger gives Through All back. Through All is not
+offered for New Body or Add, and the History lists the cut as Through All.
+
+Verified on the emulator (`ThroughAllTest`): absent for New Body, offered for
+Cut, it reports the derived reach of the 1 m part, the precision surface's
+Extrude commits it as one Undo step, and it stays Through All in the History.
+
 ## Drilling a hole
 
 Tap a flat face of a CAD part and, beside **Sketch here**, the bar under your

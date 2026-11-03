@@ -1,7 +1,48 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.112.0
+**Status Version:** 0.113.0
 **Updated:** 2026-11-03
+**Latest stage:** **`CAD-EXTENT-R1` — the Through All extent of a Cut**
+(2026-11-03). **TECH PASS (emulator) / OWNER PHYSICAL REVIEW REQUIRED / NOT
+MERGED.** Branch `claude/new-session-g87rge`, product at `7006e54`. Stage 5b of
+`docs/FEATURE_PARITY_PLAN.md`; To Face and hole positioning by dimensions are
+stage 5c.
+
+- **Model.** `ExtrudeExtentMode::ThroughAll` (index 3) stores no distance
+  (`depth` and `secondDistance` exactly 0, a meaningful side). The chain
+  derives it — the farthest the earlier New Body / Add solids and pattern
+  copies of an Add reach on that side, plus 1 % — and resolves the feature into
+  a One Side extrusion (`extrudeResolvedThroughAll`) before anything reads a
+  distance, so an upstream size edit lengthens the cut. Only a later Cut takes
+  it (`ThroughAllUnsupported`, CadStatus 110); a side without material is
+  `ThroughAllReachesNothing` (111).
+- **Format.** `CADB` v12 (DATA_PACKAGE_SPEC.md §7o): v11's layout with extent
+  code 4, written only when a feature is Through All; v1..v11 projects keep
+  their bytes and fingerprint; code 4 in an older version is refused.
+- **UX.** The extrude palette draws a fourth extent choice, Through All, only
+  where native says it applies (a Cut of a target body); the arrow, the value
+  ("Through all (1.010 m)") and the preview show the derived reach
+  (`displayExtrude`); Flip chooses the other side; a drag sets a depth (One
+  Side) and a second finger restores Through All; leaving Cut keeps the reach
+  as One Side; the precision surface's Extrude does not submit the shown number
+  over it; the History reads "Through All".
+- **Found on the way.** `extrudeExtentModeFromIndex` was a three-case switch,
+  so the JNI door refused index 3 — caught by `ThroughAllTest` on the device
+  (run `41674570360` attempt 2, 1/8 failed), fixed in `7006e54`, and now pinned
+  by `TA_05_every_extent_mode_round_trips_its_index`.
+- **Evidence.** Host `HOST_SELFTESTS_OK` (4642 checks before the index fix;
+  CAD-feature suite 806/806 after it) with 16 `TA_*` checks (exact volumes
+  through a block, after a size edit and from a boss; every refusal; the
+  transitions; the index; v12 round trip and version rule; the session: offered
+  only for Cut, arrow reads the reach, drag and restore, commit goes through).
+  JVM `CadHudPresentationTest` (four extents, Through All offered only where it
+  applies). `CI FAST` `41678824385` success. `CI DEVICE` `41678818704`
+  `ThroughAllTest` + `CadExtrudeExtentTest` + `HoleTest` success (8/8, 25/25
+  startup tokens). Physical-device behaviour UNVERIFIED.
+- **Not this stage:** To Face / To Object, Through All for an Add or both
+  sides, Through All Next, a drill-point or taper.
+
+**Previous stage:** `CAD-HOLE-R1` (record below, unchanged).
 **Latest stage:** **`CAD-HOLE-R1` — Hole: Simple, Counterbore and
 Countersink, to a depth or Through All** (2026-11-03). **TECH PASS (emulator)
 / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
@@ -2383,10 +2424,11 @@ lives in Git history; only what still constrains the code is kept here.
 `SCULPT-UNDO-R0` (`ARCH-OWNER-12` — a dedicated bounded volatile per-body Sculpt
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
-**Next Stage:** `CAD-EXTENT-R1` — Through All / To Face extents for Add and
-Cut (stage 5b of `docs/FEATURE_PARITY_PLAN.md`), after the OWNER
-physical-device review of the `CAD-HOLE-R1` APK (holes, patterns, sketch
-Undo/Redo, the knife, push-through to Cut, Fillet/Chamfer); the Delete → Undo → Redo owner
+**Next Stage:** `CAD-TO-FACE-R1` — the To Face extent for Add and Cut and
+positioning a hole by distances to edges (stage 5c of
+`docs/FEATURE_PARITY_PLAN.md`), after the OWNER physical-device review of the
+`CAD-EXTENT-R1` APK (Through All, holes, patterns, sketch Undo/Redo, the knife,
+push-through to Cut, Fillet/Chamfer); the Delete → Undo → Redo owner
 verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See *Next Stage*.
 
 ## Current state
