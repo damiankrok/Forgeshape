@@ -353,11 +353,26 @@ enum class CadStatus : uint8_t {
     EdgeFinishNoEffect,
     // The body already carries kMaxCadEdgeFinishes finishes.
     TooManyEdgeFinishes,
+    // `CAD-PATTERN-R1`. A pattern's own values are out of bounds or not in
+    // their kind's canonical form, or its feature list is empty, too long,
+    // unordered or duplicated.
+    PatternInvalid,
+    // A pattern names a feature the chain does not have, or one at or after
+    // the pattern itself.
+    PatternFeatureNotFound,
+    // A pattern names the base feature (a New Body is not repeated into the
+    // same body) or the body is a Revolve.
+    PatternTargetUnsupported,
+    // One instance changed nothing: a Cut that misses the body, an Add that
+    // adds nothing, or an Add that would stand apart from the body.
+    PatternInstanceNoEffect,
+    // The body already carries kMaxCadFeaturePatterns patterns.
+    TooManyPatterns,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 93;
+constexpr int kCadStatusCount = 105;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);

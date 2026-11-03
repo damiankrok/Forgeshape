@@ -731,6 +731,37 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
             }
         }
     }
+    // `CAD-PATTERN-R1`: every pattern's whole authored truth, the exact bits
+    // of every number. Mixed only when the body has one, so every project
+    // without keeps its fingerprint.
+    if (cadBodyStateUsesPatterns(state)) {
+        auto mixBits = [&hash](double v) {
+            uint64_t bits = 0;
+            std::memcpy(&bits, &v, sizeof bits);
+            mixU64(hash, bits);
+        };
+        mixU64(hash, 0x50415430ull);  // "PAT0"
+        mixU64(hash, state.patterns.size());
+        for (const CadFeaturePattern& p : state.patterns) {
+            mixU64(hash, p.patternId);
+            mixU64(hash, static_cast<uint64_t>(p.kind));
+            mixU64(hash, p.featureIds.size());
+            for (uint32_t id : p.featureIds) mixU64(hash, id);
+            mixU64(hash, static_cast<uint64_t>(p.axis));
+            mixU64(hash, p.reversed ? 1u : 0u);
+            mixU64(hash, p.count);
+            mixBits(p.spacing);
+            mixU64(hash, static_cast<uint64_t>(p.axis2));
+            mixU64(hash, p.reversed2 ? 1u : 0u);
+            mixU64(hash, p.count2);
+            mixBits(p.spacing2);
+            mixBits(p.angleDegrees);
+            mixBits(p.center[0]);
+            mixBits(p.center[1]);
+            mixBits(p.center[2]);
+            mixBits(p.offset);
+        }
+    }
     // `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: a Revolve's whole authored truth -- its
     // selection, its axis ref, the exact angle bits and the direction. Mixed
     // only for a Revolve, so every Extrude project keeps the fingerprint it

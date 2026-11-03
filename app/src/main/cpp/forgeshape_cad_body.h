@@ -602,6 +602,105 @@ struct CadEdgeFinish {
 
 bool sameCadEdgeFinish(const CadEdgeFinish& a, const CadEdgeFinish& b);
 
+// ---------------------------------------------------------------------------
+// Feature patterns: Linear, Circular and Mirror (`CAD-PATTERN-R1`)
+// ---------------------------------------------------------------------------
+//
+// A pattern REPEATS one or more earlier later-features (Add or Cut) of the SAME
+// body: each instance is the feature's own derived tool solid, moved by a rigid
+// transform derived from the pattern's values alone, and applied with the
+// feature's own operation. Nothing about an instance is stored -- not a mesh,
+// not a copy of the sketch, not a placement: the authored truth is the
+// pattern's kind, the features it names by id, and its numbers.
+//
+// The directions and planes are the body's own LOCAL principal axes and planes
+// (`CadBodyAxis`), so a pattern moves with the body and needs no reference to
+// anything outside it. A Circular axis passes through `center` (body-local).
+// A Mirror reflects across the body-local plane NORMAL to `axis` at `offset`
+// along it. Each kind has ONE canonical form: the fields it does not use are
+// exactly their defaults, so one pattern has one encoding.
+//
+// Patterns take their place in the chain BY ID: a pattern is applied right
+// after the last feature whose id is below its own, and it may name only
+// features with a smaller id. Instance triangles carry the pattern's own
+// INELIGIBLE face-table entry, so an instance face is never a sketch support
+// (a support resolves to the ORIGINAL feature's face frame, which an instance
+// does not stand on).
+
+enum class CadPatternKind : uint8_t {
+    Linear,
+    Circular,
+    Mirror,
+};
+
+constexpr int kCadPatternKindCount = 3;
+
+const char* cadPatternKindName(CadPatternKind kind);
+bool cadPatternKindFromIndex(int index, CadPatternKind* out);
+int cadPatternKindIndex(CadPatternKind kind);
+
+// The body's local principal axes.
+enum class CadBodyAxis : uint8_t {
+    X,
+    Y,
+    Z,
+};
+
+constexpr int kCadBodyAxisCount = 3;
+
+bool cadBodyAxisFromIndex(int index, CadBodyAxis* out);
+int cadBodyAxisIndex(CadBodyAxis axis);
+
+// Bounds. Instances count the original: a Linear 3 x 2 grid is 6 instances.
+constexpr uint32_t kMinPatternCount = 2;
+constexpr uint32_t kMaxPatternInstances = 64;
+constexpr uint32_t kMaxFeaturesPerPattern = 8;
+constexpr uint32_t kMaxCadFeaturePatterns = 16;
+constexpr double kMinPatternSpacing = 1.0e-5;
+constexpr double kMaxPatternSpacing = 1000.0;
+constexpr double kMaxPatternOffset = 1000.0;
+
+struct CadFeaturePattern {
+    // Minted from `CadBodyState::nextFeatureId`, like a feature's and a
+    // finish's, so all three share one id space and a failure names any.
+    uint32_t patternId = 0;
+    CadPatternKind kind = CadPatternKind::Linear;
+    // 1..kMaxFeaturesPerPattern later features, strictly ascending, each with
+    // an id below `patternId`.
+    std::vector<uint32_t> featureIds;
+    // Linear: the first direction. Circular: the rotation axis. Mirror: the
+    // normal of the mirror plane.
+    CadBodyAxis axis = CadBodyAxis::X;
+    // Linear: the first direction points along -axis. Circular: the instances
+    // turn clockwise about +axis. Mirror: unused (false).
+    bool reversed = false;
+    // Linear / Circular: instances along the first direction / around the
+    // axis, kMinPatternCount..kMaxPatternInstances. Mirror: 2.
+    uint32_t count = 2;
+    // Linear: metres between neighbours along the first direction. Else 0.
+    double spacing = 0.0;
+    // Linear only, a second direction; `count2 == 1` means none, and then
+    // `axis2` is Y, `reversed2` false and `spacing2` 0 (the canonical empty).
+    CadBodyAxis axis2 = CadBodyAxis::Y;
+    bool reversed2 = false;
+    uint32_t count2 = 1;
+    double spacing2 = 0.0;
+    // Circular only: the swept angle in degrees, (0, 360]. A full 360 spaces
+    // `count` instances evenly round the circle; less spans the first to the
+    // last. Else 0.
+    double angleDegrees = 0.0;
+    // Circular only: a point on the axis, body-local metres. Else zero.
+    double center[3] = {0.0, 0.0, 0.0};
+    // Mirror only: where the plane stands along `axis`, body-local metres.
+    // Else 0.
+    double offset = 0.0;
+};
+
+bool sameCadFeaturePattern(const CadFeaturePattern& a, const CadFeaturePattern& b);
+
+// The instance count of a pattern, the original included.
+uint32_t cadPatternInstanceCount(const CadFeaturePattern& pattern);
+
 // The whole authored truth of one CAD Body. Plain, copyable, comparable,
 // BOUNDED (the sketch caps its entities and every polyline's vertices, the
 // table caps its sketches and the chain caps its features), and carrying
@@ -643,6 +742,10 @@ struct CadBodyState {
     // every extrusion. Empty for every body any earlier version created; a body
     // with one is written `CADB` v9 alone.
     std::vector<CadEdgeFinish> edgeFinishes;
+    // Linear, Circular and Mirror patterns of later features (`CAD-PATTERN-R1`),
+    // strictly ascending by id and applied in the chain BY ID. Empty for every
+    // body any earlier version created; a body with one is written `CADB` v10.
+    std::vector<CadFeaturePattern> patterns;
 };
 
 // The record with `sketchId`, or null.
@@ -726,6 +829,18 @@ uint32_t appendCadEdgeFinish(CadBodyState* state, CadEdgeFinishKind kind, double
 
 // The finish with `finishId`, or null.
 const CadEdgeFinish* findCadEdgeFinish(const CadBodyState& state, uint32_t finishId);
+
+// Whether the body carries a pattern. Such a state round-trips only through
+// `CADB` v10, and is never legacy-representable.
+bool cadBodyStateUsesPatterns(const CadBodyState& state);
+
+// Appends `pattern` with its id minted from `nextFeatureId` (the field's own
+// id is ignored). Returns the id, or 0 with nothing added at
+// kMaxCadFeaturePatterns. Validates nothing else.
+uint32_t appendCadFeaturePattern(CadBodyState* state, CadFeaturePattern pattern);
+
+// The pattern with `patternId`, or null.
+const CadFeaturePattern* findCadFeaturePattern(const CadBodyState& state, uint32_t patternId);
 
 // The number of features in the chain, the base included.
 inline uint32_t cadFeatureCount(const CadBodyState& state) {

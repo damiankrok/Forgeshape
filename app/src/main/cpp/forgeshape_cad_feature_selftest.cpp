@@ -23,6 +23,7 @@
 #include "forgeshape_owner_shell_selftest.h"
 #include "forgeshape_cad_edge_finish_selftest.h"
 #include "forgeshape_sketch_knife_undo_selftest.h"
+#include "forgeshape_cad_pattern_selftest.h"
 #include "forgeshape_cad_revolve_selftest.h"
 #include "forgeshape_cad_timeline_selftest.h"
 #include "forgeshape_sketch_drafting_selftest.h"
@@ -5837,6 +5838,14 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + edgeFinishPerformance;
+    // Feature patterns (`CAD-PATTERN-R1`): Linear, Circular and Mirror.
+    std::vector<ArrangementSelfTestCheck> patterns;
+    std::string patternPerformance;
+    runCadPatternSelfTests(&patterns, &patternPerformance);
+    for (const ArrangementSelfTestCheck& check : patterns) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + patternPerformance;
     // Sketch ergonomics (`SKETCH-KNIFE-UNDO-R1`): push-through to Cut, the
     // staged sketch's own Undo / Redo, and the knife.
     std::vector<ArrangementSelfTestCheck> knifeUndo;

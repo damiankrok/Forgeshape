@@ -9,6 +9,7 @@
 #include "forgeshape_cad_edge_finish.h"
 #include "forgeshape_cad_feature.h"
 #include "forgeshape_cad_kernel.h"
+#include "forgeshape_cad_pattern.h"
 
 namespace forgeshape {
 
@@ -472,6 +473,64 @@ bool cadEdgeFinishKindFromIndex(int index, CadEdgeFinishKind* out) {
 
 int cadEdgeFinishKindIndex(CadEdgeFinishKind kind) { return static_cast<int>(kind); }
 
+const char* cadPatternKindName(CadPatternKind kind) {
+    switch (kind) {
+        case CadPatternKind::Linear: return "Linear";
+        case CadPatternKind::Circular: return "Circular";
+        case CadPatternKind::Mirror: return "Mirror";
+    }
+    return "unknown";
+}
+
+bool cadPatternKindFromIndex(int index, CadPatternKind* out) {
+    if (out == nullptr || index < 0 || index >= kCadPatternKindCount) return false;
+    *out = static_cast<CadPatternKind>(index);
+    return true;
+}
+
+int cadPatternKindIndex(CadPatternKind kind) { return static_cast<int>(kind); }
+
+bool cadBodyAxisFromIndex(int index, CadBodyAxis* out) {
+    if (out == nullptr || index < 0 || index >= kCadBodyAxisCount) return false;
+    *out = static_cast<CadBodyAxis>(index);
+    return true;
+}
+
+int cadBodyAxisIndex(CadBodyAxis axis) { return static_cast<int>(axis); }
+
+bool sameCadFeaturePattern(const CadFeaturePattern& a, const CadFeaturePattern& b) {
+    return a.patternId == b.patternId && a.kind == b.kind && a.featureIds == b.featureIds
+           && a.axis == b.axis && a.reversed == b.reversed && a.count == b.count
+           && a.spacing == b.spacing && a.axis2 == b.axis2 && a.reversed2 == b.reversed2
+           && a.count2 == b.count2 && a.spacing2 == b.spacing2
+           && a.angleDegrees == b.angleDegrees && a.center[0] == b.center[0]
+           && a.center[1] == b.center[1] && a.center[2] == b.center[2] && a.offset == b.offset;
+}
+
+uint32_t cadPatternInstanceCount(const CadFeaturePattern& pattern) {
+    return pattern.kind == CadPatternKind::Linear ? pattern.count * pattern.count2 : pattern.count;
+}
+
+bool cadBodyStateUsesPatterns(const CadBodyState& state) { return !state.patterns.empty(); }
+
+uint32_t appendCadFeaturePattern(CadBodyState* state, CadFeaturePattern pattern) {
+    if (state == nullptr || state->patterns.size() >= kMaxCadFeaturePatterns
+        || state->nextFeatureId == 0xFFFFFFFFu) {
+        return 0;
+    }
+    pattern.patternId = state->nextFeatureId;
+    state->patterns.push_back(std::move(pattern));
+    state->nextFeatureId += 1u;
+    return state->patterns.back().patternId;
+}
+
+const CadFeaturePattern* findCadFeaturePattern(const CadBodyState& state, uint32_t patternId) {
+    for (const CadFeaturePattern& pattern : state.patterns) {
+        if (pattern.patternId == patternId) return &pattern;
+    }
+    return nullptr;
+}
+
 namespace {
 
 // A total order over face tokens: kind, entity, local index, then -- for a
@@ -725,6 +784,10 @@ bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
     if (cadBodyStateUsesEdgeFinishes(state)) {
         return false;
     }
+    // A pattern has no encoding below v10 (`CAD-PATTERN-R1`).
+    if (cadBodyStateUsesPatterns(state)) {
+        return false;
+    }
     // A Construction role or a sketch dimension has no encoding below v8
     // (`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1`).
     if (cadBodyStateUsesDrafting(state)) {
@@ -849,8 +912,14 @@ bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b) {
         || a.baseKind != b.baseKind || !sameExtrudeFeature(a.extrude, b.extrude)
         || !sameRevolveFeature(a.revolve, b.revolve)
         || a.laterFeatures.size() != b.laterFeatures.size()
-        || a.edgeFinishes.size() != b.edgeFinishes.size()) {
+        || a.edgeFinishes.size() != b.edgeFinishes.size()
+        || a.patterns.size() != b.patterns.size()) {
         return false;
+    }
+    for (size_t i = 0; i < a.patterns.size(); ++i) {
+        if (!sameCadFeaturePattern(a.patterns[i], b.patterns[i])) {
+            return false;
+        }
     }
     for (size_t i = 0; i < a.edgeFinishes.size(); ++i) {
         if (!sameCadEdgeFinish(a.edgeFinishes[i], b.edgeFinishes[i])) {
@@ -1325,6 +1394,10 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
         if (!state.edgeFinishes.empty()) {
             return CadStatus::EdgeFinishTargetUnsupported;
         }
+        // A Revolve has no later feature to repeat.
+        if (!state.patterns.empty()) {
+            return CadStatus::PatternTargetUnsupported;
+        }
         const CadStatus revolveWhy =
                 validateRevolveFeatureGeometry(cadBaseSketch(state), state.revolve, &baseRegions);
         if (revolveWhy != CadStatus::Ok) {
@@ -1366,6 +1439,12 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
     const CadStatus finishWhy = validateCadEdgeFinishes(state);
     if (finishWhy != CadStatus::Ok) {
         return finishWhy;
+    }
+    // Patterns (`CAD-PATTERN-R1`): ids, bounds, canonical form, and features
+    // that exist earlier in the chain -- again without the kernel.
+    const CadStatus patternWhy = validateCadFeaturePatterns(state);
+    if (patternWhy != CadStatus::Ok) {
+        return patternWhy;
     }
     if (outProfiles != nullptr) {
         *outProfiles = std::move(baseRegions.loops);
@@ -1555,6 +1634,15 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
         faces.push_back(CadMeshFace{finish.finishId, token, false});
     }
     const bool finished = !state.edgeFinishes.empty();
+    // And one INELIGIBLE entry per pattern: an instance face is never a sketch
+    // support, because a support resolves to the ORIGINAL feature's frame.
+    std::vector<uint32_t> patternTag;
+    for (const CadFeaturePattern& pattern : state.patterns) {
+        patternTag.push_back(static_cast<uint32_t>(faces.size()));
+        CadFaceToken token;
+        token.kind = CadFaceKind::Side;
+        faces.push_back(CadMeshFace{pattern.patternId, token, false});
+    }
 
     // Every body any earlier version created: R0's path, bit for bit.
     if (!finished && chain.size() == 1u && base.kind == CadFeatureKind::Extrude
@@ -1615,8 +1703,84 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
         }
         components = measure.components;
         volume = measure.volume;
+        // Patterns take their place in the chain BY ID (`CAD-PATTERN-R1`):
+        // each is applied once every feature below its id is, and before any
+        // feature above it, so a later Cut sees the instances it follows.
+        size_t nextPattern = 0;
+        auto applyPatternsBelow = [&](uint32_t limitId) -> CadStatus {
+            while (nextPattern < state.patterns.size()
+                   && state.patterns[nextPattern].patternId < limitId) {
+                const CadFeaturePattern& pattern = state.patterns[nextPattern];
+                const uint32_t tag = patternTag[nextPattern];
+                ++nextPattern;
+                const std::vector<CadPatternTransform> instances =
+                        cadPatternInstanceTransforms(pattern);
+                if (instances.empty()) {
+                    local.failedFeatureId = pattern.patternId;
+                    return CadStatus::PatternInvalid;
+                }
+                for (const CadPatternTransform& motion : instances) {
+                    for (uint32_t featureId : pattern.featureIds) {
+                        const CadFeatureGeometry* source = nullptr;
+                        for (const CadFeatureGeometry& g : chain) {
+                            if (g.featureId == featureId) source = &g;
+                        }
+                        if (source == nullptr) {
+                            local.failedFeatureId = pattern.patternId;
+                            return CadStatus::PatternFeatureNotFound;
+                        }
+                        CadSolid tool;
+                        CadStatus toolWhy = appendCadFeatureSolid(*source, tag, &tool);
+                        if (toolWhy != CadStatus::Ok) {
+                            local.failedFeatureId = pattern.patternId;
+                            return toolWhy;
+                        }
+                        // Every instance triangle wears the pattern's entry.
+                        std::fill(tool.faceTags.begin(), tool.faceTags.end(), tag);
+                        transformCadSolid(motion, &tool);
+                        CadSolidMeasure toolMeasure;
+                        if (cadKernelValidateSolid(tool, &toolMeasure) != CadKernelStatus::Ok) {
+                            local.failedFeatureId = pattern.patternId;
+                            return CadStatus::KernelFailed;
+                        }
+                        const bool add = source->operation == CadFeatureOperation::Add;
+                        CadSolid result;
+                        CadSolidMeasure resultMeasure;
+                        if (cadKernelBoolean(body, tool,
+                                             add ? CadBooleanOp::Union : CadBooleanOp::Difference,
+                                             &result)
+                                    != CadKernelStatus::Ok
+                            || cadKernelMeasure(result, &resultMeasure) != CadKernelStatus::Ok) {
+                            local.failedFeatureId = pattern.patternId;
+                            return CadStatus::KernelFailed;
+                        }
+                        const double floor = kCadOperationEffectFraction * toolMeasure.volume;
+                        const bool noEffect =
+                                add ? (resultMeasure.components > components
+                                       || resultMeasure.volume - volume <= floor)
+                                    : (!result.empty() && volume - resultMeasure.volume <= floor);
+                        if (!add && result.empty()) {
+                            local.failedFeatureId = pattern.patternId;
+                            return CadStatus::CutRemovesBody;
+                        }
+                        if (noEffect) {
+                            local.failedFeatureId = pattern.patternId;
+                            return CadStatus::PatternInstanceNoEffect;
+                        }
+                        body = std::move(result);
+                        components = resultMeasure.components;
+                        volume = resultMeasure.volume;
+                    }
+                }
+            }
+            return CadStatus::Ok;
+        };
         for (size_t i = 1; i < chain.size(); ++i) {
             const CadFeatureGeometry& feature = chain[i];
+            why = applyPatternsBelow(feature.featureId);
+            if (why != CadStatus::Ok) {
+                return finish(why, local.failedFeatureId);
+            }
             // The support must still carry material where this feature stands:
             // an earlier Cut that removed the whole face refuses by name rather
             // than leave a sketch floating in empty space. A feature extruding
@@ -1669,6 +1833,10 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
             body = std::move(result);
             components = resultMeasure.components;
             volume = resultMeasure.volume;
+        }
+        why = applyPatternsBelow(0xFFFFFFFFu);
+        if (why != CadStatus::Ok) {
+            return finish(why, local.failedFeatureId);
         }
         // Chamfers and Fillets, in order, after every extrusion: one kernel
         // Difference per edge with a tool derived from the edge alone.

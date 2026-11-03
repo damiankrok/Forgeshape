@@ -36,6 +36,9 @@ enum class CadTimelineRowKind : uint8_t {
     // A Chamfer or a Fillet (`CAD-EDGE-FINISH-R1`), listed after every feature
     // because it is applied after every extrusion.
     Finish,
+    // A Linear, Circular or Mirror pattern (`CAD-PATTERN-R1`), listed at its
+    // place in the chain BY ID, because that is where it is applied.
+    Pattern,
 };
 
 const char* cadTimelineRowKindName(CadTimelineRowKind kind);
@@ -113,6 +116,11 @@ struct CadTimelineRow {
     CadEdgeFinishKind finishKind = CadEdgeFinishKind::Fillet;
     Meters finishDistance = 0.0;
     uint32_t finishEdgeCount = 0;
+
+    // --- a pattern row (`CAD-PATTERN-R1`) ---
+    CadPatternKind patternKind = CadPatternKind::Linear;
+    uint32_t patternInstances = 0;
+    uint32_t patternFeatureCount = 0;
 };
 
 struct CadTimeline {
@@ -129,7 +137,8 @@ struct CadTimeline {
 };
 
 // How many rows a timeline can have: one per feature and one per sketch.
-constexpr uint32_t kMaxCadTimelineRows = kMaxCadFeatures + kMaxCadSketches + kMaxCadEdgeFinishes;
+constexpr uint32_t kMaxCadTimelineRows =
+        kMaxCadFeatures + kMaxCadSketches + kMaxCadEdgeFinishes + kMaxCadFeaturePatterns;
 
 // THE timeline of `state`.
 //

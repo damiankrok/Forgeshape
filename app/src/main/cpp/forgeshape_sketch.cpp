@@ -14,7 +14,7 @@ namespace forgeshape {
 
 // The count is a literal in the header so Java can mirror it; this is what
 // keeps the literal honest when an enumerator is appended.
-static_assert(static_cast<int>(CadStatus::SketchIsRoot) + 1 == kCadStatusCount,
+static_assert(static_cast<int>(CadStatus::TooManyPatterns) + 1 == kCadStatusCount,
               "kCadStatusCount must equal the number of CadStatus enumerators");
 
 const char* cadStatusName(CadStatus status) {
@@ -119,6 +119,11 @@ const char* cadStatusName(CadStatus status) {
         case CadStatus::EdgeFinishTooLarge: return "EdgeFinishTooLarge";
         case CadStatus::EdgeFinishNoEffect: return "EdgeFinishNoEffect";
         case CadStatus::TooManyEdgeFinishes: return "TooManyEdgeFinishes";
+        case CadStatus::PatternInvalid: return "PatternInvalid";
+        case CadStatus::PatternFeatureNotFound: return "PatternFeatureNotFound";
+        case CadStatus::PatternTargetUnsupported: return "PatternTargetUnsupported";
+        case CadStatus::PatternInstanceNoEffect: return "PatternInstanceNoEffect";
+        case CadStatus::TooManyPatterns: return "TooManyPatterns";
     }
     return "unknown";
 }

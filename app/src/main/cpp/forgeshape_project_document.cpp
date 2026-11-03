@@ -527,6 +527,16 @@ bool cadDocumentNeedsV8(const ProjectDocument& document) {
     return false;
 }
 
+// Whether any CAD body needs the v10 section (`CAD-PATTERN-R1`): a pattern.
+bool cadDocumentNeedsV10(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (cadBodyStateUsesPatterns(body.state)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Whether any CAD body needs the v9 section (`CAD-EDGE-FINISH-R1`): a Chamfer
 // or a Fillet, which no earlier layout has a byte for.
 bool cadDocumentNeedsV9(const ProjectDocument& document) {
@@ -1363,6 +1373,23 @@ void writeCadDimensions(ByteWriter& out, const CadSketch& sketch) {
 }
 
 // A finish kind's file code: 1 Chamfer, 2 Fillet; 0 is never written.
+// §7m file codes, 1-based and file-owned like every other.
+uint8_t cadPatternKindFileCode(CadPatternKind kind) {
+    return static_cast<uint8_t>(cadPatternKindIndex(kind) + 1);
+}
+
+bool cadPatternKindFromFileCode(uint8_t code, CadPatternKind* out) {
+    return code >= 1u && cadPatternKindFromIndex(static_cast<int>(code) - 1, out);
+}
+
+uint8_t cadBodyAxisFileCode(CadBodyAxis axis) {
+    return static_cast<uint8_t>(cadBodyAxisIndex(axis) + 1);
+}
+
+bool cadBodyAxisFromFileCode(uint8_t code, CadBodyAxis* out) {
+    return code >= 1u && cadBodyAxisFromIndex(static_cast<int>(code) - 1, out);
+}
+
 uint8_t cadEdgeFinishKindFileCode(CadEdgeFinishKind kind) {
     return kind == CadEdgeFinishKind::Chamfer ? 1u : 2u;
 }
@@ -1376,7 +1403,7 @@ bool cadEdgeFinishKindFromFileCode(uint8_t code, CadEdgeFinishKind* out) {
 }
 
 void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKinds,
-                    bool drafting, bool finishes) {
+                    bool drafting, bool finishes, bool patterns) {
     const CadBodyState& state = body.state;
     out.u64(body.objectId);
     out.u32(state.nextSketchId);
@@ -1446,6 +1473,31 @@ void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKin
                 writeCadFaceTokenV6(out, edge.faceA);
                 writeCadFaceTokenV6(out, edge.faceB);
             }
+        }
+    }
+    if (patterns) {
+        // §7m: the body's patterns, ascending by id.
+        out.u32(static_cast<uint32_t>(state.patterns.size()));
+        for (const CadFeaturePattern& pattern : state.patterns) {
+            out.u32(pattern.patternId);
+            out.u8(cadPatternKindFileCode(pattern.kind));
+            out.u32(static_cast<uint32_t>(pattern.featureIds.size()));
+            for (uint32_t id : pattern.featureIds) {
+                out.u32(id);
+            }
+            out.u8(cadBodyAxisFileCode(pattern.axis));
+            out.u8(pattern.reversed ? 1u : 0u);
+            out.u32(pattern.count);
+            out.f64(pattern.spacing);
+            out.u8(cadBodyAxisFileCode(pattern.axis2));
+            out.u8(pattern.reversed2 ? 1u : 0u);
+            out.u32(pattern.count2);
+            out.f64(pattern.spacing2);
+            out.f64(pattern.angleDegrees);
+            out.f64(pattern.center[0]);
+            out.f64(pattern.center[1]);
+            out.f64(pattern.center[2]);
+            out.f64(pattern.offset);
         }
     }
 }
@@ -1562,7 +1614,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
 
     // The section is written at the LOWEST version that can carry it, so every
     // project that predates a feature keeps the bytes it always had.
-    const bool cadV9 = document.hasCad && cadDocumentNeedsV9(document);
+    const bool cadV10 = document.hasCad && cadDocumentNeedsV10(document);
+    const bool cadV9 = document.hasCad && (cadV10 || cadDocumentNeedsV9(document));
     const bool cadV8 = document.hasCad && (cadV9 || cadDocumentNeedsV8(document));
     const bool cadV7 = document.hasCad && (cadV8 || cadDocumentNeedsV7(document));
     const bool cadV6 = document.hasCad && (cadV7 || cadDocumentNeedsV6(document));
@@ -1580,7 +1633,7 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
                 // table replaces the inline sketches outright. v7 (§7h) is that
                 // layout with a kind after every feature id.
                 writeCadBodyV6(out, body, /*featureKinds=*/cadV7, /*drafting=*/cadV8,
-                               /*finishes=*/cadV9);
+                               /*finishes=*/cadV9, /*patterns=*/cadV10);
                 continue;
             }
             const CadBodyState& state = body.state;
@@ -1733,7 +1786,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
         appendSection(file, kSectionTagCad,
-                      cadV9   ? kCadSectionVersionV9
+                      cadV10  ? kCadSectionVersionV10
+                      : cadV9 ? kCadSectionVersionV9
                       : cadV8 ? kCadSectionVersionV8
                       : cadV7 ? kCadSectionVersionV7
                       : cadV6 ? kCadSectionVersionV6
@@ -2415,7 +2469,7 @@ ProjectCodecStatus readCadSelectionV6(ByteReader& in, ExtrudeFeature* extrude) {
 // Structure and file codes here; every relation between the parts --
 // ids, order, references, placements, selections -- is `validateCadBodyState`'s.
 ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool featureKinds,
-                                   bool drafting, bool finishes) {
+                                   bool drafting, bool finishes, bool patterns) {
     CadBodyState& state = body->state;
     uint32_t sketchCount = 0;
     if (!in.u64(&body->objectId) || !in.u32(&state.nextSketchId)
@@ -2603,8 +2657,9 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
         }
         // A v9 body carries at least one finish: the section is written at
         // v9 only for one that does, and an empty list would be a second
-        // encoding of a v8 body.
-        if (finishCount == 0 || finishCount > kMaxCadEdgeFinishes) {
+        // encoding of a v8 body. In v10 the list may be empty, because the
+        // patterns that follow are what made the section v10.
+        if ((finishCount == 0 && !patterns) || finishCount > kMaxCadEdgeFinishes) {
             return ProjectCodecStatus::ImpossibleCount;
         }
         state.edgeFinishes.assign(finishCount, CadEdgeFinish{});
@@ -2639,12 +2694,64 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
             }
         }
     }
+    if (patterns) {
+        uint32_t patternCount = 0;
+        if (!in.u32(&patternCount)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        // A v10 body that carries no pattern would be a second encoding of a
+        // v9 one -- but one body of several may carry none, so only the bound
+        // is the codec's; a whole section without a pattern is refused below.
+        if (patternCount > kMaxCadFeaturePatterns) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        state.patterns.assign(patternCount, CadFeaturePattern{});
+        for (CadFeaturePattern& pattern : state.patterns) {
+            uint8_t kindCode = 0;
+            uint32_t featureCount = 0;
+            if (!in.u32(&pattern.patternId) || !in.u8(&kindCode) || !in.u32(&featureCount)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            if (!cadPatternKindFromFileCode(kindCode, &pattern.kind)) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            if (featureCount == 0 || featureCount > kMaxFeaturesPerPattern) {
+                return ProjectCodecStatus::ImpossibleCount;
+            }
+            pattern.featureIds.assign(featureCount, 0u);
+            for (uint32_t& id : pattern.featureIds) {
+                if (!in.u32(&id)) {
+                    return ProjectCodecStatus::Truncated;
+                }
+            }
+            uint8_t axis = 0;
+            uint8_t reversed = 0;
+            uint8_t axis2 = 0;
+            uint8_t reversed2 = 0;
+            if (!in.u8(&axis) || !in.u8(&reversed) || !in.u32(&pattern.count)
+                || !in.f64(&pattern.spacing) || !in.u8(&axis2) || !in.u8(&reversed2)
+                || !in.u32(&pattern.count2) || !in.f64(&pattern.spacing2)
+                || !in.f64(&pattern.angleDegrees) || !in.f64(&pattern.center[0])
+                || !in.f64(&pattern.center[1]) || !in.f64(&pattern.center[2])
+                || !in.f64(&pattern.offset)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            if (!cadBodyAxisFromFileCode(axis, &pattern.axis)
+                || !cadBodyAxisFromFileCode(axis2, &pattern.axis2) || reversed > 1u
+                || reversed2 > 1u) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            pattern.reversed = reversed == 1u;
+            pattern.reversed2 = reversed2 == 1u;
+        }
+    }
     return ProjectCodecStatus::Ok;
 }
 
 ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, uint16_t version) {
     if (version == kCadSectionVersionV6 || version == kCadSectionVersionV7
-        || version == kCadSectionVersionV8 || version == kCadSectionVersionV9) {
+        || version == kCadSectionVersionV8 || version == kCadSectionVersionV9
+        || version == kCadSectionVersionV10) {
         uint32_t bodyCount = 0;
         if (!in.u32(&bodyCount)) {
             return ProjectCodecStatus::Truncated;
@@ -2664,9 +2771,21 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
             const ProjectCodecStatus why =
                     decodeCadBodyV6(in, &body, /*featureKinds=*/version >= kCadSectionVersionV7,
                                     /*drafting=*/version >= kCadSectionVersionV8,
-                                    /*finishes=*/version >= kCadSectionVersionV9);
+                                    /*finishes=*/version >= kCadSectionVersionV9,
+                                    /*patterns=*/version >= kCadSectionVersionV10);
             if (why != ProjectCodecStatus::Ok) {
                 return why;
+            }
+        }
+        // A v10 section exists only for a pattern: one with none anywhere is
+        // a second encoding of a v9 (or lower) section.
+        if (version >= kCadSectionVersionV10) {
+            bool anyPattern = false;
+            for (const ProjectCadBody& body : record->bodies) {
+                anyPattern = anyPattern || !body.state.patterns.empty();
+            }
+            if (!anyPattern) {
+                return ProjectCodecStatus::InvalidSemanticValue;
             }
         }
         if (!in.atEnd()) {
@@ -2957,7 +3076,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
                         || sectionVersion == kCadSectionVersionV6
                         || sectionVersion == kCadSectionVersionV7
                         || sectionVersion == kCadSectionVersionV8
-                        || sectionVersion == kCadSectionVersionV9;
+                        || sectionVersion == kCadSectionVersionV9
+                        || sectionVersion == kCadSectionVersionV10;
         } else if (isScene) {
             // SCNE became the second multi-version section at Stage 018A: v1 as
             // every build before it wrote, and v2 carrying per-body visibility,

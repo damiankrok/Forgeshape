@@ -10,6 +10,7 @@ const char* cadTimelineRowKindName(CadTimelineRowKind kind) {
         case CadTimelineRowKind::Sketch: return "Sketch";
         case CadTimelineRowKind::Feature: return "Feature";
         case CadTimelineRowKind::Finish: return "Finish";
+        case CadTimelineRowKind::Pattern: return "Pattern";
     }
     return "unknown";
 }
@@ -85,12 +86,43 @@ CadTimeline buildCadTimeline(const CadBodyState& state, const CadRegenerationRep
     // every later feature is not known to regenerate.
     bool pastFailure = false;
     bool pastEdit = false;
+    // Patterns sit in the chain BY ID: each is listed just before the first
+    // feature whose id is above its own, exactly where regeneration applies it.
+    size_t nextPattern = 0;
+    uint32_t patternOrdinal = 0;
+    auto listPatternsBelow = [&](uint32_t limitId) {
+        while (nextPattern < state.patterns.size()
+               && state.patterns[nextPattern].patternId < limitId
+               && timeline.rows.size() < kMaxCadTimelineRows) {
+            const CadFeaturePattern& pattern = state.patterns[nextPattern++];
+            CadTimelineRow row;
+            row.kind = CadTimelineRowKind::Pattern;
+            row.id = pattern.patternId;
+            row.editFeatureId = pattern.patternId;
+            row.ordinal = ++patternOrdinal;
+            row.patternKind = pattern.kind;
+            row.patternInstances = cadPatternInstanceCount(pattern);
+            row.patternFeatureCount = static_cast<uint32_t>(pattern.featureIds.size());
+            if (!evaluated) {
+                row.state = pastEdit ? CadTimelineRowState::Pending : CadTimelineRowState::Ok;
+            } else if (pastFailure) {
+                row.state = CadTimelineRowState::NotRegenerated;
+            } else if (report.status != CadStatus::Ok
+                       && report.failedFeatureId == pattern.patternId) {
+                row.state = CadTimelineRowState::Failed;
+                row.status = report.status;
+                pastFailure = true;
+            }
+            timeline.rows.push_back(row);
+        }
+    };
     const uint32_t count = cadFeatureCount(state);
     for (uint32_t i = 0; i < count && timeline.rows.size() < kMaxCadTimelineRows; ++i) {
         CadFeatureView view;
         if (!cadFeatureAt(state, i, &view)) {
             break;
         }
+        listPatternsBelow(view.featureId);
         const bool sketchListed =
                 std::find(listed.begin(), listed.end(), view.sketchId) != listed.end();
         if (!sketchListed && view.sketchId != kNoCadSketch) {
@@ -143,6 +175,8 @@ CadTimeline buildCadTimeline(const CadBodyState& state, const CadRegenerationRep
         }
         timeline.rows.push_back(row);
     }
+
+    listPatternsBelow(0xFFFFFFFFu);
 
     // Chamfers and Fillets, in application order, after every extrusion. A
     // staged edit of any feature re-derives them too, so they are Pending until
@@ -211,7 +245,11 @@ std::string cadTimelineRowSummary(const CadTimelineRow& row) {
                       cadTimelineRowStateName(row.state));
         return buffer;
     }
-    if (row.kind == CadTimelineRowKind::Finish) {
+    if (row.kind == CadTimelineRowKind::Pattern) {
+        std::snprintf(buffer, sizeof(buffer), "Pattern %s #%u %u instances of %u features %s",
+                      cadPatternKindName(row.patternKind), row.id, row.patternInstances,
+                      row.patternFeatureCount, cadTimelineRowStateName(row.state));
+    } else if (row.kind == CadTimelineRowKind::Finish) {
         std::snprintf(buffer, sizeof(buffer), "%s #%u %.6g on %u edges %s",
                       cadEdgeFinishKindName(row.finishKind), row.id, row.finishDistance,
                       row.finishEdgeCount, cadTimelineRowStateName(row.state));

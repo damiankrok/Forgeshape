@@ -222,6 +222,11 @@ constexpr uint16_t kCadSectionVersionV8 = 8;
 // body's Chamfer / Fillet list after its features. Written ONLY when a body
 // carries one, so every v1..v8 project keeps its bytes.
 constexpr uint16_t kCadSectionVersionV9 = 9;
+// v10 (`CAD-PATTERN-R1`, DATA_PACKAGE_SPEC.md §7m): the v9 layout -- whose
+// finish list may now be empty -- followed by each body's pattern list.
+// Written ONLY when a body carries a pattern, so every v1..v9 project keeps
+// its bytes.
+constexpr uint16_t kCadSectionVersionV10 = 10;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.

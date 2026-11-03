@@ -60,6 +60,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_cad_kernel.cpp
     forgeshape_cad_extrude_tool.cpp
     forgeshape_cad_edge_finish.cpp
+    forgeshape_cad_pattern.cpp
     forgeshape_sketch.cpp
     forgeshape_sketch_region.cpp
     forgeshape_sketch_arrangement.cpp
@@ -132,6 +133,7 @@ set(FORGESHAPE_SELFTEST_SOURCES
     forgeshape_cad_revolve_selftest.cpp
     forgeshape_cad_edge_finish_selftest.cpp
     forgeshape_sketch_knife_undo_selftest.cpp
+    forgeshape_cad_pattern_selftest.cpp
     forgeshape_cad_timeline_selftest.cpp
     forgeshape_cad_r2_selftest.cpp
     forgeshape_cad_oracle_selftest.cpp
