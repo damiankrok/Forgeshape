@@ -1522,6 +1522,34 @@ than opening the part with its holes silently filled. No v11 corpus fixture
 exists yet: the round trip and the refusals are host evidence (`HO_12_*` in the
 CAD-feature suite).
 
+## 7o. `CADB` v12 — the Through All extent (`CAD-EXTENT-R1`)
+
+Version 12 is v11's layout (§7n) byte for byte, with two changes:
+
+1. an extent code (the `u8` that precedes each feature's direction, §7d/§7g)
+   may be **4, Through All**, which no earlier version has — a v1..v11 section
+   carrying it is refused as `InvalidSemanticValue`, and a v12 section in which
+   no feature carries it is a second encoding of v11 and refused the same way;
+2. the hole list keeps its layout, and a v12 section is not refused for having
+   no hole (in v11 it was; in v12 the extent is what made it v12).
+
+A Through All feature stores **no distance**: its `depth` and `secondDistance`
+are exactly `0.0` (anything else is `InvalidExtrudeExtent`), and its direction
+is the side it cuts toward, meaningful exactly as One Side's is. The distance
+is DERIVED at regeneration: the farthest the material before the feature
+reaches on that side of its sketch plane — every earlier New Body and Add
+feature's own solid, and every earlier pattern's copies of an Add (Cuts and
+holes only remove) — plus 1 % (at least 1 µm), so the tool leaves the body
+cleanly and an upstream size edit lengthens the cut. Only a later **Cut** may
+be Through All (`ThroughAllUnsupported` for the base feature, an Add or a
+Revolve); a cut whose side holds no material is `ThroughAllReachesNothing`.
+
+v12 is written exactly when some feature is Through All; every other project
+keeps whichever of v1..v11 it already used, byte for byte, and its fingerprint
+(the extent index is already mixed; a Through All feature mixes the new index
+3 and its two zero distances). No v12 corpus fixture exists yet: the round trip
+and the version rule are host evidence (`TA_06_*` in the CAD-feature suite).
+
 ## 7j. `FRFM` v1 — the Freeform bodies (`MODELING-FOUNDATIONS-R1` B)
 
 A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is

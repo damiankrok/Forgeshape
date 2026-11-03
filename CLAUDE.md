@@ -553,8 +553,21 @@ on the host, with no device, and is the fast native loop.
   `mixed_cad_extent`, and the two the decoder must refuse, `cad_bad_extent` and
   `cad_bad_two_sides`), and every one of those older fixtures is still
   byte-for-byte unchanged. A later Add or Cut feature carries its extent on
-  exactly these terms. **Still not delivered:** `Intersect`,
-  `To Object`, `Through All`, taper or draft, a Hole feature, and a
+  exactly these terms. **Through All is the one extent whose distance is
+  DERIVED** (`CAD-EXTENT-R1`): `ExtrudeExtentMode::ThroughAll` stores `depth`
+  and `secondDistance` as exactly 0 and a meaningful `direction`, is legal on
+  a later **Cut** alone (`ThroughAllUnsupported`), and the chain resolves it
+  (`extrudeResolvedThroughAll`) into a One Side extrusion of the farthest the
+  earlier material reaches on that side plus 1 % BEFORE anything reads a
+  distance — so the two-distance rule above still holds for every consumer —
+  and a side holding no material is `ThroughAllReachesNothing`. The session
+  shows the resolved reach (`displayExtrude`) on the arrow, the value and the
+  preview; a drag sets a depth (One Side) and a second pointer or Cancel gives
+  Through All back; the palette draws the choice only where native says it
+  applies; and the precision surface's Extrude does not submit the shown
+  number over it. **`CADB` v12** (§7o) is written only when a feature is
+  Through All. **Still not delivered:** `Intersect`,
+  `To Object` / To Face, taper or draft, and a
   total-length presentation of Symmetric — the durable value stays the distance
   per side whatever a later UI chooses to show.
 - **What an extrusion extrudes is a REGION, named by semantic identity**
@@ -1799,6 +1812,8 @@ coincident edges / making a closed solid of one),
   *Linear* / *Circular*), *Mirror* of a feature (one reflected copy of a
   feature across a plane of the part — never the body Mirror, which creates a
   new body),
+  *Through All* (also the extent of a Cut that goes right through the part,
+  however thick it is or becomes),
   *Hole* (a round hole drilled into a face where it was tapped; *Simple*,
   *Counterbore*, *Countersink*), *Through All* (a hole as deep as the part
   reaches below its face),
