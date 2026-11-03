@@ -3,6 +3,7 @@ package com.forgeshape.app;
 import static com.forgeshape.app.SketchTestSupport.dragSketch;
 import static com.forgeshape.app.SketchTestSupport.drawRectangleAndExtrude;
 import static com.forgeshape.app.SketchTestSupport.selectTool;
+import static com.forgeshape.app.SketchTestSupport.sketchEntityCount;
 import static com.forgeshape.app.SketchTestSupport.sketchState;
 import static com.forgeshape.app.WorkspaceTestSupport.doOnWorkspace;
 import static com.forgeshape.app.WorkspaceTestSupport.onWorkspace;
@@ -84,9 +85,13 @@ public final class RevolveFeatureTest {
         final double before = mass[NativeViewport.MASS_VOLUME];
         sketchOnTop(0.3, 0.3);
         selectTool(rule.getScenario(), R.id.tool_rail_circle);
-        dragSketch(rule.getScenario(), 0.5, 0.0, 0.65, 0.0);
+        // A drag long enough to be a drag on screen: a circle of radius 0.3
+        // centred 0.55 off the axis, clear of it and inside the 2 m face.
+        dragSketch(rule.getScenario(), 0.55, 0.0, 0.85, 0.0);
+        assertEquals("the circle is drawn", 1, sketchEntityCount());
         selectTool(rule.getScenario(), R.id.tool_rail_line);
         final long axis = placeLine(0.0, -0.6, 0.0, 0.6);
+        assertEquals("and the axis", 2, sketchEntityCount());
         press(R.id.finish_sketch);
         assertEquals("Finish succeeds: " + NativeViewport.sketchLastStatus(),
                 NativeViewport.SKETCH_READY, sketchState());
