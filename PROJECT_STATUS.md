@@ -1,7 +1,47 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.111.0
+**Status Version:** 0.112.0
 **Updated:** 2026-11-03
+**Latest stage:** **`CAD-HOLE-R1` — Hole: Simple, Counterbore and
+Countersink, to a depth or Through All** (2026-11-03). **TECH PASS (emulator)
+/ OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`claude/new-session-g87rge`, product at `31addc0`. Stage 5 of
+`docs/FEATURE_PARITY_PLAN.md`; the extrusion extents Through All / To Face
+were split off as stage 5b.
+
+- **Model.** `CadBodyState::holes`: per hole an id from `nextFeatureId`, a
+  kind, the face it is drilled into as a `CadFeatureSupport` (resolved by the
+  one rule a later feature's sketch uses, now `resolveCadFeatureSupportFrame`),
+  the axis point in that face's frame, the diameter, Through All or a blind
+  depth, and the counterbore's or cone's two values in one canonical form per
+  kind. The tool is a derived solid of revolution (32 steps), one kernel
+  Difference, in the chain by id interleaved with patterns; Through All runs
+  as far as the body reaches below the face at that point of the chain.
+  Refusals: `HoleInvalid`, `HoleSupportInvalid`, `HoleNoEffect`,
+  `TooManyHoles`, `HoleNotFound` (CadStatus 105..109), and `SupportFaceLost`.
+- **Format.** `CADB` v11 (DATA_PACKAGE_SPEC.md §7n), written only when a body
+  carries a hole; every v1..v10 project keeps its bytes and fingerprint. No
+  corpus fixture yet (72 unchanged); round trip and refusals are host checks.
+- **UX.** A tap on an eligible face of an unlocked Extrude CAD body offers
+  Hole in the face bar beside Sketch here; `HoleEditorPanel` opens on native
+  seeds (a 1/2/5 diameter a fifth of the part's thinnest extent, Through All,
+  the tap snapped to a quarter-diameter grid) and draws only the rows its kind
+  uses; Apply / edit / Delete are one Undo each; the History lists and
+  reopens holes.
+- **Evidence.** Host `HOST_SELFTESTS_OK (4627 checks, 0 failed)` with 31
+  `HO_*` checks (exact removed volumes of a through, a blind, a counterbore and
+  a countersink hole, on a cap, a side, a boss and a pocket floor; Through All
+  following an upstream size edit; every refusal; chain order; ineligible bore
+  faces; v11 round trip and bad bytes; acts and Undo; History rows; seeds).
+  JVM `HolePresentationTest`. `CI FAST` `41664577122` success. `CI DEVICE`
+  `HoleTest` run `41665942679` success (2/2, 25/25 startup tokens);
+  regression run with PatternTest and EdgeFinishTest recorded on completion.
+  Physical-device behaviour UNVERIFIED.
+- **Not this stage:** threaded or tapered holes, a drill-point bottom, holes
+  on curved faces, positioning by dimensions to edges, a pattern of a hole,
+  extrusion extents Through All / To Face (stage 5b), live preview.
+
+**Previous stage:** `CAD-PATTERN-R1` (record below, unchanged).
 **Latest stage:** **`CAD-PATTERN-R1` — Pattern (Linear, Circular) and Mirror
 of features** (2026-11-03). **TECH PASS (emulator) / OWNER PHYSICAL REVIEW
 REQUIRED / NOT MERGED.** Branch `claude/new-session-g87rge`, product at
@@ -2342,10 +2382,10 @@ lives in Git history; only what still constrains the code is kept here.
 `SCULPT-UNDO-R0` (`ARCH-OWNER-12` — a dedicated bounded volatile per-body Sculpt
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
-**Next Stage:** `CAD-HOLE-R1` — Hole and Through All (stage 5 of
-`docs/FEATURE_PARITY_PLAN.md`), after the OWNER physical-device review of the
-`CAD-PATTERN-R1` APK (patterns, sketch Undo/Redo, the knife, push-through to
-Cut, Fillet/Chamfer); the Delete → Undo → Redo owner
+**Next Stage:** `CAD-EXTENT-R1` — Through All / To Face extents for Add and
+Cut (stage 5b of `docs/FEATURE_PARITY_PLAN.md`), after the OWNER
+physical-device review of the `CAD-HOLE-R1` APK (holes, patterns, sketch
+Undo/Redo, the knife, push-through to Cut, Fillet/Chamfer); the Delete → Undo → Redo owner
 verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See *Next Stage*.
 
 ## Current state

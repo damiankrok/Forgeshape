@@ -911,6 +911,32 @@ stays a useful size, and a value you type is never nudged to it.
 Not yet: sketching on an imported or sculpted surface; a curved face as a
 sketch support; and moving a face-attached body on its own.
 
+## Drilling a hole
+
+Tap a flat face of a CAD part and, beside **Sketch here**, the bar under your
+finger offers **Hole**.
+
+- **Hole** opens a small editor at the model, already filled in: a *Simple*
+  hole of a round diameter (a fifth of the part's thinnest size), *Through
+  All*, at the point you tapped rounded to a tidy grid. **Apply** drills it as
+  one Undo step.
+- *Counterbore* adds a wider, flat-bottomed bore at the top (its diameter and
+  depth); *Countersink* adds a cone (its diameter at the face and its angle).
+  Each shows only its own fields.
+- *Depth* drills to a typed depth instead of through the part. Through All
+  goes as deep as the part reaches under that face, so making the part
+  thicker later makes the hole longer.
+- *At* gives the hole's position on the face as two numbers, for an exact
+  placement.
+- A hole that would remove nothing is refused and the editor keeps your
+  values. The **History** lists each hole; tapping it reopens the editor with
+  **Delete**.
+
+Verified on the emulator (`HoleTest`): a face offers Hole, its seeded Simple
+Through All hole applies as one Undo and Undo removes it; a Counterbore to a
+depth shows exactly its rows; the History reopens a hole, an edited diameter
+applies, and Delete removes it.
+
 ## Repeating a feature: Pattern and Mirror
 
 Tap a face of a boss or a pocket (a later Add or Cut) and, beside **Sketch
