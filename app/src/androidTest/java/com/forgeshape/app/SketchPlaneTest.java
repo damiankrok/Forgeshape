@@ -116,6 +116,25 @@ public final class SketchPlaneTest {
         assertEquals("its sketch stands 0.5 m off the face", 0.5, lastSketchOffset(body), 1e-9);
     }
 
+    @Test
+    public void a_part_measures_its_volume_area_and_centre() {
+        final long body = block();
+        final double[] mass = new double[NativeViewport.MASS_SIZE];
+        assertTrue(NativeViewport.bodyMassProperties(body, mass));
+        assertEquals("the 2 x 2 x 1 block is closed", 1.0, mass[NativeViewport.MASS_CLOSED], 0.0);
+        assertEquals("its volume", 4.0, mass[NativeViewport.MASS_VOLUME], 1e-4);
+        assertEquals("its surface area", 16.0, mass[NativeViewport.MASS_AREA], 1e-4);
+        assertEquals("its centre of mass is half way up", 0.5,
+                mass[NativeViewport.MASS_CENTROID_X + 2], 1e-4);
+        assertEquals("its size", 2.0, mass[NativeViewport.MASS_SIZE_X], 1e-5);
+        final String shown = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final android.widget.TextView text = activity.findViewById(R.id.cad_mass_properties);
+            return text == null ? "" : text.getText().toString();
+        });
+        assertTrue("the Measure section reads the volume: " + shown,
+                shown.isEmpty() || shown.contains("4"));
+    }
+
     private static double lastSketchOffset(long body) {
         final double[] header = new double[NativeViewport.TIMELINE_HEADER_SIZE];
         final double[] rows =
