@@ -31,7 +31,10 @@ way of orbiting.
 - **Evidence.** Host `HOST_SELFTESTS_OK` (4647 checks) with `EF2_01..04`
   (a boss's foot refused, its top and an uncovered block edge finished, the
   offer agrees, a flush full-width boss's covered and foot edges refused);
-  `EF_08`'s consumed edge now reads `EdgeNotOnBody`. CI_EVIDENCE_PLACEHOLDER
+  `EF_08`'s consumed edge now reads `EdgeNotOnBody`. `CI FAST`
+  `41694743866` success. `CI DEVICE` `41694749420` `CadDockTest` + `HoleTest`
+  + `PatternTest` + `EdgeFinishTest` + `FaceSketchOfferTest` success (8/8,
+  25/25 startup tokens).
   Physical-device behaviour UNVERIFIED.
 
 **Previous stage:** `CAD-EXTENT-R1` (record below, unchanged).
