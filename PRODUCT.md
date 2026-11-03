@@ -913,6 +913,28 @@ sketch support; and moving a face-attached body on its own.
 
 ## Drafting inside a sketch
 
+**Undo and Redo while drawing.** While a sketch is being drawn, the Undo and
+Redo arrows at the bottom trailing corner step the sketch itself: each drawn
+entity, typed value, Delete or trim is one step back, and Redo puts it back. In
+a new project's very first sketch the arrows are there too, with no Objects
+capsule beside them. They take back nothing outside the sketch, and once Finish
+Sketch is taken they are withdrawn until Back to Sketch. Verified on the
+emulator (`SketchKnifeUndoTest`).
+
+**The knife.** The last Tool Rail entry, **Trim**, is a knife. Swipe across
+lines and every piece the stroke crosses is cut back to the nearest
+intersections; a line that meets nothing is removed whole, and one swipe is
+one Undo step. A still tap cuts just the piece under the finger, as the
+palette's Trim does. Verified on the emulator (`SketchKnifeUndoTest`).
+
+**Pushing a face sketch into a Cut.** On a sketch drawn on a face of a CAD
+body, dragging the extrude arrow back through the face turns the new feature
+into a **Cut** going into the body; dragging it back out returns to the
+operation chosen before (New Body, or Add once chosen). Proved by the native
+checks with real touch samples (`SKU_PT_*`); on the device the Cut is also
+reachable from the action dock's palette as before.
+
+
 While a sketch is being drawn, a **Modify** control stands under the
 orientation navigator in the upper corner. It opens the **sketch actions
 palette**: *Select multiple*, *Dimension*, *Make Construction* (or *Make

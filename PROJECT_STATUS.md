@@ -1,7 +1,51 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.109.0
+**Status Version:** 0.110.0
 **Updated:** 2026-11-03
+**Latest stage:** **`SKETCH-KNIFE-UNDO-R1` — Undo in the sketch, the knife,
+and pushing a face sketch into a Cut** (2026-11-03). **TECH PASS (emulator) /
+OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`claude/new-session-g87rge`, product at `022df5d`. OWNER request: the sketch
+has no undo arrows; a new sketch on a body does not always allow a Cut; add a
+knife that trims sketch lines to the nearest intersection.
+
+- **Cut on a face sketch, root cause.** The domain accepts Cut on every
+  eligible face (host probe over caps, sides, an Add's faces, a pocket's floor
+  and walls: all `Ok`; the buried cap of a boss is `SupportFaceLost`, as it
+  should be). What failed was the gesture: the arrow drag was clamped at 1 mm,
+  so pushing the arrow INTO the body never became a Cut — the only route was
+  the dock's palette. Now a NEW One Side Extrude on a CAD face may be dragged
+  through the plane: the side and the operation switch together (into the
+  material = Cut, out = the outward operation last chosen), frozen at
+  pointer-down, a second pointer or Cancel restores both. Edits and
+  world-plane sketches keep the clamp.
+- **Undo / Redo in the sketch.** `SketchSession` keeps a volatile branch of the
+  staged sketch (64 entries, one per gesture or act, outermost-scope recording;
+  a polyline run gives back a vertex first). `historyUndo` / `historyRedo` ask
+  the sketch first; the capsule is drawn in Editing — including the first
+  project's bootstrap sketch, where the bottom edge used to be withdrawn whole
+  — and withdrawn in Ready. Nothing persisted; Construction steps stay refused
+  under a sketch; Finish is still one transaction.
+- **The knife.** `SketchTool::Trim` (index 7, `ic_tool_trim`) on the Tool Rail
+  IS the Trim mode; a swipe trims every interval its stroke crosses through
+  `trimAt` (samples a quarter of the tap tolerance apart, reach 0.6 of a
+  step, so passing beside a line cuts nothing), one act, one Undo.
+- **Evidence.** Host `HOST_SELFTESTS_OK (4548 checks, 0 failed)` with 32
+  `SKU_*` checks (push-through in/out/cancel/commit volume, outward memory,
+  world-plane and edit unchanged; undo/redo, cap, Ready, cancel, commit after
+  undo; knife swipe, beside, tap, rail/mode coupling), mutation-tested (each
+  of the three features disabled fails 4..13 checks). `CI FAST` `41582254545`
+  success. `CI DEVICE` `41583947747` PASS — `SketchKnifeUndoTest` 2/2 (the
+  first run, `41581126865`, failed 2/2 because the capsule was not on screen
+  in the bootstrap sketch; fixed in `022df5d`); regression `41582251731`
+  `SketchUxTest` PASS; `SketchExtrudeTest` (assertion updated for the capsule
+  now drawn while sketching) EXTRUDE_EVIDENCE. Physical-device behaviour
+  UNVERIFIED.
+- **Not this stage:** a Revolve push-through, push-through on an edit, power
+  trim of splines (Trim refuses a spline as before), and a sketch history that
+  survives Finish/Cancel.
+
+**Previous stage:** `CAD-EDGE-FINISH-R1` (record below, unchanged).
 **Latest stage:** **`CAD-EDGE-FINISH-R1` — Chamfer and Fillet**
 (2026-11-03). **TECH PASS (emulator) / OWNER PHYSICAL REVIEW REQUIRED / NOT
 MERGED.** Branch `claude/new-session-g87rge`, product and tests at `4e82da1`.
@@ -2253,7 +2297,8 @@ lives in Git history; only what still constrains the code is kept here.
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
 **Next Stage:** the OWNER physical-device review of the
-`CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` APK; the Delete → Undo → Redo owner
+`SKETCH-KNIFE-UNDO-R1` APK (sketch Undo/Redo, the knife, push-through to Cut,
+with the earlier `CAD-EDGE-FINISH-R1` and drafting-toolkit work); the Delete → Undo → Redo owner
 verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See *Next Stage*.
 
 ## Current state
