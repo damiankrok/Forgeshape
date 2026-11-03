@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launcher icon foreground: the ForgeShape mark (ic_forgeshape_mark) in colour.
+  A solid block with its front corner cut away, lit from above: the top in the
+  light text tone, the two sides in the product accent (#4C8FD6) and its shade,
+  the cut's two walls in the opposite tones, and the cut's floor glowing like
+  hot metal, the "forge" in the name. Inside the 66 dp safe zone of the 108 dp
+  adaptive canvas, so every launcher mask keeps the whole mark.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Top. -->
+    <path
+        android:fillColor="#FFF4F1EB"
+        android:pathData="M54,24 L79.981,39 L66.99,46.5 L54,39 L41.01,46.5 L28.019,39 Z" />
+    <!-- The +x side (right on screen), in shade. -->
+    <path
+        android:fillColor="#FF2B64A6"
+        android:pathData="M79.981,69 L54,84 L54,69 L66.99,61.5 L66.99,46.5 L79.981,39 Z" />
+    <!-- The +y side (left on screen), the accent. -->
+    <path
+        android:fillColor="#FF4C8FD6"
+        android:pathData="M28.019,69 L54,84 L54,69 L41.01,61.5 L41.01,46.5 L28.019,39 Z" />
+    <!-- The cut's wall facing +x, lit like the right side but deeper. -->
+    <path
+        android:fillColor="#FF234F84"
+        android:pathData="M54,54 L41.01,61.5 L41.01,46.5 L54,39 Z" />
+    <!-- The cut's wall facing +y. -->
+    <path
+        android:fillColor="#FF3B78BC"
+        android:pathData="M54,54 L66.99,61.5 L66.99,46.5 L54,39 Z" />
+    <!-- The cut's floor: the face the cut produced, hot. -->
+    <path
+        android:fillColor="#FFF59A3C"
+        android:pathData="M54,54 L66.99,61.5 L54,69 L41.01,61.5 Z" />
+    <path
+        android:fillColor="#FFFFC27A"
+        android:pathData="M54,57.25 L61.4,61.5 L54,65.75 L46.6,61.5 Z" />
+</vector>

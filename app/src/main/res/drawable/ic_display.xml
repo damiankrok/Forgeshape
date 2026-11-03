@@ -1,12 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Display settings: how the surface is SHADED, not what it is.
-
-  A half-toned circle, which is the one symbol that means "appearance" without
-  meaning "light source" or "material" — both of which ForgeShape deliberately
-  does not have.
-
-  Drawn white and tinted at use; see EditorControlStyles.icon().
+  Display: how the model is drawn (shading, surface, projection, grid) —
+  a block with one face shaded.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
@@ -14,13 +9,14 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M12,3.5 A8.5,8.5 0 0,1 12,20.5 Z" />
-    <path
         android:fillColor="#00000000"
         android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="2"
+        android:strokeWidth="2.0"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M12,3.5 A8.5,8.5 0 1,0 12,20.5 A8.5,8.5 0 1,0 12,3.5 Z" />
+        android:pathData="M12,3 L20,7.5 L20,16.5 L12,21 L4,16.5 L4,7.5 Z M4,7.5 L12,12 L20,7.5 M12,12 L12,21" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillAlpha="0.85"
+        android:pathData="M4,7.5 L12,12 L12,21 L4,16.5 Z" />
 </vector>

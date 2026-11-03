@@ -1,28 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The product mark: a closed profile and the depth it was extruded to.
+  The ForgeShape mark: a solid block with its front corner cut away.
 
-  It says what the program makes, in the product's own vocabulary, before the
-  user has made anything. Drawn on the same 24-unit grid as every other icon,
-  white and tinted at use like all of them, so it belongs to the set rather than
-  sitting outside it as a logo.
+  It says what the program makes — solids you shape by adding and removing
+  material — before the user has made anything. The cut's floor is filled:
+  it is the face the cut produced, the "hot" part of the forge. Drawn on the
+  same 24-unit grid as every other icon, white and tinted at use, so it
+  belongs to the set. The launcher icon (ic_launcher_*) is the same geometry
+  in colour.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- The profile: the face the sketch closed. -->
     <path
-        android:pathData="M3,9h10v10h-10z"
+        android:fillColor="#00000000"
         android:strokeColor="#FFFFFFFF"
         android:strokeWidth="1.6"
-        android:strokeLineJoin="round" />
-    <!-- The extrusion: the same profile offset, and the three edges that join
-         the two. -->
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,2.2 L20.487,7.1 L20.487,16.9 L12,21.8 L3.513,16.9 L3.513,7.1 Z" />
     <path
-        android:pathData="M3,9l5,-4h10v10l-5,4 M13,9l5,-4"
+        android:fillColor="#00000000"
         android:strokeColor="#FFFFFFFF"
         android:strokeWidth="1.6"
-        android:strokeLineJoin="round" />
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M3.513,7.1 L7.756,9.55 L12,7.1 L16.244,9.55 L20.487,7.1 M7.756,9.55 L7.756,14.45 M16.244,9.55 L16.244,14.45 M12,7.1 L12,12 M12,16.9 L12,21.8" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,12 L16.244,14.45 L12,16.9 L7.756,14.45 Z" />
 </vector>

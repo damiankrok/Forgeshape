@@ -1,13 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Settings (UI-PREF-R1): the persistent application preferences.
-
-  Three horizontal sliders with their thumbs at different positions — the one
-  symbol that says "adjustable preferences" without saying "gear", which on a
-  modelling tool would read as a machine part, and without saying "display",
-  which the half-toned circle already means.
-
-  Drawn white and tinted at use; see EditorControlStyles.icon().
+  Settings: the application preferences — the gear, as everywhere.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
@@ -17,10 +10,15 @@
     <path
         android:fillColor="#00000000"
         android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="2"
+        android:strokeWidth="1.8"
         android:strokeLineCap="round"
-        android:pathData="M4,7 L20,7 M4,12 L20,12 M4,17 L20,17" />
+        android:strokeLineJoin="round"
+        android:pathData="M19.36,10.11 L22.06,10.34 L22.06,13.66 L19.36,13.89 L18.54,15.87 L20.29,17.94 L17.94,20.29 L15.87,18.54 L13.89,19.36 L13.66,22.06 L10.34,22.06 L10.11,19.36 L8.13,18.54 L6.06,20.29 L3.71,17.94 L5.46,15.87 L4.64,13.89 L1.94,13.66 L1.94,10.34 L4.64,10.11 L5.46,8.13 L3.71,6.06 L6.06,3.71 L8.13,5.46 L10.11,4.64 L10.34,1.94 L13.66,1.94 L13.89,4.64 L15.87,5.46 L17.94,3.71 L20.29,6.06 L18.54,8.13 Z" />
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M9,7 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0 Z M15,12 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0 Z M7,17 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0 Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M8.8,12 a3.2,3.2 0 1,0 6.4,0 a3.2,3.2 0 1,0 -6.4,0 Z" />
 </vector>

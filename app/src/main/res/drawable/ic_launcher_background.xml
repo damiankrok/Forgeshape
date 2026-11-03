@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launcher icon background: the Warm Graphite ground the editor itself opens
+  on, with a faint lighter disc behind the mark so the solid reads as lit.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF1F1D1A"
+        android:pathData="M0,0h108v108h-108z" />
+    <path
+        android:fillColor="#FF2C2925"
+        android:pathData="M54,14 a40,40 0 1,0 0.01,0 Z" />
+</vector>
