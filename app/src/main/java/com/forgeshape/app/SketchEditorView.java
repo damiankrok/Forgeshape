@@ -67,6 +67,8 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     private final TextView operationAdd;
     private final TextView operationCut;
     private final NumericPropertyRow depthField;
+    /** What the depth field was last filled with, so an untouched one is known. */
+    private String shownDepthText = "";
     private final TextView directionAlong;
     private final TextView directionAgainst;
     /**
@@ -386,8 +388,10 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
             @Override
             public void onClick(View v) {
                 // The depth is submitted FIRST, so the commit extrudes what the
-                // field says rather than what the session last held.
-                if (submitDepth()) {
+                // field says rather than what the session last held -- except
+                // over Through All, whose field only SHOWS where it reaches:
+                // submitting that number would quietly turn it into a depth.
+                if (throughAllUntouched() || submitDepth()) {
                     SketchEditorView.this.actions.onExtrudeRequested();
                 }
             }
@@ -474,7 +478,8 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
             return;
         }
         refreshProfiles();
-        depthField.setText(unit.format(nativeSketch[NativeViewport.SKETCH_EXTRUDE_DEPTH]));
+        shownDepthText = unit.format(nativeSketch[NativeViewport.SKETCH_EXTRUDE_DEPTH]);
+        depthField.setText(shownDepthText);
         NativeViewport.cadExtrudeToolState(nativeExtrude);
         refreshOperations();
         refreshRevolve(revolving);
@@ -484,6 +489,8 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         // that is still invalid is refused by name, and changes nothing.
         directionRow.setVisibility(
                 nativeExtrude[NativeViewport.CAD_EXTRUDE_EXTENT] == NativeViewport.EXTENT_ONE_SIDE
+                        || nativeExtrude[NativeViewport.CAD_EXTRUDE_EXTENT]
+                                == NativeViewport.EXTENT_THROUGH_ALL
                         ? VISIBLE
                         : GONE);
         showDirection();
@@ -752,6 +759,12 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     /** Submits the depth field with the session's own direction. */
     private boolean submitDepth() {
         return submitDepth(currentDirection());
+    }
+
+    /** Through All, and the depth field still says what native wrote into it. */
+    private boolean throughAllUntouched() {
+        return nativeExtrude[NativeViewport.CAD_EXTRUDE_EXTENT] == NativeViewport.EXTENT_THROUGH_ALL
+                && depthField.text().equals(shownDepthText);
     }
 
     /** Submits the depth field and one direction. False on a refusal. */

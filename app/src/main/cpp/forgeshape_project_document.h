@@ -231,6 +231,11 @@ constexpr uint16_t kCadSectionVersionV10 = 10;
 // pattern list may now be empty -- followed by each body's hole list. Written
 // ONLY when a body carries a hole, so every v1..v10 project keeps its bytes.
 constexpr uint16_t kCadSectionVersionV11 = 11;
+// v12 (`CAD-EXTENT-R1`, DATA_PACKAGE_SPEC.md §7o): the v11 layout -- whose
+// hole list may now be empty -- in which an extent code may be 4, Through All.
+// Written ONLY when a feature's extent is Through All, so every v1..v11
+// project keeps its bytes.
+constexpr uint16_t kCadSectionVersionV12 = 12;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.

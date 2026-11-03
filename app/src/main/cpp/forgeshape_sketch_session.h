@@ -795,6 +795,15 @@ public:
     // The extent MODE is preserved.
     CadStatus setExtrude(Meters depth, ExtrudeDirection direction);
     const ExtrudeFeature& extrude() const { return extrude_; }
+    // The extrusion as it will be BUILT (`CAD-EXTENT-R1`): `extrude()` itself,
+    // or for Through All the One Side extrusion of the distance the candidate
+    // chain derives for it -- what the arrow, the preview and the value read,
+    // so they show where the cut will actually reach. Derived, cached by the
+    // candidate revision, never stored.
+    ExtrudeFeature displayExtrude() const;
+    // Whether Through All can be chosen now: a new or edited later Cut of a
+    // target body's Extrude chain.
+    bool throughAllAvailable() const;
 
     // --- the extent (`CAD-EXT-R1`) ---------------------------------------
     //
@@ -1143,6 +1152,13 @@ private:
     ExtrudeDirection reuseCutDirection_ = ExtrudeDirection::AgainstNormal;
     // Bumped by every authored change that could change the candidate.
     uint64_t candidateRevision_ = 1;
+    // The resolved Through All extrusion and the candidate revision it was
+    // derived for (`displayExtrude`). Runtime cache only.
+    mutable ExtrudeFeature displayCache_;
+    mutable uint64_t displayCacheRevision_ = 0;
+    // Whether the extrude drag in progress started from Through All, so a
+    // second pointer or a Cancel gives Through All back rather than a depth.
+    bool dragFromThroughAll_ = false;
     CadCandidateEvaluation evaluation_;
     // A Ready-state tap that may pick a region: armed on a single-pointer Down
     // that misses the arrow, disarmed by travel or a second pointer.

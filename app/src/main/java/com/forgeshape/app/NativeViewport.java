@@ -2372,6 +2372,10 @@ final class NativeViewport {
     static final int CAD_TOO_MANY_HOLES = 108;
     /** An act named a hole the body does not carry. */
     static final int CAD_HOLE_NOT_FOUND = 109;
+    /** `CAD-EXTENT-R1`: Through All on a feature that is not a later Cut. */
+    static final int CAD_THROUGH_ALL_UNSUPPORTED = 110;
+    /** Through All found no material on its side of the sketch. */
+    static final int CAD_THROUGH_ALL_REACHES_NOTHING = 111;
 
     // --- Chamfer and Fillet (`CAD-EDGE-FINISH-R1`) ------------------------
 
@@ -2833,7 +2837,7 @@ final class NativeViewport {
      * land between two of them. Every slot is DERIVED below JNI on every read —
      * the shell stores no depth, no direction and no anchor.
      */
-    static final int CAD_EXTRUDE_SIZE = 59;
+    static final int CAD_EXTRUDE_SIZE = 60;
     /** 1 when the canvas manipulator is live; 0 is the whole reason it is absent. */
     static final int CAD_EXTRUDE_ACTIVE = 0;
     /** The PRIMARY side's distance: the whole depth of a One Side extrusion. */
@@ -2936,6 +2940,8 @@ final class NativeViewport {
     static final int CAD_EXTRUDE_DOCK_AXIS_SINE = 57;
     /** Why the dock is hidden: 0 shown, 1 no frame, 2 near the axis, 3 behind the eye, 4 off the viewport. */
     static final int CAD_EXTRUDE_DOCK_HIDDEN = 58;
+    /** 1 when Through All can be chosen now (a later Cut of a target body). */
+    static final int CAD_EXTRUDE_THROUGH_ALL_AVAILABLE = 59;
     static final int DOCK_SHOWN = 0;
     static final int DOCK_HIDDEN_NO_FRAME = 1;
     static final int DOCK_HIDDEN_NEAR_AXIS = 2;
@@ -2946,6 +2952,11 @@ final class NativeViewport {
     static final int EXTENT_ONE_SIDE = 0;
     static final int EXTENT_SYMMETRIC = 1;
     static final int EXTENT_TWO_SIDES = 2;
+    /**
+     * `CAD-EXTENT-R1`: as far as the body reaches, for a later Cut alone; its
+     * distance is derived below JNI and reported in the distance slots.
+     */
+    static final int EXTENT_THROUGH_ALL = 3;
 
     /** Side selectors for {@link #sketchSetExtrudeSide}. */
     static final int EXTRUDE_SIDE_POSITIVE = 1;

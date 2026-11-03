@@ -177,6 +177,10 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_hole_too_many);
             case NativeViewport.CAD_HOLE_NOT_FOUND:
                 return context.getString(R.string.status_hole_not_found);
+            case NativeViewport.CAD_THROUGH_ALL_UNSUPPORTED:
+                return context.getString(R.string.status_through_all_unsupported);
+            case NativeViewport.CAD_THROUGH_ALL_REACHES_NOTHING:
+                return context.getString(R.string.status_through_all_reaches_nothing);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));

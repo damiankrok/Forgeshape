@@ -120,9 +120,17 @@ enum class ExtrudeExtentMode : uint8_t {
     // Two independent distances: `depth` along `+N` (A) and `secondDistance`
     // along `-N` (B).
     TwoSides,
+    // `CAD-EXTENT-R1`. As far as the body reaches on `direction`'s side, for a
+    // later CUT alone. Its distance is DERIVED, never stored: canonically
+    // `depth` and `secondDistance` are exactly 0, and the chain resolves the
+    // feature into a One Side extrusion of the derived distance
+    // (`extrudeResolvedThroughAll`) before anything reads a distance, so the
+    // mesh generator, the face frames and the preview still see two plain
+    // distances. Until it is resolved the two distances read 0.
+    ThroughAll,
 };
 
-constexpr int kExtrudeExtentModeCount = 3;
+constexpr int kExtrudeExtentModeCount = 4;
 
 const char* extrudeExtentModeName(ExtrudeExtentMode mode);
 bool extrudeExtentModeFromIndex(int index, ExtrudeExtentMode* out);
@@ -238,6 +246,16 @@ Meters extrudeNegativeDistance(const ExtrudeFeature& extrude);
 // Validation refuses a non-canonical feature by name rather than repairing it,
 // so one solid has exactly one encoding.
 bool extrudeFeatureCanonical(const ExtrudeFeature& extrude);
+
+// Whether the extrusion's distance is derived from the body (`ThroughAll`).
+inline bool extrudeIsThroughAll(const ExtrudeFeature& extrude) {
+    return extrude.extent == ExtrudeExtentMode::ThroughAll;
+}
+
+// The One Side extrusion a Through All one IS once its distance is known:
+// the same selection and side, `distance` on that side. Returned unchanged for
+// any other mode.
+ExtrudeFeature extrudeResolvedThroughAll(const ExtrudeFeature& extrude, Meters distance);
 
 // The feature `to` implies, from the one there is (`CAD-EXT-R1` transitions).
 //
@@ -917,6 +935,10 @@ uint32_t appendCadFeaturePattern(CadBodyState* state, CadFeaturePattern pattern)
 
 // The pattern with `patternId`, or null.
 const CadFeaturePattern* findCadFeaturePattern(const CadBodyState& state, uint32_t patternId);
+
+// Whether any feature's extent is Through All (`CAD-EXTENT-R1`). Such a state
+// round-trips only through `CADB` v12, and is never legacy-representable.
+bool cadBodyStateUsesThroughAll(const CadBodyState& state);
 
 // Whether the body carries a hole. Such a state round-trips only through
 // `CADB` v11, and is never legacy-representable.

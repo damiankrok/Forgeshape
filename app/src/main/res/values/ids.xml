@@ -107,6 +107,7 @@
     <item name="cad_extrude_extent_one_side" type="id" />
     <item name="cad_extrude_extent_symmetric" type="id" />
     <item name="cad_extrude_extent_two_sides" type="id" />
+    <item name="cad_extrude_extent_through_all" type="id" />
     <item name="cad_extrude_second_value" type="id" />
     <item name="cad_extrude_second_editor" type="id" />
     <item name="field_cad_extrude_second" type="id" />

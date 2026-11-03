@@ -4180,7 +4180,7 @@ final class EditorWorkspaceView extends FrameLayout
         // direction native reports is what turns that into a real side. In
         // Symmetric and Two Sides the selector's own sides are literal.
         int target = side;
-        if (extent == NativeViewport.EXTENT_ONE_SIDE) {
+        if (extent == NativeViewport.EXTENT_ONE_SIDE || extent == NativeViewport.EXTENT_THROUGH_ALL) {
             target = nativeExtrude[NativeViewport.CAD_EXTRUDE_DIRECTION]
                                      == NativeViewport.EXTRUDE_ALONG_NORMAL
                              ? NativeViewport.EXTRUDE_SIDE_POSITIVE
@@ -4219,7 +4219,9 @@ final class EditorWorkspaceView extends FrameLayout
                                                   ? R.string.extent_symmetric
                                                   : mode == NativeViewport.EXTENT_TWO_SIDES
                                                           ? R.string.extent_two_sides
-                                                          : R.string.extent_one_side)),
+                                                          : mode == NativeViewport.EXTENT_THROUGH_ALL
+                                                                  ? R.string.extent_through_all
+                                                                  : R.string.extent_one_side)),
                 R.attr.fsTextSecondary);
     }
 

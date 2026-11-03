@@ -238,6 +238,7 @@ uint8_t extrudeExtentFileCode(ExtrudeExtentMode mode) {
         case ExtrudeExtentMode::OneSide: return 1;
         case ExtrudeExtentMode::Symmetric: return 2;
         case ExtrudeExtentMode::TwoSides: return 3;
+        case ExtrudeExtentMode::ThroughAll: return 4;
     }
     return 0;
 }
@@ -248,6 +249,7 @@ bool extrudeExtentFromFileCode(uint8_t code, ExtrudeExtentMode* out) {
         case 1: *out = ExtrudeExtentMode::OneSide; return true;
         case 2: *out = ExtrudeExtentMode::Symmetric; return true;
         case 3: *out = ExtrudeExtentMode::TwoSides; return true;
+        case 4: *out = ExtrudeExtentMode::ThroughAll; return true;
         default: return false;
     }
 }
@@ -521,6 +523,16 @@ bool cadDocumentNeedsV7(const ProjectDocument& document) {
 bool cadDocumentNeedsV8(const ProjectDocument& document) {
     for (const ProjectCadBody& body : document.cad.bodies) {
         if (cadBodyStateUsesDrafting(body.state)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Whether any CAD body needs the v12 section (`CAD-EXTENT-R1`): Through All.
+bool cadDocumentNeedsV12(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (cadBodyStateUsesThroughAll(body.state)) {
             return true;
         }
     }
@@ -1651,7 +1663,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
 
     // The section is written at the LOWEST version that can carry it, so every
     // project that predates a feature keeps the bytes it always had.
-    const bool cadV11 = document.hasCad && cadDocumentNeedsV11(document);
+    const bool cadV12 = document.hasCad && cadDocumentNeedsV12(document);
+    const bool cadV11 = document.hasCad && (cadV12 || cadDocumentNeedsV11(document));
     const bool cadV10 = document.hasCad && (cadV11 || cadDocumentNeedsV10(document));
     const bool cadV9 = document.hasCad && (cadV10 || cadDocumentNeedsV9(document));
     const bool cadV8 = document.hasCad && (cadV9 || cadDocumentNeedsV8(document));
@@ -1824,7 +1837,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
         appendSection(file, kSectionTagCad,
-                      cadV11  ? kCadSectionVersionV11
+                      cadV12  ? kCadSectionVersionV12
+                      : cadV11 ? kCadSectionVersionV11
                       : cadV10 ? kCadSectionVersionV10
                       : cadV9 ? kCadSectionVersionV9
                       : cadV8 ? kCadSectionVersionV8
@@ -2826,7 +2840,8 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
 ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, uint16_t version) {
     if (version == kCadSectionVersionV6 || version == kCadSectionVersionV7
         || version == kCadSectionVersionV8 || version == kCadSectionVersionV9
-        || version == kCadSectionVersionV10 || version == kCadSectionVersionV11) {
+        || version == kCadSectionVersionV10 || version == kCadSectionVersionV11
+        || version == kCadSectionVersionV12) {
         uint32_t bodyCount = 0;
         if (!in.u32(&bodyCount)) {
             return ProjectCodecStatus::Truncated;
@@ -2864,8 +2879,17 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
         }
+        // A Through All extent has no encoding below v12, and a v12 section
+        // exists only for one (`CAD-EXTENT-R1`).
+        bool anyThroughAll = false;
+        for (const ProjectCadBody& body : record->bodies) {
+            anyThroughAll = anyThroughAll || cadBodyStateUsesThroughAll(body.state);
+        }
+        if (anyThroughAll != (version >= kCadSectionVersionV12)) {
+            return ProjectCodecStatus::InvalidSemanticValue;
+        }
         // And a v11 section exists only for a hole (`CAD-HOLE-R1`).
-        if (version >= kCadSectionVersionV11) {
+        if (version == kCadSectionVersionV11) {
             bool anyHole = false;
             for (const ProjectCadBody& body : record->bodies) {
                 anyHole = anyHole || !body.state.holes.empty();
@@ -2958,7 +2982,8 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         }
         if (!workplaneFromFileCode(planeCode, &baseSketch.plane)
             || !extrudeDirectionFromFileCode(directionCode, &state.extrude.direction)
-            || !extrudeExtentFromFileCode(extentCode, &state.extrude.extent)) {
+            || !extrudeExtentFromFileCode(extentCode, &state.extrude.extent)
+            || extrudeIsThroughAll(state.extrude)) {  // v12 alone carries code 4
             return ProjectCodecStatus::InvalidSemanticValue;
         }
         // The ONE canonical form, checked HERE as well as in the domain
@@ -3029,6 +3054,7 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
                     || feature.operation == CadFeatureOperation::NewBody
                     || !cadFaceKindFromFileCode(faceKindCode, &support.face.kind)
                     || !extrudeExtentFromFileCode(featureExtentCode, &feature.extrude.extent)
+                    || extrudeIsThroughAll(feature.extrude)
                     || !extrudeDirectionFromFileCode(featureDirectionCode,
                                                      &feature.extrude.direction)
                     || !extrudeFeatureCanonical(feature.extrude)) {
@@ -3164,7 +3190,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
                         || sectionVersion == kCadSectionVersionV8
                         || sectionVersion == kCadSectionVersionV9
                         || sectionVersion == kCadSectionVersionV10
-                        || sectionVersion == kCadSectionVersionV11;
+                        || sectionVersion == kCadSectionVersionV11
+                        || sectionVersion == kCadSectionVersionV12;
         } else if (isScene) {
             // SCNE became the second multi-version section at Stage 018A: v1 as
             // every build before it wrote, and v2 carrying per-body visibility,

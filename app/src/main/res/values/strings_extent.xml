@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Through All extent of a Cut (`CAD-EXTENT-R1`). -->
+<resources>
+    <string name="extent_through_all">Through All</string>
+    <string name="cad_hud_caption_through_all">Through all</string>
+    <string name="extent_through_all_description">Cut right through the part, however thick it is or becomes.</string>
+    <string name="extrude_through_all_reading">Through all (%1$s)</string>
+    <string name="history_detail_through_all">Through All</string>
+    <string name="status_through_all_unsupported">Only a Cut can go through all: an Add or the first shape of a part needs a distance.</string>
+    <string name="status_through_all_reaches_nothing">There is no material on that side to cut through. Flip the cut into the part.</string>
+</resources>

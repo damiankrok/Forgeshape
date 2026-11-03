@@ -245,9 +245,9 @@ public final class CadHudPresentationTest {
             captions.add(CadHudPresentation.extentCaption(mode));
             descriptions.add(CadHudPresentation.extentDescription(mode));
         }
-        assertEquals(3, icons.size());
-        assertEquals(3, captions.size());
-        assertEquals(3, descriptions.size());
+        assertEquals(4, icons.size());
+        assertEquals(4, captions.size());
+        assertEquals(4, descriptions.size());
         assertEquals(R.drawable.ic_extent_one_side,
                 CadHudPresentation.extentIcon(NativeViewport.EXTENT_ONE_SIDE));
         assertEquals(R.drawable.ic_extent_symmetric,
@@ -267,6 +267,18 @@ public final class CadHudPresentationTest {
         assertEquals(NativeViewport.EXTENT_ONE_SIDE, CadHudPresentation.EXTENTS[0]);
         assertEquals(NativeViewport.EXTENT_SYMMETRIC, CadHudPresentation.EXTENTS[1]);
         assertEquals(NativeViewport.EXTENT_TWO_SIDES, CadHudPresentation.EXTENTS[2]);
+        assertEquals(NativeViewport.EXTENT_THROUGH_ALL, CadHudPresentation.EXTENTS[3]);
+    }
+
+    @Test
+    public void throughAllIsOfferedOnlyWhereNativeSaysItApplies() {
+        assertTrue(CadHudPresentation.extentOffered(NativeViewport.EXTENT_ONE_SIDE, false));
+        assertTrue(CadHudPresentation.extentOffered(NativeViewport.EXTENT_TWO_SIDES, false));
+        assertFalse("not drawn where it cannot succeed",
+                CadHudPresentation.extentOffered(NativeViewport.EXTENT_THROUGH_ALL, false));
+        assertTrue(CadHudPresentation.extentOffered(NativeViewport.EXTENT_THROUGH_ALL, true));
+        assertTrue("Through All is one-sided, so it flips",
+                CadHudPresentation.flipPresent(NativeViewport.EXTENT_THROUGH_ALL));
     }
 
     @Test

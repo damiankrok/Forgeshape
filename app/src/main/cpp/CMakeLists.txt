@@ -136,6 +136,7 @@ set(FORGESHAPE_SELFTEST_SOURCES
     forgeshape_sketch_knife_undo_selftest.cpp
     forgeshape_cad_pattern_selftest.cpp
     forgeshape_cad_hole_selftest.cpp
+    forgeshape_cad_through_all_selftest.cpp
     forgeshape_cad_timeline_selftest.cpp
     forgeshape_cad_r2_selftest.cpp
     forgeshape_cad_oracle_selftest.cpp

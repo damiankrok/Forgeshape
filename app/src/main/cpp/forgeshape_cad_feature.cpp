@@ -1,5 +1,7 @@
 #include "forgeshape_cad_feature.h"
 
+#include "forgeshape_cad_pattern.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -533,6 +535,47 @@ CadStatus sketchPlacement(const CadBodyState& state, CadSketchId sketchId, const
                                                                : CadStatus::FeatureSupportInvalid;
 }
 
+// How far a Through All Cut on `placement` must reach along `sign`·n to leave
+// the body (`CAD-EXTENT-R1`): the farthest the MATERIAL before `featureId`
+// stands on that side -- every earlier New Body and Add feature's own solid,
+// and every earlier pattern's copies of an Add -- plus a small margin so the
+// tool leaves the body cleanly. Cuts and holes only remove, so they cannot
+// reach farther. 0 when nothing stands on that side.
+double throughAllReach(const CadBodyState& state, const std::vector<CadFeatureGeometry>& chain,
+                       uint32_t featureId, const CadFrame64& placement, double sign) {
+    double reach = 0.0;
+    const auto measure = [&](const CadSolid& solid) {
+        for (size_t i = 0; i + 2 < solid.positions.size(); i += 3) {
+            const DVec3 p{solid.positions[i], solid.positions[i + 1], solid.positions[i + 2]};
+            reach = std::max(reach, sign * dvec3Dot(dvec3Sub(p, placement.origin), placement.n));
+        }
+    };
+    for (const CadFeatureGeometry& g : chain) {
+        if (g.operation == CadFeatureOperation::Cut) continue;
+        CadSolid solid;
+        if (appendCadFeatureSolid(g, 0u, &solid) == CadStatus::Ok) measure(solid);
+    }
+    for (const CadFeaturePattern& pattern : state.patterns) {
+        if (pattern.patternId >= featureId) continue;
+        for (uint32_t id : pattern.featureIds) {
+            for (const CadFeatureGeometry& g : chain) {
+                if (g.featureId != id || g.operation != CadFeatureOperation::Add) continue;
+                CadSolid source;
+                if (appendCadFeatureSolid(g, 0u, &source) != CadStatus::Ok) continue;
+                for (const CadPatternTransform& motion : cadPatternInstanceTransforms(pattern)) {
+                    CadSolid moved = source;
+                    transformCadSolid(motion, &moved);
+                    measure(moved);
+                }
+            }
+        }
+    }
+    if (!(reach > 1.0e-9)) {
+        return 0.0;
+    }
+    return reach + std::max(1.0e-6, 0.01 * reach);
+}
+
 // The one walk behind both entry points: every feature in order, whichever
 // kind of selection it makes, each placed on its sketch's support.
 CadStatus walkCadChain(const CadBodyState& state, std::vector<CadFeatureGeometry>* out,
@@ -591,6 +634,25 @@ CadStatus walkCadChain(const CadBodyState& state, std::vector<CadFeatureGeometry
             g.extrude = revolveSelectionCarrier(*view.revolve);
             g.placement = placement;
             why = deriveRevolveFeature(&g);
+        } else if (extrudeIsThroughAll(*view.extrude)) {
+            // `CAD-EXTENT-R1`: a later Cut alone goes through a body, and how
+            // far is the material before it -- never a stored number.
+            if (base || view.operation != CadFeatureOperation::Cut) {
+                return refuse(CadStatus::ThroughAllUnsupported, view.featureId);
+            }
+            // Its ONE stored form, judged before the resolved copy replaces it.
+            const CadStatus extentWhy = validateExtrudeExtent(*view.extrude);
+            if (extentWhy != CadStatus::Ok) {
+                return refuse(extentWhy, view.featureId);
+            }
+            const double sign =
+                    view.extrude->direction == ExtrudeDirection::AlongNormal ? 1.0 : -1.0;
+            const double reach = throughAllReach(state, chain, view.featureId, placement, sign);
+            if (!(reach > 0.0) || !std::isfinite(reach)) {
+                return refuse(CadStatus::ThroughAllReachesNothing, view.featureId);
+            }
+            why = deriveFeature(view.featureId, view.operation, *view.sketch,
+                                extrudeResolvedThroughAll(*view.extrude, reach), placement, &g);
         } else {
             why = deriveFeature(view.featureId, view.operation, *view.sketch, *view.extrude,
                                 placement, &g);

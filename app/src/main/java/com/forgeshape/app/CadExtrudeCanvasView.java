@@ -143,7 +143,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
     /** The extent choices, in {@link CadHudPresentation#EXTENTS} order. */
     private static final int[] EXTENT_CHOICE_IDS = {
             R.id.cad_extrude_extent_one_side, R.id.cad_extrude_extent_symmetric,
-            R.id.cad_extrude_extent_two_sides};
+            R.id.cad_extrude_extent_two_sides, R.id.cad_extrude_extent_through_all};
     /** The operation choices, in {@link CadHudPresentation#OPERATIONS} order. */
     private static final int[] OPERATION_CHOICE_IDS = {
             R.id.cad_extrude_operation_new_body, R.id.cad_extrude_operation_add,
@@ -1188,7 +1188,11 @@ final class CadExtrudeCanvasView extends FrameLayout {
         bindDock(context, extent, dockFrame);
 
         shownDepth = tool[NativeViewport.CAD_EXTRUDE_DEPTH];
-        reading.setText(unit.formatWithUnit(shownDepth));
+        // Through All reads as what it is, with where it reaches now beside it.
+        reading.setText(extent == NativeViewport.EXTENT_THROUGH_ALL
+                ? context.getString(R.string.extrude_through_all_reading,
+                        unit.formatWithUnit(shownDepth))
+                : unit.formatWithUnit(shownDepth));
         reading.setContentDescription(context.getString(
                 extent == NativeViewport.EXTENT_SYMMETRIC ? R.string.extrude_each_side_description
                         : extent == NativeViewport.EXTENT_TWO_SIDES
@@ -1326,8 +1330,13 @@ final class CadExtrudeCanvasView extends FrameLayout {
         }
 
         // The palette.
+        final boolean throughAllAvailable =
+                tool[NativeViewport.CAD_EXTRUDE_THROUGH_ALL_AVAILABLE] != 0.0;
         for (int i = 0; i < extentChoices.length; i++) {
             final int mode = CadHudPresentation.EXTENTS[i];
+            extentChoices[i].view.setVisibility(
+                    CadHudPresentation.extentOffered(mode, throughAllAvailable) || mode == extent
+                            ? VISIBLE : GONE);
             markChoice(extentChoices[i], mode == extent,
                     CadHudPresentation.extentDescription(mode));
             applyIcon(extentChoices[i]);

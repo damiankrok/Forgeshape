@@ -240,6 +240,7 @@ CadStatus SketchSession::begin(Workplane plane) {
     operation_ = CadFeatureOperation::NewBody;
     outwardOperation_ = CadFeatureOperation::NewBody;
     pushThrough_ = false;
+    dragFromThroughAll_ = false;
     targetBodyId_ = kNoObject;
     targetBaseState_ = CadBodyState{};
     hasTargetState_ = false;
@@ -300,6 +301,7 @@ void SketchSession::cancel() {
     operation_ = CadFeatureOperation::NewBody;
     outwardOperation_ = CadFeatureOperation::NewBody;
     pushThrough_ = false;
+    dragFromThroughAll_ = false;
     targetBodyId_ = kNoObject;
     targetBaseState_ = CadBodyState{};
     hasTargetState_ = false;
@@ -1084,10 +1086,12 @@ bool SketchSession::restoreCancelledExtrudeDrag() {
     if (!extrudeDrag_.cancelDrag(&restore)) {
         return false;
     }
-    if (pushThrough_) {
-        // A push-through may have changed the side and the operation too:
-        // everything the drag started from comes back, in one write.
+    if (pushThrough_ || dragFromThroughAll_) {
+        // A push-through may have changed the side and the operation too, and
+        // a drag from Through All turned it into a depth: everything the drag
+        // started from comes back, in one write.
         pushThrough_ = false;
+        dragFromThroughAll_ = false;
         extrude_ = dragStartExtrude_;
         operation_ = dragStartOperation_;
         touchCandidate();
@@ -1159,6 +1163,11 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             pushThrough_ = pushThroughAllowed();
             dragStartExtrude_ = extrude_;
             dragStartOperation_ = operation_;
+            // Dragging the arrow of a Through All cut sets a DEPTH: the first
+            // sample makes it One Side (`extrudeFeatureWithSide`), measured
+            // from the arrow it reaches now; a still tap changes nothing, and
+            // a cancel gives Through All back.
+            dragFromThroughAll_ = extrudeIsThroughAll(extrude_);
             touchOverlay();
             return true;
         }
@@ -1248,6 +1257,7 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             }
             regionTapArmed_ = false;
             regionTapOnHead_ = false;
+            dragFromThroughAll_ = false;
             extrudeDrag_.endDrag();
             touchOverlay();
             return true;
@@ -2987,7 +2997,12 @@ CadStatus SketchSession::applyExtrudeFeature(const ExtrudeFeature& requested) {
                 || validateDimensionMeters(requested.depth) == DimensionValidation::Ok)
             && validateDimensionMeters(positive + negative) == DimensionValidation::Ok
             && positive + negative <= kMaxSketchCoordinateMeters;
-    if (!sidesOk) {
+    if (requested.extent == ExtrudeExtentMode::ThroughAll) {
+        // No distance to judge: the chain derives it. Only where it can apply.
+        if (!throughAllAvailable()) {
+            return fail(CadStatus::ThroughAllUnsupported);
+        }
+    } else if (!sidesOk) {
         return fail(CadStatus::InvalidExtrudeDepth);
     }
     // The selection is chosen elsewhere, never here: only the extent moves --
@@ -2999,13 +3014,51 @@ CadStatus SketchSession::applyExtrudeFeature(const ExtrudeFeature& requested) {
     setExtrudeRegions(&extrude_, regions);
     extrude_.selection = kind;
     extrude_.planarFaces = std::move(faces);
-    if (extrude_.extent == ExtrudeExtentMode::OneSide) {
+    if (extrude_.extent == ExtrudeExtentMode::OneSide
+        || extrude_.extent == ExtrudeExtentMode::ThroughAll) {
         // The user's live One Side choice IS the transition memory; nothing
         // else writes it, so the two can never disagree.
         oneSideDirection_ = extrude_.direction;
     }
     touchCandidate();
     return fail(CadStatus::Ok);
+}
+
+bool SketchSession::throughAllAvailable() const {
+    return state_ == SketchSessionState::Ready && featureKind_ == CadFeatureKind::Extrude
+           && operation_ == CadFeatureOperation::Cut && editingFeatureId_ != kCadFeatureId
+           && editingSketchId_ == kNoCadSketch;
+}
+
+ExtrudeFeature SketchSession::displayExtrude() const {
+    if (!extrudeIsThroughAll(extrude_)) {
+        return extrude_;
+    }
+    if (displayCacheRevision_ == candidateRevision_) {
+        return displayCache_;
+    }
+    // The feature the candidate builds: the one being edited, or the one this
+    // session appends last.
+    const CadBodyState state = candidateState();
+    uint32_t featureId = editingFeatureId_;
+    if (featureId == 0 && !state.laterFeatures.empty()) {
+        featureId = state.laterFeatures.back().featureId;
+    }
+    // Unresolvable (nothing on that side): a short arrow on the chosen side,
+    // while the candidate's own verdict names the refusal.
+    ExtrudeFeature resolved = extrudeResolvedThroughAll(extrude_, kDefaultExtrudeDepthMeters * 0.1);
+    std::vector<CadFeatureGeometry> chain;
+    if (featureId > kCadFeatureId
+        && buildCadChainGeometry(state, &chain, nullptr, featureId) == CadStatus::Ok) {
+        for (const CadFeatureGeometry& g : chain) {
+            if (g.featureId == featureId) {
+                resolved = extrudeResolvedThroughAll(extrude_, g.farOffset - g.nearOffset);
+            }
+        }
+    }
+    displayCache_ = resolved;
+    displayCacheRevision_ = candidateRevision_;
+    return resolved;
 }
 
 CadStatus SketchSession::setExtrude(Meters depth, ExtrudeDirection direction) {
@@ -3023,7 +3076,12 @@ CadStatus SketchSession::setExtrudeExtent(ExtrudeExtentMode extent) {
         || extrudeExtentModeIndex(extent) >= kExtrudeExtentModeCount) {
         return fail(CadStatus::InvalidExtrudeExtent);
     }
-    return applyExtrudeFeature(extrudeFeatureWithExtent(extrude_, extent, oneSideDirection_));
+    if (extent == ExtrudeExtentMode::ThroughAll && !throughAllAvailable()) {
+        return fail(CadStatus::ThroughAllUnsupported);
+    }
+    // Out of Through All, the distance it reaches now is the one carried over.
+    return applyExtrudeFeature(
+            extrudeFeatureWithExtent(displayExtrude(), extent, oneSideDirection_));
 }
 
 CadStatus SketchSession::setExtrudeSide(bool positiveSide, Meters distance) {
@@ -3061,7 +3119,7 @@ bool SketchSession::extrudeAnchors(CadExtrudeAnchors* out) const {
     if (!selectionAnchorPoint(&base)) {
         return false;
     }
-    return cadExtrudeAnchorsAt(frame_, base, extrude_, out);
+    return cadExtrudeAnchorsAt(frame_, base, displayExtrude(), out);
 }
 
 CadStatus SketchSession::flipExtrudeDirection() {
@@ -3072,6 +3130,14 @@ CadStatus SketchSession::flipExtrudeDirection() {
     // Sides states both explicitly, so there is no side left for a Flip to
     // choose; using it to swap A and B would be a second, hidden meaning for
     // one control.
+    if (extrude_.extent == ExtrudeExtentMode::ThroughAll) {
+        // Through All is one-sided too: Flip chooses the other side.
+        ExtrudeFeature flipped = extrude_;
+        flipped.direction = extrude_.direction == ExtrudeDirection::AlongNormal
+                                    ? ExtrudeDirection::AgainstNormal
+                                    : ExtrudeDirection::AlongNormal;
+        return applyExtrudeFeature(flipped);
+    }
     if (extrude_.extent != ExtrudeExtentMode::OneSide) {
         return fail(CadStatus::InvalidExtrudeExtent);
     }
@@ -3235,6 +3301,11 @@ CadStatus SketchSession::setOperation(CadFeatureOperation operation) {
         outwardOperation_ = operation;  // what a push-through back out becomes
     }
     if (operation_ != operation) {
+        // Only a Cut goes through a body: leaving Cut keeps the distance the
+        // cut reached, as One Side, rather than a state the commit refuses.
+        if (extrudeIsThroughAll(extrude_) && operation != CadFeatureOperation::Cut) {
+            extrude_ = displayExtrude();
+        }
         operation_ = operation;
         touchCandidate();
         // A NEW feature on a face starts facing the way its operation works:
@@ -4492,8 +4563,9 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
         // The SAME two offsets `generateCadMesh` extrudes between, so the
         // preview and the solid it previews cannot disagree about where the
         // caps are in any extent mode.
-        const double nearOffset = -extrudeNegativeDistance(extrude_);
-        const double farOffset = extrudePositiveDistance(extrude_);
+        const ExtrudeFeature shown = displayExtrude();
+        const double nearOffset = -extrudeNegativeDistance(shown);
+        const double farOffset = extrudePositiveDistance(shown);
         for (const std::vector<std::vector<SketchPoint>>& loops : chosenLoops) {
             for (const std::vector<SketchPoint>& loop : loops) {
                 const size_t n = loop.size();

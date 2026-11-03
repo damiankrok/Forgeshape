@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Through All: the sketch plane on top, a block below it, and one arrow
+     running from the plane right out of the block's far side. Its silhouette
+     -- an arrow that passes the second line -- separates it from One Side,
+     whose arrow stops in the open, in monochrome as well as in colour. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillAlpha="0.35"
+        android:pathData="M3,6 h18 v10 h-18 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M3,6 L21,6 M3,16 L21,16 M12,3 L12,21 M8.5,17.5 L12,21 L15.5,17.5" />
+</vector>

@@ -5612,7 +5612,9 @@ Java_com_forgeshape_app_NativeViewport_sketchState(JNIEnv* env, jclass, jdoubleA
         values[5] = static_cast<double>(s.planarFaceCount() > 0 ? s.planarFaceCount()
                                                                 : s.regions().regions.size());
         values[6] = static_cast<double>(s.selectedProfileId());
-        values[7] = s.extrude().depth;
+        // The depth as it will be built: for Through All, the distance the
+        // candidate derives (`CAD-EXTENT-R1`), never the stored 0.
+        values[7] = s.displayExtrude().depth;
         values[8] = static_cast<double>(forgeshape::extrudeDirectionIndex(s.extrude().direction));
         values[9] = static_cast<double>(forgeshape::cadStatusCode(s.lastStatus()));
         values[10] = s.polylineInProgress() ? 1.0 : 0.0;
@@ -6291,11 +6293,16 @@ bool resolveCadSketchWorldFrame(forgeshape::ConstructionScene& scene, forgeshape
 //   [57] |sin| of the view against the axis at the arrow point (diagnostic)
 //   [58] why it is hidden: 0 shown, 1 no frame, 2 near the axis,
 //        3 behind the eye, 4 off the viewport (`CadExtrudeDockHidden`)
+//
+// `CAD-EXTENT-R1` added Through All (extent 3): slots 13..14 then carry the
+// distance the candidate chain DERIVES, so the value reads where the cut will
+// actually reach.
+//   [59] 1 when Through All can be chosen now (`throughAllAvailable`)
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                                                            jdoubleArray out) {
     constexpr jsize kLegacySlots = 21;
-    constexpr jsize kMaxSlots = 59;
+    constexpr jsize kMaxSlots = 60;
     if (out == nullptr || env->GetArrayLength(out) < kLegacySlots) {
         return;
     }
@@ -6318,6 +6325,7 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
             values[29] = static_cast<double>(
                     session.selectedAreaCount());
             values[30] = static_cast<double>(session.editingFeatureId());
+            values[59] = session.throughAllAvailable() ? 1.0 : 0.0;
             if (ready) {
                 // The SAME evaluation the render thread draws and the commit
                 // applies: latest-only, cached by candidate revision.
@@ -6331,14 +6339,15 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
         forgeshape::CadExtrudeAnchors anchors;
         if (session.extrudeAnchors(&anchors)) {
             const forgeshape::ExtrudeFeature& extrude = session.extrude();
+            const forgeshape::ExtrudeFeature shown = session.displayExtrude();
             values[0] = 1.0;
             values[1] = anchors.depth;
             values[2] = forgeshape::extrudeDirectionIndex(extrude.direction);
             values[3] = static_cast<double>(extrude.profileEntityId);
             values[4] = session.extrudeManipulator().capturing() ? 1.0 : 0.0;
             values[12] = forgeshape::extrudeExtentModeIndex(extrude.extent);
-            values[13] = forgeshape::extrudePositiveDistance(extrude);
-            values[14] = forgeshape::extrudeNegativeDistance(extrude);
+            values[13] = forgeshape::extrudePositiveDistance(shown);
+            values[14] = forgeshape::extrudeNegativeDistance(shown);
             values[20] = session.extrudeManipulator().capturing()
                                  ? (session.extrudeManipulator().capturedPositiveSide() ? 1.0 : 2.0)
                                  : 0.0;
@@ -7525,8 +7534,8 @@ Java_com_forgeshape_app_NativeViewport_sketchSetExtrudeExtent(JNIEnv*, jclass, j
         std::lock_guard<std::mutex> lock(g_stateMutex);
         forgeshape::SketchSession& session = forgeshape::sketchSession();
         status = session.setExtrudeExtent(mode);
-        positive = forgeshape::extrudePositiveDistance(session.extrude());
-        negative = forgeshape::extrudeNegativeDistance(session.extrude());
+        positive = forgeshape::extrudePositiveDistance(session.displayExtrude());
+        negative = forgeshape::extrudeNegativeDistance(session.displayExtrude());
     }
     FS_LOGI("FORGESHAPE_EXTRUDE_EXTENT mode=%s positive=%.6f negative=%.6f %s",
             forgeshape::extrudeExtentModeName(mode), positive, negative,

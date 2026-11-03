@@ -381,11 +381,16 @@ enum class CadStatus : uint8_t {
     TooManyHoles,
     // An act names a hole the body does not carry.
     HoleNotFound,
+    // `CAD-EXTENT-R1`. Through All on a feature that cannot take it: the base
+    // feature, an Add, or a Revolve -- only a later Cut goes through a body.
+    ThroughAllUnsupported,
+    // Through All found no material on its side of the sketch plane.
+    ThroughAllReachesNothing,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 110;
+constexpr int kCadStatusCount = 112;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);

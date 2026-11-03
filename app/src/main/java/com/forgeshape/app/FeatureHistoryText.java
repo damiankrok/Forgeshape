@@ -101,6 +101,8 @@ final class FeatureHistoryText {
             case NativeViewport.EXTENT_TWO_SIDES:
                 return context.getString(R.string.history_detail_two_sides,
                         unit.formatWithUnit(row.positive), unit.formatWithUnit(row.negative));
+            case NativeViewport.EXTENT_THROUGH_ALL:
+                return context.getString(R.string.history_detail_through_all);
             default:
                 return context.getString(R.string.history_detail_one_side,
                         unit.formatWithUnit(Math.max(row.positive, row.negative)));
