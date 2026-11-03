@@ -41,6 +41,14 @@ struct CadFrame64 {
 
 DVec3 cadFramePoint(const CadFrame64& frame, double a, double b, double c);
 
+// `CAD-PLANE-R1`. The construction plane `offset` metres along `face`'s normal,
+// tilted `angleDegrees` about its `u` axis (positive turns `v` toward `n`):
+// `u` is kept, `v' = cos·v + sin·n`, `n' = cos·n - sin·v`, still right-handed.
+// The face itself for (0, 0).
+CadFrame64 cadSketchPlaneFrame(const CadFrame64& face, double offset, double angleDegrees);
+// Whether (offset, angle) is a plane a sketch may stand on.
+bool cadSketchPlaneValuesValid(double offset, double angleDegrees);
+
 // One planar face of one feature's own extrusion, in body-local binary64.
 struct CadFeatureFace {
     CadFaceToken token{};

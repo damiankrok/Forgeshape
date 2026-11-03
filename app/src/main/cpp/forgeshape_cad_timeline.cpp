@@ -59,6 +59,10 @@ void fillSketch(const CadSketchRecord& record, CadTimelineRow* row) {
     row->onBodyFace = !record.hasFeatureSupport && record.sketch.hasFaceSupport;
     row->onFeatureFace = record.hasFeatureSupport;
     row->supportFeatureId = record.hasFeatureSupport ? record.featureSupport.featureId : 0u;
+    // `CAD-PLANE-R1`: a sketch row carries its construction plane off the face
+    // in the two value slots a feature row uses for its distance and angle.
+    row->positiveDistance = record.planeOffset;
+    row->angleDegrees = record.planeAngleDegrees;
 }
 
 }  // namespace

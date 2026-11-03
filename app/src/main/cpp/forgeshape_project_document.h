@@ -243,6 +243,12 @@ constexpr uint16_t kCadSectionVersionV12 = 12;
 // Face or a hole is placed from edges, so every v1..v12 project keeps its
 // bytes.
 constexpr uint16_t kCadSectionVersionV13 = 13;
+// v14 (`CAD-PLANE-R1`, DATA_PACKAGE_SPEC.md §7q): the v13 layout -- in which
+// every hole carries its placement byte -- with each sketch record placed on
+// a face of the body's own features followed by its construction plane's
+// offset and tilt. Written ONLY when a sketch stands off its face, so every
+// v1..v13 project keeps its bytes.
+constexpr uint16_t kCadSectionVersionV14 = 14;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.

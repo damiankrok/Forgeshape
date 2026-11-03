@@ -1606,6 +1606,33 @@ without keeps its fingerprint. No v13 corpus fixture exists yet: the round
 trip and the version rule are host evidence (`TF_07_*`, `HE_05_*` in the
 CAD-feature suite).
 
+## 7q. `CADB` v14 — a sketch on a construction plane off its face (`CAD-PLANE-R1`)
+
+Version 14 is v13's layout (§7p) byte for byte, with one addition: every
+sketch record whose placement code is the FEATURE face (a face of one of the
+body's own features, §7g) is followed, right after its support, by
+
+```
+f64  planeOffset          metres along the face's material-outward normal
+f64  planeAngleDegrees    tilt about the face frame's u axis, [-90, 90]
+```
+
+The plane is DERIVED from the face on every regeneration: its origin is the
+face frame's origin moved `planeOffset` along `n`, `u` is kept, and
+`v' = cos·v + sin·n`, `n' = cos·n - sin·v` for the angle in radians — so an
+upstream size edit that moves the face moves the plane. A record placed on the
+face itself writes two `0.0`s. A root record (workplane or body face) has no
+such fields and must stand on its plane; an offset or a tilt there, a
+non-finite value, an offset past the sketch bound or a tilt past 90° is
+`SketchPlaneInvalid`. The support face must still carry material
+(`SupportFaceLost`), judged on the FACE and not on the plane.
+
+v14 is written exactly when some sketch stands off its face; a v14 section
+with none is a second encoding of v13 (or lower) and is refused. The
+fingerprint mixes a `PLN0` block (each such sketch's id and the exact offset
+and angle bits) only then. No v14 corpus fixture exists yet: the round trip
+and the version rule are host evidence (`PL_04_*` in the CAD-feature suite).
+
 ## 7j. `FRFM` v1 — the Freeform bodies (`MODELING-FOUNDATIONS-R1` B)
 
 A Freeform body's truth is its quad CONTROL CAGE; the smooth surface is

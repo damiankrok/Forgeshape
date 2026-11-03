@@ -4965,6 +4965,20 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     @Override
+    public boolean onFacePlaneRequested(double offsetMeters, double angleDegrees) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchSetFacePlane(offsetMeters, angleDegrees);
+        if (status != NativeViewport.CAD_OK) {
+            // Refused, never clamped: the plane stands where it was.
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return false;
+        }
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_sketch_plane_moved), R.attr.fsTextSecondary);
+        return true;
+    }
+
+    @Override
     public void onRevolveAngleEntered(double degrees) {
         final int status = NativeViewport.sketchSetRevolveAngle(degrees);
         if (status != NativeViewport.CAD_OK) {

@@ -2390,6 +2390,8 @@ final class NativeViewport {
     static final int CAD_HOLE_EDGE_NOT_FOUND = 117;
     /** The two edges a hole is placed from are parallel. */
     static final int CAD_HOLE_EDGES_PARALLEL = 118;
+    /** `CAD-PLANE-R1`: a sketch plane off its face that cannot be. */
+    static final int CAD_SKETCH_PLANE_INVALID = 119;
 
     // --- Chamfer and Fillet (`CAD-EDGE-FINISH-R1`) ------------------------
 
@@ -2568,6 +2570,19 @@ final class NativeViewport {
 
     /** Ends placing from edges (the editor closed or chose a point). */
     static native void cadHoleEdgeRelease();
+
+    /**
+     * `CAD-PLANE-R1`: stands the open sketch off its face, {@code offset}
+     * metres along its normal and tilted {@code angleDegrees} about its first
+     * axis. Returns a CAD status.
+     */
+    static native int sketchSetFacePlane(double offset, double angleDegrees);
+
+    /**
+     * The open sketch's plane: [0] 1 when it may stand off its face now, [1]
+     * the offset in metres, [2] the tilt in degrees.
+     */
+    static native void sketchFacePlaneState(double[] out);
 
     /** {@link #cadHoleInfo} slots. */
     static final int HOLE_INFO_SIZE = 16;

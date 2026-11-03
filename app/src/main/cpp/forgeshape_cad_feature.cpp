@@ -507,6 +507,26 @@ DVec3 cadFramePoint(const CadFrame64& frame, double a, double b, double c) {
     return dvec3Add(frame.origin, frameDirection(frame, a, b, c));
 }
 
+CadFrame64 cadSketchPlaneFrame(const CadFrame64& face, double offset, double angleDegrees) {
+    if (offset == 0.0 && angleDegrees == 0.0) {
+        return face;  // bit for bit: a sketch on the face itself moves nowhere
+    }
+    const double a = angleDegrees * 3.14159265358979323846 / 180.0;
+    const double c = std::cos(a);
+    const double s = std::sin(a);
+    CadFrame64 out = face;
+    out.origin = dvec3Add(face.origin, dvec3Scale(face.n, offset));
+    out.v = dvec3Add(dvec3Scale(face.v, c), dvec3Scale(face.n, s));
+    out.n = dvec3Sub(dvec3Scale(face.n, c), dvec3Scale(face.v, s));
+    return out;
+}
+
+bool cadSketchPlaneValuesValid(double offset, double angleDegrees) {
+    return std::isfinite(offset) && std::isfinite(angleDegrees)
+           && std::fabs(offset) <= kMaxSketchCoordinateMeters
+           && std::fabs(angleDegrees) <= kMaxSketchPlaneAngleDegrees;
+}
+
 namespace {
 
 // Where a sketch's (u, v, w) stands in the body, and whether it may stand
@@ -515,6 +535,7 @@ namespace {
 CadStatus sketchPlacement(const CadBodyState& state, CadSketchId sketchId, const CadSketch& sketch,
                           const CadFeatureSupport* support,
                           const std::vector<CadFeatureGeometry>& chain, CadFrame64* out) {
+    const CadSketchRecord* record = findCadSketchRecord(state, sketchId);
     if (support == nullptr) {
         // Only the base's sketch is placed by its own workplane (and, for the
         // whole body, its TopoRef); any other root sketch is a second answer
@@ -522,8 +543,16 @@ CadStatus sketchPlacement(const CadBodyState& state, CadSketchId sketchId, const
         if (sketchId != state.baseSketchId) {
             return CadStatus::SketchSupportInvalid;
         }
+        // A root sketch stands on its plane; the body itself is what moves.
+        if (record != nullptr && cadSketchRecordOffFace(*record)) {
+            return CadStatus::SketchPlaneInvalid;
+        }
         *out = workplaneFrame64(sketch.plane);
         return CadStatus::Ok;
+    }
+    if (record != nullptr
+        && !cadSketchPlaneValuesValid(record->planeOffset, record->planeAngleDegrees)) {
+        return CadStatus::SketchPlaneInvalid;
     }
     // A sketch on one of the body's own faces is authored on its canonical
     // local XY and placed by its support alone; a TopoRef there would be a
@@ -531,8 +560,15 @@ CadStatus sketchPlacement(const CadBodyState& state, CadSketchId sketchId, const
     if (sketch.plane != Workplane::XY || sketch.hasFaceSupport) {
         return CadStatus::FeatureSupportInvalid;
     }
-    return resolveCadFeatureSupportFrame(chain, *support, out) ? CadStatus::Ok
-                                                               : CadStatus::FeatureSupportInvalid;
+    CadFrame64 face;
+    if (!resolveCadFeatureSupportFrame(chain, *support, &face)) {
+        return CadStatus::FeatureSupportInvalid;
+    }
+    // `CAD-PLANE-R1`: on the face, or on the construction plane derived from it.
+    *out = record != nullptr
+                   ? cadSketchPlaneFrame(face, record->planeOffset, record->planeAngleDegrees)
+                   : face;
+    return CadStatus::Ok;
 }
 
 // How far a Through All Cut on `placement` must reach along `sign`·n to leave

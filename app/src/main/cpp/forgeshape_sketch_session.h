@@ -470,6 +470,21 @@ public:
     CadStatus setPlaneOffset(double meters);
     double planeOffset() const { return planeOffset_; }
 
+    // --- a construction plane off a face (`CAD-PLANE-R1`) ------------------
+    //
+    // A sketch on a face of the body it will change -- a new Add or Cut, a
+    // kept sketch, or an edit of a feature or a retained sketch that stands on
+    // one of the body's faces -- may stand OFF that face: `offset` metres
+    // along its normal, tilted `angleDegrees` about its `u` axis
+    // (`cadSketchPlaneFrame`). The authored (u, v) never move; the plane they
+    // are drawn on does, and the authoring frame with it. Session state until
+    // the commit writes it into the sketch record. A New Body is not offered
+    // off a face: its placement is the face's own (`TopoRef`).
+    bool facePlaneAvailable() const;
+    CadStatus setFacePlane(double offset, double angleDegrees);
+    double facePlaneOffset() const { return facePlaneOffset_; }
+    double facePlaneAngle() const { return facePlaneAngle_; }
+
     // --- the selected line's dimension (`SKETCH-UX-R1` E) ----------------
 
     // The selected entity's length, when it is a straight Line. False for any
@@ -1112,6 +1127,14 @@ private:
     // The world frame the sketch is authored on. See SketchFrame.
     SketchFrame frame_;
     double planeOffset_ = 0.0;
+    // `CAD-PLANE-R1`: the face's own world frame (what a zero plane is), and
+    // the construction plane off it the session is authoring on.
+    SketchFrame faceBaseFrame_{};
+    double facePlaneOffset_ = 0.0;
+    double facePlaneAngle_ = 0.0;
+    // Writes the session's plane into the record a candidate or a commit
+    // builds for it.
+    void stampFacePlane(CadSketchRecord* record) const;
     // The current adaptive minor grid step, in metres. Updated from the camera
     // at pointer-down and when the overlay is rebuilt; never persisted.
     double gridStep_ = kSketchGridSpacingMeters;

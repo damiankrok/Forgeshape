@@ -407,11 +407,15 @@ enum class CadStatus : uint8_t {
     // The two edges a hole is placed from are parallel, so two distances do
     // not fix one point.
     HoleEdgesParallel,
+    // `CAD-PLANE-R1`. A construction plane off a face that cannot be: an
+    // offset or a tilt on a root sketch, a non-finite value, an offset past
+    // the sketch bound or a tilt past `kMaxSketchPlaneAngleDegrees`.
+    SketchPlaneInvalid,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 119;
+constexpr int kCadStatusCount = 120;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);

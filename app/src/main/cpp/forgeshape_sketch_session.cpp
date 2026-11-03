@@ -177,6 +177,87 @@ CadStatus SketchSession::setPlaneOffset(double meters) {
     return fail(CadStatus::Ok);
 }
 
+namespace {
+
+// The float authoring frame of `cadSketchPlaneFrame`, and its inverse.
+SketchFrame offsetSketchFrame(const SketchFrame& face, double offset, double angleDegrees) {
+    if (offset == 0.0 && angleDegrees == 0.0) return face;
+    const float a = static_cast<float>(angleDegrees * 3.14159265358979323846 / 180.0);
+    const float c = std::cos(a);
+    const float s = std::sin(a);
+    SketchFrame out = face;
+    out.origin = vec3Add(face.origin, vec3Scale(face.n, static_cast<float>(offset)));
+    out.v = vec3Add(vec3Scale(face.v, c), vec3Scale(face.n, s));
+    out.n = vec3Sub(vec3Scale(face.n, c), vec3Scale(face.v, s));
+    return out;
+}
+
+SketchFrame unoffsetSketchFrame(const SketchFrame& plane, double offset, double angleDegrees) {
+    if (offset == 0.0 && angleDegrees == 0.0) return plane;
+    const float a = static_cast<float>(angleDegrees * 3.14159265358979323846 / 180.0);
+    const float c = std::cos(a);
+    const float s = std::sin(a);
+    SketchFrame out = plane;
+    out.v = vec3Sub(vec3Scale(plane.v, c), vec3Scale(plane.n, s));
+    out.n = vec3Add(vec3Scale(plane.v, s), vec3Scale(plane.n, c));
+    out.origin = vec3Sub(plane.origin, vec3Scale(out.n, static_cast<float>(offset)));
+    return out;
+}
+
+}  // namespace
+
+bool SketchSession::facePlaneAvailable() const {
+    if (!active() || featureKind_ == CadFeatureKind::Revolve || reuseSketchId_ != kNoCadSketch
+        || editingFeatureId_ == kCadFeatureId) {
+        return false;
+    }
+    // An edit of a feature or a retained sketch: when its record stands on a
+    // face of the body's own features.
+    if (editingFeatureId_ > kCadFeatureId) {
+        const CadSketchRecord* record = cadFeatureSketchRecord(targetBaseState_, editingFeatureId_);
+        return record != nullptr && record->hasFeatureSupport;
+    }
+    if (editingSketchId_ != kNoCadSketch) {
+        const CadSketchRecord* record = findCadSketchRecord(targetBaseState_, editingSketchId_);
+        return record != nullptr && record->hasFeatureSupport;
+    }
+    // A new sketch on a face of the body it would change.
+    return sketch_.hasFaceSupport && hasTargetState_
+           && sketch_.faceSupport.producerObjectId == targetBodyId_;
+}
+
+CadStatus SketchSession::setFacePlane(double offset, double angleDegrees) {
+    if (!active()) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (!facePlaneAvailable()) {
+        return fail(CadStatus::SketchPlaneInvalid);
+    }
+    if (!cadSketchPlaneValuesValid(offset, angleDegrees)) {
+        return fail(CadStatus::SketchPlaneInvalid);
+    }
+    facePlaneOffset_ = offset;
+    facePlaneAngle_ = angleDegrees;
+    frame_ = offsetSketchFrame(faceBaseFrame_, offset, angleDegrees);
+    // Off the face a New Body has no placement to stand on: the operation
+    // becomes the first one that can.
+    if (operation_ == CadFeatureOperation::NewBody
+        && !operationAvailable(CadFeatureOperation::NewBody)) {
+        operation_ = operationAvailable(CadFeatureOperation::Add) ? CadFeatureOperation::Add
+                                                                  : CadFeatureOperation::Cut;
+    }
+    resetGesture();
+    touchCandidate();
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
+void SketchSession::stampFacePlane(CadSketchRecord* record) const {
+    if (record == nullptr || !record->hasFeatureSupport) return;
+    record->planeOffset = facePlaneOffset_;
+    record->planeAngleDegrees = facePlaneAngle_;
+}
+
 CadStatus SketchSession::beginOnFace(const SketchFrame& worldFrame, const TopoRef& support,
                                      const CadBodyState* producerState) {
     if (state_ != SketchSessionState::Inactive) {
@@ -193,6 +274,7 @@ CadStatus SketchSession::beginOnFace(const SketchFrame& worldFrame, const TopoRe
     sketch_.hasFaceSupport = true;
     sketch_.faceSupport = support;
     frame_ = worldFrame;
+    faceBaseFrame_ = worldFrame;
     // The producer is also the body an Add or a Cut would modify. Its state is
     // staged now, so the candidate is a pure function of what the session
     // holds; the commit refuses if the body changed underneath.
@@ -219,6 +301,9 @@ CadStatus SketchSession::begin(Workplane plane) {
     const WorkplaneFrame wf = workplaneFrame(plane);
     frame_ = SketchFrame{Vec3{0.0f, 0.0f, 0.0f}, wf.uAxis, wf.vAxis, wf.normal};
     planeOffset_ = 0.0;
+    faceBaseFrame_ = frame_;
+    facePlaneOffset_ = 0.0;
+    facePlaneAngle_ = 0.0;
     gridStep_ = kSketchGridSpacingMeters;
     selectedIds_.clear();
     multiSelect_ = false;
@@ -373,6 +458,13 @@ CadStatus SketchSession::beginEditFeature(ObjectId bodyId, const CadBodyState& s
                                 ? extrude_.direction
                                 : ExtrudeDirection::AlongNormal;
     frame_ = worldFrame;
+    // The plane comes back with the sketch, and the face under it is what a
+    // new value is measured from (`CAD-PLANE-R1`).
+    if (const CadSketchRecord* record = cadFeatureSketchRecord(state, featureId)) {
+        facePlaneOffset_ = record->planeOffset;
+        facePlaneAngle_ = record->planeAngleDegrees;
+    }
+    faceBaseFrame_ = unoffsetSketchFrame(worldFrame, facePlaneOffset_, facePlaneAngle_);
     editingBodyId_ = bodyId;
     editingFeatureId_ = featureId;
     targetBodyId_ = bodyId;
@@ -572,6 +664,9 @@ CadStatus SketchSession::beginEditSketch(ObjectId bodyId, const CadBodyState& st
     }
     sketch_ = record->sketch;
     frame_ = worldFrame;
+    facePlaneOffset_ = record->planeOffset;
+    facePlaneAngle_ = record->planeAngleDegrees;
+    faceBaseFrame_ = unoffsetSketchFrame(worldFrame, facePlaneOffset_, facePlaneAngle_);
     editingBodyId_ = bodyId;
     editingSketchId_ = sketchId;
     targetBodyId_ = bodyId;
@@ -662,6 +757,7 @@ CadStatus SketchSession::commitSketch(ConstructionScene& scene, ConstructionHist
         if (kept == kNoCadSketch) {
             return fail(CadStatus::TooManySketches);
         }
+        stampFacePlane(findCadSketchRecord(candidate, kept));
     }
     CadStatus why = CadStatus::Ok;
     {
@@ -3293,6 +3389,7 @@ CadBodyState SketchSession::candidateState() const {
             record->sketch.plane = Workplane::XY;
             record->sketch.hasFaceSupport = false;
             record->sketch.faceSupport = TopoRef{};
+            stampFacePlane(record);
         }
         return state;
     }
@@ -3328,6 +3425,7 @@ CadBodyState SketchSession::candidateState() const {
                 record->sketch.plane = Workplane::XY;
                 record->sketch.hasFaceSupport = false;
                 record->sketch.faceSupport = TopoRef{};
+                stampFacePlane(record);
             }
         }
         for (CadFeature& existing : state.laterFeatures) {
@@ -3350,8 +3448,12 @@ CadBodyState SketchSession::candidateState() const {
     support.featureId = sketch_.faceSupport.producerLocalFeatureId;
     support.face = sketch_.faceSupport.face;
     support.lineageToken = sketch_.faceSupport.lineageToken;
-    if (appendCadLaterFeatureWithSketch(&state, operation_, support, std::move(sketch), extrude_)
-        == 0) {
+    const uint32_t appended =
+            appendCadLaterFeatureWithSketch(&state, operation_, support, std::move(sketch), extrude_);
+    if (appended != 0) {
+        stampFacePlane(cadFeatureSketchRecord(state, appended));
+    }
+    if (appended == 0) {
         // A full chain or table cannot take another feature. The candidate
         // still carries the attempt -- a feature naming no sketch -- so the
         // evaluation refuses it by name (`TooManyFeatures`/`SketchNotFound`)
@@ -3388,7 +3490,8 @@ bool SketchSession::operationAvailable(CadFeatureOperation operation) const {
         return addOrCut;
     }
     if (operation == CadFeatureOperation::NewBody) {
-        return true;
+        // Off its face a sketch has no placement a new body could take.
+        return facePlaneOffset_ == 0.0 && facePlaneAngle_ == 0.0;
     }
     // Add and Cut need a body to act on: the CAD body this sketch stands on,
     // whose chain is staged. A world-plane sketch has none.

@@ -522,7 +522,8 @@ bool sameRevolveFeature(const RevolveFeature& a, const RevolveFeature& b) {
 bool sameCadSketchRecord(const CadSketchRecord& a, const CadSketchRecord& b) {
     return a.sketchId == b.sketchId && a.hasFeatureSupport == b.hasFeatureSupport
            && sameCadFeatureSupport(a.featureSupport, b.featureSupport)
-           && sameCadSketch(a.sketch, b.sketch);
+           && sameCadSketch(a.sketch, b.sketch) && sameBits(a.planeOffset, b.planeOffset)
+           && sameBits(a.planeAngleDegrees, b.planeAngleDegrees);
 }
 
 bool sameCadFeature(const CadFeature& a, const CadFeature& b) {
@@ -661,6 +662,13 @@ bool cadBodyStateUsesToFace(const CadBodyState& state) {
     if (extrudeIsToFace(state.extrude)) return true;
     for (const CadFeature& feature : state.laterFeatures) {
         if (extrudeIsToFace(feature.extrude)) return true;
+    }
+    return false;
+}
+
+bool cadBodyStateUsesSketchPlanes(const CadBodyState& state) {
+    for (const CadSketchRecord& record : state.sketches) {
+        if (cadSketchRecordOffFace(record)) return true;
     }
     return false;
 }
@@ -950,7 +958,7 @@ bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
     // Nor a hole below v11 (`CAD-HOLE-R1`), nor Through All below v12
     // (`CAD-EXTENT-R1`).
     if (cadBodyStateUsesHoles(state) || cadBodyStateUsesThroughAll(state)
-        || cadBodyStateUsesToFace(state)) {
+        || cadBodyStateUsesToFace(state) || cadBodyStateUsesSketchPlanes(state)) {
         return false;
     }
     // A Construction role or a sketch dimension has no encoding below v8
@@ -1551,6 +1559,15 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
     if (tableWhy != CadStatus::Ok) {
         return tableWhy;
     }
+    // `CAD-PLANE-R1`: only a sketch on a face of the body's own features may
+    // stand off it, and only on a plane it can stand on.
+    for (const CadSketchRecord& record : state.sketches) {
+        if (cadSketchRecordOffFace(record)
+            && (!record.hasFeatureSupport
+                || !cadSketchPlaneValuesValid(record.planeOffset, record.planeAngleDegrees))) {
+            return CadStatus::SketchPlaneInvalid;
+        }
+    }
     const int kind = cadFeatureKindIndex(state.baseKind);
     if (kind < 0 || kind >= kCadFeatureKindCount) {
         return CadStatus::InvalidFeatureKind;
@@ -2053,7 +2070,14 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
             CadFeatureView view;
             const bool onFeatureFace = cadFeatureAt(state, static_cast<uint32_t>(i), &view)
                                        && view.support != nullptr;
-            if (onFeatureFace && !cadSolidHasFaceOn(body, feature.placement)) {
+            // Asked of the FACE, not of where the sketch stands: a sketch on a
+            // construction plane off the face (`CAD-PLANE-R1`) still needs the
+            // face it is derived from.
+            CadFrame64 supportFace = feature.placement;
+            if (onFeatureFace) {
+                resolveCadFeatureSupportFrame(chain, *view.support, &supportFace);
+            }
+            if (onFeatureFace && !cadSolidHasFaceOn(body, supportFace)) {
                 return finish(CadStatus::SupportFaceLost, feature.featureId);
             }
             CadSolid tool;

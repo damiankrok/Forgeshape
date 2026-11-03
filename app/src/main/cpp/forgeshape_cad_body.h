@@ -545,7 +545,24 @@ struct CadSketchRecord {
     bool hasFeatureSupport = false;
     CadFeatureSupport featureSupport{};
     CadSketch sketch;
+    // `CAD-PLANE-R1`. A sketch on one of the body's own faces may stand OFF
+    // the face, on a construction plane derived from it: `planeOffset` metres
+    // along the face's material-outward normal, then tilted
+    // `planeAngleDegrees` about the face frame's own `u` axis
+    // (`cadSketchPlaneFrame`). Both exactly 0 for a sketch on the face itself
+    // and for every root sketch; a size edit upstream carries the plane with
+    // the face it is derived from.
+    double planeOffset = 0.0;
+    double planeAngleDegrees = 0.0;
 };
+
+// The largest tilt a construction plane may take off its face, either way.
+constexpr double kMaxSketchPlaneAngleDegrees = 90.0;
+
+// Whether a record stands off its face (`CAD-PLANE-R1`).
+inline bool cadSketchRecordOffFace(const CadSketchRecord& record) {
+    return record.planeOffset != 0.0 || record.planeAngleDegrees != 0.0;
+}
 
 bool sameCadSketchRecord(const CadSketchRecord& a, const CadSketchRecord& b);
 
@@ -980,6 +997,9 @@ bool cadBodyStateUsesThroughAll(const CadBodyState& state);
 // `CAD-TO-FACE-R1`: a To Face extrusion or a hole placed from two edges, the
 // two things `CADB` v13 alone carries.
 bool cadBodyStateUsesToFace(const CadBodyState& state);
+// `CAD-PLANE-R1`: a sketch on a construction plane off its face, the thing
+// `CADB` v14 alone carries.
+bool cadBodyStateUsesSketchPlanes(const CadBodyState& state);
 bool cadBodyStateUsesHoleEdges(const CadBodyState& state);
 
 // Whether the body carries a hole. Such a state round-trips only through

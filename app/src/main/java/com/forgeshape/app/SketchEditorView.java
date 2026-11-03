@@ -44,6 +44,10 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     private final LinearLayout editingSection;
     private final TextView entitySummary;
     private final LinearLayout rectangleRow;
+    private final LinearLayout planeSection;
+    private final NumericPropertyRow planeOffsetField;
+    private final NumericPropertyRow planeAngleField;
+    private final double[] nativePlane = new double[3];
     private final LinearLayout circleRow;
     private final LinearLayout lineRow;
     private final NumericPropertyRow[] rectangleFields = new NumericPropertyRow[2];
@@ -135,6 +139,13 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
          * canvas operation badge sends, so the two cannot become two answers.
          */
         void onExtrudeOperationRequested(int operation);
+
+        /**
+         * Stand the sketch on a construction plane off its face
+         * (`CAD-PLANE-R1`): an offset in metres along the face's normal and a
+         * tilt in degrees about its first axis. False when native refused.
+         */
+        boolean onFacePlaneRequested(double offsetMeters, double angleDegrees);
     }
 
     private final OnSketchAction actions;
@@ -196,6 +207,38 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         final LinearLayout.LayoutParams deleteParams = EditorControlStyles.rowParams(gap);
         deleteParams.width = LayoutParams.MATCH_PARENT;
         editingSection.addView(deleteEntity, deleteParams);
+
+        // The sketch's plane (`CAD-PLANE-R1`): on a face of the part, the
+        // sketch may stand off it -- an offset along the face's normal and a
+        // tilt -- and the drawing moves with the plane. Absent where it cannot
+        // apply (a world plane, a new body's first sketch).
+        planeSection = new LinearLayout(context);
+        planeSection.setId(R.id.sketch_plane_section);
+        planeSection.setOrientation(VERTICAL);
+        planeSection.addView(EditorControlStyles.sectionLabel(context,
+                context.getString(R.string.sketch_plane_section)),
+                EditorControlStyles.rowParams(0));
+        planeOffsetField = new NumericPropertyRow(context, R.id.field_sketch_plane_offset,
+                context.getString(R.string.label_plane_offset), false);
+        planeAngleField = new NumericPropertyRow(context, R.id.field_sketch_plane_angle,
+                context.getString(R.string.label_plane_angle), true);
+        final LinearLayout planeFields = new LinearLayout(context);
+        planeFields.setOrientation(HORIZONTAL);
+        planeFields.addView(planeOffsetField, EditorControlStyles.evenShare(0));
+        planeFields.addView(planeAngleField, EditorControlStyles.evenShare(gap));
+        planeSection.addView(planeFields, EditorControlStyles.rowParams(smallGap));
+        final TextView movePlane = EditorControlStyles.secondaryActionChip(context,
+                R.id.sketch_plane_apply, context.getString(R.string.sketch_plane_apply));
+        movePlane.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                submitPlane();
+            }
+        });
+        final LinearLayout.LayoutParams moveParams = EditorControlStyles.rowParams(gap);
+        moveParams.width = LayoutParams.MATCH_PARENT;
+        planeSection.addView(movePlane, moveParams);
+        editingSection.addView(planeSection, EditorControlStyles.rowParams(sectionGap));
         addView(editingSection, EditorControlStyles.rowParams(0));
 
         applyEntity = EditorControlStyles.primaryButton(context, R.id.apply_sketch_entity,
@@ -475,6 +518,7 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
 
         if (!ready) {
             refreshSelectedEntity(unit);
+            refreshPlane(unit);
             return;
         }
         refreshProfiles();
@@ -494,6 +538,39 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
                         ? VISIBLE
                         : GONE);
         showDirection();
+    }
+
+    private void refreshPlane(LengthUnit unit) {
+        NativeViewport.sketchFacePlaneState(nativePlane);
+        final boolean available = nativePlane[0] != 0.0;
+        planeSection.setVisibility(available ? VISIBLE : GONE);
+        if (!available) {
+            return;
+        }
+        if (!planeOffsetField.hasFocus()) {
+            planeOffsetField.setText(unit.format(nativePlane[1]));
+        }
+        if (!planeAngleField.hasFocus()) {
+            planeAngleField.setText(CadRevolvePresentation.formatDegrees(nativePlane[2]));
+        }
+    }
+
+    private void submitPlane() {
+        final LengthUnit unit = host.uiState().displayUnit();
+        final double offset;
+        final double angle;
+        try {
+            offset = unit.toMeters(LengthUnit.parse(planeOffsetField.text())).doubleValue();
+            angle = LengthUnit.parse(planeAngleField.text()).doubleValue();
+        } catch (NumberFormatException notANumber) {
+            planeOffsetField.requestFocus();
+            return;
+        }
+        if (actions.onFacePlaneRequested(offset, angle)) {
+            planeOffsetField.clearFocus();
+            planeAngleField.clearFocus();
+            refreshFromNative();
+        }
     }
 
     private void refreshSelectedEntity(LengthUnit unit) {

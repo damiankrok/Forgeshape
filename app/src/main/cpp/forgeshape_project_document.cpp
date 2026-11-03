@@ -531,6 +531,17 @@ bool cadDocumentNeedsV8(const ProjectDocument& document) {
     return false;
 }
 
+// Whether any CAD body needs the v14 section (`CAD-PLANE-R1`): a sketch on a
+// construction plane off its face.
+bool cadDocumentNeedsV14(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (cadBodyStateUsesSketchPlanes(body.state)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Whether any CAD body needs the v13 section (`CAD-TO-FACE-R1`): a To Face
 // extrusion or a hole placed from edges.
 bool cadDocumentNeedsV13(const ProjectDocument& document) {
@@ -1447,7 +1458,8 @@ bool cadEdgeFinishKindFromFileCode(uint8_t code, CadEdgeFinishKind* out) {
 }
 
 void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKinds,
-                    bool drafting, bool finishes, bool patterns, bool holes, bool toFace) {
+                    bool drafting, bool finishes, bool patterns, bool holes, bool toFace,
+                    bool planes) {
     const CadBodyState& state = body.state;
     out.u64(body.objectId);
     out.u32(state.nextSketchId);
@@ -1458,6 +1470,11 @@ void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body, bool featureKin
         if (record.hasFeatureSupport) {
             out.u8(kCadSketchPlacementFeatureFace);
             writeCadFeatureSupportV6(out, record.featureSupport);
+            if (planes) {
+                // §7q: the construction plane off that face.
+                out.f64(record.planeOffset);
+                out.f64(record.planeAngleDegrees);
+            }
         } else if (record.sketch.hasFaceSupport) {
             const TopoRef& ref = record.sketch.faceSupport;
             out.u8(kCadSketchPlacementBodyFace);
@@ -1690,7 +1707,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
 
     // The section is written at the LOWEST version that can carry it, so every
     // project that predates a feature keeps the bytes it always had.
-    const bool cadV13 = document.hasCad && cadDocumentNeedsV13(document);
+    const bool cadV14 = document.hasCad && cadDocumentNeedsV14(document);
+    const bool cadV13 = document.hasCad && (cadV14 || cadDocumentNeedsV13(document));
     const bool cadV12 = document.hasCad && (cadV13 || cadDocumentNeedsV12(document));
     const bool cadV11 = document.hasCad && (cadV12 || cadDocumentNeedsV11(document));
     const bool cadV10 = document.hasCad && (cadV11 || cadDocumentNeedsV10(document));
@@ -1713,7 +1731,7 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
                 // layout with a kind after every feature id.
                 writeCadBodyV6(out, body, /*featureKinds=*/cadV7, /*drafting=*/cadV8,
                                /*finishes=*/cadV9, /*patterns=*/cadV10, /*holes=*/cadV11,
-                               /*toFace=*/cadV13);
+                               /*toFace=*/cadV13, /*planes=*/cadV14);
                 continue;
             }
             const CadBodyState& state = body.state;
@@ -1866,7 +1884,8 @@ std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document) {
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
         appendSection(file, kSectionTagCad,
-                      cadV13  ? kCadSectionVersionV13
+                      cadV14  ? kCadSectionVersionV14
+                      : cadV13 ? kCadSectionVersionV13
                       : cadV12 ? kCadSectionVersionV12
                       : cadV11 ? kCadSectionVersionV11
                       : cadV10 ? kCadSectionVersionV10
@@ -2553,7 +2572,7 @@ ProjectCodecStatus readCadSelectionV6(ByteReader& in, ExtrudeFeature* extrude) {
 // ids, order, references, placements, selections -- is `validateCadBodyState`'s.
 ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool featureKinds,
                                    bool drafting, bool finishes, bool patterns, bool holes,
-                                   bool toFace) {
+                                   bool toFace, bool planes) {
     CadBodyState& state = body->state;
     uint32_t sketchCount = 0;
     if (!in.u64(&body->objectId) || !in.u32(&state.nextSketchId)
@@ -2611,6 +2630,10 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body, bool fe
                 return faceWhy;
             }
             if (!in.u64(&support.lineageToken)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            if (planes
+                && (!in.f64(&record.planeOffset) || !in.f64(&record.planeAngleDegrees))) {
                 return ProjectCodecStatus::Truncated;
             }
         } else {
@@ -2912,7 +2935,8 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
     if (version == kCadSectionVersionV6 || version == kCadSectionVersionV7
         || version == kCadSectionVersionV8 || version == kCadSectionVersionV9
         || version == kCadSectionVersionV10 || version == kCadSectionVersionV11
-        || version == kCadSectionVersionV12 || version == kCadSectionVersionV13) {
+        || version == kCadSectionVersionV12 || version == kCadSectionVersionV13
+        || version == kCadSectionVersionV14) {
         uint32_t bodyCount = 0;
         if (!in.u32(&bodyCount)) {
             return ProjectCodecStatus::Truncated;
@@ -2935,7 +2959,8 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
                                     /*finishes=*/version >= kCadSectionVersionV9,
                                     /*patterns=*/version >= kCadSectionVersionV10,
                                     /*holes=*/version >= kCadSectionVersionV11,
-                                    /*toFace=*/version >= kCadSectionVersionV13);
+                                    /*toFace=*/version >= kCadSectionVersionV13,
+                                    /*planes=*/version >= kCadSectionVersionV14);
             if (why != ProjectCodecStatus::Ok) {
                 return why;
             }
@@ -2960,6 +2985,16 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         if ((anyThroughAll && version < kCadSectionVersionV12)
             || (!anyThroughAll && version == kCadSectionVersionV12)) {
             return ProjectCodecStatus::InvalidSemanticValue;
+        }
+        // A v14 section exists only for a sketch off its face (`CAD-PLANE-R1`).
+        if (version == kCadSectionVersionV14) {
+            bool anyPlane = false;
+            for (const ProjectCadBody& body : record->bodies) {
+                anyPlane = anyPlane || cadBodyStateUsesSketchPlanes(body.state);
+            }
+            if (!anyPlane) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
         }
         // And a v13 section exists only for a To Face extrusion or a hole
         // placed from edges (`CAD-TO-FACE-R1`).
@@ -3277,7 +3312,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
                         || sectionVersion == kCadSectionVersionV10
                         || sectionVersion == kCadSectionVersionV11
                         || sectionVersion == kCadSectionVersionV12
-                        || sectionVersion == kCadSectionVersionV13;
+                        || sectionVersion == kCadSectionVersionV13
+                        || sectionVersion == kCadSectionVersionV14;
         } else if (isScene) {
             // SCNE became the second multi-version section at Stage 018A: v1 as
             // every build before it wrote, and v2 carrying per-body visibility,

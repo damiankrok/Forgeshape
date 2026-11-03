@@ -834,6 +834,18 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
             mixDouble(hash, h.edgeDistanceB);
         }
     }
+    // `CAD-PLANE-R1`: every sketch on a construction plane off its face -- its
+    // id and the exact offset and tilt bits. Mixed only when the body has one,
+    // so every project without keeps its fingerprint.
+    if (cadBodyStateUsesSketchPlanes(state)) {
+        mixU64(hash, 0x504C4E30ull);  // "PLN0"
+        for (const CadSketchRecord& record : state.sketches) {
+            if (!cadSketchRecordOffFace(record)) continue;
+            mixU64(hash, record.sketchId);
+            mixDouble(hash, record.planeOffset);
+            mixDouble(hash, record.planeAngleDegrees);
+        }
+    }
     // `CAD-V6-REVOLVE-NEWBODY-E2E-R1`: a Revolve's whole authored truth -- its
     // selection, its axis ref, the exact angle bits and the direction. Mixed
     // only for a Revolve, so every Extrude project keeps the fingerprint it

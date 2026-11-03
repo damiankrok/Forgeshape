@@ -81,6 +81,11 @@ final class FeatureHistoryText {
                             unit.formatWithUnit(row.positive), unit.formatWithUnit(row.negative));
         }
         if (row.isSketch()) {
+            if (row.onFeatureFace && (row.positive != 0.0 || row.angle != 0.0)) {
+                return context.getString(R.string.history_detail_sketch_off_face,
+                        unit.formatWithUnit(row.positive), CadRevolvePresentation.label(row.angle),
+                        row.entities);
+            }
             if (row.onBodyFace || row.onFeatureFace) {
                 return context.getString(R.string.history_detail_sketch_face, row.entities);
             }

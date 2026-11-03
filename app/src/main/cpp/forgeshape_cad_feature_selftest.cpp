@@ -27,6 +27,7 @@
 #include "forgeshape_cad_hole_selftest.h"
 #include "forgeshape_cad_through_all_selftest.h"
 #include "forgeshape_cad_to_face_selftest.h"
+#include "forgeshape_cad_plane_selftest.h"
 #include "forgeshape_cad_revolve_selftest.h"
 #include "forgeshape_cad_timeline_selftest.h"
 #include "forgeshape_sketch_drafting_selftest.h"
@@ -5874,6 +5875,14 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + toFacePerformance;
+    // A construction plane off a face (`CAD-PLANE-R1`).
+    std::vector<ArrangementSelfTestCheck> planeChecks;
+    std::string planePerformance;
+    runCadPlaneSelfTests(&planeChecks, &planePerformance);
+    for (const ArrangementSelfTestCheck& check : planeChecks) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + planePerformance;
     // Sketch ergonomics (`SKETCH-KNIFE-UNDO-R1`): push-through to Cut, the
     // staged sketch's own Undo / Redo, and the knife.
     std::vector<ArrangementSelfTestCheck> knifeUndo;

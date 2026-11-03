@@ -195,6 +195,8 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_hole_edge_not_found);
             case NativeViewport.CAD_HOLE_EDGES_PARALLEL:
                 return context.getString(R.string.status_hole_edges_parallel);
+            case NativeViewport.CAD_SKETCH_PLANE_INVALID:
+                return context.getString(R.string.status_sketch_plane_invalid);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));

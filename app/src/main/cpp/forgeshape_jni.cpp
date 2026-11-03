@@ -8108,6 +8108,50 @@ Java_com_forgeshape_app_NativeViewport_sketchRotateView(JNIEnv*, jclass, jint qu
 }
 
 // ---------------------------------------------------------------------------
+// A construction plane off a face (`CAD-PLANE-R1`)
+// ---------------------------------------------------------------------------
+
+// Stands the open sketch `offset` metres off its face, tilted `angleDegrees`
+// about the face's u axis, and frames the view on the new plane while the
+// sketch is being drawn. Returns the CadStatus code.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetFacePlane(JNIEnv*, jclass, jdouble offset,
+                                                          jdouble angleDegrees) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SketchSession& s = forgeshape::sketchSession();
+        status = s.setFacePlane(offset, angleDegrees);
+        if (status == forgeshape::CadStatus::Ok
+            && s.state() == forgeshape::SketchSessionState::Editing) {
+            beginSketchView();
+        }
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_FACE_PLANE offset=%.6f angle=%.4f %s", offset, angleDegrees,
+            forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// The open sketch's construction plane into out[0..2]: [0] 1 when it may
+// stand off its face now, [1] the offset in metres, [2] the tilt in degrees.
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchFacePlaneState(JNIEnv* env, jclass,
+                                                            jdoubleArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 3) {
+        return;
+    }
+    jdouble v[3] = {0.0, 0.0, 0.0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SketchSession& s = forgeshape::sketchSession();
+        v[0] = s.facePlaneAvailable() ? 1.0 : 0.0;
+        v[1] = s.facePlaneOffset();
+        v[2] = s.facePlaneAngle();
+    }
+    env->SetDoubleArrayRegion(out, 0, 3, v);
+}
+
+// ---------------------------------------------------------------------------
 // The selected line's dimension (`SKETCH-UX-R1` E)
 // ---------------------------------------------------------------------------
 
