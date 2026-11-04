@@ -59,6 +59,11 @@ final class GlobalToolbarView extends LinearLayout {
         /** Export the current model as one GLB file. */
         void onExportGlbRequested();
 
+        /** Export as one of {@link EditorWorkspaceView#EXPORT_FORMATS}. */
+        default void onExportRequested(int format) {
+            onExportGlbRequested();
+        }
+
         /** Editing -> Ready: validate the sketch and find its profiles. */
         void onFinishSketchRequested();
 
@@ -149,6 +154,9 @@ final class GlobalToolbarView extends LinearLayout {
      *  nothing does not restyle three controls. */
     private Boolean editingGroupSolo;
     private View editingGroupLoneMember;
+
+    /** Where the export menu's choice goes. */
+    private OnGlobalAction exportActions;
 
     GlobalToolbarView(Context context, final OnGlobalAction actions) {
         super(context);
@@ -422,10 +430,13 @@ final class GlobalToolbarView extends LinearLayout {
         exportAction.setTextColor(
                 EditorControlStyles.themeColor(context, R.attr.fsTextPrimary));
         exportAction.setContentDescription(context.getString(R.string.export_glb_description));
+        exportActions = actions;
+        // A tap opens the format menu (`INTERCHANGE-R1`): GLB, STL, 3MF, OBJ,
+        // PLY. A transient menu anchored to the chip, closed by its own choice.
         exportAction.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                actions.onExportGlbRequested();
+                showExportMenu();
             }
         });
         utilityGroup.addView(exportAction, EditorControlStyles.wrap(0));
@@ -607,6 +618,27 @@ final class GlobalToolbarView extends LinearLayout {
             transition.setText(label);
         }
     }
+
+    private void showExportMenu() {
+        final android.widget.PopupMenu menu = new android.widget.PopupMenu(getContext(), exportAction);
+        for (int i = 0; i < EditorWorkspaceView.EXPORT_FORMATS.length; i++) {
+            final EditorWorkspaceView.ExportFormat format = EditorWorkspaceView.EXPORT_FORMATS[i];
+            menu.getMenu().add(0, format.code, i, format.label);
+        }
+        menu.setOnMenuItemClickListener(item -> {
+            exportActions.onExportRequested(item.getItemId());
+            return true;
+        });
+        exportMenu = menu;
+        menu.show();
+    }
+
+    /** The open export menu, for a test; null when none was opened. */
+    android.widget.PopupMenu exportMenuForTest() {
+        return exportMenu;
+    }
+
+    private android.widget.PopupMenu exportMenu;
 
     /** How wide this single-line control would be with nothing bounding it. */
     private static int naturalWidth(TextView view, CharSequence text) {

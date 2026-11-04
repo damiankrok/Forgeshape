@@ -145,9 +145,55 @@ final class ProjectTransfer {
         final Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(OPEN_MIME_TYPE);
+        // Every mesh format the importer reads (`INTERCHANGE-R1`), and the
+        // generic types providers report them as; the parser decides.
         intent.putExtra(Intent.EXTRA_MIME_TYPES,
-                new String[]{GLB_MIME_TYPE, CREATE_MIME_TYPE, OPEN_MIME_TYPE});
+                new String[]{GLB_MIME_TYPE, "model/stl", "application/sla", "model/obj",
+                        "model/3mf", "application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
+                        "application/x-ply", "text/plain", CREATE_MIME_TYPE, OPEN_MIME_TYPE});
         return intent;
+    }
+
+    /** The intent that asks where to put an exported model of any format. */
+    static Intent createMeshDocumentIntent(String mimeType, String suggestedName) {
+        final Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(mimeType);
+        intent.putExtra(Intent.EXTRA_TITLE, suggestedName);
+        return intent;
+    }
+
+    /**
+     * The lower-case extension of the picked file's display name (".stl"), or
+     * "" when the provider reports none. Only a tie-breaker for the importer's
+     * own sniffing; never stored, never handed past JNI as anything but this.
+     */
+    static String extensionOf(android.content.Context context, android.net.Uri uri) {
+        if (context == null || uri == null) {
+            return "";
+        }
+        String name = null;
+        try (android.database.Cursor cursor = context.getContentResolver().query(uri,
+                new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                name = cursor.getString(0);
+            }
+        } catch (RuntimeException ignored) {
+            // A provider that cannot answer leaves the bytes to speak for themselves.
+        }
+        return extensionOfName(name);
+    }
+
+    /** ".stl" for "Part.STL"; "" for none. Pure, for the JVM. */
+    static String extensionOfName(String name) {
+        if (name == null) {
+            return "";
+        }
+        final int dot = name.lastIndexOf('.');
+        if (dot < 0 || dot == name.length() - 1 || name.length() - dot > 6) {
+            return "";
+        }
+        return name.substring(dot).toLowerCase(java.util.Locale.ROOT);
     }
 
     /** The intent that asks where to put a diagnostic report. */

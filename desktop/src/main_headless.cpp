@@ -19,6 +19,7 @@
 #include "forgeshape_gizmo.h"
 #include "forgeshape_history.h"
 #include "forgeshape_mass_properties.h"
+#include "forgeshape_mesh_export.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_render_surface.h"
 #include "forgeshape_selection.h"
@@ -473,7 +474,12 @@ int main(int argc, char** argv) {
         frameWith(idle);
         const bool rows = editor.widgetRect("pm_save", nullptr) &&
                           editor.widgetRect("pm_close", nullptr) &&
-                          editor.widgetRect("pm_export", nullptr);
+                          editor.widgetRect("pm_export", nullptr) &&
+                          editor.widgetRect("pm_import", nullptr) &&
+                          editor.widgetRect("pm_export_stl", nullptr) &&
+                          editor.widgetRect("pm_export_3mf", nullptr) &&
+                          editor.widgetRect("pm_export_obj", nullptr) &&
+                          editor.widgetRect("pm_export_ply", nullptr);
         snap("09-project-menu");
         fsui::InputState esc;
         esc.keys.push_back(fsui::Key::Escape);
@@ -625,6 +631,38 @@ int main(int argc, char** argv) {
         clickId("snap_move_0");
         editor.undo();
         frameWith(idle);
+    }
+    {
+        // Interchange (`INTERCHANGE-R1`): every mesh format the project menu
+        // writes is read back by the one import as one new body and one Undo.
+        const forgeshape::MeshExportFormat formats[] = {
+            forgeshape::MeshExportFormat::Stl, forgeshape::MeshExportFormat::Obj,
+            forgeshape::MeshExportFormat::Ply, forgeshape::MeshExportFormat::ThreeMf};
+        bool all = true;
+        for (const forgeshape::MeshExportFormat format : formats) {
+            std::vector<uint8_t> bytes;
+            {
+                std::lock_guard<std::mutex> lock(forgeshape::editorStateMutex());
+                bytes = forgeshape::exportSceneAs(format, forgeshape::constructionScene(),
+                                                  forgeshape::ProjectKind::Construction);
+            }
+            const size_t bodies = forgeshape::constructionScene().bodyCount();
+            const size_t depth = forgeshape::constructionHistory().undoDepth();
+            const bool read = !bytes.empty() &&
+                              editor.importMeshBytes(bytes, std::string("Part") +
+                                                                forgeshape::meshExportFileExtension(format));
+            const bool one = forgeshape::constructionScene().bodyCount() == bodies + 1 &&
+                             forgeshape::constructionHistory().undoDepth() == depth + 1;
+            editor.undo();
+            frameWith(idle);
+            const bool undone = forgeshape::constructionScene().bodyCount() == bodies;
+            if (!(read && one && undone)) {
+                std::fprintf(stderr, "interchange %s: read=%d one=%d undone=%d\n",
+                             forgeshape::meshExportFormatName(format), read, one, undone);
+                all = false;
+            }
+        }
+        check("every_mesh_format_exported_imports_back_as_one_body_and_one_undo", all);
     }
     clickId("ribbon_tab_View");
     snap("07-view-ribbon");

@@ -870,6 +870,10 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
     // neither leaves a body with no geometry at all, and both would be two
     // answers to what the object is.
     std::vector<uint8_t> covered(bodies.size(), 0);
+    // A CAD body whose ROOT sketch stands on another body's face: its
+    // placement is derived, and it is the one CAD body that cannot be
+    // sculpted, so a `SCUL` entry over one is refused below.
+    std::vector<uint8_t> faceSupportedCad(bodies.size(), 0);
 
     if (document.hasConstruction) {
         // A SUBSEQUENCE of the scene, in ascending scene order — every body
@@ -1004,6 +1008,11 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
                 return ProjectCodecStatus::UnresolvedReference;
             }
             covered[found] = 3;
+            for (const CadSketchRecord& record : body.state.sketches) {
+                if (!record.hasFeatureSupport && record.sketch.hasFaceSupport) {
+                    faceSupportedCad[found] = 1;
+                }
+            }
             if (body.state.sketches.size() > kMaxCadSketches) {
                 return ProjectCodecStatus::ImpossibleCount;
             }
@@ -1241,8 +1250,9 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
             // entry is its second representation, exactly as over `CONS` or
             // `IMPT`). An older build still REFUSES the pair, so it cannot
             // open half a body. Over a Freeform (`FRFM`) or Surface (`SURF`)
-            // body it stays REFUSED: neither can be sculpted.
-            if (covered[found] == 4 || covered[found] == 5) {
+            // body it stays REFUSED: neither can be sculpted -- and so over a
+            // FACE-supported CAD body, whose placement is derived.
+            if (covered[found] == 4 || covered[found] == 5 || faceSupportedCad[found] != 0) {
                 return ProjectCodecStatus::UnresolvedReference;
             }
             // A `SCUL` entry over an `IMPT` body is VALID since `IMPORT-01B`.

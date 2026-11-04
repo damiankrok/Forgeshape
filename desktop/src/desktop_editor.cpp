@@ -1,6 +1,7 @@
 #include "desktop_editor.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <mutex>
@@ -17,6 +18,8 @@
 #include "forgeshape_display.h"
 #include "forgeshape_cad_status_text.h"
 #include "forgeshape_editor_core.h"
+#include "forgeshape_import_commit.h"
+#include "forgeshape_mesh_import.h"
 #include "forgeshape_freeform_session.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_gltf_export.h"
@@ -483,6 +486,70 @@ void DesktopEditor::exportGlb() {
     }
 }
 
+void DesktopEditor::exportAs(fs::MeshExportFormat format) {
+    if (platform_ == nullptr) return;
+    std::vector<uint8_t> bytes;
+    fs::GlbExportStatus why = fs::GlbExportStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        if (!fs::constructionScene().hasProject()) return;
+        bytes = fs::exportSceneAs(format, fs::constructionScene(), fs::ProjectKind::Construction, &why);
+    }
+    if (bytes.empty()) {
+        report(std::string("Could not export: ") + fs::glbExportStatusName(why), true);
+        return;
+    }
+    // The extension without its dot names both the filter and the file.
+    const std::string extension = std::string(fs::meshExportFileExtension(format)).substr(1);
+    std::string name;
+    if (platform_->saveFile(fs::meshExportFormatName(format), extension.c_str(),
+                            "Model." + extension, bytes, &name)) {
+        report("Exported " + name);
+    }
+}
+
+bool DesktopEditor::importMeshBytes(const std::vector<uint8_t>& bytes, const std::string& name) {
+    std::string extension;
+    const size_t dot = name.find_last_of('.');
+    if (dot != std::string::npos) {
+        extension = name.substr(dot);
+        for (char& c : extension) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    const fs::MeshImportFormat format =
+        fs::detectMeshImportFormat(bytes.data(), bytes.size(), extension.c_str());
+    fs::ParsedGlbScene parsed;
+    const fs::GlbImportStatus parsedWhy = fs::importMeshFile(bytes.data(), bytes.size(), format, &parsed);
+    if (parsedWhy != fs::GlbImportStatus::Ok) {
+        report(std::string("Could not import ") + name + ": " + fs::glbImportStatusName(parsedWhy), true);
+        return false;
+    }
+    fs::ImportCommitReport committed;
+    fs::ImportCommitStatus status;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        fs::ImportModeFacts facts;
+        facts.sculpting = fs::sculptSession().inSculptMode();
+        facts.sketchActive = fs::sketchSession().active();
+        status = fs::commitImportedGlbSceneInMode(parsed, fs::constructionScene(),
+                                                  fs::constructionHistory(), facts, &committed);
+    }
+    if (status != fs::ImportCommitStatus::Ok) {
+        report(std::string("Could not import ") + name + ": " + fs::importCommitStatusName(status), true);
+        return false;
+    }
+    report("Imported " + std::to_string(committed.objects) + (committed.objects == 1 ? " object" : " objects") +
+           " from " + name);
+    return true;
+}
+
+void DesktopEditor::importMesh() {
+    if (platform_ == nullptr) return;
+    std::vector<uint8_t> bytes;
+    std::string name;
+    if (!platform_->openFile("Meshes", "glb;*.stl;*.obj;*.ply;*.3mf", &bytes, &name)) return;
+    importMeshBytes(bytes, name);
+}
+
 void DesktopEditor::undo() {
     std::lock_guard<std::mutex> lock(fs::editorStateMutex());
     // While a sketch is open the pair steps its own volatile branch
@@ -784,6 +851,7 @@ bool DesktopEditor::shortcut(char key, bool ctrl, bool shift) {
             case 'S': saveProject(); return true;
             case 'O': openProject(); return true;
             case 'E': exportGlb(); return true;
+            case 'I': importMesh(); return true;
             default: return false;
         }
     }
@@ -1249,7 +1317,12 @@ void DesktopEditor::buildProjectMenu(int width, int height) {
         rows.push_back({"pm_open", "ic_project", "Open project\xE2\x80\xA6", "Ctrl+O", 1});
         if (project) {
             rows.push_back({"pm_save", "ic_save", "Save project\xE2\x80\xA6", "Ctrl+S", 2});
+            rows.push_back({"pm_import", "ic_import", "Import mesh\xE2\x80\xA6", "Ctrl+I", 6});
             rows.push_back({"pm_export", "ic_export", "Export GLB\xE2\x80\xA6", "Ctrl+E", 3});
+            rows.push_back({"pm_export_stl", "ic_export", "Export STL (mm)\xE2\x80\xA6", "", 7});
+            rows.push_back({"pm_export_3mf", "ic_export", "Export 3MF (mm)\xE2\x80\xA6", "", 8});
+            rows.push_back({"pm_export_obj", "ic_export", "Export OBJ\xE2\x80\xA6", "", 9});
+            rows.push_back({"pm_export_ply", "ic_export", "Export PLY\xE2\x80\xA6", "", 10});
             rows.push_back({"pm_close", "ic_sketch_cancel", "Close project", "", 4});
         }
     }
@@ -1286,6 +1359,11 @@ void DesktopEditor::buildProjectMenu(int width, int height) {
         case 3: exportGlb(); break;
         case 4: closeProject(); break;
         case 5: reloadTheme(); break;
+        case 6: importMesh(); break;
+        case 7: exportAs(fs::MeshExportFormat::Stl); break;
+        case 8: exportAs(fs::MeshExportFormat::ThreeMf); break;
+        case 9: exportAs(fs::MeshExportFormat::Obj); break;
+        case 10: exportAs(fs::MeshExportFormat::Ply); break;
         default: break;
     }
 }

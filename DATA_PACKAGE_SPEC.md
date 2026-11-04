@@ -495,11 +495,19 @@ closes the profile `profileEntityId` names — extracted by the same
 or whose chosen profile is open, crossing, zero-area, forked or nested, is
 refused rather than opened as an object with nothing to draw.
 
-A `SCUL` entry over a `CADB` body is **refused** (`UnresolvedReference`):
-`CAD-R0-A1A2` leaves CAD → Sculpt out, so such a file describes something this
-build cannot evaluate. The same fail-closed shape the pre-`IMPORT-01B` reader
-gave an `IMPT`+`SCUL` file. The valid combinations are therefore the four of
-§7a plus `SCNE+CADB` and `SCNE+CONS+CADB` (and either with `IMPT` beside them).
+A `SCUL` entry over a `CADB` body was refused until `CAD-SCULPT-R1` and is
+**valid now** on exactly the terms `IMPORT-01B` gave `IMPT`+`SCUL`: a CAD Body
+may be sculpted, and the entry is the sculpt mesh it gained — a second
+representation of the same body, never a second answer to what it is. Its
+chain stays in `CADB` and is never derived from the entry; the entry's
+`sourceStale` flag says whether the chain was edited after the freeze. No
+layout, section or version changed: a build from before `CAD-SCULPT-R1`
+REFUSES the pair (`UnresolvedReference`) rather than opening half a body. A
+`SCUL` entry over a **face-supported** CAD body (one whose ROOT sketch carries
+a `TopoRef`) is still refused (`UnresolvedReference`): its placement is
+derived from another body's face and the product cannot sculpt one. The valid
+combinations are therefore the four of §7a plus `SCNE+CADB`,
+`SCNE+CONS+CADB` and `SCNE+CADB+SCUL` (and each with `IMPT` beside them).
 
 ## 7c. `CADB` v2 — a sketch supported by a CAD face (`CAD-A3`)
 
@@ -1844,7 +1852,7 @@ active mode or body, not the session history.
 | A payload's own structure does not add up; a sculpt, batch, polyline or SCNE v2 body flags byte with a reserved bit; an imported record whose normals do not match its positions one for one, or whose batches do not tile its indices | `BadPayload` |
 | A count no project can have, or one whose byte size would overflow — refused **before any allocation**; a `CADB` body with no entities or more than 256, a polyline with no vertices or more than 256 | `ImpossibleCount` |
 | A value the live model refuses: a non-positive or non-finite dimension, a broken capsule relation, a non-finite position or rotation, a zero or negative scale, a duplicate or reserved `ObjectId`, an allocator that could mint a collision, an index out of range, an unknown primitive, feature, workplane, direction or entity-kind code, an imported normal that is not a unit direction, an imported name the domain's own sanitizer would not have produced, and any `CADB` record `validateCadBodyState` refuses — a bad coordinate, size, depth or entity id, a sketch that does not close the profile the extrusion names, and every `CADB` v6 refusal §7g names | `InvalidSemanticValue` |
-| An active body no section carries, a `CONS`/`SCUL`/`IMPT`/`CADB` body `SCNE` does not carry, a Sculpt project whose active body has no sculpt mesh, a body claimed by two of `CONS`, `IMPT` and `CADB`, a `SCUL` entry over a `CADB` body | `UnresolvedReference` |
+| An active body no section carries, a `CONS`/`SCUL`/`IMPT`/`CADB` body `SCNE` does not carry, a Sculpt project whose active body has no sculpt mesh, a body claimed by two of `CONS`, `IMPT` and `CADB`, a `SCUL` entry over a face-supported `CADB` body, an `FRFM` body or a `SURF` body | `UnresolvedReference` |
 | A load attempted while a Construction edit is open (not a property of the file) | `RefusedEditInProgress` |
 
 Semantic values are checked by calling the **domain's own** validators —

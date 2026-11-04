@@ -1509,6 +1509,30 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
                         && cadBaseSketch(back.cad.bodies[1].state).faceSupport.face.kind
                                    == CadFaceKind::CapFar
                         && encodeProjectV1(back) == cadFaceCapBytes);
+        {
+            // `CAD-SCULPT-R1`: a sculpt mesh may sit over the independent
+            // producer but never over the face-supported dependent, whose
+            // placement is derived -- the one CAD body that cannot be sculpted.
+            const ProjectDocument faceDocument = canonicalCadFaceSketchCapDocument();
+            ProjectSculptBody sculpt;
+            sculpt.positions = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+                                0.0f, 0.0f, 1.0f};
+            sculpt.indices = {0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3};
+            ProjectDocument overProducer = faceDocument;
+            overProducer.hasSculpt = true;
+            sculpt.objectId = faceDocument.cad.bodies[0].objectId;
+            overProducer.sculpt.bodies.push_back(sculpt);
+            ProjectDocument overDependent = faceDocument;
+            overDependent.hasSculpt = true;
+            sculpt.objectId = faceDocument.cad.bodies[1].objectId;
+            overDependent.sculpt.bodies.push_back(sculpt);
+            r.check("CADSCULPT_a_sculpt_entry_over_a_world_cad_body_is_valid",
+                    validateProjectDocument(faceDocument) == ProjectCodecStatus::Ok
+                            && validateProjectDocument(overProducer) == ProjectCodecStatus::Ok);
+            r.check("CADSCULPT_a_sculpt_entry_over_a_face_supported_cad_body_is_refused",
+                    validateProjectDocument(overDependent)
+                            == ProjectCodecStatus::UnresolvedReference);
+        }
         r.check("CADA3_47_the_cad_face_side_fixture_roundtrips_bit_for_bit",
                 decodeProject(cadFaceSideBytes.data(), cadFaceSideBytes.size(), &back)
                                 == ProjectCodecStatus::Ok

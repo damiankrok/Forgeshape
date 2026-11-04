@@ -471,7 +471,8 @@ public final class GlbImportPreviewTest {
         // preview, because it no longer produces one: it creates objects the
         // user keeps. What must still be true is that GLB is the ONLY
         // interchange route on the surface, which the loop above asserts.
-        assertTrue("Import GLB is offered: " + text, text.contains("import glb"));
+        assertTrue("Import (GLB and the other mesh formats) is offered: " + text,
+                text.contains("import mesh") && text.contains("glb"));
         assertFalse("and nothing here still calls it a preview: " + text,
                 text.contains("preview"));
     }

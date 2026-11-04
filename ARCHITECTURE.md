@@ -164,7 +164,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | Reading a `.glb` | `forgeshape_gltf_import.{h,cpp}` + `forgeshape_json.{h,cpp}` | platform-neutral, and deliberately shares NO code with the writer: it re-derives every offset, length, stride and bound from the file. Supports a bounded STATIC subset — a node matrix or TRS, several TRIANGLES primitives, a generated NORMAL, ignored colour/UV, `doubleSided` — and fails closed by name on everything else. It bakes the node transform and produces GEOMETRY: it decides nothing about the project and creates no body, which is what lets one parse serve both the durable import and the diagnostic preview |
 | What an Imported Mesh may be, and what a `.forge` file may carry for one | `forgeshape_imported_mesh.{h,cpp}` | ONE validator (`validateImportedMeshData`) and ONE name rule (`sanitizeImportedMeshName`), called by the importer and by the codec alike, so a file can never carry geometry or a name the importer would have refused. It resolves per-submesh `doubleSided` into draw geometry; it holds no material, no `SculptRevision` and no source path |
 | Turning a parsed file into durable project objects | `forgeshape_import_commit.{h,cpp}` | it decides how many objects a file becomes, what they are called and where the node transform ends up. Atomic: everything is built and validated off the scene, and the whole commit is ONE `ScopedConstructionEdit`, so an import is one Undo and a refusal costs no `ObjectId` |
-| Which LOCAL mesh a body is sculpted FROM | `buildSculptSourceMesh` in `forgeshape_scene.{h,cpp}` | the second ONE dispatch point beside `publishSceneObject`: a Construction Body regenerates from its parameters, an Imported Mesh hands over the arrays it owns. Either source is only READ. It copies an imported object's RAW indices, never `buildDrawData`'s reversed duplicates, and collapses per-submesh `doubleSided` into the frozen mesh's one sidedness answer — see *Sculpting an Imported Mesh* |
+| Which LOCAL mesh a body is sculpted FROM | `buildSculptSourceMesh` in `forgeshape_scene.{h,cpp}` | the second ONE dispatch point beside `publishSceneObject`: a Construction Body regenerates from its parameters, an Imported Mesh hands over the arrays it owns, and a world-plane CAD Body hands its regenerated solid to `buildSculptSeedFromSolid` (`forgeshape_sculpt_seed.{h,cpp}`) — see *Sculpting a CAD Body*. Every source is only READ. It copies an imported object's RAW indices, never `buildDrawData`'s reversed duplicates, and collapses per-submesh `doubleSided` into the frozen mesh's one sidedness answer — see *Sculpting an Imported Mesh* |
 | The three principal workplanes and the ONE mapping between sketch `(u, v)` and body-local 3D | `forgeshape_workplane.{h,cpp}` | no camera, no pixel: a workplane is a fact about the body, right-handed by construction, and it reads nothing from the view |
 | What a sketch entity may be, the sketch's per-sketch identities, closed-profile extraction and ear-clipping triangulation | `forgeshape_sketch.{h,cpp}` | truth is the entity list; profiles, polygons and triangles are DERIVED and never stored. It fails closed by name — open, forked, crossing, zero-area, duplicate-edge and nested loops are refused, never repaired — and every refusal is one `CadStatus` |
 | A CAD Body's authored truth (`CadBodyState`: one sketch, one linear extrusion with its EXTENT) and the ONE regeneration path from it to a mesh | `forgeshape_cad_body.{h,cpp}` | the extent is TWO non-negative distances read through `extrudePositiveDistance` / `extrudeNegativeDistance`, and the mode names which the controls author rather than adding a second geometry rule; `extrudeFeatureWithExtent` is the transition policy as a pure function; each mode has ONE canonical form and a non-canonical one is refused by name. `applyState` validates and regenerates the whole requested state and writes nothing unless all of it passes; no vertex is truth; no parameter is ever read back out of a mesh |
@@ -190,6 +190,8 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | What an imported preview IS, and every boundary it may not cross | `forgeshape_import_preview.{h,cpp}` | session-only: no scene `ObjectId`, no Construction Source, no sculpt representation, no `MeshStore`, no history, no `.forge`, no checkpoint, not selectable, not re-exportable, gone with the process. Its renderer keys are resource keys and never identities. Since `IMPORT-01A` it is reachable only from the verification suites |
 | What a body is CALLED wherever the user reads it | `BodyLabels` (Java) | one answer for the Objects list, the Objects capsule, the precision surface's title and the status line: an Imported Mesh uses the name its file gave it, a Construction Body is `Body #id`, and the empty string native code returns for the latter is the SIGNAL for that fallback, not a name |
 | Whether the file agrees with the scene | `forgeshape_glb_roundtrip.{h,cpp}` | compares the independently parsed file against DOMAIN truth re-derived from the generator and `modelMatrix()`, never against the exporter's captured arrays. Reads only, and reports a number rather than a boolean |
+| Export as STL, OBJ, PLY or 3MF, and the format menu's ordinals | `forgeshape_mesh_export.{h,cpp}` | one world-space snapshot taken through `captureGlbExportScene`, four deterministic encoders (STL and 3MF in millimetres, OBJ and PLY in metres, no axis converted); `Glb` delegates to `exportSceneAsGlb` byte for byte — see *Mesh interchange* |
+| Reading STL, OBJ, PLY and 3MF | `forgeshape_mesh_import.{h,cpp}` | `detectMeshImportFormat` decides by the bytes, `importMeshFile` produces the SAME `ParsedGlbScene` the GLB reader does, so one commit and one `IMPT` record serve every format; 3MF's ZIP and inflater are this file's own |
 | The glTF 2.0 / GLB export: what the file contains and every byte of it | `forgeshape_gltf_export.{h,cpp}` | platform-neutral C++ with no Android, JNI, `Uri`, `ContentResolver`, path or Vulkan type. It READS the scene and writes bytes: it mints no revision, opens no transaction, allocates no `ObjectId` and moves no sculpt vertex. It re-evaluates a Construction Source, reads a Frozen Sculpt Mesh or reads an Imported Mesh's own arrays — never a GPU buffer and never a decoded `.forge` — and applies NO coordinate conversion — see *Export coordinates* |
 | What a lost GPU device means and how many rebuilds are attempted | `RenderRecoveryPolicy` (`forgeshape_render_recovery.{h,cpp}`) | deliberately free of Vulkan so it can be self-tested without a GPU; it owns no handle, performs no teardown and touches no project state |
 | Tearing the device down and building it again | `Renderer::rebuildDeviceAfterLoss` | it rebuilds the GPU COPY of derived data; the CPU project is not consulted and not touched, and `syncScene` re-uploads from the published revisions |
@@ -211,7 +213,7 @@ no login and no sync.
 | Domain code | Construction, geometry, sculpt, picking, camera and selection stay platform-neutral C++17. `forgeshape_camera`, `forgeshape_construction`, `forgeshape_transform`, `forgeshape_picking`, `forgeshape_selection`, `forgeshape_mesh` and `forgeshape_sculpt` contain no JNI, Android, Win32, Vulkan, renderer or UI type |
 | Platform types | `View`, `Activity`, `MotionEvent`, `Surface`, `jobject`, `HWND` and every other platform type may never become domain truth. Android's reach exactly as far as `forgeshape_jni.cpp`, Windows' as far as `desktop/src/main_win32.cpp` |
 | The shells | the Android UI (framework Views) and the desktop interface (`desktop/src`, ForgeShape's own kit) own draft, presentation and layout state and nothing else, and read authoritative state back from the core |
-| Shared glue | what both shells need beyond the domain lives in `forgeshape_editor_core` (the camera, the selection, the state mutex, the Dimensions predicate, the CAD operation preview, the gizmo's activation rule, and the sketch's acts: the view a sketch borrows and gives back, the support chooser's begin and confirm, Finish with its feature view, the CAD bootstrap and later commits, and a sketch's share of a touch event — `editorSketchTouch`; since `WORKBENCH-UX-R1` also the staged edit of an earlier step — `editorSketchBeginEditFeature`, `editorSketchBeginEditSketch`, `editorSketchCommitEdit` — `editorFitBody`, and `editorSketchLivePlacement`, the size a sketch drag is placing and where to read it) and `forgeshape_viewport_frame` (`composeViewportFrame`, the ONE frame composition both shells draw). It moves out of JNI act by act; what still lives in a shell reaches a frame through `ViewportFrameSources` |
+| Shared glue | what both shells need beyond the domain lives in `forgeshape_editor_core` (the camera, the selection, the state mutex, the Dimensions predicate, the CAD operation preview, the gizmo's activation rule, and the sketch's acts: the view a sketch borrows and gives back, the support chooser's begin and confirm, Finish with its feature view, the CAD bootstrap and later commits, and a sketch's share of a touch event — `editorSketchTouch`; since `WORKBENCH-UX-R1` also the staged edit of an earlier step — `editorSketchBeginEditFeature`, `editorSketchBeginEditSketch`, `editorSketchCommitEdit` — `editorFitBody`, and `editorSketchLivePlacement`, the size a sketch drag is placing and where to read it; since `PLACEMENT-PRECISION-R1` `editorArrangeActiveBody`, Drop to ground and Centre on origin) and `forgeshape_viewport_frame` (`composeViewportFrame`, the ONE frame composition both shells draw). It moves out of JNI act by act; what still lives in a shell reaches a frame through `ViewportFrameSources` |
 | Input | crosses the boundary as **semantic, platform-neutral** data: `forgeshape_input.h`'s `TouchAction`/`TouchPointer` for touch, and the camera's pointer-device doors (`orbitByPixels`, `panByPixels`, `zoomAtPixel`) for a mouse on either shell |
 | Platform services | file, storage and system services have narrow boundaries of their own: `ProjectSlot`, `ProjectCheckpoint` and `ProjectTransfer` on Android, `DesktopPlatform` on Windows; each turns a path, a `Uri` or a dialog into bytes and bytes into a document, and none reaches the codec |
 | Serialization | the `.forge` document (`forgeshape_project_document.{h,cpp}` + `forgeshape_project_bytes.{h,cpp}`) is **platform-independent and explicitly versioned**, so a project saved on Windows opens on a phone and the reverse, byte for byte. `DATA_PACKAGE_SPEC.md` owns the layout |
@@ -3285,12 +3287,8 @@ Extend or Offset.
 
 ### What this stage deliberately does not do
 
-CAD → Sculpt: `buildSculptSourceMesh` returns false for a CAD Body, the freeze
-refuses by name (`CadBodyNotSculptable`), *Start Sculpting* is absent for one,
-and a `SCUL` entry over a `CADB` body is refused by the codec. Enabling it needs
-three decisions this stage does not make — the wording of the way back out of
-Sculpt over a CAD Body, the stale-source rule over a CAD edit, and the
-`CADB`+`SCUL` file combination — and each deserves its own approval. Since
+CAD → Sculpt arrived later, with its three decisions made by the OWNER
+(`CAD-SCULPT-R1`, see *Sculpting a CAD Body*). Since
 `CAD-VERTICAL-SLICE-R1` holes, face-supported sketches, arcs, splines and the
 Add / Cut booleans exist, and since `CAD-V6-REVOLVE-NEWBODY-E2E-R1` a Revolve
 New Body, and since `CAD-SKETCH-DRAFTING-TOOLKIT-E2E-R1` Construction geometry,
@@ -4955,6 +4953,73 @@ it is about `CONS` versus `IMPT`, the two things a body's geometry can come FROM
 and `SCUL` is not one of them. `DATA_PACKAGE_SPEC.md` owns the layout and the
 compatibility direction, which is fail-closed: an older build refuses an
 `IMPT`+`SCUL` file rather than opening half a body.
+
+## Sculpting a CAD Body (`CAD-SCULPT-R1`)
+
+A CAD Body draws a mesh made for DRAWING: vertices duplicated along every hard
+edge so each face shades flat, and as few triangles as the shape allows. A
+brush on it would tear faces apart at every edge and find nothing to move in
+the middle of a face. `buildSculptSourceMesh` therefore hands the chain's
+regenerated solid (`CadBody::generateMesh`) to `buildSculptSeedFromSolid`
+(`forgeshape_sculpt_seed.{h,cpp}`), which welds it by exact position into ONE
+connected surface (a signed zero is one position; triangles the weld closes up
+are dropped) and refines it by CONFORMING edge splits — the split decision
+belongs to the edge, so both triangles beside it share its one midpoint and no
+pass can leave a T-junction or a crack; a rotation that is cyclic keeps the
+winding, and a two-edge split cuts its quad on the shorter diagonal — until no
+edge is longer than the part's bounding-box diagonal / 96, or the next pass
+would pass 320 000 triangles. It is a pure, deterministic function of the mesh,
+called once per Start Sculpting and per Reset.
+
+The chain stays the truth. A stroke writes only the Frozen Sculpt Mesh, and a
+CAD edit committed while one exists marks it STALE:
+`ConstructionHistory::commitEdit` compares every CAD body's state with the
+edit's pre-state (`sameCadBodyState`) and calls `markSourceStale()` on any that
+moved, exactly as a Construction parameter edit does — so adopting the new
+shape is the explicit, destructive Reset. A FACE-supported CAD Body is the one
+exception: its placement is derived from another body's face, so it seeds
+nothing, the freeze refuses it (`CadBodyNotSculptable`) and the codec refuses a
+`SCUL` entry over it. The way out of Sculpt reads *Back to CAD Body* (short
+form `← CAD Body`), the reset *Reset Sculpt from CAD Body…*.
+
+## Precise arrangement (`PLACEMENT-PRECISION-R1`)
+
+`gizmoSnapSettings()` in `forgeshape_gizmo.{h,cpp}` is one process-scoped
+`GizmoSnap` — a move step in metres and a rotate step in degrees, 0 meaning off
+— and `GizmoSession::beginDrag` copies it into the drag, so a step chosen
+mid-drag waits for the next one. `snappedMoveDelta` lands a World move's
+ABSOLUTE position on a multiple of the step (`snapToStep(start + delta) -
+start`) and snaps a Local move's delta, because a Local axis has no world
+grid; a rotation snaps its quantized angle. The snapped value goes through the
+same solver and decomposition as an unsnapped one. `editorArrangeActiveBody`
+in the editor core moves the active body by its drawn bounds
+(`editorBodyBounds`) — Drop to ground by `-lo.y`, Centre on origin by
+`-centre.x` and `-centre.z` — through `applySceneBodyTransform`, which is what
+makes each ONE Undo and lets a lock or a derived placement refuse it. Android
+reaches both through JNI (`arrangeActiveBody`, `setGizmoSnap`,
+`gizmoSnapState`) from the Placement editor's Arrange and Snap rows; the
+desktop calls them directly from Properties.
+
+## Mesh interchange (`INTERCHANGE-R1`)
+
+Export and import grew from one format to five, around two existing seams.
+**Export**: `captureMeshExportSnapshot` takes the GLB exporter's own snapshot
+(`captureGlbExportScene`) and adds each body's translation, so every format
+writes the world-space shape the viewport draws; `exportSceneAs` dispatches on
+`MeshExportFormat` (append-only — its ordinal crosses JNI and the desktop
+shell) and delegates `Glb` to `exportSceneAsGlb` unchanged. STL (binary) and
+3MF write millimetres, OBJ and PLY metres; no axis is converted; every encoder
+writes the same "printable" triangle set (no zero-area triangle, no reversed
+twin of one already written, which is what a double-sided submesh draws); and
+the bytes are deterministic. **Import**: `detectMeshImportFormat` decides by
+content — the glTF magic, a ZIP header (3MF), a `ply` line, the binary-STL
+length rule, an ASCII `solid … facet`, an OBJ grammar — with the extension only
+breaking a tie, and `importMeshFile` produces a `ParsedGlbScene`, the shape
+the durable GLB import already commits through `commitImportedGlbScene`. An
+STL body is welded so it can be sculpted without tearing; OBJ and PLY keep the
+file's own topology; 3MF bakes each build item's transform. Android offers the
+formats from the Export chip's menu and one Import mesh picker; the desktop
+from the project menu, Ctrl+I and a dropped file.
 
 ## Deleting a body
 

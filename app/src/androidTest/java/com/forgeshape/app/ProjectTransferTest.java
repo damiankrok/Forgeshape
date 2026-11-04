@@ -424,7 +424,9 @@ public final class ProjectTransferTest {
         // still say neither "import" nor "GLB", which is what keeps the two
         // acts apart: Open File REPLACES the project with another one, Import
         // GLB ADDS somebody else's mesh to the project already open.
-        assertTrue("the GLB row must name the act: " + text, text.contains("import glb"));
+        // Since `INTERCHANGE-R1` the row imports every mesh format it lists.
+        assertTrue("the import row must name the act and GLB: " + text,
+                text.contains("import mesh") && text.contains("glb") && text.contains("stl"));
         assertFalse("and nothing in the group still calls it a preview: " + text,
                 text.contains("preview"));
 

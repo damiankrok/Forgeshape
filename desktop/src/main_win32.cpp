@@ -10,6 +10,7 @@
 #endif
 #include "forgeshape_render_surface.h"  // windows.h, with the Vulkan Win32 define
 
+#include <cctype>
 #include <commdlg.h>
 #include <dwmapi.h>
 #include <shellapi.h>
@@ -273,8 +274,19 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             wchar_t path[MAX_PATH * 4];
             if (DragQueryFileW(drop, 0, path, MAX_PATH * 4) > 0) {
                 std::vector<uint8_t> bytes;
-                if (readWholeFile(path, &bytes) && app->editor.settleUnsavedChanges()) {
-                    app->editor.openProjectBytes(bytes, narrow(fileNameOf(path)));
+                const std::string name = narrow(fileNameOf(path));
+                std::string lower = name;
+                for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                const bool project = lower.size() >= 6 && lower.compare(lower.size() - 6, 6, ".forge") == 0;
+                if (!readWholeFile(path, &bytes)) {
+                    // nothing to do: the file could not be read
+                } else if (project) {
+                    // A `.forge` REPLACES the project, so the open asks first.
+                    if (app->editor.settleUnsavedChanges()) app->editor.openProjectBytes(bytes, name);
+                } else {
+                    // Any other file is a mesh to ADD (`INTERCHANGE-R1`):
+                    // GLB, STL, OBJ, PLY or 3MF, sniffed from its bytes.
+                    app->editor.importMeshBytes(bytes, name);
                 }
             }
             DragFinish(drop);

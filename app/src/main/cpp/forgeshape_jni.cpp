@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <condition_variable>
 #include <limits>
@@ -55,6 +56,8 @@
 #include "forgeshape_gltf_export.h"
 #include "forgeshape_gltf_import.h"
 #include "forgeshape_import_commit.h"
+#include "forgeshape_mesh_import.h"
+#include "forgeshape_mesh_export.h"
 #include "forgeshape_import_preview.h"
 #include "forgeshape_gltf_export_selftest.h"
 #include "forgeshape_gltf_import_selftest.h"
@@ -9873,6 +9876,39 @@ Java_com_forgeshape_app_NativeViewport_loadProject(JNIEnv* env, jclass, jbyteArr
 // deliberately no status code across JNI: the product has exactly one thing to
 // say to the user about a failed export, and the codec's own vocabulary belongs
 // in the log rather than in five status strings nobody can act on differently.
+// The current model in another format (`INTERCHANGE-R1`): STL and 3MF in
+// millimetres, OBJ and PLY in metres; a READ, on exportGlb's terms.
+JNIEXPORT jbyteArray JNICALL
+Java_com_forgeshape_app_NativeViewport_exportMesh(JNIEnv* env, jclass, jint formatCode) {
+    if (formatCode < 0 || formatCode > static_cast<jint>(forgeshape::MeshExportFormat::ThreeMf)) {
+        return nullptr;
+    }
+    const auto format = static_cast<forgeshape::MeshExportFormat>(formatCode);
+    std::vector<uint8_t> bytes;
+    forgeshape::GlbExportStatus why = forgeshape::GlbExportStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::ProjectKind kind = forgeshape::sculptSession().inSculptMode()
+                                                     ? forgeshape::ProjectKind::Sculpt
+                                                     : forgeshape::ProjectKind::Construction;
+        bytes = forgeshape::exportSceneAs(format, forgeshape::constructionScene(), kind, &why);
+    }
+    if (bytes.empty()) {
+        FS_LOGE("FORGESHAPE_EXPORT_FAIL:%s format=%s", forgeshape::glbExportStatusName(why),
+                forgeshape::meshExportFormatName(format));
+        return nullptr;
+    }
+    FS_LOGI("FORGESHAPE_EXPORTED:%zu format=%s", bytes.size(),
+            forgeshape::meshExportFormatName(format));
+    jbyteArray out = env->NewByteArray(static_cast<jsize>(bytes.size()));
+    if (out == nullptr) {
+        return nullptr;
+    }
+    env->SetByteArrayRegion(out, 0, static_cast<jsize>(bytes.size()),
+                            reinterpret_cast<const jbyte*>(bytes.data()));
+    return out;
+}
+
 JNIEXPORT jbyteArray JNICALL
 Java_com_forgeshape_app_NativeViewport_exportGlb(JNIEnv* env, jclass) {
     std::vector<uint8_t> bytes;
@@ -9920,6 +9956,76 @@ Java_com_forgeshape_app_NativeViewport_exportGlb(JNIEnv* env, jclass) {
 // tokens intact and keeps the Java side's mapping a single comparison. It must
 // stay in step with NativeViewport.IMPORT_COMMIT_BASE.
 constexpr jint kImportCommitStatusBase = 1000;
+
+// The PROJECT half of every durable import: the mode facts and the commit,
+// under the state mutex, for a scene a format reader already parsed.
+static jint commitParsedImport(const forgeshape::ParsedGlbScene& parsed, jsize length,
+                               const char* format) {
+    forgeshape::ImportCommitReport report;
+    forgeshape::ImportCommitStatus committed = forgeshape::ImportCommitStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ImportModeFacts facts;
+        facts.sculpting = forgeshape::sculptSession().inSculptMode();
+        facts.sketchActive = forgeshape::sketchSession().active();
+        committed = forgeshape::commitImportedGlbSceneInMode(
+                parsed, forgeshape::constructionScene(), forgeshape::constructionHistory(), facts,
+                &report);
+    }
+    if (committed != forgeshape::ImportCommitStatus::Ok) {
+        FS_LOGE("FORGESHAPE_IMPORT_FAIL:%s geometry=%s bytes=%d format=%s",
+                forgeshape::importCommitStatusName(committed),
+                forgeshape::importedMeshValidationName(report.geometryWhy), (int)length, format);
+        return kImportCommitStatusBase + static_cast<jint>(committed);
+    }
+    FS_LOGI("FORGESHAPE_IMPORTED:%d objects=%d vertices=%u triangles=%u batches=%u "
+            "firstObjectId=%llu activeObjectId=%llu format=%s",
+            (int)length, report.objects, report.vertices, report.triangles, report.batches,
+            (unsigned long long)report.firstObjectId,
+            (unsigned long long)report.activeBodyId, format);
+    return 0;
+}
+
+// Reads a mesh file of any supported format (`INTERCHANGE-R1`) and creates
+// durable Imported Mesh bodies from it, on exactly importGlbDurable's terms:
+// the FILE refusals are GlbImportStatus ordinals, the PROJECT ones
+// kImportCommitStatusBase + an ImportCommitStatus ordinal.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_importMeshDurable(JNIEnv* env, jclass, jbyteArray data,
+                                                         jstring extensionHint) {
+    if (data == nullptr) {
+        return static_cast<jint>(forgeshape::GlbImportStatus::NoData);
+    }
+    const jsize length = env->GetArrayLength(data);
+    if (length <= 0) {
+        return static_cast<jint>(forgeshape::GlbImportStatus::NoData);
+    }
+    std::vector<uint8_t> bytes(static_cast<size_t>(length));
+    env->GetByteArrayRegion(data, 0, length, reinterpret_cast<jbyte*>(bytes.data()));
+    std::string extension;
+    if (extensionHint != nullptr) {
+        const char* chars = env->GetStringUTFChars(extensionHint, nullptr);
+        if (chars != nullptr) {
+            // A short ASCII tie-breaker and nothing else: never stored.
+            for (const char* c = chars; *c != '\0' && extension.size() < 8; ++c) {
+                extension.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(*c))));
+            }
+            env->ReleaseStringUTFChars(extensionHint, chars);
+        }
+    }
+    const forgeshape::MeshImportFormat format =
+            forgeshape::detectMeshImportFormat(bytes.data(), bytes.size(), extension.c_str());
+    forgeshape::ParsedGlbScene parsed;
+    const forgeshape::GlbImportStatus why =
+            forgeshape::importMeshFile(bytes.data(), bytes.size(), format, &parsed);
+    if (why != forgeshape::GlbImportStatus::Ok) {
+        FS_LOGE("FORGESHAPE_IMPORT_FAIL:%s bytes=%d format=%s",
+                forgeshape::glbImportStatusName(why), (int)length,
+                forgeshape::meshImportFormatName(format));
+        return static_cast<jint>(why);
+    }
+    return commitParsedImport(parsed, length, forgeshape::meshImportFormatName(format));
+}
 
 // Reads a `.glb` and creates durable Imported Mesh bodies from it.
 //

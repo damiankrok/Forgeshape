@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "forgeshape_mesh_export.h"
 #include "forgeshape_render_surface.h"
 #include "ui/atlas.h"
 #include "ui/theme.h"
@@ -85,6 +86,11 @@ public:
     void openProjectBytes(const std::vector<uint8_t>& bytes, const std::string& name);
     void saveProject();
     void exportGlb();
+    // `INTERCHANGE-R1`: the current model as STL, 3MF, OBJ or PLY, and any
+    // supported mesh file imported as durable bodies (one Undo).
+    void exportAs(forgeshape::MeshExportFormat format);
+    void importMesh();
+    bool importMeshBytes(const std::vector<uint8_t>& bytes, const std::string& name);
     void undo();
     void redo();
     void addPrimitive(int kind);

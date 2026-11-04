@@ -1350,6 +1350,31 @@ final class NativeViewport {
      */
     static native int importGlbDurable(byte[] bytes);
 
+    // --- more formats (`INTERCHANGE-R1`, OWNER 2026-11-04) -------------------
+
+    /** `forgeshape::MeshExportFormat` ordinals; append-only. */
+    static final int EXPORT_FORMAT_GLB = 0;
+    static final int EXPORT_FORMAT_STL = 1;
+    static final int EXPORT_FORMAT_OBJ = 2;
+    static final int EXPORT_FORMAT_PLY = 3;
+    static final int EXPORT_FORMAT_3MF = 4;
+
+    /**
+     * The current model as one file of {@code format}: GLB and OBJ and PLY in
+     * metres, STL and 3MF in millimetres (the 3D-printing convention). A READ,
+     * exactly as {@link #exportGlb()} is; null when nothing could be exported.
+     */
+    static native byte[] exportMesh(int format);
+
+    /**
+     * Reads a mesh file of any supported format — GLB, STL (binary or ASCII,
+     * millimetres), OBJ, PLY or 3MF — sniffed from its bytes, with the file
+     * name's lower-case extension (".stl") breaking ties, and creates durable
+     * Imported Mesh bodies from it exactly as {@link #importGlbDurable} does:
+     * one Undo, the same refusals, the same answer codes.
+     */
+    static native int importMeshDurable(byte[] bytes, String extensionHint);
+
     /** @return the stable refusal token for a commit status, e.g. {@code TooManyObjects} */
     static native String glbCommitStatusToken(int status);
 

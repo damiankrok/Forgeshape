@@ -227,10 +227,22 @@ on the host, with no device, and is the fast native loop.
   sketch is ONE `ScopedConstructionEdit` around ONE `addCadBody` (one Undo),
   every later sketch-size or depth edit is ONE step, and a refused commit mints
   no `ObjectId`. CAD uses the Construction history, never `SculptHistory`.
-  **CAD → Sculpt is deliberately NOT this stage**: `buildSculptSourceMesh`
-  returns false for a CAD Body, the freeze refuses by name
-  (`CadBodyNotSculptable`), the control is absent for one, and a `SCUL` entry
-  over a `CADB` body is refused by the codec. While a sketch is being DRAWN the
+  **A CAD Body may be SCULPTED** (`CAD-SCULPT-R1`, OWNER 2026-11-04: lay the
+  part out precisely as CAD, then sculpt the detail into it):
+  `buildSculptSourceMesh` seeds the Frozen Sculpt Mesh from the chain's own
+  derived solid through `buildSculptSeedFromSolid`
+  (`forgeshape_sculpt_seed.{h,cpp}`) — welded by exact position into ONE
+  connected surface and refined by conforming edge splits (no T-junction, no
+  crack, winding kept) until no edge is longer than the part's diagonal / 96 or
+  320 000 triangles are reached — a pure, deterministic function of the mesh,
+  called once per Start Sculpting or Reset. The chain stays the truth and is
+  never written by a stroke; a CAD edit committed while a sculpt mesh exists
+  marks it STALE (`ConstructionHistory::commitEdit`), exactly as a Construction
+  parameter edit does, and adopting it is the explicit Reset. A
+  FACE-supported CAD Body is still refused (`CadBodyNotSculptable`, control
+  absent), because its placement is derived from another body's face. A `SCUL`
+  entry over a `CADB` body is valid; over `FRFM` or `SURF` it is still
+  refused. While a sketch is being DRAWN the
   single-finger gesture belongs to the sketch and never orbits — an orbit would
   take the aligned view away under the finger placing a point — two fingers
   still pan and pinch, and creation, deletion, body switching, freeze and
@@ -280,7 +292,7 @@ on the host, with no device, and is the fast native loop.
   v2 support block because a version is a superset of the one below it; a
   curveless project keeps v1 or v2 byte-identical, and a curve code inside a
   section that declared itself v1 or v2 is refused as malformed rather than
-  read. **Not this stage**: CAD → Sculpt, custom construction planes,
+  read. **Not this stage**: custom construction planes,
   curved-face sketches, projected edges, a constraint solver, and every
   boolean/fillet/chamfer.
 - **Home is not a project, and a project is never empty** (`APP-H1`,
@@ -1242,7 +1254,9 @@ on the host, with no device, and is the fast native loop.
   than inert (`GIZMO_STYLE_DEFERRED_BY_RENDERER_CONTRACT`).
 - **A body's SOURCE is never written by sculpting.** A body has a source
   representation — a Construction Source, an Imported Mesh, or a CAD Body —
-  and may also own a Frozen Sculpt Mesh (not yet for a CAD Body). A sculpt edit may never change a primitive parameter, a
+  and may also own a Frozen Sculpt Mesh (a CAD Body since `CAD-SCULPT-R1`,
+  never a face-supported one). A sculpt edit may never change a primitive
+  parameter, a CAD feature, a
   `PrimitiveKind`, a transform, or one byte of an imported object's positions,
   normals, topology or submesh batches; and no Construction parameter may ever be
   reconstructed from sculpt vertices. Adopting a changed source into the sculpt
@@ -1428,10 +1442,11 @@ on the host, with no device, and is the fast native loop.
   then mutated.
   `DATA_PACKAGE_SPEC.md` owns the layout, and `scripts/build-forge-corpus.ps1`
   is a second implementation of it whose bytes must stay identical.
-  **GLB/glTF, OBJ and FBX are not `.forge`.** A `.glb` is written by Export and
-  read by Import into objects that then live in `.forge` like anything else; it
-  is never a project and is never referenced by one. OBJ and FBX are absent in
-  both directions, and no inert menu entry for one may be drawn.
+  **GLB, STL, OBJ, PLY and 3MF are not `.forge`.** Each is written by Export
+  and read by Import into objects that then live in `.forge` like anything
+  else; none is ever a project or referenced by one. FBX and STEP are absent in
+  both directions (FBX is a closed format, STEP needs a B-Rep the product does
+  not have), and no inert menu entry for one may be drawn.
 - **Autosave protects work; it never overwrites what the user chose to keep.**
   The manual slot and the recovery checkpoint are two different files written by
   two different acts, and only an explicit Save touches the one the user named.
@@ -1463,8 +1478,15 @@ on the host, with no device, and is the fast native loop.
   non-triangle mode, a node with children, a node stating both a `matrix` and a
   TRS, and any attribute it has not been told it may ignore. It bakes the node
   transform and produces GEOMETRY; it decides nothing about the project, and no
-  coordinate conversion of any kind exists. OBJ and FBX stay absent in both
-  directions.
+  coordinate conversion of any kind exists. **The other mesh readers**
+  (`INTERCHANGE-R1`, `forgeshape_mesh_import.{h,cpp}`: binary and ASCII STL in
+  millimetres, welded; OBJ, PLY in metres, never welded; 3MF in its declared
+  unit, its own ZIP and inflater, one mesh per build item) produce the SAME
+  `ParsedGlbScene`, so one commit, one Undo and one `IMPT` record serve every
+  format; the format is decided by the BYTES (`detectMeshImportFormat`, the
+  file's extension only breaking a tie), normals are generated, no axis is
+  converted, and everything outside each subset is refused by name, never
+  guessed (`GlbImportStatus` is append-only, its ordinals cross JNI).
 - **`IMPORT-01A` (`ARCH-OWNER-10`) is durable import, and an Imported Mesh is a
   body's second representation.** A `SceneObject` owns a Construction Source or
   an Imported Mesh, never both and never neither, for its whole life. A
@@ -1540,6 +1562,21 @@ on the host, with no device, and is the fast native loop.
   than guessing — no NaN, no jump. The camera alone sizes the instrument: the
   BODY's scale never reaches it, and a drag's basis is frozen at the pointer
   down and is scale-free.
+- **Snapping and arranging are placement acts, never truth of their own**
+  (`PLACEMENT-PRECISION-R1`). A gizmo drag may snap: `gizmoSnapSettings` holds
+  ONE move step in metres and ONE rotate step in degrees (0 is off), the drag
+  FREEZES them at pointer-down with its basis, a World move lands the ABSOLUTE
+  position on a multiple of the step while a Local move snaps the delta, and a
+  rotation snaps its angle — every sample still through the one solver and the
+  one decomposition. The steps are session presentation: no `.forge` byte, no
+  history step, no fingerprint, no `AppPreferences` field. **Drop to ground**
+  and **Centre on origin** (`editorArrangeActiveBody`) move the active body by
+  its DRAWN bounds — its lowest point to `y = 0`, its centre to `x = z = 0` —
+  through `applySceneBodyTransform`, so each is ONE Undo, a lock or a derived
+  placement refuses it on the transform's own terms, and nothing to do records
+  nothing; both are refused in Sculpt and under a sketch. The Placement
+  editor's Arrange and Snap rows on Android and the desktop's Properties are
+  the two doors to the same calls.
 - **A rotation is composed as a matrix and stored as Euler degrees.** A handle
   drag may never add its angle to one Euler component — that is only correct
   when the other two are zero. Every sample composes from the IMMUTABLE start
@@ -1712,7 +1749,8 @@ on the host, with no device, and is the fast native loop.
   width is arithmetic on its row, not a constant, and the only approved second
   forms are `← Construction` and `← Imported Mesh` — the way OUT of Sculpt, in
   its two destinations — with the full wording kept as the content description in
-  both. A third abbreviated label needs its own approval.
+  both — and, since `CAD-SCULPT-R1` (OWNER 2026-11-04), `← CAD Body` over a
+  sculpted CAD Body. A fourth abbreviated label needs its own approval.
 - **The launcher icon is the ForgeShape mark in colour** (`STARTUP-FACE-ICONS-R1`):
   an adaptive icon (`mipmap-anydpi-v26/ic_launcher*`, background, foreground
   and an Android 13 monochrome layer) of the same notched-block geometry
@@ -1725,9 +1763,16 @@ on the host, with no device, and is the fast native loop.
   than an absent one, so a future reserved control needs its own approval.
 - **Export is one-way, one file, and a different act from Save.** A `.forge`
   document is the project and ForgeShape reads it back as one; a `.glb` is a
-  view of the geometry for another tool and is never a project. OBJ, FBX and
-  every other interchange format stay absent, and no exporter may write a second
-  file beside the `.glb` — no `.bin`, no `.gltf`, no texture, no sidecar. The
+  view of the geometry for another tool and is never a project. **Export as**
+  (`INTERCHANGE-R1`, `forgeshape_mesh_export.{h,cpp}`) also writes binary STL
+  and 3MF in MILLIMETRES (what every slicer reads) and OBJ and PLY in metres,
+  every one from the ONE snapshot the GLB export takes (`captureGlbExportScene`)
+  in world space, so a body is the same shape at the same place whichever
+  format is chosen, deterministically (fixed number format, fixed ZIP
+  timestamps) and with no axis converted; a double-sided submesh's reversed
+  twins are dropped because those formats cannot say double-sided. FBX, STEP
+  and every other format stay absent, and no exporter may write a second
+  file beside its one file — no `.bin`, no `.gltf`, no `.mtl`, no texture, no sidecar. The
   exporter is platform-neutral (`forgeshape_gltf_export.h`): it never sees a
   `Uri`, a `ContentResolver` or a path; it re-evaluates a Construction Source,
   reads a Frozen Sculpt Mesh or reads an Imported Mesh's own CPU arrays, never a
@@ -1923,6 +1968,10 @@ on the host, with no device, and is the fast native loop.
   of that strip), *Mirror* (creating one new body reflected across a principal
   world plane; never a live symmetry modifier and never a negative scale),
   *Add Primitive* (the six-shape creation surface),
+  *Export as* (the format menu Export opens: GLB, STL, 3MF, OBJ, PLY), *Import
+  mesh* (reading one of those files into new bodies), *Drop to ground* /
+  *Centre on origin* (the two Arrange acts), *snap step* (the move or rotate
+  increment a drag lands on; never "grid snap", which is the sketch's),
   *precision surface* (the on-demand exact-value panel, implemented by
   *Property Inspector*), *anchored surface* (any panel that grows out of the
   control that opened it; `AnchoredSurfaceView` owns the growth for all of them),
@@ -2046,7 +2095,8 @@ coincident edges / making a closed solid of one),
   acts read **Back to Imported Mesh** (short form `← Imported Mesh`, full wording
   always the content description) and **Reset Sculpt from Imported Mesh…**,
   because Construction wording over a body with no Construction Source names a
-  place that does not exist. The view id stays `back_to_construction`: an id names
+  place that does not exist; over a CAD Body they read **Back to CAD Body**
+  (short form `← CAD Body`) and **Reset Sculpt from CAD Body…**. The view id stays `back_to_construction`: an id names
   the ACT the code performs, and copy never renames one.
 - **Comments explain why**, plus ownership, units, lifecycle and constraints —
   never obvious syntax. Worth a comment: why the Android UI must not become

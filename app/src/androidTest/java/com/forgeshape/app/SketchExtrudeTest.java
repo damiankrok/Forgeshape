@@ -273,7 +273,8 @@ public final class SketchExtrudeTest {
                     activity.getString(R.string.context_cad_body),
                     ((TextView) workspace.findViewById(R.id.editing_context_label)).getText()
                             .toString());
-            assertEquals("Start Sculpting is not offered for a CAD Body", View.GONE,
+            // `CAD-SCULPT-R1`: a world-plane CAD Body may be sculpted.
+            assertEquals("Start Sculpting is offered for a CAD Body", View.VISIBLE,
                     workspace.findViewById(R.id.freeze_to_sculpt).getVisibility());
             assertEquals("Undo and Redo are back", View.VISIBLE,
                     workspace.historyGroup().getVisibility());

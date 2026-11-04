@@ -139,9 +139,16 @@
       have given.
     -->
     <string name="export">Export</string>
-    <string name="export_glb_description">Export GLB — save the model as a .glb file</string>
+    <string name="export_glb_description">Export — save the model as GLB, STL, 3MF, OBJ or PLY</string>
     <string name="status_export_glb_written">Exported — %1$s as GLB.</string>
     <string name="status_export_glb_failed">Could not export the model. Nothing was written; your work is unchanged.</string>
+    <!-- INTERCHANGE-R1 (OWNER 2026-11-04): exports and imports in several formats. -->
+    <string name="export_as_glb">GLB — glTF, for any 3D tool (metres)</string>
+    <string name="export_as_stl">STL — for 3D printing (millimetres)</string>
+    <string name="export_as_3mf">3MF — for 3D printing (millimetres)</string>
+    <string name="export_as_obj">OBJ — Wavefront (metres)</string>
+    <string name="export_as_ply">PLY — polygon file (metres)</string>
+    <string name="status_export_written">Exported — %1$s as %2$s.</string>
     <!--
       Project actions. Both of these WORK, which is why they are ordinary
       controls rather than reserved ones: there is one app-private project slot
@@ -195,7 +202,7 @@
       adds somebody else's mesh to the project already open.
     -->
     <string name="import_section">Import a mesh</string>
-    <string name="import_glb">Import GLB…</string>
+    <string name="import_glb">Import mesh — GLB, STL, OBJ, PLY, 3MF…</string>
     <string name="status_glb_imported">Imported %1$s.</string>
     <string name="status_glb_import_failed">Could not import that file — %1$s. Your project is unchanged.</string>
     <string name="status_glb_import_refused_in_sculpt">Import is not available while sculpting. Your project is unchanged.</string>

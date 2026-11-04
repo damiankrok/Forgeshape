@@ -497,6 +497,14 @@ public final class ForgeShapeActivity extends Activity {
                     return launch(ProjectTransfer.openGlbDocumentIntent(),
                             REQUEST_OPEN_GLB_DOCUMENT);
                 }
+
+                @Override
+                public boolean requestCreateMeshDocument(String mimeType, String suggestedName) {
+                    // The same destination handler: it writes whatever export
+                    // bytes are pending, whatever their format.
+                    return launch(ProjectTransfer.createMeshDocumentIntent(mimeType, suggestedName),
+                            REQUEST_CREATE_GLB_DOCUMENT);
+                }
             };
 
     /**

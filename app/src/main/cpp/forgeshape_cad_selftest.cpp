@@ -1774,8 +1774,10 @@ int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
             sculpt.positions = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
             sculpt.indices = {0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3};
             sculpted.sculpt.bodies.push_back(sculpt);
-            r.check("CADR0_36_a_sculpt_entry_over_a_cad_body_is_refused",
-                    validateProjectDocument(sculpted) == ProjectCodecStatus::UnresolvedReference);
+            // Since `CAD-SCULPT-R1` a CAD Body may be sculpted, so its `SCUL`
+            // entry is its second representation, as over `CONS` or `IMPT`.
+            r.check("CADR0_36_a_sculpt_entry_over_a_cad_body_is_valid",
+                    validateProjectDocument(sculpted) == ProjectCodecStatus::Ok);
         }
         // Fail closed at the byte level: a plane code no plane has, with the
         // CRC recomputed so only the semantic check can catch it; and a CADB
@@ -1871,14 +1873,15 @@ int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
     }
 
     // -----------------------------------------------------------------------
-    // CADR0-39: a CAD body does not sculpt, by name, and Delete is neutral
+    // CADR0-39: a world-plane CAD body offers a sculpt seed (`CAD-SCULPT-R1`)
     // -----------------------------------------------------------------------
     {
         ConstructionScene scene;
         SceneObject* body = scene.addCadBody(bodyState(rectangleSketch(), 1, 1.5));
         ConstructionMesh source;
-        r.check("CADR0_39_a_cad_body_offers_no_sculpt_source_this_stage",
-                body != nullptr && !buildSculptSourceMesh(*body, &source));
+        r.check("CADR0_39_a_cad_body_offers_a_sculpt_seed",
+                body != nullptr && buildSculptSourceMesh(*body, &source)
+                        && !source.indices.empty());
     }
 
     // -----------------------------------------------------------------------

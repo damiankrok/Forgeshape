@@ -6566,25 +6566,82 @@ final class EditorWorkspaceView extends FrameLayout
      */
     @Override
     public void onExportGlbRequested() {
-        final byte[] bytes = NativeViewport.exportGlb();
+        onExportRequested(NativeViewport.EXPORT_FORMAT_GLB);
+    }
+
+    /** What each export format is called, offered as and written with. */
+    static final class ExportFormat {
+        final int code;
+        final int label;
+        final String mime;
+        final String fileName;
+
+        ExportFormat(int code, int label, String mime, String fileName) {
+            this.code = code;
+            this.label = label;
+            this.mime = mime;
+            this.fileName = fileName;
+        }
+    }
+
+    /** The formats the Export menu offers, in the order it lists them. */
+    static final ExportFormat[] EXPORT_FORMATS = {
+            new ExportFormat(NativeViewport.EXPORT_FORMAT_GLB, R.string.export_as_glb,
+                    ProjectTransfer.GLB_MIME_TYPE, "model.glb"),
+            new ExportFormat(NativeViewport.EXPORT_FORMAT_STL, R.string.export_as_stl,
+                    "model/stl", "model.stl"),
+            new ExportFormat(NativeViewport.EXPORT_FORMAT_3MF, R.string.export_as_3mf,
+                    "model/3mf", "model.3mf"),
+            new ExportFormat(NativeViewport.EXPORT_FORMAT_OBJ, R.string.export_as_obj,
+                    "model/obj", "model.obj"),
+            new ExportFormat(NativeViewport.EXPORT_FORMAT_PLY, R.string.export_as_ply,
+                    "application/x-ply", "model.ply"),
+    };
+
+    static ExportFormat exportFormat(int code) {
+        for (ExportFormat format : EXPORT_FORMATS) {
+            if (format.code == code) {
+                return format;
+            }
+        }
+        return EXPORT_FORMATS[0];
+    }
+
+    /** The format whose bytes are pending, for the written status. */
+    private int pendingExportFormat = NativeViewport.EXPORT_FORMAT_GLB;
+
+    /**
+     * Exports the current model as one file of the chosen format
+     * (`INTERCHANGE-R1`): built before the picker opens, written where the user
+     * picks, a READ of the project like the GLB export always was.
+     */
+    @Override
+    public void onExportRequested(int formatCode) {
+        final ExportFormat format = exportFormat(formatCode);
+        final byte[] bytes = format.code == NativeViewport.EXPORT_FORMAT_GLB
+                ? NativeViewport.exportGlb() : NativeViewport.exportMesh(format.code);
         if (bytes == null || bytes.length == 0) {
-            // Null is every refusal at once — an empty scene, a mesh the writer
-            // would not vouch for, a model past the size ceiling — and this
-            // layer cannot tell them apart. So it says the one thing true of
-            // all of them, rather than guessing "there is nothing to export"
-            // over a model that is merely too large. The specific reason is in
-            // the log, as FORGESHAPE_GLB_EXPORT_FAIL.
-            Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "EXPORT_GLB_ENCODE_FAILED", null);
+            Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "EXPORT_ENCODE_FAILED",
+                    "format=" + format.code);
             showStatus(getContext().getString(R.string.status_export_glb_failed),
                     R.attr.fsTextError);
             return;
         }
         pendingGlbBytes = bytes;
-        if (transferHost == null || !transferHost.requestCreateGlbDocument()) {
+        pendingExportFormat = format.code;
+        final boolean asked = transferHost != null && (format.code == NativeViewport.EXPORT_FORMAT_GLB
+                ? transferHost.requestCreateGlbDocument()
+                : transferHost.requestCreateMeshDocument(format.mime, format.fileName));
+        if (!asked) {
             pendingGlbBytes = null;
             showStatus(getContext().getString(R.string.status_export_glb_failed),
                     R.attr.fsTextError);
         }
+    }
+
+    /** The export's bytes waiting for a destination, for a test. */
+    byte[] pendingExportBytesForTest() {
+        return pendingGlbBytes;
     }
 
     /**
@@ -6617,8 +6674,11 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "EXPORT_GLB_WROTE",
-                "bytes=" + bytes.length);
-        showStatus(getContext().getString(R.string.status_export_glb_written, projectSummary()),
+                "bytes=" + bytes.length + " format=" + pendingExportFormat);
+        showStatus(pendingExportFormat == NativeViewport.EXPORT_FORMAT_GLB
+                ? getContext().getString(R.string.status_export_glb_written, projectSummary())
+                : getContext().getString(R.string.status_export_written, projectSummary(),
+                        getContext().getString(exportFormat(pendingExportFormat).label)),
                 R.attr.fsTextSuccess);
     }
 
@@ -6682,7 +6742,14 @@ final class EditorWorkspaceView extends FrameLayout
                     R.attr.fsTextError);
             return;
         }
-        applyImportedGlbBytes(bytes);
+        // Any supported format (`INTERCHANGE-R1`): the bytes decide, and the
+        // file name's extension only breaks a tie.
+        applyImportedMeshBytes(bytes, ProjectTransfer.extensionOf(getContext(), source));
+    }
+
+    /** Imports a mesh file of any supported format; see applyImportedGlbBytes. */
+    void applyImportedMeshBytes(byte[] bytes, String extensionHint) {
+        applyImportedBytes(bytes, extensionHint);
     }
 
     /**
@@ -6695,11 +6762,16 @@ final class EditorWorkspaceView extends FrameLayout
      * refusal — is identical either way.
      */
     void applyImportedGlbBytes(byte[] bytes) {
+        applyImportedBytes(bytes, null);
+    }
+
+    private void applyImportedBytes(byte[] bytes, String extensionHint) {
         // Counted on this side because the count the user cares about is how
         // many objects APPEARED, which is a fact about the scene either side of
         // the call rather than about the file.
         final int before = NativeViewport.sceneBodyCount();
-        final int status = NativeViewport.importGlbDurable(bytes);
+        final int status = extensionHint == null ? NativeViewport.importGlbDurable(bytes)
+                : NativeViewport.importMeshDurable(bytes, extensionHint);
         if (status == NativeViewport.IMPORT_REFUSED_IN_SCULPT) {
             // Native refused from its own mode, under the commit's lock, for a
             // caller that got here without the picker guard above.
@@ -6883,6 +6955,16 @@ final class EditorWorkspaceView extends FrameLayout
         boolean requestCreateGlbDocument();
 
         boolean requestOpenGlbDocument();
+
+        /**
+         * Asks where to put an exported model of any format (`INTERCHANGE-R1`).
+         * The answer comes back through the GLB destination handler, which
+         * writes whatever bytes are pending. A host that predates the formats
+         * falls back to the GLB picker.
+         */
+        default boolean requestCreateMeshDocument(String mimeType, String suggestedName) {
+            return requestCreateGlbDocument();
+        }
     }
 
     private ProjectTransferHost transferHost;
