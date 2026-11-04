@@ -259,6 +259,18 @@ const char* glbImportStatusName(GlbImportStatus status) {
         case GlbImportStatus::CannotGenerateNormals: return "CannotGenerateNormals";
         case GlbImportStatus::NonFiniteValue: return "NonFiniteValue";
         case GlbImportStatus::TooLarge: return "TooLarge";
+        case GlbImportStatus::UnknownFormat: return "UnknownFormat";
+        case GlbImportStatus::MalformedText: return "MalformedText";
+        case GlbImportStatus::MalformedBinary: return "MalformedBinary";
+        case GlbImportStatus::UnsupportedPlyFormat: return "UnsupportedPlyFormat";
+        case GlbImportStatus::UnsupportedObjFeature: return "UnsupportedObjFeature";
+        case GlbImportStatus::MalformedZip: return "MalformedZip";
+        case GlbImportStatus::UnsupportedZipFeature: return "UnsupportedZipFeature";
+        case GlbImportStatus::ZipChecksumMismatch: return "ZipChecksumMismatch";
+        case GlbImportStatus::MalformedXml: return "MalformedXml";
+        case GlbImportStatus::UnsupportedThreeMfFeature: return "UnsupportedThreeMfFeature";
+        case GlbImportStatus::MissingModelPart: return "MissingModelPart";
+        case GlbImportStatus::MalformedThreeMf: return "MalformedThreeMf";
     }
     return "unknown";
 }
@@ -280,6 +292,13 @@ GlbImportCategory glbImportStatusCategory(GlbImportStatus status) {
         case GlbImportStatus::NoMeshes:
         case GlbImportStatus::NothingToImport:
         case GlbImportStatus::TooLarge:
+        case GlbImportStatus::UnknownFormat:
+        case GlbImportStatus::MalformedText:
+        case GlbImportStatus::MalformedBinary:
+        case GlbImportStatus::MalformedZip:
+        case GlbImportStatus::ZipChecksumMismatch:
+        case GlbImportStatus::MalformedXml:
+        case GlbImportStatus::MissingModelPart:
             return GlbImportCategory::Unreadable;
 
         case GlbImportStatus::ExternalBuffer:
@@ -297,6 +316,10 @@ GlbImportCategory glbImportStatusCategory(GlbImportStatus status) {
         case GlbImportStatus::UnsupportedComponentType:
         case GlbImportStatus::UnsupportedAccessorType:
         case GlbImportStatus::InterleavedAccessor:
+        case GlbImportStatus::UnsupportedPlyFormat:
+        case GlbImportStatus::UnsupportedObjFeature:
+        case GlbImportStatus::UnsupportedZipFeature:
+        case GlbImportStatus::UnsupportedThreeMfFeature:
             return GlbImportCategory::Unsupported;
 
         case GlbImportStatus::SingularNodeTransform:
@@ -306,6 +329,7 @@ GlbImportCategory glbImportStatusCategory(GlbImportStatus status) {
         case GlbImportStatus::CountMismatch:
         case GlbImportStatus::CannotGenerateNormals:
         case GlbImportStatus::NonFiniteValue:
+        case GlbImportStatus::MalformedThreeMf:
             return GlbImportCategory::Inconsistent;
     }
     return GlbImportCategory::Unreadable;

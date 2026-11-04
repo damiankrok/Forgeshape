@@ -942,7 +942,7 @@ void runSurfaceSelfTestsAndLog() {
 
 void runGltfExportSelfTestsAndLog() {
 #ifndef NDEBUG
-    constexpr int kMaxGltfChecks = 128;
+    constexpr int kMaxGltfChecks = 256;
     static forgeshape::GltfExportSelfTestResult results[kMaxGltfChecks];
     const int count = forgeshape::runGltfExportSelfTests(results, kMaxGltfChecks);
     int failed = 0;
@@ -1047,7 +1047,7 @@ void runGltfImportSelfTestsAndLog() {
     // R1 added the external-GLB subset, so the suite outgrew 128. The recorder
     // silently drops checks past its ceiling, which would look like a smaller
     // passing suite rather than a failure, so this stays well ahead of it.
-    constexpr int kMaxImportChecks = 256;
+    constexpr int kMaxImportChecks = 384;
     static forgeshape::GltfImportSelfTestResult results[kMaxImportChecks];
     const int count = forgeshape::runGltfImportSelfTests(results, kMaxImportChecks);
     int failed = 0;
@@ -10182,7 +10182,7 @@ Java_com_forgeshape_app_NativeViewport_importGlbPreview(JNIEnv* env, jclass, jby
 // an enum value the domain does not have.
 static forgeshape::GlbImportStatus importStatusFromOrdinal(jint ordinal) {
     if (ordinal < 0
-        || ordinal > static_cast<jint>(forgeshape::GlbImportStatus::TooLarge)) {
+        || ordinal > static_cast<jint>(forgeshape::GlbImportStatus::MalformedThreeMf)) {
         return forgeshape::GlbImportStatus::NoData;
     }
     return static_cast<forgeshape::GlbImportStatus>(ordinal);

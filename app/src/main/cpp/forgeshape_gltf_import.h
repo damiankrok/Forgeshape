@@ -103,6 +103,29 @@ enum class GlbImportStatus {
     CannotGenerateNormals,  // a normal, supplied or generated, is not a direction
     NonFiniteValue,
     TooLarge,
+
+    // --- the other interchange formats (`forgeshape_mesh_import.h`) ---------
+    // APPENDED, never inserted: these ordinals cross JNI, so every value above
+    // keeps the number it always had. Each names what stopped the reader of a
+    // non-GLB file; the ones above (TruncatedFile, NothingToImport,
+    // IndexOutOfRange, NonFiniteValue, TooLarge, CannotGenerateNormals...) are
+    // reused by those readers wherever they already say the right thing.
+    UnknownFormat,              // the bytes are none of the formats this reader knows
+    MalformedText,              // an OBJ, ASCII STL or ASCII PLY line breaks its grammar
+    MalformedBinary,            // a binary STL or PLY whose layout disagrees with its length
+    UnsupportedPlyFormat,       // a PLY format line, version or property type not read
+    UnsupportedObjFeature,      // an OBJ statement describing geometry this reader does
+                                // not build (free-form curves and surfaces) or unknown
+    MalformedZip,               // a 3MF container whose ZIP records do not add up
+    UnsupportedZipFeature,      // encryption, ZIP64, spanning, or a method other than
+                                // STORED and DEFLATE
+    ZipChecksumMismatch,        // an entry's bytes do not match its CRC-32
+    MalformedXml,               // a 3MF part that is not well-formed XML, or has a DTD
+    UnsupportedThreeMfFeature,  // a required extension, an external component path,
+                                // an unknown unit
+    MissingModelPart,           // a ZIP with no 3MF model part in it
+    MalformedThreeMf,           // a model document whose ids, references or numbers
+                                // disagree with each other
 };
 
 const char* glbImportStatusName(GlbImportStatus status);

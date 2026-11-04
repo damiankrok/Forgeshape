@@ -90,6 +90,8 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_glb_roundtrip.cpp
     forgeshape_gltf_export.cpp
     forgeshape_gltf_import.cpp
+    forgeshape_mesh_export.cpp
+    forgeshape_mesh_import.cpp
     forgeshape_import_preview.cpp
     forgeshape_import_commit.cpp
     forgeshape_imported_mesh.cpp

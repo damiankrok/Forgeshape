@@ -16,6 +16,8 @@
 #include "forgeshape_import_preview.h"
 #include "forgeshape_json.h"
 #include "forgeshape_math.h"
+#include "forgeshape_mesh_export.h"
+#include "forgeshape_mesh_import.h"
 #include "forgeshape_project_document.h"
 #include "forgeshape_project_state.h"
 #include "forgeshape_scene.h"
@@ -567,6 +569,903 @@ void runImportSketchGuardChecks(Recorder& r) {
                     && static_cast<int>(ImportCommitStatus::RefusedInSketch) == 6);
     r.check("IMPORT_SK_07_no_mode_means_no_mode_refusal",
             importModeRefusal(ImportModeFacts{}) == ImportCommitStatus::Ok);
+}
+
+// ---------------------------------------------------------------------------
+// MESH-IMPORT: STL, OBJ, PLY and 3MF into the one parsed-scene shape
+// ---------------------------------------------------------------------------
+//
+// Every fixture below is built HERE -- text by hand, binary by this file's own
+// little-endian writers, ZIP containers and DEFLATE streams by this file's own
+// encoder and CRC -- so a reader is never proven only against the writer it
+// shipped beside. The one exception is the dynamic-Huffman stream, which is
+// the output of an independent DEFLATE implementation (zlib, level 9) frozen
+// as bytes: no hand-written encoder here could prove the reader against
+// another's idea of a dynamic block.
+
+std::vector<uint8_t> bytesOf(const std::string& text) {
+    return std::vector<uint8_t>(text.begin(), text.end());
+}
+
+GlbImportStatus importText(const std::string& text, MeshImportFormat format,
+                           ParsedGlbScene* out) {
+    const std::vector<uint8_t> bytes = bytesOf(text);
+    return importMeshFile(bytes.data(), bytes.size(), format, out);
+}
+
+GlbImportStatus importBytes(const std::vector<uint8_t>& bytes, MeshImportFormat format,
+                            ParsedGlbScene* out) {
+    return importMeshFile(bytes.data(), bytes.size(), format, out);
+}
+
+MeshImportFormat detectBytes(const std::vector<uint8_t>& bytes, const char* hint = "") {
+    return detectMeshImportFormat(bytes.data(), bytes.size(), hint);
+}
+
+struct WorldBounds {
+    float lo[3] = {1e30f, 1e30f, 1e30f};
+    float hi[3] = {-1e30f, -1e30f, -1e30f};
+
+    void add(const float* xyz) {
+        for (int c = 0; c < 3; ++c) {
+            lo[c] = std::fmin(lo[c], xyz[c]);
+            hi[c] = std::fmax(hi[c], xyz[c]);
+        }
+    }
+};
+
+WorldBounds boundsOf(const ParsedGlbScene& scene) {
+    WorldBounds bounds;
+    for (const ParsedGlbMesh& mesh : scene.meshes) {
+        for (size_t v = 0; v + 2 < mesh.positions.size(); v += 3) bounds.add(&mesh.positions[v]);
+    }
+    return bounds;
+}
+
+WorldBounds boundsOf(const ParsedGlbMesh& mesh) {
+    WorldBounds bounds;
+    for (size_t v = 0; v + 2 < mesh.positions.size(); v += 3) bounds.add(&mesh.positions[v]);
+    return bounds;
+}
+
+WorldBounds boundsOf(const MeshExportSnapshot& snapshot) {
+    WorldBounds bounds;
+    for (const MeshExportObject& object : snapshot.objects) {
+        for (size_t v = 0; v + 2 < object.positions.size(); v += 3) {
+            bounds.add(&object.positions[v]);
+        }
+    }
+    return bounds;
+}
+
+// Within 1e-5 relative (absolute below one unit): a millimetre round trip
+// moves a float by about one ULP, and nothing a reader may do moves it more.
+bool boundsMatch(const WorldBounds& a, const WorldBounds& b) {
+    for (int c = 0; c < 3; ++c) {
+        const double tolLo = 1e-5 * std::fmax(1.0, std::fabs(b.lo[c]));
+        const double tolHi = 1e-5 * std::fmax(1.0, std::fabs(b.hi[c]));
+        if (std::fabs(a.lo[c] - b.lo[c]) > tolLo || std::fabs(a.hi[c] - b.hi[c]) > tolHi) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool boundsAre(const WorldBounds& b, float x0, float y0, float z0, float x1, float y1, float z1) {
+    WorldBounds expected;
+    const float lo[3] = {x0, y0, z0};
+    const float hi[3] = {x1, y1, z1};
+    expected.add(lo);
+    expected.add(hi);
+    return boundsMatch(b, expected);
+}
+
+// Every reader's shared contract on its output.
+bool parsedLikeTheContract(const ParsedGlbScene& scene) {
+    if (scene.meshes.empty()) return false;
+    const Mat4 identity = mat4Identity();
+    for (const ParsedGlbMesh& mesh : scene.meshes) {
+        if (!mesh.normalsGenerated || mesh.translation[0] != 0.0f || mesh.translation[1] != 0.0f
+            || mesh.translation[2] != 0.0f || mesh.batches.size() != 1
+            || mesh.batches[0].firstIndex != 0 || mesh.batches[0].indexCount != mesh.indices.size()
+            || mesh.batches[0].doubleSided || mesh.normals.size() != mesh.positions.size()
+            || std::memcmp(mesh.nodeTransform.m, identity.m, sizeof(identity.m)) != 0) {
+            return false;
+        }
+        for (size_t v = 0; v + 2 < mesh.normals.size(); v += 3) {
+            const double length = std::sqrt(double(mesh.normals[v]) * mesh.normals[v]
+                                            + double(mesh.normals[v + 1]) * mesh.normals[v + 1]
+                                            + double(mesh.normals[v + 2]) * mesh.normals[v + 2]);
+            if (std::fabs(length - 1.0) > 1e-5) return false;
+        }
+    }
+    return true;
+}
+
+uint32_t testCrc32(const std::string& data) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (unsigned char byte : data) {
+        crc ^= byte;
+        for (int k = 0; k < 8; ++k) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    return ~crc;
+}
+
+void putU16(std::vector<uint8_t>& out, uint32_t v) {
+    out.push_back(static_cast<uint8_t>(v & 0xFFu));
+    out.push_back(static_cast<uint8_t>((v >> 8) & 0xFFu));
+}
+
+void putU32(std::vector<uint8_t>& out, uint32_t v) {
+    putU16(out, v & 0xFFFFu);
+    putU16(out, v >> 16);
+}
+
+struct TestZipPart {
+    std::string name;
+    std::string content;            // uncompressed
+    std::vector<uint8_t> deflated;  // non-empty: stored as DEFLATE with these bytes
+    uint32_t crcFlip = 0;           // XORed into the recorded CRC
+    uint16_t flags = 0;
+};
+
+std::vector<uint8_t> testZip(const std::vector<TestZipPart>& parts) {
+    std::vector<uint8_t> zip;
+    std::vector<uint32_t> offsets;
+    for (const TestZipPart& part : parts) {
+        const bool deflate = !part.deflated.empty();
+        const uint32_t stored = static_cast<uint32_t>(deflate ? part.deflated.size()
+                                                              : part.content.size());
+        offsets.push_back(static_cast<uint32_t>(zip.size()));
+        putU32(zip, 0x04034B50u);
+        putU16(zip, 20);
+        putU16(zip, part.flags);
+        putU16(zip, deflate ? 8 : 0);
+        putU16(zip, 0);
+        putU16(zip, 0x21);
+        putU32(zip, testCrc32(part.content) ^ part.crcFlip);
+        putU32(zip, stored);
+        putU32(zip, static_cast<uint32_t>(part.content.size()));
+        putU16(zip, static_cast<uint32_t>(part.name.size()));
+        putU16(zip, 0);
+        zip.insert(zip.end(), part.name.begin(), part.name.end());
+        if (deflate) {
+            zip.insert(zip.end(), part.deflated.begin(), part.deflated.end());
+        } else {
+            zip.insert(zip.end(), part.content.begin(), part.content.end());
+        }
+    }
+    const uint32_t directory = static_cast<uint32_t>(zip.size());
+    for (size_t i = 0; i < parts.size(); ++i) {
+        const TestZipPart& part = parts[i];
+        const bool deflate = !part.deflated.empty();
+        putU32(zip, 0x02014B50u);
+        putU16(zip, 20);
+        putU16(zip, 20);
+        putU16(zip, part.flags);
+        putU16(zip, deflate ? 8 : 0);
+        putU16(zip, 0);
+        putU16(zip, 0x21);
+        putU32(zip, testCrc32(part.content) ^ part.crcFlip);
+        putU32(zip, static_cast<uint32_t>(deflate ? part.deflated.size() : part.content.size()));
+        putU32(zip, static_cast<uint32_t>(part.content.size()));
+        putU16(zip, static_cast<uint32_t>(part.name.size()));
+        putU16(zip, 0);
+        putU16(zip, 0);
+        putU16(zip, 0);
+        putU16(zip, 0);
+        putU32(zip, 0);
+        putU32(zip, offsets[i]);
+        zip.insert(zip.end(), part.name.begin(), part.name.end());
+    }
+    const uint32_t size = static_cast<uint32_t>(zip.size()) - directory;
+    putU32(zip, 0x06054B50u);
+    putU16(zip, 0);
+    putU16(zip, 0);
+    putU16(zip, static_cast<uint32_t>(parts.size()));
+    putU16(zip, static_cast<uint32_t>(parts.size()));
+    putU32(zip, size);
+    putU32(zip, directory);
+    putU16(zip, 0);
+    return zip;
+}
+
+const char* const kTestContentTypes =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+        "<Default Extension=\"rels\" "
+        "ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+        "<Default Extension=\"model\" "
+        "ContentType=\"application/vnd.ms-package.3dmanufacturing-3dmodel+xml\"/></Types>";
+
+std::string testRels(const char* target) {
+    return std::string("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                       "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/"
+                       "relationships\"><Relationship Target=\"")
+           + target
+           + "\" Id=\"rel0\" "
+             "Type=\"http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel\"/>"
+             "</Relationships>";
+}
+
+std::vector<uint8_t> testThreeMf(const std::string& model, uint32_t crcFlip = 0,
+                                 uint16_t flags = 0) {
+    std::vector<TestZipPart> parts(3);
+    parts[0].name = "[Content_Types].xml";
+    parts[0].content = kTestContentTypes;
+    parts[1].name = "_rels/.rels";
+    parts[1].content = testRels("/3D/3dmodel.model");
+    parts[2].name = "3D/3dmodel.model";
+    parts[2].content = model;
+    parts[2].crcFlip = crcFlip;
+    parts[2].flags = flags;
+    return testZip(parts);
+}
+
+// A 10 mm tetrahedron, wound outward, with whatever the case varies.
+std::string tetraModel(const std::string& modelAttributes, const std::string& itemAttributes,
+                       const std::string& extraResources = "",
+                       const std::string& lastTriangle = "v1=\"1\" v2=\"2\" v3=\"3\"") {
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model " + modelAttributes
+           + " xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">"
+             "<resources><object id=\"1\" type=\"model\"><mesh><vertices>"
+             "<vertex x=\"0\" y=\"0\" z=\"0\"/><vertex x=\"10\" y=\"0\" z=\"0\"/>"
+             "<vertex x=\"0\" y=\"10\" z=\"0\"/><vertex x=\"0\" y=\"0\" z=\"10\"/>"
+             "</vertices><triangles><triangle v1=\"0\" v2=\"2\" v3=\"1\"/>"
+             "<triangle v1=\"0\" v2=\"1\" v3=\"3\"/><triangle v1=\"0\" v2=\"3\" v3=\"2\"/>"
+             "<triangle "
+           + lastTriangle + "/></triangles></mesh></object>" + extraResources
+           + "</resources><build><item " + itemAttributes + "/></build></model>\n";
+}
+
+// A STORED block then a FIXED-Huffman block with greedy LZ77 matches that
+// reach back into the stored block -- RFC 1951 3.2.4 and 3.2.6, written out by
+// hand. Huffman codes go most-significant bit first, everything else least.
+class TestBitWriter {
+public:
+    std::vector<uint8_t> bytes;
+    void bit(uint32_t value) {
+        if (count_ == 0) bytes.push_back(0);
+        bytes.back() = static_cast<uint8_t>(bytes.back() | ((value & 1u) << count_));
+        count_ = (count_ + 1) & 7;
+    }
+    void lsb(uint32_t value, int n) { for (int i = 0; i < n; ++i) bit(value >> i); }
+    void code(uint32_t value, int n) { for (int i = n - 1; i >= 0; --i) bit(value >> i); }
+    void align() { count_ = 0; }
+
+private:
+    int count_ = 0;
+};
+
+void fixedSymbol(TestBitWriter& w, int symbol) {
+    if (symbol <= 143) w.code(0x30u + symbol, 8);
+    else if (symbol <= 255) w.code(0x190u + (symbol - 144), 9);
+    else if (symbol <= 279) w.code(static_cast<uint32_t>(symbol - 256), 7);
+    else w.code(0xC0u + (symbol - 280), 8);
+}
+
+std::vector<uint8_t> testDeflateStoredThenFixed(const std::string& data) {
+    static const int kLenBase[29] = {3,  4,  5,  6,  7,  8,  9,  10, 11,  13,  15,  17,  19,  23, 27,
+                                     31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
+    static const int kLenExtra[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2,
+                                      2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
+    static const int kDistBase[30] = {1,    2,    3,    4,    5,    7,     9,     13,    17,  25,
+                                      33,   49,   65,   97,   129,  193,   257,   385,   513, 769,
+                                      1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577};
+    static const int kDistExtra[30] = {0, 0, 0, 0, 1, 1, 2, 2,  3,  3,  4,  4,  5,  5,  6,
+                                       6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
+    TestBitWriter w;
+    const size_t storedLength = data.size() / 3 < 60000 ? data.size() / 3 : 60000;
+    w.lsb(0, 1);  // not final
+    w.lsb(0, 2);  // stored
+    w.align();
+    w.bytes.push_back(static_cast<uint8_t>(storedLength & 0xFF));
+    w.bytes.push_back(static_cast<uint8_t>(storedLength >> 8));
+    w.bytes.push_back(static_cast<uint8_t>(~storedLength & 0xFF));
+    w.bytes.push_back(static_cast<uint8_t>((~storedLength >> 8) & 0xFF));
+    w.bytes.insert(w.bytes.end(), data.begin(), data.begin() + storedLength);
+    w.lsb(1, 1);  // final
+    w.lsb(1, 2);  // fixed Huffman
+    size_t i = storedLength;
+    while (i < data.size()) {
+        size_t bestLength = 0;
+        size_t bestDistance = 0;
+        const size_t from = i > 1024 ? i - 1024 : 0;
+        for (size_t candidate = from; candidate < i; ++candidate) {
+            size_t length = 0;
+            while (length < 258 && i + length < data.size()
+                   && data[candidate + length] == data[i + length]) {
+                ++length;
+            }
+            if (length > bestLength) {
+                bestLength = length;
+                bestDistance = i - candidate;
+            }
+        }
+        if (bestLength < 3) {
+            fixedSymbol(w, static_cast<unsigned char>(data[i]));
+            ++i;
+            continue;
+        }
+        int l = 28;
+        while (kLenBase[l] > static_cast<int>(bestLength)) --l;
+        fixedSymbol(w, 257 + l);
+        w.lsb(static_cast<uint32_t>(bestLength - kLenBase[l]), kLenExtra[l]);
+        int d = 29;
+        while (kDistBase[d] > static_cast<int>(bestDistance)) --d;
+        w.code(static_cast<uint32_t>(d), 5);
+        w.lsb(static_cast<uint32_t>(bestDistance - kDistBase[d]), kDistExtra[d]);
+        i += bestLength;
+    }
+    fixedSymbol(w, 256);
+    return w.bytes;
+}
+
+// The content of a STORED entry, found by walking local headers -- enough for
+// reading back a file this suite's own writer, or the exporter, produced.
+bool storedZipEntry(const std::vector<uint8_t>& zip, const std::string& name, std::string* out) {
+    size_t at = 0;
+    while (at + 30 <= zip.size() && zip[at] == 'P' && zip[at + 1] == 'K' && zip[at + 2] == 3
+           && zip[at + 3] == 4) {
+        const auto u16 = [&zip](size_t p) { return static_cast<size_t>(zip[p] | (zip[p + 1] << 8)); };
+        const size_t size = u16(at + 18) | (u16(at + 20) << 16);
+        const size_t nameLength = u16(at + 26);
+        const size_t extra = u16(at + 28);
+        const size_t data = at + 30 + nameLength + extra;
+        if (data + size > zip.size()) return false;
+        if (std::string(zip.begin() + at + 30, zip.begin() + at + 30 + nameLength) == name) {
+            out->assign(zip.begin() + data, zip.begin() + data + size);
+            return true;
+        }
+        at = data + size;
+    }
+    return false;
+}
+
+// The model zlib deflated (raw, level 9) into ONE dynamic-Huffman block: a
+// centimetre tetrahedron placed by a scaling, translating item, and a second
+// object built of two components of it.
+const char* const kDynamicModelText =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<model unit=\"centimeter\" xml:lang=\"en-US\" "
+        "xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">\n"
+        " <resources>\n"
+        "  <object id=\"1\" type=\"model\" name=\"Tetra\">\n"
+        "   <mesh>\n"
+        "    <vertices>\n"
+        "     <vertex x=\"0\" y=\"0\" z=\"0\"/>\n"
+        "     <vertex x=\"1\" y=\"0\" z=\"0\"/>\n"
+        "     <vertex x=\"0\" y=\"1\" z=\"0\"/>\n"
+        "     <vertex x=\"0\" y=\"0\" z=\"1\"/>\n"
+        "    </vertices>\n"
+        "    <triangles>\n"
+        "     <triangle v1=\"0\" v2=\"2\" v3=\"1\"/>\n"
+        "     <triangle v1=\"0\" v2=\"1\" v3=\"3\"/>\n"
+        "     <triangle v1=\"0\" v2=\"3\" v3=\"2\"/>\n"
+        "     <triangle v1=\"1\" v2=\"2\" v3=\"3\"/>\n"
+        "    </triangles>\n"
+        "   </mesh>\n"
+        "  </object>\n"
+        "  <object id=\"2\" type=\"model\" name=\"Pair\">\n"
+        "   <components>\n"
+        "    <component objectid=\"1\"/>\n"
+        "    <component objectid=\"1\" transform=\"1 0 0 0 1 0 0 0 1 5 0 0\"/>\n"
+        "   </components>\n"
+        "  </object>\n"
+        " </resources>\n"
+        " <build>\n"
+        "  <item objectid=\"1\" transform=\"2 0 0 0 1 0 0 0 1 10 0 5\"/>\n"
+        "  <item objectid=\"2\"/>\n"
+        " </build>\n"
+        "</model>\n";
+
+const uint8_t kDynamicModelDeflated[] = {
+        0x85, 0x52, 0xDB, 0x6E, 0xC2, 0x30, 0x0C, 0x7D, 0xE7, 0x2B, 0xAC, 0xBC, 0x43, 0x9A, 0x54, 0x48,
+        0x13, 0x4A, 0xE1, 0x6D, 0xCF, 0x93, 0x06, 0x1F, 0x50, 0x52, 0x33, 0x32, 0x35, 0x09, 0x4A, 0x52,
+        0x04, 0xFB, 0xFA, 0xA5, 0x4D, 0x3B, 0x28, 0xB7, 0xA9, 0x52, 0x1C, 0xBB, 0xC7, 0xC7, 0x27, 0xB6,
+        0xC5, 0xEA, 0xA4, 0x6B, 0x38, 0xA2, 0xF3, 0xCA, 0x9A, 0x82, 0xB0, 0x59, 0x46, 0x00, 0x8D, 0xB4,
+        0x95, 0x32, 0x5F, 0x05, 0xD9, 0xAC, 0xDF, 0xA7, 0x6F, 0x64, 0xB5, 0x9C, 0x08, 0x6D, 0x2B, 0xAC,
+        0xA1, 0x31, 0x2A, 0x14, 0x44, 0xA2, 0x09, 0x4A, 0x63, 0x40, 0x47, 0x20, 0x66, 0x2F, 0xEA, 0xB2,
+        0xC5, 0xA2, 0x99, 0x6E, 0x3E, 0xBB, 0x80, 0xF1, 0x05, 0xD9, 0x87, 0x70, 0x58, 0x50, 0xEA, 0xE5,
+        0x1E, 0x75, 0xE9, 0x67, 0x5A, 0x49, 0x67, 0xBD, 0xDD, 0x85, 0x99, 0xB4, 0x9A, 0xE6, 0x95, 0x2E,
+        0x4D, 0xB3, 0x2B, 0x65, 0x68, 0x5C, 0xAC, 0x43, 0xA5, 0x75, 0x48, 0x79, 0xC6, 0xE6, 0x34, 0xE3,
+        0x64, 0x39, 0x01, 0xE1, 0xD0, 0xDB, 0xC6, 0x49, 0xF4, 0xD1, 0x01, 0x61, 0xB7, 0xDF, 0x28, 0x03,
+        0xA8, 0x2A, 0xEA, 0x23, 0x10, 0xCE, 0x07, 0x2C, 0x48, 0xA7, 0x87, 0x80, 0x29, 0x75, 0x74, 0xD6,
+        0x18, 0x5C, 0xD9, 0x26, 0x46, 0xB0, 0x46, 0xBF, 0xEF, 0x6E, 0x20, 0xE2, 0xAB, 0x82, 0xEA, 0x49,
+        0x06, 0x1F, 0x4F, 0x70, 0x2A, 0x48, 0x7C, 0xE4, 0xB9, 0x3B, 0x7F, 0xDA, 0x93, 0xDE, 0x03, 0xD8,
+        0x7F, 0x80, 0xC4, 0xC0, 0xFE, 0x03, 0x24, 0x06, 0x36, 0x00, 0x04, 0x1D, 0x6B, 0x12, 0xC1, 0xA9,
+        0xD8, 0xBC, 0xFA, 0xA2, 0x71, 0x08, 0xC0, 0x91, 0x75, 0xD9, 0x47, 0x5E, 0x10, 0x1E, 0x4D, 0x7E,
+        0xC5, 0xF2, 0x18, 0xC5, 0x12, 0x2A, 0x7F, 0x8D, 0xCA, 0x13, 0x8A, 0x3F, 0x41, 0xB1, 0x51, 0xC5,
+        0xFC, 0xA2, 0x7B, 0x2C, 0x54, 0xD0, 0xA1, 0xCD, 0x82, 0xA6, 0xE9, 0xDC, 0x0E, 0x8A, 0x3F, 0x1C,
+        0xD4, 0x47, 0xA9, 0x5C, 0x3F, 0xA7, 0xB8, 0x07, 0x07, 0x6B, 0xE2, 0x26, 0x0D, 0xAD, 0xF8, 0x0B,
+        0x40, 0xA2, 0x49, 0xE3, 0xA6, 0x2F, 0xFF, 0x42, 0x9C, 0xBB, 0xF1, 0x3B, 0xEB, 0x74, 0xF4, 0x20,
+        0xEB, 0xBE, 0x8B, 0x9D, 0xB7, 0xB6, 0x67, 0x10, 0x74, 0x5C, 0xF0, 0x4A, 0xB7, 0xA0, 0xD7, 0xEB,
+        0x26, 0xB6, 0x8D, 0xAA, 0xAB, 0x0E, 0xA2, 0x02, 0xEA, 0xA7, 0xE5, 0xF8, 0x5D, 0x39, 0xD6, 0x9A,
+        0x79, 0xAA, 0x77, 0x9B, 0x9B, 0xFA, 0x2D, 0x68, 0x4F, 0x1E, 0xFB, 0xD7, 0xB6, 0x65, 0x39, 0xF9,
+        0x05,
+};
+
+void runMeshImportFormatChecks(Recorder& r) {
+    // -----------------------------------------------------------------------
+    // Round trips: the exporter's four new formats, read back
+    // -----------------------------------------------------------------------
+    Fixture f;
+    f.setBox(f.first(), 2.0, 1.0, 0.5);
+    f.place(f.first(), placement(1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0));
+    f.first().setName("P\xC3\xA0rt #1 & co");
+    SceneObject& second = f.scene.addBody();
+    f.setBox(second, 1.0, 1.0, 1.0);
+    f.place(second, placement(-2.0, 0.0, 0.0, 0.0, 45.0, 0.0, 1.0, 1.0, 1.0));
+    MeshExportSnapshot snapshot;
+    const bool captured = captureMeshExportSnapshot(f.scene, ProjectKind::Construction, &snapshot)
+                          == GlbExportStatus::Ok;
+    const WorldBounds expected = boundsOf(snapshot);
+    const std::vector<uint8_t> glb = exportSceneAs(MeshExportFormat::Glb, f.scene,
+                                                   ProjectKind::Construction);
+    const std::vector<uint8_t> stl = exportSceneAs(MeshExportFormat::Stl, f.scene,
+                                                   ProjectKind::Construction);
+    const std::vector<uint8_t> obj = exportSceneAs(MeshExportFormat::Obj, f.scene,
+                                                   ProjectKind::Construction);
+    const std::vector<uint8_t> ply = exportSceneAs(MeshExportFormat::Ply, f.scene,
+                                                   ProjectKind::Construction);
+    const std::vector<uint8_t> threeMf = exportSceneAs(MeshExportFormat::ThreeMf, f.scene,
+                                                       ProjectKind::Construction);
+    r.check("MIM_01_every_exported_format_is_detected_from_its_bytes_alone",
+            detectBytes(glb) == MeshImportFormat::Glb && detectBytes(stl) == MeshImportFormat::Stl
+                    && detectBytes(obj) == MeshImportFormat::Obj
+                    && detectBytes(ply) == MeshImportFormat::Ply
+                    && detectBytes(threeMf) == MeshImportFormat::ThreeMf);
+
+    ParsedGlbScene fromStl, fromObj, fromPly, from3mf;
+    const bool stlOk = importBytes(stl, MeshImportFormat::Stl, &fromStl) == GlbImportStatus::Ok;
+    const bool objOk = importBytes(obj, MeshImportFormat::Obj, &fromObj) == GlbImportStatus::Ok;
+    const bool plyOk = importBytes(ply, MeshImportFormat::Ply, &fromPly) == GlbImportStatus::Ok;
+    const bool threeMfOk =
+            importBytes(threeMf, MeshImportFormat::ThreeMf, &from3mf) == GlbImportStatus::Ok;
+    r.check("MIM_02_stl_reads_back_as_one_welded_mesh_in_metres",
+            captured && stlOk && fromStl.meshes.size() == 1 && fromStl.totalTriangles() == 24
+                    && fromStl.totalVertices() == 16 && boundsMatch(boundsOf(fromStl), expected));
+    r.check("MIM_03_obj_reads_back_one_named_mesh_per_object_in_metres",
+            objOk && fromObj.meshes.size() == 2 && fromObj.meshes[0].name == "P_rt _1 & co"
+                    && fromObj.meshes[0].triangleCount() == 12
+                    && fromObj.meshes[1].triangleCount() == 12
+                    && fromObj.meshes[0].vertexCount() == 8 && fromObj.meshes[1].vertexCount() == 8
+                    && boundsMatch(boundsOf(fromObj), expected));
+    r.check("MIM_04_ply_reads_back_every_triangle_in_metres",
+            plyOk && fromPly.meshes.size() == 1 && fromPly.totalTriangles() == 24
+                    && boundsMatch(boundsOf(fromPly), expected));
+    r.check("MIM_05_3mf_reads_back_one_named_mesh_per_item_from_millimetres",
+            threeMfOk && from3mf.meshes.size() == 2
+                    && from3mf.meshes[0].name == "P\xC3\xA0rt #1 & co"
+                    && from3mf.meshes[0].triangleCount() == 12
+                    && from3mf.meshes[1].vertexCount() == 8
+                    && boundsMatch(boundsOf(from3mf), expected));
+    {
+        ParsedGlbScene viaSwitch;
+        ParsedGlbScene direct;
+        const bool both = importBytes(glb, MeshImportFormat::Glb, &viaSwitch) == GlbImportStatus::Ok
+                          && importGlb(glb.data(), glb.size(), &direct) == GlbImportStatus::Ok;
+        r.check("MIM_06_glb_goes_through_the_one_glb_parser_unchanged",
+                both && viaSwitch.meshes.size() == direct.meshes.size()
+                        && viaSwitch.meshes[0].positions == direct.meshes[0].positions
+                        && viaSwitch.meshes[0].normals == direct.meshes[0].normals
+                        && viaSwitch.meshes[0].indices == direct.meshes[0].indices);
+    }
+    r.check("MIM_07_every_reader_generates_unit_normals_at_the_identity_with_no_translation",
+            parsedLikeTheContract(fromStl) && parsedLikeTheContract(fromObj)
+                    && parsedLikeTheContract(fromPly) && parsedLikeTheContract(from3mf));
+    {
+        bool committed = true;
+        for (const ParsedGlbScene* parsed : {&fromStl, &fromObj, &fromPly, &from3mf}) {
+            Fixture g;
+            ImportCommitReport report;
+            committed = committed
+                        && commitImportedGlbScene(*parsed, g.scene, g.history, &report)
+                                   == ImportCommitStatus::Ok
+                        && report.objects == static_cast<int>(parsed->meshes.size());
+        }
+        r.check("MIM_08_every_reader_output_commits_as_durable_imported_bodies", committed);
+    }
+
+    // -----------------------------------------------------------------------
+    // Detection
+    // -----------------------------------------------------------------------
+    {
+        std::vector<uint8_t> solidHeader = stl;
+        std::memcpy(solidHeader.data(), "solid ForgeShape", 16);
+        ParsedGlbScene parsed;
+        r.check("MIM_09_a_binary_stl_whose_header_says_solid_is_still_read_as_binary",
+                detectBytes(solidHeader) == MeshImportFormat::Stl
+                        && importBytes(solidHeader, MeshImportFormat::Stl, &parsed)
+                                   == GlbImportStatus::Ok
+                        && parsed.totalTriangles() == 24);
+        const std::vector<uint8_t> junk = bytesOf("not a mesh at all\n\x01\x02");
+        ParsedGlbScene none;
+        r.check("MIM_10_unknown_bytes_are_unknown_and_a_hint_only_names_the_reader_that_refuses",
+                detectBytes(junk) == MeshImportFormat::Unknown
+                        && detectBytes(junk, ".stl") == MeshImportFormat::Stl
+                        && detectBytes(junk, "3MF") == MeshImportFormat::ThreeMf
+                        && detectBytes(stl, ".obj") == MeshImportFormat::Stl
+                        && importBytes(junk, MeshImportFormat::Unknown, &none)
+                                   == GlbImportStatus::UnknownFormat
+                        && importBytes(junk, MeshImportFormat::Stl, &none)
+                                   == GlbImportStatus::TruncatedFile
+                        && std::string(meshImportFormatName(MeshImportFormat::ThreeMf)) == "3mf");
+    }
+
+    // -----------------------------------------------------------------------
+    // Refusals, each by its own name
+    // -----------------------------------------------------------------------
+    {
+        bool noData = true;
+        const uint8_t one = 0;
+        for (int k = 0; k < kMeshImportFormatCount; ++k) {
+            ParsedGlbScene parsed;
+            const MeshImportFormat format = static_cast<MeshImportFormat>(k);
+            noData = noData && importMeshFile(nullptr, 0, format, &parsed) == GlbImportStatus::NoData
+                     && importMeshFile(&one, 0, format, &parsed) == GlbImportStatus::NoData;
+        }
+        r.check("MIM_11_empty_input_is_NoData_for_every_format", noData);
+    }
+    {
+        const std::vector<uint8_t> truncated(stl.begin(), stl.end() - 10);
+        ParsedGlbScene parsed;
+        r.check("MIM_12_a_truncated_binary_stl_is_TruncatedFile",
+                importBytes(truncated, MeshImportFormat::Stl, &parsed)
+                                == GlbImportStatus::TruncatedFile
+                        && detectBytes(truncated, ".stl") == MeshImportFormat::Stl);
+    }
+    {
+        const std::string vertices = "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\n";
+        ParsedGlbScene parsed;
+        r.check("MIM_13_an_obj_face_naming_a_missing_vertex_or_normal_is_IndexOutOfRange",
+                importText(vertices + "f 1 2 4\n", MeshImportFormat::Obj, &parsed)
+                                == GlbImportStatus::IndexOutOfRange
+                        && importText(vertices + "f 1 2 0\n", MeshImportFormat::Obj, &parsed)
+                                   == GlbImportStatus::IndexOutOfRange
+                        && importText(vertices + "f -4 1 2\n", MeshImportFormat::Obj, &parsed)
+                                   == GlbImportStatus::IndexOutOfRange
+                        && importText(vertices + "f 1//2 2//2 3//2\n", MeshImportFormat::Obj,
+                                      &parsed)
+                                   == GlbImportStatus::IndexOutOfRange);
+    }
+    {
+        ParsedGlbScene parsed;
+        r.check("MIM_14_a_ply_with_an_unknown_format_version_or_type_is_UnsupportedPlyFormat",
+                importText("ply\nformat binary_middle_endian 1.0\nend_header\n",
+                           MeshImportFormat::Ply, &parsed)
+                                == GlbImportStatus::UnsupportedPlyFormat
+                        && importText("ply\nformat ascii 2.0\nend_header\n", MeshImportFormat::Ply,
+                                      &parsed)
+                                   == GlbImportStatus::UnsupportedPlyFormat
+                        && importText("ply\nformat ascii 1.0\nelement vertex 1\n"
+                                      "property quad x\nend_header\n",
+                                      MeshImportFormat::Ply, &parsed)
+                                   == GlbImportStatus::UnsupportedPlyFormat);
+    }
+    const std::string goodTetra = tetraModel("unit=\"millimeter\"", "objectid=\"1\"");
+    {
+        ParsedGlbScene parsed;
+        r.check("MIM_15_a_zip_entry_whose_bytes_break_its_crc_is_ZipChecksumMismatch",
+                importBytes(testThreeMf(goodTetra), MeshImportFormat::ThreeMf, &parsed)
+                                == GlbImportStatus::Ok
+                        && importBytes(testThreeMf(goodTetra, 0x1u), MeshImportFormat::ThreeMf,
+                                       &parsed)
+                                   == GlbImportStatus::ZipChecksumMismatch);
+    }
+    {
+        std::vector<TestZipPart> noModel(2);
+        noModel[0].name = "[Content_Types].xml";
+        noModel[0].content = kTestContentTypes;
+        noModel[1].name = "Metadata/notes.txt";
+        noModel[1].content = "no model here";
+        std::vector<TestZipPart> danglingTarget(3);
+        danglingTarget[0] = noModel[0];
+        danglingTarget[1].name = "_rels/.rels";
+        danglingTarget[1].content = testRels("/3D/elsewhere.model");
+        danglingTarget[2].name = "3D/3dmodel.model";
+        danglingTarget[2].content = goodTetra;
+        ParsedGlbScene parsed;
+        r.check("MIM_16_a_zip_with_no_3mf_model_part_is_MissingModelPart",
+                importBytes(testZip(noModel), MeshImportFormat::ThreeMf, &parsed)
+                                == GlbImportStatus::MissingModelPart
+                        && importBytes(testZip(danglingTarget), MeshImportFormat::ThreeMf, &parsed)
+                                   == GlbImportStatus::MissingModelPart);
+    }
+    {
+        ParsedGlbScene parsed;
+        r.check("MIM_17_obj_free_form_and_unknown_statements_are_UnsupportedObjFeature",
+                importText("v 0 0 0\ncstype bspline\n", MeshImportFormat::Obj, &parsed)
+                                == GlbImportStatus::UnsupportedObjFeature
+                        && importText("v 0 0 0\nfrobnicate 1\n", MeshImportFormat::Obj, &parsed)
+                                   == GlbImportStatus::UnsupportedObjFeature);
+    }
+    {
+        const std::string beamRequired = tetraModel(
+                "unit=\"millimeter\" requiredextensions=\"b\" "
+                "xmlns:b=\"http://schemas.microsoft.com/3dmanufacturing/beamlattice/2017/02\"",
+                "objectid=\"1\"");
+        const std::string parsec = tetraModel("unit=\"parsec\"", "objectid=\"1\"");
+        const std::string otherPart = tetraModel(
+                "unit=\"millimeter\" "
+                "xmlns:p=\"http://schemas.microsoft.com/3dmanufacturing/production/2015/06\"",
+                "objectid=\"2\"",
+                "<object id=\"2\"><components><component objectid=\"1\" "
+                "p:path=\"/3D/other.model\"/></components></object>");
+        std::vector<TestZipPart> badDeflate(1);
+        badDeflate[0].name = "3D/3dmodel.model";
+        badDeflate[0].content = "x";
+        badDeflate[0].deflated = {0x07};  // BFINAL with the reserved block type 3
+        ParsedGlbScene parsed;
+        r.check("MIM_18_3mf_and_zip_features_this_reader_does_not_implement_are_refused_by_name",
+                importBytes(testThreeMf(beamRequired), MeshImportFormat::ThreeMf, &parsed)
+                                == GlbImportStatus::UnsupportedThreeMfFeature
+                        && importBytes(testThreeMf(parsec), MeshImportFormat::ThreeMf, &parsed)
+                                   == GlbImportStatus::UnsupportedThreeMfFeature
+                        && importBytes(testThreeMf(otherPart), MeshImportFormat::ThreeMf, &parsed)
+                                   == GlbImportStatus::UnsupportedThreeMfFeature
+                        && importBytes(testThreeMf(goodTetra, 0, 0x0001u),
+                                       MeshImportFormat::ThreeMf, &parsed)
+                                   == GlbImportStatus::UnsupportedZipFeature
+                        && importBytes(testZip(badDeflate), MeshImportFormat::ThreeMf, &parsed)
+                                   == GlbImportStatus::MalformedZip);
+    }
+    {
+        ParsedGlbScene parsed;
+        r.check("MIM_19_a_3mf_part_with_a_dtd_or_unbalanced_tags_is_MalformedXml",
+                importBytes(testThreeMf("<?xml version=\"1.0\"?><!DOCTYPE model [<!ENTITY a "
+                                        "\"b\">]><model/>"),
+                            MeshImportFormat::ThreeMf, &parsed)
+                                == GlbImportStatus::MalformedXml
+                        && importBytes(testThreeMf("<model xmlns=\"http://schemas.microsoft.com/"
+                                                   "3dmanufacturing/core/2015/02\"><resources>"
+                                                   "</model>"),
+                                       MeshImportFormat::ThreeMf, &parsed)
+                                   == GlbImportStatus::MalformedXml);
+    }
+    {
+        const std::string unknownObject = tetraModel("unit=\"millimeter\"", "objectid=\"9\"");
+        const std::string badTriangle = tetraModel("unit=\"millimeter\"", "objectid=\"1\"", "",
+                                                   "v1=\"1\" v2=\"2\" v3=\"9\"");
+        const std::string cycle = tetraModel(
+                "unit=\"millimeter\"", "objectid=\"2\"",
+                "<object id=\"2\"><components><component objectid=\"3\"/></components></object>"
+                "<object id=\"3\"><components><component objectid=\"2\"/></components></object>");
+        ParsedGlbScene parsed;
+        r.check("MIM_20_a_3mf_whose_references_disagree_is_refused_by_name",
+                importBytes(testThreeMf(unknownObject), MeshImportFormat::ThreeMf, &parsed)
+                                == GlbImportStatus::MalformedThreeMf
+                        && importBytes(testThreeMf(badTriangle), MeshImportFormat::ThreeMf, &parsed)
+                                   == GlbImportStatus::IndexOutOfRange
+                        && importBytes(testThreeMf(cycle), MeshImportFormat::ThreeMf, &parsed)
+                                   == GlbImportStatus::MalformedThreeMf);
+    }
+    {
+        ParsedGlbScene parsed;
+        const std::string infiniteVertex = tetraModel("unit=\"millimeter\"", "objectid=\"1\"")
+                                                   .replace(goodTetra.find("x=\"10\""), 6,
+                                                            "x=\"inf\"");
+        r.check("MIM_21_a_non_finite_coordinate_is_NonFiniteValue_in_every_format",
+                importText("v nan 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", MeshImportFormat::Obj,
+                           &parsed)
+                                == GlbImportStatus::NonFiniteValue
+                        && importText("solid s\nfacet normal 0 0 1\nouter loop\nvertex inf 0 0\n"
+                                      "vertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid s\n",
+                                      MeshImportFormat::Stl, &parsed)
+                                   == GlbImportStatus::NonFiniteValue
+                        && importText("ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\n"
+                                      "property float y\nproperty float z\nelement face 1\n"
+                                      "property list uchar int vertex_indices\nend_header\n"
+                                      "1e999 0 0\n3 0 0 0\n",
+                                      MeshImportFormat::Ply, &parsed)
+                                   == GlbImportStatus::NonFiniteValue
+                        && importBytes(testThreeMf(infiniteVertex), MeshImportFormat::ThreeMf,
+                                       &parsed)
+                                   == GlbImportStatus::NonFiniteValue);
+    }
+    {
+        ParsedGlbScene parsed;
+        parsed.meshes.resize(1);
+        parsed.meshes[0].name = "sentinel";
+        const bool refused = importText("v 0 0 0\nf 1 2 3\n", MeshImportFormat::Obj, &parsed)
+                             == GlbImportStatus::IndexOutOfRange;
+        r.check("MIM_22_a_refusal_leaves_the_caller_s_scene_untouched",
+                refused && parsed.meshes.size() == 1 && parsed.meshes[0].name == "sentinel");
+    }
+
+    // -----------------------------------------------------------------------
+    // What each format's reader understands
+    // -----------------------------------------------------------------------
+    {
+        const std::string fans =
+                "# fans\n"
+                "o Quad\n"
+                "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
+                "vt 0 0\nvn 0 0 1\n"
+                "f -4/1/1 -3/1/1 -2/1/1 -1/1/1\n"
+                "o Pentagon\n"
+                "v 0 0 1\nv 1 0 1\nv 1.5 0.5 1\nv 1 1 1\nv 0 1 1\n"
+                "f 5//1 6//1 7//1 8//1 9//1\n"
+                "g ignored because this file has objects\n"
+                "f -5 -3 -1 # a trailing comment\n";
+        ParsedGlbScene parsed;
+        const bool ok = importText(fans, MeshImportFormat::Obj, &parsed) == GlbImportStatus::Ok;
+        r.check("MIM_23_obj_negative_indices_resolve_and_polygons_fan_triangulate",
+                ok && parsed.meshes.size() == 2 && parsed.meshes[0].name == "Quad"
+                        && parsed.meshes[0].indices == std::vector<uint32_t>({0, 1, 2, 0, 2, 3})
+                        && parsed.meshes[1].name == "Pentagon"
+                        && parsed.meshes[1].vertexCount() == 5
+                        && parsed.meshes[1].triangleCount() == 4);
+        const std::string groups =
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\ng first\nf 1 2 3\ng second\nf 3 1 2\n";
+        ParsedGlbScene byGroup;
+        ParsedGlbScene byObject;
+        const bool grouped =
+                importText(groups, MeshImportFormat::Obj, &byGroup) == GlbImportStatus::Ok;
+        const bool objected = importText("o only\n" + groups, MeshImportFormat::Obj, &byObject)
+                              == GlbImportStatus::Ok;
+        r.check("MIM_24_obj_splits_by_g_only_in_a_file_with_no_o",
+                grouped && byGroup.meshes.size() == 2 && byGroup.meshes[0].name == "first"
+                        && byGroup.meshes[1].name == "second"
+                        && byGroup.meshes[1].vertexCount() == 3 && objected
+                        && byObject.meshes.size() == 1 && byObject.meshes[0].name == "only"
+                        && byObject.meshes[0].triangleCount() == 2);
+    }
+    {
+        const std::string facet = " facet normal 0 0 0\n  outer loop\n";
+        const std::string end = "  endloop\n endfacet\n";
+        const std::string ascii =
+                "solid first part\n" + facet
+                + "   vertex 0 0 0\n   vertex 0 10 0\n   vertex 10 0 0\n" + end + facet
+                + "   vertex 0 0 0\n   vertex 10 0 0\n   vertex 0 0 10\n" + end + facet
+                + "   vertex 0 0 0\n   vertex 0 0 10\n   vertex 0 10 0\n" + end + facet
+                + "   vertex 10 0 0\n   vertex 0 10 0\n   vertex 0 0 10\n" + end
+                + "endsolid first part\nsolid second\n" + facet
+                + "   vertex 0 0 0\n   vertex 0 0 0\n   vertex 5 0 0\n" + end + facet
+                + "   vertex 0 0 0\n   vertex 5 0 0\n   vertex 5 5 0\n" + end + facet
+                + "   vertex 0 0 0\n   vertex 5 5 0\n   vertex 0 5 0\n" + end + "endsolid second\n";
+        ParsedGlbScene parsed;
+        const bool ok = detectBytes(bytesOf(ascii)) == MeshImportFormat::Stl
+                        && importText(ascii, MeshImportFormat::Stl, &parsed) == GlbImportStatus::Ok;
+        r.check("MIM_25_ascii_stl_reads_every_solid_by_name_in_millimetres_dropping_slivers",
+                ok && parsed.meshes.size() == 2 && parsed.meshes[0].name == "first part"
+                        && parsed.meshes[0].vertexCount() == 4
+                        && parsed.meshes[0].triangleCount() == 4
+                        && boundsAre(boundsOf(parsed.meshes[0]), 0, 0, 0, 0.01f, 0.01f, 0.01f)
+                        && parsed.meshes[1].name == "second"
+                        && parsed.meshes[1].vertexCount() == 4
+                        && parsed.meshes[1].triangleCount() == 2);
+    }
+    {
+        const std::string asciiPly =
+                "ply\nformat ascii 1.0\ncomment a quad with a colour and an extra element\n"
+                "element vertex 4\nproperty float x\nproperty float y\nproperty float z\n"
+                "property uchar red\nelement face 1\nproperty list uchar int vertex_indices\n"
+                "element extra 2\nproperty list uchar float values\nend_header\n"
+                "0 0 0 255\n1 0 0 0\n1 1 0 0\n0 1 0 0\n4 0 1 2 3\n2 0.5 0.25\n0\n";
+        std::string bigHeader =
+                "ply\nformat binary_big_endian 1.0\nelement vertex 4\nproperty double x\n"
+                "property double y\nproperty double z\nproperty uchar red\nelement face 1\n"
+                "property list uchar int vertex_indices\nelement extra 2\n"
+                "property list uchar float values\nend_header\n";
+        std::vector<uint8_t> big(bigHeader.begin(), bigHeader.end());
+        const auto putBig = [&big](const void* value, size_t size) {
+            const uint8_t* bytes = static_cast<const uint8_t*>(value);
+            for (size_t i = size; i-- > 0;) big.push_back(bytes[i]);  // host is little-endian
+        };
+        const double corners[4][3] = {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}};
+        for (const auto& corner : corners) {
+            for (double value : corner) putBig(&value, sizeof(value));
+            big.push_back(7);
+        }
+        big.push_back(4);
+        for (int32_t index : {0, 1, 2, 3}) putBig(&index, sizeof(index));
+        big.push_back(2);
+        for (float value : {0.5f, 0.25f}) putBig(&value, sizeof(value));
+        big.push_back(0);
+        ParsedGlbScene fromAscii;
+        ParsedGlbScene fromBig;
+        const bool asciiOk =
+                importText(asciiPly, MeshImportFormat::Ply, &fromAscii) == GlbImportStatus::Ok;
+        r.check("MIM_26_ascii_ply_skips_other_properties_and_elements_and_fans_a_quad",
+                asciiOk && fromAscii.meshes.size() == 1 && fromAscii.meshes[0].vertexCount() == 4
+                        && fromAscii.meshes[0].indices
+                                   == std::vector<uint32_t>({0, 1, 2, 0, 2, 3}));
+        r.check("MIM_27_big_endian_ply_of_doubles_reads_the_same_mesh",
+                importBytes(big, MeshImportFormat::Ply, &fromBig) == GlbImportStatus::Ok
+                        && asciiOk && fromBig.meshes.size() == 1
+                        && fromBig.meshes[0].positions == fromAscii.meshes[0].positions
+                        && fromBig.meshes[0].indices == fromAscii.meshes[0].indices);
+    }
+    {
+        std::vector<TestZipPart> parts(3);
+        parts[0].name = "[Content_Types].xml";
+        parts[0].content = kTestContentTypes;
+        parts[1].name = "_rels/.rels";
+        parts[1].content = testRels("/3D/3dmodel.model");
+        parts[2].name = "3D/3dmodel.model";
+        parts[2].content = kDynamicModelText;
+        parts[2].deflated.assign(kDynamicModelDeflated,
+                                 kDynamicModelDeflated + sizeof(kDynamicModelDeflated));
+        ParsedGlbScene parsed;
+        const bool ok = (kDynamicModelDeflated[0] & 0x06u) == 0x04u  // BTYPE 2: dynamic
+                        && importBytes(testZip(parts), MeshImportFormat::ThreeMf, &parsed)
+                                   == GlbImportStatus::Ok;
+        r.check("MIM_28_a_dynamic_huffman_deflated_3mf_model_decodes", ok && parsed.meshes.size() == 2);
+        r.check("MIM_29_3mf_unit_and_item_transform_are_baked_into_world_metres",
+                ok && parsed.meshes.size() == 2 && parsed.meshes[0].name == "Tetra"
+                        && parsed.meshes[0].vertexCount() == 4
+                        && boundsAre(boundsOf(parsed.meshes[0]), 0.10f, 0.0f, 0.05f, 0.12f, 0.01f,
+                                     0.06f));
+        r.check("MIM_30_3mf_components_resolve_and_merge_into_their_item_s_one_mesh",
+                ok && parsed.meshes.size() == 2 && parsed.meshes[1].name == "Pair"
+                        && parsed.meshes[1].vertexCount() == 8
+                        && parsed.meshes[1].triangleCount() == 8
+                        && boundsAre(boundsOf(parsed.meshes[1]), 0.0f, 0.0f, 0.0f, 0.06f, 0.01f,
+                                     0.01f));
+    }
+    {
+        std::string model;
+        const bool found = storedZipEntry(threeMf, "3D/3dmodel.model", &model);
+        std::vector<TestZipPart> parts(3);
+        parts[0].name = "[Content_Types].xml";
+        parts[0].content = kTestContentTypes;
+        parts[1].name = "_rels/.rels";
+        parts[1].content = testRels("/3D/3dmodel.model");
+        parts[2].name = "3D/3dmodel.model";
+        parts[2].content = model;
+        parts[2].deflated = testDeflateStoredThenFixed(model);
+        ParsedGlbScene parsed;
+        const bool ok = found && threeMfOk
+                        && importBytes(testZip(parts), MeshImportFormat::ThreeMf, &parsed)
+                                   == GlbImportStatus::Ok;
+        bool same = ok && parsed.meshes.size() == from3mf.meshes.size();
+        for (size_t m = 0; same && m < parsed.meshes.size(); ++m) {
+            same = parsed.meshes[m].positions == from3mf.meshes[m].positions
+                   && parsed.meshes[m].indices == from3mf.meshes[m].indices;
+        }
+        r.check("MIM_31_stored_and_fixed_huffman_blocks_decode_to_the_same_model",
+                same && testCrc32("123456789") == 0xCBF43926u
+                        && parts[2].deflated.size() < model.size());
+    }
+    {
+        ParsedGlbScene parsed;
+        const bool ok = importBytes(testThreeMf(tetraModel("unit=\"millimeter\"",
+                                                           "objectid=\"1\" transform=\"-1 0 0 0 1 "
+                                                           "0 0 0 1 0 0 0\"")),
+                                    MeshImportFormat::ThreeMf, &parsed)
+                        == GlbImportStatus::Ok;
+        bool outward = ok && parsed.meshes.size() == 1 && parsed.meshes[0].vertexCount() == 4;
+        if (outward) {
+            const ParsedGlbMesh& mesh = parsed.meshes[0];
+            Vec3 centroid{0.0f, 0.0f, 0.0f};
+            for (uint32_t v = 0; v < 4; ++v) centroid = vec3Add(centroid, mesh.worldPosition(v));
+            centroid = vec3Scale(centroid, 0.25f);
+            for (uint32_t v = 0; v < 4; ++v) {
+                outward = outward
+                          && vec3Dot(mesh.worldNormal(v), vec3Sub(mesh.worldPosition(v), centroid))
+                                     > 0.0f;
+            }
+            outward = outward && boundsAre(boundsOf(mesh), -0.01f, 0, 0, 0, 0.01f, 0.01f);
+        }
+        r.check("MIM_32_a_mirroring_3mf_item_keeps_the_outside_outside", outward);
+    }
+    r.check("MIM_33_the_appended_refusals_keep_stable_ordinals_names_and_categories",
+            static_cast<int>(GlbImportStatus::TooLarge) == 36
+                    && static_cast<int>(GlbImportStatus::UnknownFormat) == 37
+                    && static_cast<int>(GlbImportStatus::MalformedThreeMf) == 48
+                    && std::string(glbImportStatusName(GlbImportStatus::UnknownFormat))
+                               == "UnknownFormat"
+                    && std::string(glbImportStatusName(GlbImportStatus::ZipChecksumMismatch))
+                               == "ZipChecksumMismatch"
+                    && std::string(glbImportStatusName(GlbImportStatus::MalformedThreeMf))
+                               == "MalformedThreeMf"
+                    && glbImportStatusCategory(GlbImportStatus::UnsupportedPlyFormat)
+                               == GlbImportCategory::Unsupported
+                    && glbImportStatusCategory(GlbImportStatus::MalformedZip)
+                               == GlbImportCategory::Unreadable
+                    && glbImportStatusCategory(GlbImportStatus::MalformedThreeMf)
+                               == GlbImportCategory::Inconsistent);
 }
 
 }  // namespace
@@ -1761,6 +2660,7 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
     }
 
     runImportSketchGuardChecks(r);
+    runMeshImportFormatChecks(r);
     // The device recorder for this suite holds 256 (`kMaxImportChecks`): a
     // check past it would be dropped silently and the suite still report OK.
     r.check("IMPSK_gltf_import_suite_fits_its_256_slot_device_recorder", r.n + 1 <= 256);

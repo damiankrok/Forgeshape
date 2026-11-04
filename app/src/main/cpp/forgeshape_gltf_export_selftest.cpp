@@ -12,6 +12,7 @@
 #include "forgeshape_gltf_export.h"
 #include "forgeshape_history.h"
 #include "forgeshape_math.h"
+#include "forgeshape_mesh_export.h"
 #include "forgeshape_project_document.h"
 #include "forgeshape_project_state.h"
 #include "forgeshape_render_mesh.h"
@@ -730,6 +731,213 @@ void runFaceSupportedExportChecks(Recorder& r) {
     // (`kMaxGltfChecks`, forgeshape_jni.cpp): a suite at the cap would drop
     // the next check silently, so the suite says so while it still can.
     r.check("FSP_gltf_export_suite_fits_its_128_slot_device_recorder", r.n + 1 <= 128);
+}
+
+// ---------------------------------------------------------------------------
+// MESH-EXPORT: STL, OBJ, PLY and 3MF from the GLB snapshot
+// ---------------------------------------------------------------------------
+//
+// Read back here with this file's own little-endian helpers and text scans,
+// never through the writer. The full round trip -- every format parsed back
+// to the same triangles and bounds -- lives in the import suite, where the
+// independent readers are.
+
+size_t countLinesStartingWith(const std::string& text, const char* prefix) {
+    const size_t n = std::strlen(prefix);
+    size_t count = 0;
+    size_t at = 0;
+    while (at < text.size()) {
+        if (text.compare(at, n, prefix) == 0) ++count;
+        const size_t next = text.find('\n', at);
+        if (next == std::string::npos) break;
+        at = next + 1;
+    }
+    return count;
+}
+
+uint16_t readU16(const std::vector<uint8_t>& bytes, size_t offset) {
+    return offset + 2 > bytes.size()
+                   ? 0
+                   : static_cast<uint16_t>(bytes[offset] | (bytes[offset + 1] << 8));
+}
+
+void runMeshExportFormatChecks(Recorder& r) {
+    Fixture f;
+    f.setBox(f.first(), 2.0, 1.0, 0.5);
+    f.place(f.first(), placement(1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0));
+    f.first().setName("P\xC3\xA0rt #1 & co");  // a UTF-8 name with OBJ and XML syntax in it
+    SceneObject& second = f.scene.addBody();
+    f.setBox(second, 1.0, 1.0, 1.0);
+    f.place(second, placement(-2.0, 0.0, 0.0, 0.0, 45.0, 0.0, 1.0, 1.0, 1.0));
+
+    std::vector<uint8_t> files[kMeshExportFormatCount];
+    bool allOk = true;
+    bool deterministic = true;
+    for (int k = 0; k < kMeshExportFormatCount; ++k) {
+        const MeshExportFormat format = static_cast<MeshExportFormat>(k);
+        GlbExportStatus why = GlbExportStatus::NothingToExport;
+        files[k] = exportSceneAs(format, f.scene, ProjectKind::Construction, &why);
+        allOk = allOk && why == GlbExportStatus::Ok && !files[k].empty();
+        deterministic = deterministic
+                        && files[k] == exportSceneAs(format, f.scene, ProjectKind::Construction);
+    }
+    r.check("MEX_01_every_format_exports_and_two_exports_are_byte_identical",
+            allOk && deterministic);
+    r.check("MEX_01_glb_through_the_format_switch_is_the_glb_export_unchanged",
+            files[0] == exportSceneAsGlb(f.scene, ProjectKind::Construction)
+                    && std::string(meshExportFormatName(MeshExportFormat::ThreeMf)) == "3mf"
+                    && std::string(meshExportFileExtension(MeshExportFormat::Stl)) == ".stl"
+                    && std::string(meshExportMimeType(MeshExportFormat::ThreeMf)) == "model/3mf");
+
+    MeshExportSnapshot snapshot;
+    const bool captured =
+            captureMeshExportSnapshot(f.scene, ProjectKind::Construction, &snapshot)
+                    == GlbExportStatus::Ok
+            && snapshot.objects.size() == 2;
+
+    // STL: the binary layout, and millimetres.
+    const std::vector<uint8_t>& stl = files[1];
+    const uint32_t facets = readU32(stl, 80);
+    bool unitNormals = stl.size() == 84u + 50ull * facets;
+    for (uint32_t t = 0; unitNormals && t < facets; ++t) {
+        const size_t at = 84u + static_cast<size_t>(t) * 50u;
+        const double nx = readF32(stl, at), ny = readF32(stl, at + 4), nz = readF32(stl, at + 8);
+        unitNormals = std::fabs(std::sqrt(nx * nx + ny * ny + nz * nz) - 1.0) < 1e-5;
+    }
+    r.check("MEX_02_stl_is_84_plus_50n_bytes_with_a_ForgeShape_header_and_unit_facet_normals",
+            unitNormals && facets == 24u && std::memcmp(stl.data(), "ForgeShape", 10) == 0
+                    && stl[10] == 0 && stl[79] == 0);
+    bool firstInMillimetres = captured;
+    if (captured) {
+        const MeshExportObject& body = snapshot.objects[0];
+        for (int k = 0; k < 3 && firstInMillimetres; ++k) {
+            for (int c = 0; c < 3; ++c) {
+                const float expected = static_cast<float>(
+                        static_cast<double>(body.positions[body.indices[k] * 3u + c]) * 1000.0);
+                firstInMillimetres = firstInMillimetres
+                                     && readF32(stl, 84u + 12u + k * 12u + c * 4u) == expected;
+            }
+        }
+    }
+    float lo[3] = {1e30f, 1e30f, 1e30f};
+    float hi[3] = {-1e30f, -1e30f, -1e30f};
+    for (uint32_t t = 0; t < 12u && stl.size() >= 84u + 50u * 12u; ++t) {
+        for (int k = 0; k < 3; ++k) {
+            for (int c = 0; c < 3; ++c) {
+                const float v = readF32(stl, 84u + t * 50u + 12u + k * 12u + c * 4u);
+                lo[c] = std::fmin(lo[c], v);
+                hi[c] = std::fmax(hi[c], v);
+            }
+        }
+    }
+    // The 2 x 1 x 0.5 m box at (1, 2, 3) m spans 0..2000, 1500..2500 and
+    // 2750..3250 mm.
+    r.check("MEX_03_stl_writes_the_first_body_in_millimetres_where_it_stands",
+            firstInMillimetres && std::fabs(lo[0]) < 1e-3f && std::fabs(hi[0] - 2000.0f) < 1e-3f
+                    && std::fabs(lo[1] - 1500.0f) < 1e-3f && std::fabs(hi[1] - 2500.0f) < 1e-3f
+                    && std::fabs(lo[2] - 2750.0f) < 1e-3f && std::fabs(hi[2] - 3250.0f) < 1e-3f);
+
+    // OBJ: metres, welded positions, normals once each, one `o` per body.
+    const std::string obj(files[2].begin(), files[2].end());
+    size_t distinctNormals = 0;
+    for (const MeshExportObject& body : snapshot.objects) {
+        std::vector<std::string> seen;
+        for (size_t v = 0; v + 2 < body.normals.size(); v += 3) {
+            std::string key;
+            for (int c = 0; c < 3; ++c) {
+                const float n = body.normals[v + c] == 0.0f ? 0.0f : body.normals[v + c];
+                key.append(reinterpret_cast<const char*>(&n), sizeof(n));
+            }
+            bool known = false;
+            for (const std::string& s : seen) known = known || s == key;
+            if (!known) seen.push_back(key);
+        }
+        distinctNormals += seen.size();
+    }
+    r.check("MEX_04_obj_has_one_object_per_body_welded_positions_and_no_locale_comma",
+            captured && obj.compare(0, 13, "# ForgeShape\n") == 0
+                    && countLinesStartingWith(obj, "o ") == 2
+                    && countLinesStartingWith(obj, "v ") == 16
+                    && countLinesStartingWith(obj, "vn ") == distinctNormals
+                    && countLinesStartingWith(obj, "f ") == 24 && obj.find(',') == std::string::npos
+                    && obj.find("\no P_rt _1 & co\n") != std::string::npos
+                    && obj.find("\no Body_") != std::string::npos);
+
+    // PLY: one binary little-endian mesh holding every body's vertices.
+    const std::string plyText(files[3].begin(), files[3].end());
+    const std::string plyLead = "ply\nformat binary_little_endian 1.0\ncomment ForgeShape\n";
+    const size_t headerEnd = plyText.find("end_header\n");
+    const size_t plyVertices = captured ? (snapshot.objects[0].positions.size()
+                                           + snapshot.objects[1].positions.size()) / 3u
+                                        : 0;
+    r.check("MEX_05_ply_is_one_binary_little_endian_mesh_of_every_body",
+            captured && headerEnd != std::string::npos
+                    && plyText.compare(0, plyLead.size(), plyLead) == 0
+                    && plyText.find("element vertex " + std::to_string(plyVertices) + "\n")
+                               < headerEnd
+                    && plyText.find("element face 24\n") < headerEnd
+                    && files[3].size() == headerEnd + 11u + plyVertices * 24u + 24u * 13u);
+
+    // 3MF: a STORED ZIP, the three parts, millimetres, welded vertices.
+    const std::vector<uint8_t>& zip = files[4];
+    const std::string zipText(zip.begin(), zip.end());
+    r.check("MEX_06_3mf_is_a_stored_zip_of_three_parts_with_welded_millimetre_vertices",
+            readU32(zip, 0) == 0x04034B50u && readU16(zip, 8) == 0
+                    && zipText.find("[Content_Types].xml") != std::string::npos
+                    && zipText.find("_rels/.rels") != std::string::npos
+                    && zipText.find("3D/3dmodel.model") != std::string::npos
+                    && zipText.find("unit=\"millimeter\"") != std::string::npos
+                    && countOccurrences(zipText, "<vertex ") == 16
+                    && countOccurrences(zipText, "<triangle ") == 24
+                    && countOccurrences(zipText, "<item objectid=") == 2
+                    && zipText.find("name=\"P\xC3\xA0rt #1 &amp; co\"") != std::string::npos);
+
+    // The printable triangle set, on a hand-built snapshot: a triangle, its
+    // reverse twin through a coincident copy of a vertex, a degenerate one and
+    // the same facet restated from another corner -- one facet in every file.
+    MeshExportSnapshot hand;
+    MeshExportObject sheet;
+    sheet.objectId = 7;
+    sheet.name = "sheet";
+    sheet.positions = {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0};
+    sheet.normals = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, -1};
+    sheet.indices = {0, 1, 2, 3, 2, 1, 0, 1, 1, 1, 2, 0};
+    hand.objects.push_back(sheet);
+    const std::vector<uint8_t> oneStl = encodeMeshExportStl(hand);
+    const std::vector<uint8_t> oneObj = encodeMeshExportObj(hand);
+    const std::vector<uint8_t> onePly = encodeMeshExportPly(hand);
+    const std::vector<uint8_t> one3mf = encodeMeshExportThreeMf(hand);
+    const std::string oneObjText(oneObj.begin(), oneObj.end());
+    const std::string onePlyText(onePly.begin(), onePly.end());
+    const std::string one3mfText(one3mf.begin(), one3mf.end());
+    r.check("MEX_07_reverse_twins_restated_facets_and_degenerate_triangles_are_not_written",
+            readU32(oneStl, 80) == 1u && oneStl.size() == 134u
+                    && countLinesStartingWith(oneObjText, "f ") == 1
+                    && onePlyText.find("element face 1\n") != std::string::npos
+                    && countOccurrences(one3mfText, "<triangle ") == 1);
+
+    MeshExportSnapshot nonFinite = hand;
+    nonFinite.objects[0].positions[4] = std::nanf("");
+    MeshExportSnapshot arealess = hand;
+    arealess.objects[0].indices = {0, 1, 1, 0, 3, 2, 2, 0, 3};
+    bool refusals = true;
+    for (int k = 1; k < kMeshExportFormatCount; ++k) {
+        const auto encode = [k](const MeshExportSnapshot& s, GlbExportStatus* why) {
+            switch (k) {
+                case 1: return encodeMeshExportStl(s, why);
+                case 2: return encodeMeshExportObj(s, why);
+                case 3: return encodeMeshExportPly(s, why);
+                default: return encodeMeshExportThreeMf(s, why);
+            }
+        };
+        GlbExportStatus a = GlbExportStatus::Ok, b = GlbExportStatus::Ok, c = GlbExportStatus::Ok;
+        const bool empty = encode(nonFinite, &a).empty() && encode(MeshExportSnapshot{}, &b).empty()
+                           && encode(arealess, &c).empty();
+        refusals = refusals && empty && a == GlbExportStatus::NonFiniteValue
+                   && b == GlbExportStatus::NothingToExport && c == GlbExportStatus::InvalidMesh;
+    }
+    r.check("MEX_07_a_non_finite_empty_or_arealess_snapshot_is_refused_by_name_with_no_bytes",
+            refusals);
 }
 }  // namespace
 
@@ -1630,6 +1838,9 @@ int runGltfExportSelfTests(GltfExportSelfTestResult* out, int maxOut) {
         r.check("FSR1C_C1_11_and_is_not_empty", !once.empty());
     }
 
+    // Before the face-supported checks, whose last check is the device
+    // recorder's capacity and must stay last to count everything.
+    runMeshExportFormatChecks(r);
     runFaceSupportedExportChecks(r);
 
     return r.n;
