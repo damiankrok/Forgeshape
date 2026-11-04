@@ -1794,6 +1794,55 @@ void DesktopEditor::buildProperties(const Rect& panel) {
                 report("That placement was refused", true);
             }
         }
+        // Arrange (`PLACEMENT-PRECISION-R1`): one act each, one Undo each.
+        const float half = (w - ui.px(6)) * 0.5f;
+        const auto arrange = [&](fs::EditorArrangeAct act, const char* done) {
+            fs::EditorArrangeStatus status;
+            {
+                std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+                status = fs::editorArrangeActiveBody(act);
+            }
+            if (status == fs::EditorArrangeStatus::Ok) report(done);
+            else if (status == fs::EditorArrangeStatus::NothingToDo) report("The body is already there");
+            else report("This body cannot be moved", true);
+        };
+        if (ui.button("arrange_drop", {x, y, half, fieldH}, "Drop to ground", "")) {
+            arrange(fs::EditorArrangeAct::DropToGround, "Standing on the ground");
+        }
+        if (ui.button("arrange_center", {x + half + ui.px(6), y, half, fieldH}, "Centre on origin", "")) {
+            arrange(fs::EditorArrangeAct::CenterOnOrigin, "Centred on the origin");
+        }
+        y += fieldH + ui.px(8);
+        // Snap while dragging: session presentation read at each drag's start.
+        fs::GizmoSnap snap;
+        {
+            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+            snap = fs::gizmoSnapSettings();
+        }
+        const auto snapRow = [&](const char* name, const char* prefix, const double* steps,
+                                 const char* const* labels, int count, bool move) {
+            ui.label({x, y, labelW, fieldH}, name, theme_.textPrimary, theme_.smallFontSize);
+            const float cellW = (w - labelW) / count - ui.px(3);
+            for (int i = 0; i < count; ++i) {
+                const double current = move ? snap.translationMeters : snap.rotationDegrees;
+                const Rect cell{x + labelW + i * (cellW + ui.px(3)), y, cellW, fieldH};
+                if (ui.listRow(std::string(prefix) + std::to_string(i), cell, labels[i], "",
+                               current == steps[i])) {
+                    std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+                    (move ? fs::gizmoSnapSettings().translationMeters
+                          : fs::gizmoSnapSettings().rotationDegrees) = steps[i];
+                }
+            }
+            y += fieldH + ui.px(6);
+        };
+        static const double moveSteps[5] = {0.0, 0.001, 0.01, 0.1, 1.0};
+        static const char* moveLabels[5] = {"Off", "1 mm", "1 cm", "10 cm", "1 m"};
+        static const double turnSteps[4] = {0.0, 5.0, 15.0, 45.0};
+        static const char* turnLabels[4] = {"Off", "5\xC2\xB0", "15\xC2\xB0", "45\xC2\xB0"};
+        ui.label({x, y, w, ui.px(18)}, "Snap while dragging", theme_.textSecondary, theme_.smallFontSize);
+        y += ui.px(20);
+        snapRow("Move", "snap_move_", moveSteps, moveLabels, 5, true);
+        snapRow("Rotate", "snap_turn_", turnSteps, turnLabels, 4, false);
     }
     // Shape: a Construction primitive's own parameters.
     if (hasPrimitive) {

@@ -43,6 +43,22 @@ final class ConstructionPlacementEditorView extends LinearLayout
     private static final int[] SCALE_LABELS = {R.string.label_scale_x, R.string.label_scale_y,
             R.string.label_scale_z};
 
+    /** The move snap steps in metres (0 is off) and their chips. */
+    static final double[] MOVE_SNAP_STEPS = {0.0, 0.001, 0.01, 0.1, 1.0};
+    private static final int[] MOVE_SNAP_IDS = {R.id.snap_move_off, R.id.snap_move_1mm,
+            R.id.snap_move_1cm, R.id.snap_move_10cm, R.id.snap_move_1m};
+    private static final int[] MOVE_SNAP_LABELS = {R.string.snap_off, R.string.snap_1mm,
+            R.string.snap_1cm, R.string.snap_10cm, R.string.snap_1m};
+    /** The rotate snap steps in degrees (0 is off) and their chips. */
+    static final double[] ROTATE_SNAP_STEPS = {0.0, 5.0, 15.0, 45.0};
+    private static final int[] ROTATE_SNAP_IDS = {R.id.snap_rotate_off, R.id.snap_rotate_5,
+            R.id.snap_rotate_15, R.id.snap_rotate_45};
+    private static final int[] ROTATE_SNAP_LABELS = {R.string.snap_off, R.string.snap_5deg,
+            R.string.snap_15deg, R.string.snap_45deg};
+    private final TextView[] moveSnapChips = new TextView[MOVE_SNAP_STEPS.length];
+    private final TextView[] rotateSnapChips = new TextView[ROTATE_SNAP_STEPS.length];
+    private final double[] snap = new double[2];
+
     private final InspectorHost host;
     private final TextView positionSectionLabel;
     private final NumericPropertyRow[] positionFields = new NumericPropertyRow[3];
@@ -112,6 +128,39 @@ final class ConstructionPlacementEditorView extends LinearLayout
                 EditorControlStyles.rowParams(sectionGap));
         addView(buildRow(context, scaleFields, SCALE_IDS, SCALE_LABELS),
                 EditorControlStyles.rowParams(smallGap));
+
+        // Arrange (`PLACEMENT-PRECISION-R1`): one act each, measured from the
+        // body's own drawn bounds and written through the same guarded
+        // placement door as Apply, so each is one Undo.
+        addView(EditorControlStyles.sectionLabel(context,
+                context.getString(R.string.section_arrange)),
+                EditorControlStyles.rowParams(sectionGap));
+        final LinearLayout arrangeRow = new LinearLayout(context);
+        arrangeRow.setOrientation(HORIZONTAL);
+        final TextView drop = EditorControlStyles.secondaryActionChip(context,
+                R.id.arrange_drop_to_ground, context.getString(R.string.arrange_drop_to_ground));
+        drop.setOnClickListener(v -> onArrange(NativeViewport.ARRANGE_DROP_TO_GROUND));
+        final TextView centre = EditorControlStyles.secondaryActionChip(context,
+                R.id.arrange_center_on_origin, context.getString(R.string.arrange_center_on_origin));
+        centre.setOnClickListener(v -> onArrange(NativeViewport.ARRANGE_CENTER_ON_ORIGIN));
+        arrangeRow.addView(drop, EditorControlStyles.evenShare(0));
+        arrangeRow.addView(centre, EditorControlStyles.evenShare(smallGap));
+        addView(arrangeRow, EditorControlStyles.rowParams(smallGap));
+
+        // Snap while dragging: the handles land on round numbers. Session
+        // presentation, read by native at each drag's start.
+        addView(EditorControlStyles.sectionLabel(context,
+                context.getString(R.string.section_snap)),
+                EditorControlStyles.rowParams(sectionGap));
+        addView(EditorControlStyles.fieldLabel(context, context.getString(R.string.snap_move)),
+                EditorControlStyles.rowParams(smallGap));
+        addView(buildSnapRow(context, moveSnapChips, MOVE_SNAP_IDS, MOVE_SNAP_LABELS, true),
+                EditorControlStyles.rowParams(smallGap));
+        addView(EditorControlStyles.fieldLabel(context, context.getString(R.string.snap_rotate)),
+                EditorControlStyles.rowParams(smallGap));
+        addView(buildSnapRow(context, rotateSnapChips, ROTATE_SNAP_IDS, ROTATE_SNAP_LABELS, false),
+                EditorControlStyles.rowParams(smallGap));
+        showSnap();
 
         // Apply is NOT added to this stack. It is handed to the panel, which
         // pins it below the scrolling body — see commitControl(). In compact
@@ -242,6 +291,61 @@ final class ConstructionPlacementEditorView extends LinearLayout
      * <p>The shape is not part of this request and is never disturbed by it,
      * and a placement that lands publishes no mesh revision.
      */
+    private LinearLayout buildSnapRow(Context context, TextView[] out, int[] ids, int[] labels,
+                                      final boolean move) {
+        final LinearLayout row = new LinearLayout(context);
+        row.setOrientation(HORIZONTAL);
+        final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        for (int i = 0; i < ids.length; i++) {
+            final int index = i;
+            out[i] = EditorControlStyles.chip(context, ids[i], context.getString(labels[i]));
+            out[i].setOnClickListener(v -> {
+                NativeViewport.gizmoSnapState(snap);
+                if (move) {
+                    NativeViewport.setGizmoSnap(MOVE_SNAP_STEPS[index], snap[1]);
+                } else {
+                    NativeViewport.setGizmoSnap(snap[0], ROTATE_SNAP_STEPS[index]);
+                }
+                showSnap();
+            });
+            row.addView(out[i], EditorControlStyles.evenShare(i == 0 ? 0 : gap));
+        }
+        return row;
+    }
+
+    /** Marks the snap steps native holds; reads native, remembers nothing. */
+    private void showSnap() {
+        NativeViewport.gizmoSnapState(snap);
+        for (int i = 0; i < moveSnapChips.length; i++) {
+            EditorControlStyles.setChipActive(moveSnapChips[i], MOVE_SNAP_STEPS[i] == snap[0]);
+        }
+        for (int i = 0; i < rotateSnapChips.length; i++) {
+            EditorControlStyles.setChipActive(rotateSnapChips[i], ROTATE_SNAP_STEPS[i] == snap[1]);
+        }
+    }
+
+    private void onArrange(int act) {
+        final int status = NativeViewport.arrangeActiveBody(act);
+        final Context context = getContext();
+        switch (status) {
+            case NativeViewport.ARRANGE_OK:
+                host.onNativeStateChanged();
+                refreshFromNative();
+                host.showStatus(context.getString(act == NativeViewport.ARRANGE_DROP_TO_GROUND
+                        ? R.string.status_arranged_on_ground
+                        : R.string.status_arranged_on_origin), R.attr.fsTextSuccess);
+                break;
+            case NativeViewport.ARRANGE_NOTHING_TO_DO:
+                host.showStatus(context.getString(R.string.status_arrange_already_there),
+                        R.attr.fsTextSecondary);
+                break;
+            default:
+                host.showStatus(context.getString(R.string.status_arrange_refused),
+                        R.attr.fsTextError);
+                break;
+        }
+    }
+
     private void onApplyTransform() {
         final BigDecimal[] position = new BigDecimal[3];
         final BigDecimal[] rotation = new BigDecimal[3];

@@ -397,6 +397,45 @@ void runFaceSupportedGizmoChecks(Recorder& r) {
                         && dependent->transform().values().positionX == 0.0);
     }
 
+    // PLACEMENT-PRECISION-R1: a snapped Move lands on round coordinates, a
+    // step of 0 changes nothing, and the snap is frozen at pointer-down.
+    {
+        r.check("snap_rounds_to_the_nearest_step",
+                snapToStep(0.37, 0.25) == 0.25 && snapToStep(-0.38, 0.25) == -0.5
+                    && snapToStep(0.37, 0.0) == 0.37 && snapToStep(1.0, -1.0) == 1.0);
+        ConstructionScene scene{NoProjectTag{}};
+        ConstructionHistory history{scene};
+        GizmoSession gizmo{scene, history};
+        SceneObject* part = gizmoAddCad(scene, gizmoRectBody(2.0, 1.0, 3.0));
+        const bool built = part != nullptr && scene.setActiveBody(part->objectId());
+        if (built) {
+            TransformValues offset = part->transform().values();
+            offset.positionX = 0.137;
+            part->transform().setValues(offset);
+        }
+        gizmo.setActive(true);
+        gizmoSnapSettings().translationMeters = 0.25;
+        const GizmoSnapshot state = gizmo.snapshot(camera, kWidth, kHeight);
+        Vec3 grabWorld{};
+        float x = 0.0f, y = 0.0f;
+        const bool grabbed = built && state.visible
+                && gizmoHandleGrabPoint(state, GizmoHandle::AxisX, &grabWorld)
+                && projectWorldToScreen(camera, grabWorld, kWidth, kHeight, &x, &y)
+                && gizmo.beginDrag(4, camera, x, y, kWidth, kHeight);
+        // Changing the step mid-drag must not reach this drag.
+        gizmoSnapSettings().translationMeters = 0.0;
+        for (int step = 1; grabbed && step <= 10; ++step) {
+            gizmo.updateDrag(4, camera, x + 13.0f * step, y, kWidth, kHeight);
+        }
+        const bool committed = grabbed && gizmo.commitDrag();
+        const double landed = built ? part->transform().values().positionX : 0.0;
+        const double quarters = landed / 0.25;
+        r.check("snap_a_world_move_lands_on_a_multiple_of_the_step",
+                committed && std::fabs(quarters - std::round(quarters)) < 1e-9
+                    && std::fabs(landed - 0.137) > 0.2);
+        gizmoSnapSettings() = GizmoSnap{};
+    }
+
     // T04: an independent CAD body is still an ordinary transformable body.
     {
         ConstructionScene scene{NoProjectTag{}};

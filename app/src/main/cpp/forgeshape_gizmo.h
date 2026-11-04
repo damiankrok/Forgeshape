@@ -512,6 +512,28 @@ Meters quantizeGizmoTranslation(Meters raw);
 Degrees quantizeGizmoRotation(Degrees raw);
 ScaleFactor quantizeGizmoScale(ScaleFactor raw);
 
+// Snapping while dragging (`PLACEMENT-PRECISION-R1`, OWNER 2026-11-04: "arrange
+// the elements as precisely as in CAD"). A step of 0 is OFF and the quantizer is
+// then the identity, exactly as above. The step a drag uses is FROZEN at its
+// pointer-down with the basis, so changing it mid-drag cannot move the body.
+//
+//   * Move in WORLD space snaps the body's POSITION on each dragged axis to a
+//     multiple of the step (so it lands on round coordinates); in LOCAL space,
+//     where a world coordinate is not along the drag, it snaps the DISTANCE
+//     moved. Rotate snaps the turn to a multiple of its step in degrees.
+//   * Presentation, never truth: session-only, no `.forge` byte, no history
+//     step, no fingerprint; what a snapped drag writes is an ordinary value the
+//     typed editor could have written, through the same one apply.
+struct GizmoSnap {
+    double translationMeters = 0.0;  // 0 = off
+    double rotationDegrees = 0.0;    // 0 = off
+};
+// The process-scoped choice both shells write and every drag reads at its start.
+GizmoSnap& gizmoSnapSettings();
+// `raw` rounded to the nearest multiple of `step`; `raw` itself for a step that
+// is not a positive finite number. Ties round away from zero, deterministically.
+double snapToStep(double raw, double step);
+
 // The whole-placement modifier: the last thing between a solved target and the
 // authoritative apply. It receives the solved target, the placement the drag
 // started from, and what kind of drag this is, so an approved snap can consult
@@ -967,6 +989,8 @@ private:
     // one authoritative entry point. Returns whether anything actually changed.
     bool applyTarget(const TransformValues& values);
 
+    // The snapped displacement along basis direction `basisIndex` (see GizmoSnap).
+    double snappedMoveDelta(int basisIndex, double delta) const;
     bool applyMoveSample(const Ray& ray);
     bool applyRotateSample(const Ray& ray);
     bool applyScaleSample(float screenX, float screenY);
@@ -1001,6 +1025,8 @@ private:
     GizmoSpace dragSpace_ = GizmoSpace::World;
     Vec3 pivot_{0.0f, 0.0f, 0.0f};
     TransformValues startValues_{};
+    // The snap this drag uses, frozen at pointer-down (see GizmoSnap).
+    GizmoSnap dragSnap_{};
     // Frozen at the down. See GizmoBasis: in Local it is derived from a rotation
     // a rotate drag is about to change, so re-reading it would chase itself.
     GizmoBasis basis_{};

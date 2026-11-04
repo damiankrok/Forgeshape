@@ -55,6 +55,29 @@ final class NativeViewport {
     /** Appended (`WORKBENCH-UX-R1`): the true isometric, front right above. */
     static final int VIEW_ISOMETRIC = 7;
 
+    // --- precise arrangement (`PLACEMENT-PRECISION-R1`) --------------------
+
+    static final int ARRANGE_DROP_TO_GROUND = 0;
+    static final int ARRANGE_CENTER_ON_ORIGIN = 1;
+    static final int ARRANGE_OK = 0;
+    static final int ARRANGE_NOTHING_TO_DO = 1;
+    static final int ARRANGE_NO_BODY = 2;
+    static final int ARRANGE_REFUSED = 3;
+    static final int ARRANGE_WRONG_MODE = 4;
+
+    /**
+     * Moves the active body by its own drawn bounds: its lowest point onto
+     * y = 0, or its X/Z centre onto the origin. One Undo, through the guarded
+     * typed placement write; refused for a locked or face-supported body.
+     */
+    static native int arrangeActiveBody(int act);
+
+    /** The snap a handle drag uses from its next start: metres and degrees, 0 is off. */
+    static native void setGizmoSnap(double translationMeters, double rotationDegrees);
+
+    /** The snap native holds: [0] metres, [1] degrees (0 is off). */
+    static native void gizmoSnapState(double[] out);
+
     /**
      * Turns the camera to a standard view about its target, keeping the
      * projection and the span (WORKBENCH-RIBBON-R1). Top and Bottom are exact.

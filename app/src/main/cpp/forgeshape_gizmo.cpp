@@ -616,6 +616,18 @@ float unwrapAngleDelta(float radians) {
 // future approved Surface Snap or Grid Snap contract lands here instead of in
 // the gesture architecture, and there is no snapping, no setting and no
 // indicator until one is approved.
+GizmoSnap& gizmoSnapSettings() {
+    static GizmoSnap settings;
+    return settings;
+}
+
+double snapToStep(double raw, double step) {
+    if (!(step > 0.0) || !std::isfinite(step) || !std::isfinite(raw)) {
+        return raw;
+    }
+    return std::round(raw / step) * step;
+}
+
 Meters quantizeGizmoTranslation(Meters raw) { return raw; }
 Degrees quantizeGizmoRotation(Degrees raw) { return raw; }
 ScaleFactor quantizeGizmoScale(ScaleFactor raw) { return raw; }
@@ -1468,6 +1480,7 @@ bool GizmoSession::beginDrag(int32_t pointerId, const CameraSnapshot& camera, fl
     dragSpace_ = state.space;
     pivot_ = state.pivot;
     startValues_ = body->transform().values();
+    dragSnap_ = gizmoSnapSettings();
     basis_ = gizmoBasisFor(dragSpace_, startValues_);
     startRotation_ = rotationMatrixFromEuler(eulerOf(startValues_));
     lastEuler_ = eulerOf(startValues_);
@@ -1607,6 +1620,20 @@ bool GizmoSession::beginDrag(int32_t pointerId, const CameraSnapshot& camera, fl
     return true;
 }
 
+double GizmoSession::snappedMoveDelta(int basisIndex, double delta) const {
+    const double step = dragSnap_.translationMeters;
+    if (!(step > 0.0)) {
+        return delta;
+    }
+    if (dragSpace_ == GizmoSpace::World && basisIndex >= 0 && basisIndex < 3) {
+        // A world axis IS a coordinate: snap where the body lands, so it
+        // stands on round numbers whatever it started at.
+        const double start = transformPositionAt(startValues_, basisIndex);
+        return snapToStep(start + delta, step) - start;
+    }
+    return snapToStep(delta, step);
+}
+
 bool GizmoSession::applyMoveSample(const Ray& ray) {
     // The world displacement this sample asks for, accumulated in DOUBLE so a
     // world-axis drag writes the same exact number the typed editor would.
@@ -1630,8 +1657,10 @@ bool GizmoSession::applyMoveSample(const Ray& ray) {
         // moves the body off its plane" a property rather than a promise.
         const Vec3 first = basisDirection(a);
         const Vec3 second = basisDirection(b);
-        const double du = quantizeGizmoTranslation(static_cast<double>(vec3Dot(raw, first)));
-        const double dv = quantizeGizmoTranslation(static_cast<double>(vec3Dot(raw, second)));
+        double du = quantizeGizmoTranslation(static_cast<double>(vec3Dot(raw, first)));
+        double dv = quantizeGizmoTranslation(static_cast<double>(vec3Dot(raw, second)));
+        du = snappedMoveDelta(a, du);
+        dv = snappedMoveDelta(b, dv);
         if (!std::isfinite(du) || !std::isfinite(dv)) {
             return false;
         }
@@ -1649,7 +1678,8 @@ bool GizmoSession::applyMoveSample(const Ray& ray) {
             // is written at all.
             return false;
         }
-        const double delta = quantizeGizmoTranslation(static_cast<double>(t - startAxisT_));
+        const double delta = snappedMoveDelta(
+                axisIndex, quantizeGizmoTranslation(static_cast<double>(t - startAxisT_)));
         if (!std::isfinite(delta)) {
             return false;
         }
@@ -1700,8 +1730,9 @@ bool GizmoSession::applyRotateSample(const Ray& ray) {
     if (!std::isfinite(accumulatedAngle_)) {
         return false;
     }
-    const double delta =
-        quantizeGizmoRotation(static_cast<double>(radiansToDegrees(accumulatedAngle_)));
+    const double delta = snapToStep(
+        quantizeGizmoRotation(static_cast<double>(radiansToDegrees(accumulatedAngle_))),
+        dragSnap_.rotationDegrees);
     if (!std::isfinite(delta)) {
         return false;
     }

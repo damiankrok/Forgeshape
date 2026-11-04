@@ -135,6 +135,8 @@ final class GlobalToolbarView extends LinearLayout {
      * surface, exactly as it does the mode.
      */
     private boolean imported;
+    /** Whether the active body is a CAD Body: the way out of Sculpt names it. */
+    private boolean cadSource;
 
     /** The capsule padding the editing group wears while it holds more than one
      *  control, kept so the group can be un-drawn and drawn again. */
@@ -586,7 +588,8 @@ final class GlobalToolbarView extends LinearLayout {
     private void applyTransitionLabel(TextView transition, int budget) {
         final Context context = getContext();
         CharSequence label = context.getString(transition == backButton
-                ? (imported ? R.string.back_to_imported_mesh : R.string.back_to_construction)
+                ? (imported ? R.string.back_to_imported_mesh
+                        : cadSource ? R.string.back_to_cad_body : R.string.back_to_construction)
                 : transition == resumeButton
                         ? R.string.resume_sculpt
                         : transition == finishSketchButton
@@ -596,8 +599,9 @@ final class GlobalToolbarView extends LinearLayout {
                                         : transition == revolveButton
                                                 ? R.string.revolve : R.string.start_sculpting);
         if (transition == backButton && naturalWidth(transition, label) > budget) {
-            label = context.getString(imported
-                    ? R.string.back_to_imported_mesh_short : R.string.back_to_construction_short);
+            label = context.getString(imported ? R.string.back_to_imported_mesh_short
+                    : cadSource ? R.string.back_to_cad_body_short
+                            : R.string.back_to_construction_short);
         }
         if (!TextUtils.equals(transition.getText(), label)) {
             transition.setText(label);
@@ -907,8 +911,9 @@ final class GlobalToolbarView extends LinearLayout {
         // The full wording, always, whatever the row can DRAW: applyTransitionLabel
         // may shorten the label, and the description is what a screen reader
         // announces, so it must not move with the window.
-        backButton.setContentDescription(context.getString(
-                imported ? R.string.back_to_imported_mesh : R.string.back_to_construction));
+        backButton.setContentDescription(context.getString(imported
+                ? R.string.back_to_imported_mesh
+                : cad ? R.string.back_to_cad_body : R.string.back_to_construction));
         // Freeze and Resume are mutually exclusive by meaning: there is nothing
         // to resume until something has been frozen, and once there is, the
         // non-destructive act is the one that gets the toolbar slot. Neither is
@@ -916,15 +921,19 @@ final class GlobalToolbarView extends LinearLayout {
         // succeed is not drawn.
         // And not in the CAD bootstrap either: there is no body to sculpt yet.
         // And not over a hidden body (GUARD-2): the native entry refuses it.
-        freezeButton.setVisibility(!sculpting && !hasFrozenMesh && !cad && !freeform && !surface && !sketching
-                && !bootstrap && !activeHidden ? VISIBLE : GONE);
+        // A CAD Body may be sculpted (`CAD-SCULPT-R1`), except one whose
+        // placement is derived from another body's face: native refuses that
+        // one by name, so the control is not drawn over it.
+        final boolean cadNotSculptable = cad && NativeViewport.sceneActiveBodyIsFaceSupportedCad();
+        freezeButton.setVisibility(!sculpting && !hasFrozenMesh && !cadNotSculptable && !freeform
+                && !surface && !sketching && !bootstrap && !activeHidden ? VISIBLE : GONE);
         resumeButton.setVisibility(!sculpting && hasFrozenMesh && !sketching && !bootstrap
                 && !activeHidden ? VISIBLE : GONE);
         finishSketchButton.setVisibility(
                 sketchState == NativeViewport.SKETCH_EDITING ? VISIBLE : GONE);
         this.sketchState = sketchState;
         applySketchCommitVisibility();
-        if (this.imported != imported) {
+        if (this.imported != imported || this.cadSource != cad) {
             // The way out of Sculpt is labelled by the REPRESENTATION as well as
             // by the width the row can spare, and that label is written from the
             // measure pass. A visibility change already asks for one; a load
@@ -933,6 +942,7 @@ final class GlobalToolbarView extends LinearLayout {
             requestLayout();
         }
         this.imported = imported;
+        this.cadSource = cad;
         applyEditingComposition();
     }
 

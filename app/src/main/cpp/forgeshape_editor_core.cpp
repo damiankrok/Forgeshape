@@ -201,6 +201,47 @@ bool editorFitBody(ObjectId id) {
     return editorBodyBounds(id, &lo, &hi) && editorCamera().frameBounds(lo, hi);
 }
 
+EditorArrangeStatus editorArrangeActiveBody(EditorArrangeAct act) {
+    ConstructionScene& scene = constructionScene();
+    if (!scene.hasProject()) {
+        return EditorArrangeStatus::NoBody;
+    }
+    if (sculptSession().inSculptMode() || sketchSession().active()) {
+        return EditorArrangeStatus::WrongMode;
+    }
+    const ObjectId id = scene.activeBodyId();
+    Vec3 lo, hi;
+    if (!editorBodyBounds(id, &lo, &hi)) {
+        return EditorArrangeStatus::NoBody;
+    }
+    const SceneObject* body = scene.findBody(id);
+    if (body == nullptr) {
+        return EditorArrangeStatus::NoBody;
+    }
+    TransformValues values = body->transform().values();
+    const TransformValues before = values;
+    switch (act) {
+        case EditorArrangeAct::DropToGround:
+            values.positionY -= static_cast<double>(lo.y);
+            break;
+        case EditorArrangeAct::CenterOnOrigin:
+            values.positionX -= 0.5 * (static_cast<double>(lo.x) + static_cast<double>(hi.x));
+            values.positionZ -= 0.5 * (static_cast<double>(lo.z) + static_cast<double>(hi.z));
+            break;
+    }
+    if (values.positionX == before.positionX && values.positionY == before.positionY
+        && values.positionZ == before.positionZ) {
+        return EditorArrangeStatus::NothingToDo;
+    }
+    BodyPlacementRefusal refusal = BodyPlacementRefusal::None;
+    const TransformApplyResult applied =
+        applySceneBodyTransform(id, values, scene, constructionHistory(), &refusal);
+    if (refusal != BodyPlacementRefusal::None || applied.status != TransformUpdateStatus::Applied) {
+        return EditorArrangeStatus::Refused;
+    }
+    return EditorArrangeStatus::Ok;
+}
+
 // ---------------------------------------------------------------------------
 // The sketch acts both shells take (`DESKTOP-R2`)
 // ---------------------------------------------------------------------------

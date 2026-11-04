@@ -77,6 +77,24 @@ bool editorFitAll();
 bool editorBodyBounds(ObjectId id, Vec3* outMin, Vec3* outMax);
 bool editorFitBody(ObjectId id);
 
+// Arranging the active body exactly (`PLACEMENT-PRECISION-R1`): one act moves it
+// by the amount its own drawn bounds say, through THE guarded typed placement
+// write (`applySceneBodyTransform`), so it is one Undo and refused by name for a
+// locked or a face-supported body exactly as a typed value is. Only the position
+// changes; rotation and scale stand.
+enum class EditorArrangeAct : uint8_t {
+    DropToGround,    // the lowest point of the body onto y = 0
+    CenterOnOrigin,  // the body's X and Z centre onto the world origin
+};
+enum class EditorArrangeStatus : uint8_t {
+    Ok,
+    NothingToDo,   // already there: nothing is written and nothing recorded
+    NoBody,        // no project, or the active body draws nothing
+    Refused,       // locked, face-supported, or a non-finite result
+    WrongMode,     // in Sculpt or while a sketch is open
+};
+EditorArrangeStatus editorArrangeActiveBody(EditorArrangeAct act);
+
 // ---------------------------------------------------------------------------
 // The sketch acts both shells take (`DESKTOP-R2`)
 // ---------------------------------------------------------------------------

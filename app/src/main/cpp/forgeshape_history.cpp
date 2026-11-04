@@ -140,6 +140,28 @@ bool ConstructionHistory::commitEdit() {
         return false;
     }
 
+    // A CAD act that changed a body's chain while that body holds a Frozen
+    // Sculpt Mesh leaves the mesh standing and marks it stale (`CAD-SCULPT-R1`):
+    // the same rule a Construction edit follows, stated once here for every CAD
+    // commit path (Edit Sketch, Add, Cut, a hole, a finish, a pattern) at once.
+    for (const BodyConstructionState& now : after.bodies) {
+        if (now.representation != BodyRepresentation::Cad) {
+            continue;
+        }
+        for (const BodyConstructionState& was : editPreState_.bodies) {
+            if (was.objectId != now.objectId) {
+                continue;
+            }
+            if (was.representation == BodyRepresentation::Cad
+                && !sameCadBodyState(was.cad, now.cad)) {
+                if (SceneObject* body = scene_.findBody(now.objectId)) {
+                    body->frozenSculpt().markSourceStale();
+                }
+            }
+            break;
+        }
+    }
+
     HistoryEntry entry;
     entry.before = std::move(editPreState_);
     entry.after = std::move(after);

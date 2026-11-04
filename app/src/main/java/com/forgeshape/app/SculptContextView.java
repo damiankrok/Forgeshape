@@ -196,7 +196,9 @@ final class SculptContextView extends LinearLayout {
         // none; a label that pointed at something the user cannot see would be
         // worse than no label. See the string's own comment.
         resetSculpt.setText(context.getString(sourceIsImported()
-                ? R.string.reset_sculpt_from_imported_mesh : R.string.reset_sculpt_from_shape));
+                ? R.string.reset_sculpt_from_imported_mesh
+                : NativeViewport.sceneActiveBodyIsCad() ? R.string.reset_sculpt_from_cad_body
+                        : R.string.reset_sculpt_from_shape));
         resetSculpt.setContentDescription(resetSculpt.getText());
     }
 
@@ -252,7 +254,9 @@ final class SculptContextView extends LinearLayout {
                 // undone, because that is what the guard is about.
                 .setMessage(context.getString(sourceIsImported()
                         ? R.string.reset_sculpt_confirm_message_imported
-                        : R.string.reset_sculpt_confirm_message))
+                        : NativeViewport.sceneActiveBodyIsCad()
+                                ? R.string.reset_sculpt_confirm_message_cad
+                                : R.string.reset_sculpt_confirm_message))
                 // The button carries the verb, not "OK": the user should be
                 // able to read what pressing it does without re-reading the
                 // message above it.

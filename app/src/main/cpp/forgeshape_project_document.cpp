@@ -1236,12 +1236,13 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
                 return ProjectCodecStatus::UnresolvedReference;
             }
             sceneCursor = found + 1;
-            // A `SCUL` entry over a `CADB` body is REFUSED: `CAD-R0-A1A2`
-            // leaves CAD -> Sculpt out, so a file claiming a sculpt mesh for
-            // a CAD Body describes something this build cannot evaluate. The
-            // same fail-closed shape the pre-`IMPORT-01B` reader gave an
-            // `IMPT`+`SCUL` file.
-            if (covered[found] == 3 || covered[found] == 4 || covered[found] == 5) {
+            // A `SCUL` entry over a `CADB` body is VALID since `CAD-SCULPT-R1`
+            // (a CAD Body may be sculpted; its chain stays the truth and the
+            // entry is its second representation, exactly as over `CONS` or
+            // `IMPT`). An older build still REFUSES the pair, so it cannot
+            // open half a body. Over a Freeform (`FRFM`) or Surface (`SURF`)
+            // body it stays REFUSED: neither can be sculpted.
+            if (covered[found] == 4 || covered[found] == 5) {
                 return ProjectCodecStatus::UnresolvedReference;
             }
             // A `SCUL` entry over an `IMPT` body is VALID since `IMPORT-01B`.

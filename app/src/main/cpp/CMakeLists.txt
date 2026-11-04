@@ -115,6 +115,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_cad_status_text.cpp
     forgeshape_render_recovery.cpp
     forgeshape_scene.cpp
+    forgeshape_sculpt_seed.cpp
     forgeshape_sculpt.cpp
     forgeshape_sculpt_history.cpp
     forgeshape_selection.cpp

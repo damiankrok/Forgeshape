@@ -606,6 +606,26 @@ int main(int argc, char** argv) {
               fit && forgeshape::editorCamera().distance() > zoomed &&
                   !editor.widgetRect("ctx_fit_body", nullptr));
     }
+    {
+        // Precise arrangement (`PLACEMENT-PRECISION-R1`): Drop to ground puts
+        // the part's lowest point on y = 0 as one Undo; a snap step is held.
+        frameWith(idle);
+        const size_t depth = forgeshape::constructionHistory().undoDepth();
+        const bool dropped = clickId("arrange_drop");
+        frameWith(idle);
+        forgeshape::Vec3 lo, hi;
+        const bool bounded = forgeshape::editorBodyBounds(
+                forgeshape::constructionScene().activeBodyId(), &lo, &hi);
+        check("drop_to_ground_stands_the_part_on_y_zero_as_one_step",
+              dropped && bounded && std::fabs(lo.y) < 1e-5f &&
+                  forgeshape::constructionHistory().undoDepth() == depth + 1);
+        const bool snapped = clickId("snap_move_2");
+        check("a_snap_step_is_chosen_for_the_next_drag",
+              snapped && forgeshape::gizmoSnapSettings().translationMeters == 0.01);
+        clickId("snap_move_0");
+        editor.undo();
+        frameWith(idle);
+    }
     clickId("ribbon_tab_View");
     snap("07-view-ribbon");
     {

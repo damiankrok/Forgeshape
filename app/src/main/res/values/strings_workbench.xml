@@ -18,4 +18,23 @@
     <string name="view_projection_to_perspective">Orthographic. Switch to perspective</string>
     <string name="history_strip_title">History</string>
     <string name="history_strip_description">The active body\'s steps in construction order</string>
+    <!-- PLACEMENT-PRECISION-R1 -->
+    <string name="section_arrange">Arrange</string>
+    <string name="arrange_drop_to_ground">Drop to ground</string>
+    <string name="arrange_center_on_origin">Centre on origin</string>
+    <string name="status_arranged_on_ground">The body stands on the ground (Y = 0).</string>
+    <string name="status_arranged_on_origin">The body is centred on the origin in X and Z.</string>
+    <string name="status_arrange_already_there">The body is already there.</string>
+    <string name="status_arrange_refused">This body cannot be moved: it is locked or placed on another body\'s face.</string>
+    <string name="section_snap">Snap while dragging</string>
+    <string name="snap_move">Move</string>
+    <string name="snap_rotate">Rotate</string>
+    <string name="snap_off">Off</string>
+    <string name="snap_1mm">1 mm</string>
+    <string name="snap_1cm">1 cm</string>
+    <string name="snap_10cm">10 cm</string>
+    <string name="snap_1m">1 m</string>
+    <string name="snap_5deg">5°</string>
+    <string name="snap_15deg">15°</string>
+    <string name="snap_45deg">45°</string>
 </resources>

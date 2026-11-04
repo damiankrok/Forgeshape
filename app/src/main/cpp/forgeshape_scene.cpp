@@ -1,5 +1,7 @@
 #include "forgeshape_scene.h"
 
+#include "forgeshape_sculpt_seed.h"
+
 #include <algorithm>
 
 #include "forgeshape_cad_face.h"
@@ -531,9 +533,20 @@ bool buildSculptSourceMesh(const SceneObject& body, ConstructionMesh* out) {
         *out = source->generateMesh();
         return true;
     }
-    if (body.cadOrNull() != nullptr) {
-        // Deliberately unsupported in `CAD-R0-A1A2`; see the header.
-        return false;
+    if (const CadBody* cad = body.cadOrNull()) {
+        // `CAD-SCULPT-R1`: the part's derived mesh, welded into one surface
+        // and refined until a brush has vertices to move. The chain is read,
+        // never written; see forgeshape_sculpt_seed.h.
+        if (body.isFaceSupportedCad()) {
+            // Its placement is derived from another body's face; a sculpt of it
+            // would have no placement of its own to stand at.
+            return false;
+        }
+        ConstructionMesh solid;
+        if (cad->generateMesh(&solid) != CadStatus::Ok) {
+            return false;
+        }
+        return buildSculptSeedFromSolid(solid, out, nullptr);
     }
     if (body.surfaceOrNull() != nullptr) {
         // Not this stage either: a Surface body's truth is its feature list.

@@ -687,4 +687,16 @@
     <item name="cancel_hole" type="id" />
     <!-- The live size of a shape a sketch drag is placing (WORKBENCH-UX-R1). -->
     <item name="sketch_live_size" type="id" />
+    <!-- PLACEMENT-PRECISION-R1: arrange and snap in the Transform panel. -->
+    <item name="arrange_drop_to_ground" type="id" />
+    <item name="arrange_center_on_origin" type="id" />
+    <item name="snap_move_off" type="id" />
+    <item name="snap_move_1mm" type="id" />
+    <item name="snap_move_1cm" type="id" />
+    <item name="snap_move_10cm" type="id" />
+    <item name="snap_move_1m" type="id" />
+    <item name="snap_rotate_off" type="id" />
+    <item name="snap_rotate_5" type="id" />
+    <item name="snap_rotate_15" type="id" />
+    <item name="snap_rotate_45" type="id" />
 </resources>

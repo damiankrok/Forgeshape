@@ -1,11 +1,14 @@
 #include "forgeshape_scene_selftest.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <string>
 #include <vector>
 
 #include "forgeshape_body_commands.h"
+#include "forgeshape_cad_body.h"
 #include "forgeshape_body_delete.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_construction.h"
@@ -19,6 +22,7 @@
 #include "forgeshape_scene.h"
 #include "forgeshape_sculpt.h"
 #include "forgeshape_sculpt_history.h"
+#include "forgeshape_sculpt_seed.h"
 #include "forgeshape_selection.h"
 #include "forgeshape_transform.h"
 
@@ -1173,6 +1177,123 @@ int runSceneSelfTests(SceneSelfTestResult* out, int max) {
         session.setIsolate(id);
         r.check("s027_20_isolate_turns_off_with_no_object",
                 session.setIsolate(kNoObject) && session.isolateTarget() == kNoObject);
+    }
+
+    // -----------------------------------------------------------------------
+    // CAD-SCULPT-R1 -- a CAD Body may be sculpted: one welded, refined seed
+    // from its derived mesh; a CAD edit marks it stale; `.forge` keeps both
+    // -----------------------------------------------------------------------
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        CadBodyState block;
+        SketchRectangle rectangle;
+        rectangle.center = SketchPoint{0.0, 0.0};
+        rectangle.width = 2.0;
+        rectangle.height = 1.0;
+        SketchEntityId entity = kNoSketchEntity;
+        addSketchEntity(&cadBaseSketch(block), rectangle, &entity);
+        block.extrude.profileEntityId = entity;
+        block.extrude.depth = 0.5;
+        SceneObject* part = scene.addCadBody(block);
+        r.check("cadsculpt_01_a_cad_part_exists", part != nullptr);
+        if (part != nullptr) {
+            scene.setActiveBody(part->objectId());
+            ConstructionMesh drawn;
+            const bool generated = part->cadOrNull()->generateMesh(&drawn) == CadStatus::Ok;
+            ConstructionMesh seed;
+            SculptSeedReport report;
+            const bool seeded = buildSculptSeedFromSolid(drawn, &seed, &report);
+            r.check("cadsculpt_02_the_part_seeds_a_sculpt_mesh",
+                    generated && seeded && buildSculptSourceMesh(*part, &seed));
+            // One connected surface: no two seed vertices share a position.
+            bool welded = true;
+            {
+                std::vector<std::array<float, 3>> positions;
+                positions.reserve(seed.vertices.size());
+                for (const MeshVertex& v : seed.vertices) {
+                    positions.push_back({v.position[0], v.position[1], v.position[2]});
+                }
+                std::sort(positions.begin(), positions.end());
+                welded = std::adjacent_find(positions.begin(), positions.end()) == positions.end();
+            }
+            r.check("cadsculpt_03_the_seed_is_one_welded_surface", welded);
+            float longest = 0.0f;
+            for (size_t t = 0; t + 2 < seed.indices.size(); t += 3) {
+                for (int e = 0; e < 3; ++e) {
+                    const MeshVertex& a = seed.vertices[seed.indices[t + e]];
+                    const MeshVertex& b = seed.vertices[seed.indices[t + (e + 1) % 3]];
+                    const float dx = a.position[0] - b.position[0];
+                    const float dy = a.position[1] - b.position[1];
+                    const float dz = a.position[2] - b.position[2];
+                    longest = std::max(longest, std::sqrt(dx * dx + dy * dy + dz * dz));
+                }
+            }
+            r.check("cadsculpt_04_every_edge_is_brush_sized",
+                    !report.budgetReached && longest <= report.targetEdgeMeters * 1.0001f
+                        && report.triangles > report.sourceTriangles * 100u);
+            // Winding is kept: the signed volume of the closed seed is the
+            // part's own, 2 x 1 x 0.5.
+            double volume = 0.0;
+            for (size_t t = 0; t + 2 < seed.indices.size(); t += 3) {
+                const float* a = seed.vertices[seed.indices[t]].position;
+                const float* b = seed.vertices[seed.indices[t + 1]].position;
+                const float* c = seed.vertices[seed.indices[t + 2]].position;
+                volume += (double(a[0]) * (double(b[1]) * c[2] - double(b[2]) * c[1])
+                           - double(a[1]) * (double(b[0]) * c[2] - double(b[2]) * c[0])
+                           + double(a[2]) * (double(b[0]) * c[1] - double(b[1]) * c[0])) / 6.0;
+            }
+            r.check("cadsculpt_05_the_seed_keeps_the_part_and_its_winding",
+                    std::fabs(volume - 1.0) < 1e-4);
+            ConstructionMesh again;
+            buildSculptSourceMesh(*part, &again);
+            bool same = again.vertices.size() == seed.vertices.size()
+                        && again.indices == seed.indices;
+            for (size_t i = 0; same && i < seed.vertices.size(); ++i) {
+                same = std::memcmp(again.vertices[i].position, seed.vertices[i].position,
+                                   sizeof(float) * 3) == 0;
+            }
+            r.check("cadsculpt_06_the_seed_is_deterministic", same);
+
+            SculptSession session;
+            session.bindTarget(&part->frozenSculpt());
+            MeshValidation why = MeshValidation::Ok;
+            r.check("cadsculpt_07_the_part_freezes", session.freezeToSculpt(seed, part->objectId(), &why));
+            r.check("cadsculpt_08_not_stale_after_the_freeze", !part->frozenSculpt().sourceStale);
+            // A CAD edit, through the one transaction boundary every CAD act
+            // takes, marks the sculpt mesh stale and moves none of its vertices.
+            const std::vector<MeshVertex> frozenBefore = part->frozenSculpt().mesh.vertices();
+            CadBodyState deeper = part->cadOrNull()->captureState();
+            deeper.extrude.depth = 0.8;
+            history.beginEdit();
+            const bool applied = part->cadOrNull()->applyState(deeper) == CadStatus::Ok;
+            publishSceneObject(*part);
+            history.commitEdit();
+            r.check("cadsculpt_09_a_cad_edit_marks_the_sculpt_mesh_stale",
+                    applied && part->frozenSculpt().sourceStale);
+            bool untouched = part->frozenSculpt().mesh.vertices().size() == frozenBefore.size();
+            for (size_t i = 0; untouched && i < frozenBefore.size(); ++i) {
+                untouched = std::memcmp(frozenBefore[i].position,
+                                        part->frozenSculpt().mesh.vertices()[i].position,
+                                        sizeof(float) * 3) == 0;
+            }
+            r.check("cadsculpt_10_the_sculpt_mesh_is_never_rederived_behind_the_user", untouched);
+            // `.forge`: a CADB body with a SCUL entry round-trips.
+            const ProjectDocument document = captureProjectDocument(scene, ProjectKind::Construction);
+            ProjectCodecStatus encodeWhy = ProjectCodecStatus::Ok;
+            const std::vector<uint8_t> bytes = encodeProjectV1(document, &encodeWhy);
+            ProjectDocument decoded;
+            const ProjectCodecStatus decodeWhy =
+                bytes.empty() ? ProjectCodecStatus::Ok
+                              : decodeProject(bytes.data(), bytes.size(), &decoded);
+            r.check("cadsculpt_11_a_sculpted_cad_part_saves_and_reopens",
+                    !bytes.empty() && encodeWhy == ProjectCodecStatus::Ok
+                        && decodeWhy == ProjectCodecStatus::Ok && decoded.sculpt.bodies.size() == 1u
+                        && decoded.sculpt.bodies[0].sourceStale);
+            // A face-supported CAD Body has no placement of its own to sculpt at.
+            r.check("cadsculpt_12_only_an_independent_part_is_sculptable",
+                    !part->isFaceSupportedCad());
+        }
     }
     return r.n;
 }

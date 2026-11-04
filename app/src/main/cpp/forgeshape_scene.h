@@ -610,11 +610,16 @@ MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy = null
 //     brush from behind, where the strict one would leave the user unable to
 //     touch half of what they imported.
 //
-// Returns false, writing nothing, for a body with no geometry to freeze -- and
-// for a CAD Body, DELIBERATELY: CAD -> Sculpt is not implemented (the wording
-// of the way back out of Sculpt, the stale-source rule over a CAD edit and the
-// `CADB`+`SCUL` file combination each need an owner decision). The control is
-// absent for a CAD Body and the freeze refuses by name.
+// A CAD Body (`CAD-SCULPT-R1`, OWNER 2026-11-04: "arrange it precisely as in
+// CAD, then go to Sculpt to add the details") seeds from its regenerated mesh
+// through `buildSculptSeedFromSolid` — welded into one surface and refined to a
+// brush-sized edge — and never writes its chain; a later CAD edit marks the
+// sculpt mesh stale (the history's commit does it, for every CAD act at once).
+// A FACE-SUPPORTED CAD Body is refused: its placement is derived.
+//
+// Returns false, writing nothing, for a body with no geometry to freeze, and
+// for a Freeform or Surface body, whose sculpt copy needs a stale-source rule
+// no owner has decided.
 bool buildSculptSourceMesh(const SceneObject& body, ConstructionMesh* out);
 
 // The one process-scoped scene. `activeConstructionOrNull()`, `meshStore()`,

@@ -3023,7 +3023,10 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
                     (unsigned long long)objectId);
             return kSculptRefusedHiddenBody;
         }
-        cadBody = body.cadOrNull() != nullptr;
+        // `CAD-SCULPT-R1`: a CAD Body IS sculptable now, seeded from its
+        // derived mesh (welded and refined, `forgeshape_sculpt_seed.h`); only a
+        // FACE-supported one, whose placement is derived, is still refused.
+        cadBody = body.cadOrNull() != nullptr && body.isFaceSupportedCad();
         freeformBody = body.freeformOrNull() != nullptr;
         surfaceBody = body.surfaceOrNull() != nullptr;
         sketching = forgeshape::sketchSession().active();
@@ -3052,9 +3055,11 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
         return kSculptRefusedFreeformBody;
     }
     if (cadBody) {
-        // `CAD-R0-A1A2` leaves CAD -> Sculpt out, by name. The control is
-        // absent for a CAD Body; this is the guard behind it.
-        FS_LOGE("FORGESHAPE_SCULPT_FREEZE_FAIL:CadBodyNotSculptable objectId=%llu",
+        // A face-supported CAD Body: its placement is its producer's face, so
+        // a sculpt of it would have none of its own. The control is absent for
+        // one; this is the guard behind it.
+        FS_LOGE("FORGESHAPE_SCULPT_FREEZE_FAIL:CadBodyNotSculptable objectId=%llu "
+                "reason=face_supported",
                 (unsigned long long)objectId);
         return kSculptRefusedCadBody;
     }
@@ -3089,6 +3094,12 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
                     mesh.vertexCount(), mesh.indexCount(), (unsigned long long)mesh.revision(),
                     (unsigned long long)mesh.objectId(),
                     forgeshape::primitiveKindName(source->kind()), described);
+        } else if (body.cadOrNull() != nullptr) {
+            FS_LOGI("FORGESHAPE_SCULPT_FROZEN:%u:%u sculptRev=%llu objectId=%llu from "
+                    "representation=Cad features=%zu",
+                    mesh.vertexCount(), mesh.indexCount(), (unsigned long long)mesh.revision(),
+                    (unsigned long long)mesh.objectId(),
+                    body.cadOrNull()->state().laterFeatures.size() + 1u);
         } else {
             const forgeshape::ImportedMesh* imported = body.importedOrNull();
             FS_LOGI("FORGESHAPE_SCULPT_FROZEN:%u:%u sculptRev=%llu objectId=%llu from "
@@ -7701,6 +7712,50 @@ Java_com_forgeshape_app_NativeViewport_sketchViewState(JNIEnv* env, jclass, jdou
                             : 0.0;
     }
     env->SetDoubleArrayRegion(out, 0, kSize, values);
+}
+
+// Precise arrangement (`PLACEMENT-PRECISION-R1`): the editor core's act, under
+// the state mutex like every other scene mutation.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_arrangeActiveBody(JNIEnv*, jclass, jint act) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (act != 0 && act != 1) {
+        return static_cast<jint>(forgeshape::EditorArrangeStatus::Refused);
+    }
+    const forgeshape::EditorArrangeStatus status = forgeshape::editorArrangeActiveBody(
+            act == 0 ? forgeshape::EditorArrangeAct::DropToGround
+                     : forgeshape::EditorArrangeAct::CenterOnOrigin);
+    if (status == forgeshape::EditorArrangeStatus::Ok) {
+        const forgeshape::TransformValues v =
+                forgeshape::constructionScene().activeBody().transform().values();
+        FS_LOGI("FORGESHAPE_ARRANGED:%s position=%.6f,%.6f,%.6f",
+                act == 0 ? "drop_to_ground" : "center_on_origin", v.positionX, v.positionY,
+                v.positionZ);
+    }
+    return static_cast<jint>(status);
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_setGizmoSnap(JNIEnv*, jclass, jdouble meters,
+                                                    jdouble degrees) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::GizmoSnap& snap = forgeshape::gizmoSnapSettings();
+    snap.translationMeters = (std::isfinite(meters) && meters > 0.0) ? meters : 0.0;
+    snap.rotationDegrees = (std::isfinite(degrees) && degrees > 0.0) ? degrees : 0.0;
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_gizmoSnapState(JNIEnv* env, jclass, jdoubleArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 2) {
+        return;
+    }
+    jdouble values[2];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        values[0] = forgeshape::gizmoSnapSettings().translationMeters;
+        values[1] = forgeshape::gizmoSnapSettings().rotationDegrees;
+    }
+    env->SetDoubleArrayRegion(out, 0, 2, values);
 }
 
 // The size of the shape a drag is placing and where to read it
