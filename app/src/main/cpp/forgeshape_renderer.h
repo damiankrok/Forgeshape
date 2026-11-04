@@ -24,6 +24,7 @@
 #include "forgeshape_mesh.h"
 #include "forgeshape_object_id.h"
 #include "forgeshape_render_mesh.h"
+#include "forgeshape_ui_frame.h"
 #include "forgeshape_render_recovery.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_selection_outline.h"
@@ -170,6 +171,11 @@ public:
     // and the headless CI check read; the Android build has no such path, so
     // its frame is recorded exactly as before.
     void requestFrameCapture() { captureRequested_ = true; }
+
+    // DESKTOP ONLY: the shell's own interface for the next frame, drawn after
+    // everything else in the main pass (see forgeshape_ui_frame.h). Null draws
+    // none.
+    void setUiFrame(UiFramePtr frame) { uiFrame_ = std::move(frame); }
     bool frameCaptureReady() const { return captureReady_; }
     const std::vector<uint8_t>& capturedFrame(uint32_t* width, uint32_t* height) const {
         *width = captureWidth_;
@@ -629,6 +635,36 @@ private:
     VkDeviceMemory captureMemory_ = VK_NULL_HANDLE;
     VkDeviceSize captureBufferSize_ = 0;
     bool recordFrameCapture(VkCommandBuffer cmd, uint32_t imageIndex);
+
+    // The desktop interface layer (forgeshape_renderer_ui.cpp).
+    UiFramePtr uiFrame_;
+    VkShaderModule uiVertShader_ = VK_NULL_HANDLE;
+    VkShaderModule uiFragShader_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout uiSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool uiDescriptorPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet uiSet_ = VK_NULL_HANDLE;
+    VkPipelineLayout uiPipelineLayout_ = VK_NULL_HANDLE;
+    VkPipeline uiPipeline_ = VK_NULL_HANDLE;
+    VkSampler uiSampler_ = VK_NULL_HANDLE;
+    VkImage uiAtlasImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory uiAtlasMemory_ = VK_NULL_HANDLE;
+    VkImageView uiAtlasView_ = VK_NULL_HANDLE;
+    uint32_t uiAtlasWidth_ = 0;
+    uint32_t uiAtlasHeight_ = 0;
+    uint64_t uiAtlasRevision_ = 0;
+    bool uiAtlasReady_ = false;
+    VkBuffer uiVertexBuffers_[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkDeviceMemory uiVertexMemory_[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkDeviceSize uiVertexCapacity_[2]{0, 0};
+    VkBuffer uiIndexBuffers_[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkDeviceMemory uiIndexMemory_[2]{VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkDeviceSize uiIndexCapacity_[2]{0, 0};
+    bool createUiDeviceResources();
+    void destroyUiDeviceResources();
+    bool createUiPipeline();
+    void destroyUiPipeline();
+    bool syncUiAtlas();
+    void recordUiDraw(VkCommandBuffer cmd);
     void readFrameCapture();
     void destroyFrameCapture();
 #endif

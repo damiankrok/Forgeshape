@@ -1,0 +1,485 @@
+#include "ui.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+
+namespace fsui {
+
+namespace {
+
+// UTF-8 to code points; malformed bytes become U+FFFD.
+std::u32string decode(const std::string& s) {
+    std::u32string out;
+    for (size_t i = 0; i < s.size();) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        uint32_t cp = 0xFFFD;
+        size_t n = 1;
+        if (c < 0x80) {
+            cp = c;
+        } else if ((c >> 5) == 6 && i + 1 < s.size()) {
+            cp = ((c & 0x1F) << 6) | (s[i + 1] & 0x3F);
+            n = 2;
+        } else if ((c >> 4) == 14 && i + 2 < s.size()) {
+            cp = ((c & 0x0F) << 12) | ((s[i + 1] & 0x3F) << 6) | (s[i + 2] & 0x3F);
+            n = 3;
+        } else if ((c >> 3) == 30 && i + 3 < s.size()) {
+            cp = ((c & 0x07) << 18) | ((s[i + 1] & 0x3F) << 12) | ((s[i + 2] & 0x3F) << 6)
+                 | (s[i + 3] & 0x3F);
+            n = 4;
+        }
+        out.push_back(cp);
+        i += n;
+    }
+    return out;
+}
+
+std::string encode(const std::u32string& s) {
+    std::string out;
+    for (char32_t cp : s) {
+        if (cp < 0x80) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp < 0x800) {
+            out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else if (cp < 0x10000) {
+            out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else {
+            out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+int Ui::fontPx(float dp) const {
+    return std::max(6, static_cast<int>(std::lround(dp * scale_)));
+}
+
+void Ui::begin(int width, int height, float scale, const InputState& input) {
+    width_ = width;
+    height_ = height;
+    scale_ = scale > 0.25f ? scale : 1.0f;
+    input_ = input;
+    frame_ = std::make_shared<forgeshape::UiFrame>();
+    clips_.clear();
+    clips_.push_back({0, 0, static_cast<float>(width), static_cast<float>(height)});
+    commandStart_ = 0;
+    previousBlockers_ = blockers_;
+    blockers_.clear();
+    hotId_.clear();
+    tooltipText_.clear();
+    if (input_.mouseReleased[0] && pressedId_ != "") {
+        // A press that ended anywhere is over; `clicked` reads it below.
+    }
+}
+
+forgeshape::UiFramePtr Ui::end() {
+    if (!tooltipText_.empty()) {
+        const float size = theme_.smallFontSize;
+        const float w = textWidth(tooltipText_, size) + px(16);
+        const float h = px(26);
+        float x = std::min(tooltipX_, width_ - w - px(4));
+        float y = tooltipY_ + px(22);
+        if (y + h > height_) y = tooltipY_ - h - px(8);
+        const Rect r{x, y, w, h};
+        shadow(r, theme_.shadow, px(6), px(10));
+        rect(r, theme_.chromeSurface, px(6));
+        border(r, theme_.chromeHairline, px(6), 1.0f);
+        label({x + px(8), y, w - px(16), h}, tooltipText_, theme_.textPrimary, size);
+    }
+    flushCommand();
+    if (input_.mouseReleased[0]) pressedId_.clear();
+    frame_->atlas = atlas_.image();
+    std::shared_ptr<const forgeshape::UiFrame> out = frame_;
+    frame_.reset();
+    return out;
+}
+
+bool Ui::pointerCaptured() const {
+    if (!pressedId_.empty()) return true;
+    for (const Rect& r : previousBlockers_) {
+        if (r.contains(input_.mouseX, input_.mouseY)) return true;
+    }
+    for (const Rect& r : blockers_) {
+        if (r.contains(input_.mouseX, input_.mouseY)) return true;
+    }
+    return false;
+}
+
+void Ui::block(const Rect& r) { blockers_.push_back(r); }
+
+void Ui::flushCommand() {
+    const uint32_t count = static_cast<uint32_t>(frame_->indices.size()) - commandStart_;
+    if (count == 0) return;
+    const Rect& clip = clips_.back();
+    forgeshape::UiDrawCommand cmd;
+    cmd.firstIndex = commandStart_;
+    cmd.indexCount = count;
+    cmd.clipX = static_cast<int32_t>(std::floor(clip.x));
+    cmd.clipY = static_cast<int32_t>(std::floor(clip.y));
+    cmd.clipWidth = static_cast<uint32_t>(std::max(0.0f, std::ceil(clip.w)));
+    cmd.clipHeight = static_cast<uint32_t>(std::max(0.0f, std::ceil(clip.h)));
+    frame_->commands.push_back(cmd);
+    commandStart_ = static_cast<uint32_t>(frame_->indices.size());
+}
+
+void Ui::pushClip(const Rect& r) {
+    flushCommand();
+    const Rect& p = clips_.back();
+    const float x0 = std::max(p.x, r.x), y0 = std::max(p.y, r.y);
+    const float x1 = std::min(p.right(), r.right()), y1 = std::min(p.bottom(), r.bottom());
+    clips_.push_back({x0, y0, std::max(0.0f, x1 - x0), std::max(0.0f, y1 - y0)});
+}
+
+void Ui::popClip() {
+    flushCommand();
+    if (clips_.size() > 1) clips_.pop_back();
+}
+
+void Ui::quad(float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1,
+              float mode, float cx, float cy, float hw, float hh, float radius, float param,
+              Color c) {
+    const uint32_t base = static_cast<uint32_t>(frame_->vertices.size());
+    const uint32_t packed = c.packed();
+    const float xs[2] = {x0, x1}, ys[2] = {y0, y1}, us[2] = {u0, u1}, vs[2] = {v0, v1};
+    for (int j = 0; j < 2; ++j) {
+        for (int i = 0; i < 2; ++i) {
+            forgeshape::UiVertex v;
+            v.x = xs[i];
+            v.y = ys[j];
+            v.u = us[i];
+            v.v = vs[j];
+            v.localX = xs[i] - cx;
+            v.localY = ys[j] - cy;
+            v.halfWidth = hw;
+            v.halfHeight = hh;
+            v.radius = radius;
+            v.mode = mode;
+            v.param = param;
+            v.color = packed;
+            frame_->vertices.push_back(v);
+        }
+    }
+    for (uint32_t idx : {0u, 1u, 2u, 2u, 1u, 3u}) frame_->indices.push_back(base + idx);
+}
+
+void Ui::rect(const Rect& r, Color c, float radiusPx) {
+    if (c.a == 0 || r.w <= 0 || r.h <= 0) return;
+    const float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
+    const float rad = std::min(radiusPx, std::min(r.w, r.h) * 0.5f);
+    quad(r.x - 1, r.y - 1, r.right() + 1, r.bottom() + 1, 0, 0, 0, 0, 1.0f, cx, cy, r.w * 0.5f,
+         r.h * 0.5f, rad, 0, c);
+}
+
+void Ui::border(const Rect& r, Color c, float radiusPx, float widthPx) {
+    if (c.a == 0 || r.w <= 0 || r.h <= 0) return;
+    const float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
+    const float rad = std::min(radiusPx, std::min(r.w, r.h) * 0.5f);
+    quad(r.x - 1, r.y - 1, r.right() + 1, r.bottom() + 1, 0, 0, 0, 0, 2.0f, cx, cy, r.w * 0.5f,
+         r.h * 0.5f, rad, widthPx, c);
+}
+
+void Ui::shadow(const Rect& r, Color c, float radiusPx, float blurPx) {
+    if (c.a == 0) return;
+    const float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f + blurPx * 0.25f;
+    quad(r.x - blurPx * 2, r.y - blurPx * 2, r.right() + blurPx * 2, r.bottom() + blurPx * 2, 0, 0,
+         0, 0, 3.0f, cx, cy, r.w * 0.5f, r.h * 0.5f, radiusPx, blurPx, c);
+}
+
+void Ui::icon(const std::string& name, const Rect& box, Color c) {
+    const int size = static_cast<int>(std::lround(std::min(box.w, box.h)));
+    const AtlasEntry& e = atlas_.icon(name, size);
+    if (!e.valid) return;
+    const float x = std::round(box.x + (box.w - size) * 0.5f);
+    const float y = std::round(box.y + (box.h - size) * 0.5f);
+    const float inv = 1.0f / atlas_.width();
+    quad(x, y, x + e.width, y + e.height, e.x * inv, e.y * inv, (e.x + e.width) * inv,
+         (e.y + e.height) * inv, 0.0f, 0, 0, 0, 0, 0, 0, c);
+}
+
+float Ui::text(float x, float baseline, const std::string& utf8, Color c, float sizeDp, bool bold) {
+    const int size = fontPx(sizeDp);
+    const float inv = 1.0f / atlas_.width();
+    float pen = std::round(x);
+    const float base = std::round(baseline);
+    for (char32_t cp : decode(utf8)) {
+        const AtlasEntry& e = atlas_.glyph(cp, size, bold);
+        if (e.valid) {
+            const float gx = std::round(pen) + e.offsetX;
+            const float gy = base + e.offsetY;
+            quad(gx, gy, gx + e.width, gy + e.height, e.x * inv, e.y * inv, (e.x + e.width) * inv,
+                 (e.y + e.height) * inv, 0.0f, 0, 0, 0, 0, 0, 0, c);
+        }
+        pen += e.advance;
+    }
+    return pen - x;
+}
+
+float Ui::textWidth(const std::string& utf8, float sizeDp, bool bold) {
+    const int size = fontPx(sizeDp);
+    float w = 0;
+    for (char32_t cp : decode(utf8)) w += atlas_.glyph(cp, size, bold).advance;
+    return w;
+}
+
+void Ui::label(const Rect& r, const std::string& utf8, Color c, float sizeDp, bool bold,
+               bool centred) {
+    const int size = fontPx(sizeDp);
+    std::string shown = utf8;
+    float w = textWidth(shown, sizeDp, bold);
+    if (w > r.w) {
+        // Shortened with an ellipsis rather than spilling out of its box.
+        std::u32string cps = decode(utf8);
+        const std::string dots = "\xE2\x80\xA6";
+        while (!cps.empty()) {
+            cps.pop_back();
+            shown = encode(cps) + dots;
+            w = textWidth(shown, sizeDp, bold);
+            if (w <= r.w) break;
+        }
+    }
+    const float ascent = atlas_.ascent(size, bold);
+    const float descent = atlas_.descent(size, bold);
+    const float baseline = r.y + (r.h + ascent - descent) * 0.5f;
+    const float x = centred ? r.x + (r.w - w) * 0.5f : r.x;
+    text(x, baseline, shown, c, sizeDp, bold);
+}
+
+void Ui::panel(const Rect& r) {
+    const float radius = px(theme_.panelRadius);
+    shadow(r, theme_.shadow, radius, px(theme_.shadowBlur));
+    rect(r, theme_.surfaceFloating, radius);
+    border(r, theme_.chromeHairline.alpha(0.8f), radius, 1.0f);
+    block(r);
+}
+
+void Ui::separator(float x, float y, float w) {
+    rect({x, std::round(y), w, 1.0f}, theme_.chromeHairline, 0);
+}
+
+bool Ui::hot(const std::string& id, const Rect& r) {
+    const Rect& clip = clips_.back();
+    const bool over = r.contains(input_.mouseX, input_.mouseY)
+                      && clip.contains(input_.mouseX, input_.mouseY);
+    if (over && (pressedId_.empty() || pressedId_ == id)) {
+        hotId_ = id;
+        return true;
+    }
+    return false;
+}
+
+bool Ui::clicked(const std::string& id, const Rect& r, bool enabled) {
+    if (!enabled) return false;
+    const bool over = hot(id, r);
+    if (over && input_.mousePressed[0]) pressedId_ = id;
+    return over && input_.mouseReleased[0] && pressedId_ == id;
+}
+
+bool Ui::button(const std::string& id, const Rect& r, const std::string& textValue,
+                const std::string& iconName, bool primary, bool enabled) {
+    const bool click = clicked(id, r, enabled);
+    const bool over = enabled && hotId_ == id;
+    const bool down = over && pressedId_ == id;
+    const float radius = px(theme_.radius);
+    Color fill = primary ? theme_.accent : theme_.controlSurface;
+    if (down) fill = primary ? theme_.primaryFillPressed : theme_.controlSurfacePressed;
+    else if (over) fill = primary ? theme_.primaryFillPressed : theme_.controlSurfacePressed;
+    if (!enabled) fill = fill.alpha(0.5f);
+    rect(r, fill, radius);
+    if (!primary) border(r, theme_.controlBorder.alpha(0.7f), radius, 1.0f);
+    const Color ink = !enabled ? theme_.textDisabled : primary ? theme_.textOnPrimary : theme_.textPrimary;
+    float x = r.x + px(10);
+    if (!iconName.empty()) {
+        const float s = px(theme_.iconSize) * 0.85f;
+        icon(iconName, {x, r.y + (r.h - s) * 0.5f, s, s}, ink);
+        x += s + px(8);
+    }
+    if (iconName.empty()) {
+        label({r.x + px(8), r.y, r.w - px(16), r.h}, textValue, ink, theme_.fontSize, primary, true);
+    } else {
+        label({x, r.y, r.right() - x - px(8), r.h}, textValue, ink, theme_.fontSize, false);
+    }
+    return click;
+}
+
+bool Ui::iconButton(const std::string& id, const Rect& r, const std::string& iconName,
+                    const std::string& tip, bool active, bool enabled) {
+    const bool click = clicked(id, r, enabled);
+    const bool over = enabled && hotId_ == id;
+    const float radius = px(theme_.radius);
+    if (active) {
+        rect(r, theme_.accent.alpha(0.22f), radius);
+        border(r, theme_.accent.alpha(0.55f), radius, 1.0f);
+    } else if (over) {
+        rect(r, theme_.controlSurfacePressed.alpha(0.85f), radius);
+    }
+    const float s = px(theme_.iconSize);
+    const Color ink = !enabled ? theme_.textDisabled : active ? theme_.accent : theme_.textPrimary;
+    icon(iconName, {r.x + (r.w - s) * 0.5f, r.y + (r.h - s) * 0.5f, s, s}, ink);
+    if (over && !tip.empty()) tooltip(tip);
+    return click;
+}
+
+bool Ui::listRow(const std::string& id, const Rect& r, const std::string& textValue,
+                 const std::string& iconName, bool selected, const std::string& detail) {
+    const bool click = clicked(id, r, true);
+    const bool over = hotId_ == id;
+    const float radius = px(theme_.radius);
+    if (selected) {
+        rect(r, theme_.accent.alpha(0.20f), radius);
+    } else if (over) {
+        rect(r, theme_.controlSurfacePressed.alpha(0.6f), radius);
+    }
+    float x = r.x + px(8);
+    if (!iconName.empty()) {
+        const float s = px(theme_.iconSize) * 0.8f;
+        icon(iconName, {x, r.y + (r.h - s) * 0.5f, s, s},
+             selected ? theme_.accent : theme_.textSecondary);
+        x += s + px(8);
+    }
+    float detailW = 0;
+    if (!detail.empty()) {
+        detailW = std::min(textWidth(detail, theme_.smallFontSize) + px(4), r.w * 0.45f);
+        label({r.right() - detailW - px(8), r.y, detailW, r.h}, detail, theme_.textSecondary,
+              theme_.smallFontSize);
+    }
+    label({x, r.y, r.right() - x - detailW - px(12), r.h}, textValue,
+          selected ? theme_.textPrimary : theme_.textPrimary, theme_.fontSize, selected);
+    return click;
+}
+
+bool Ui::toggle(const std::string& id, const Rect& r, const std::string& textValue, bool* value) {
+    const bool click = clicked(id, r, true);
+    if (click) *value = !*value;
+    const float tw = px(34), th = px(18);
+    const Rect track{r.right() - tw - px(4), r.y + (r.h - th) * 0.5f, tw, th};
+    rect(track, *value ? theme_.accent : theme_.fieldSurface, th * 0.5f);
+    border(track, theme_.controlBorder, th * 0.5f, 1.0f);
+    const float knob = th - px(4);
+    const float kx = *value ? track.right() - knob - px(2) : track.x + px(2);
+    rect({kx, track.y + px(2), knob, knob}, theme_.textPrimary, knob * 0.5f);
+    label({r.x, r.y, r.w - tw - px(12), r.h}, textValue, theme_.textPrimary, theme_.fontSize);
+    return click;
+}
+
+bool Ui::editCommit(const std::string& id, std::string* committed) {
+    if (editId_ != id) return false;
+    bool commit = false;
+    bool cancel = false;
+    for (Key k : input_.keys) {
+        if (k == Key::Enter || k == Key::Tab) commit = true;
+        if (k == Key::Escape) cancel = true;
+    }
+    if (editCommitPending_) {
+        commit = true;
+        editCommitPending_ = false;
+    }
+    if (cancel) {
+        editId_.clear();
+        return false;
+    }
+    if (commit) {
+        *committed = editBuffer_;
+        editId_.clear();
+        return true;
+    }
+    return false;
+}
+
+bool Ui::textField(const std::string& id, const Rect& r, std::string* value) {
+    const float radius = px(theme_.radius);
+    const bool over = hot(id, r);
+    const bool editing = editId_ == id;
+    if (input_.mousePressed[0]) {
+        if (over && !editing) {
+            editId_ = id;
+            editBuffer_ = *value;
+            editCursor_ = decode(editBuffer_).size();
+        } else if (!over && editing) {
+            editCommitPending_ = true;
+        }
+    }
+    if (editId_ == id) {
+        std::u32string cps = decode(editBuffer_);
+        for (char32_t ch : input_.text) {
+            if (ch >= 0x20 && ch != 0x7F) {
+                cps.insert(cps.begin() + std::min(editCursor_, cps.size()), ch);
+                ++editCursor_;
+            }
+        }
+        for (Key k : input_.keys) {
+            if (k == Key::Backspace && editCursor_ > 0 && !cps.empty()) {
+                cps.erase(cps.begin() + (editCursor_ - 1));
+                --editCursor_;
+            } else if (k == Key::Delete && editCursor_ < cps.size()) {
+                cps.erase(cps.begin() + editCursor_);
+            } else if (k == Key::Left && editCursor_ > 0) {
+                --editCursor_;
+            } else if (k == Key::Right && editCursor_ < cps.size()) {
+                ++editCursor_;
+            } else if (k == Key::Home) {
+                editCursor_ = 0;
+            } else if (k == Key::End) {
+                editCursor_ = cps.size();
+            }
+        }
+        editBuffer_ = encode(cps);
+    }
+    rect(r, theme_.fieldSurface, radius);
+    border(r, editId_ == id ? theme_.accent : over ? theme_.controlBorder : theme_.chromeHairline,
+           radius, editId_ == id ? 1.5f : 1.0f);
+    const Rect inner{r.x + px(8), r.y, r.w - px(16), r.h};
+    pushClip(inner);
+    const std::string shown = editId_ == id ? editBuffer_ : *value;
+    label(inner, shown, theme_.textPrimary, theme_.fontSize);
+    if (editId_ == id) {
+        const std::u32string cps = decode(editBuffer_);
+        const float caret = inner.x + textWidth(encode(cps.substr(0, editCursor_)), theme_.fontSize);
+        rect({caret, r.y + px(7), std::max(1.0f, px(1.2f)), r.h - px(14)}, theme_.accent, 0);
+    }
+    popClip();
+    std::string committed;
+    if (editCommit(id, &committed)) {
+        *value = committed;
+        return true;
+    }
+    return false;
+}
+
+bool Ui::numberField(const std::string& id, const Rect& r, double* value, int decimals,
+                     const std::string& unit) {
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), "%.*f", decimals, *value);
+    std::string text = buffer;
+    const float unitW = unit.empty() ? 0.0f : textWidth(unit, theme_.smallFontSize) + px(10);
+    const Rect field{r.x, r.y, r.w - unitW, r.h};
+    const bool committed = textField(id, field, &text);
+    if (!unit.empty()) {
+        label({field.right() + px(6), r.y, unitW, r.h}, unit, theme_.textSecondary,
+              theme_.smallFontSize);
+    }
+    if (!committed) return false;
+    std::string normalised = text;
+    std::replace(normalised.begin(), normalised.end(), ',', '.');
+    char* end = nullptr;
+    const double parsed = std::strtod(normalised.c_str(), &end);
+    if (end == normalised.c_str() || !std::isfinite(parsed)) return false;
+    *value = parsed;
+    return true;
+}
+
+void Ui::tooltip(const std::string& textValue) {
+    tooltipText_ = textValue;
+    tooltipX_ = input_.mouseX;
+    tooltipY_ = input_.mouseY;
+}
+
+}  // namespace fsui

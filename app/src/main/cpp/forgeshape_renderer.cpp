@@ -312,6 +312,7 @@ void Renderer::destroyDeviceScopedResources() {
         destroyGizmoResources();
 #if !defined(__ANDROID__)
         destroyFrameCapture();
+        destroyUiDeviceResources();
 #endif
         destroySketchOverlayResources();
         destroyOutlineDeviceResources();
@@ -475,6 +476,9 @@ bool Renderer::attachSurface(PlatformWindow window) {
         // one-time copy. It is device-scoped, so a HOME/resume does not
         // regenerate it.
         if (!createGizmoResources()) return false;
+#if !defined(__ANDROID__)
+        if (!createUiDeviceResources()) return false;
+#endif
     } else {
         // Reused device: confirm the new surface is still presentable.
         VkBool32 supported = VK_FALSE;
@@ -3259,6 +3263,9 @@ bool Renderer::createSwapchainDependents() {
     if (!createPipeline()) return false;
     if (!createGridPipeline()) return false;
     if (!createGizmoPipeline()) return false;
+#if !defined(__ANDROID__)
+    if (!createUiPipeline()) return false;
+#endif
     // After the main render pass exists, because the composite pipeline is
     // built against it, and after the depth format is known, because the mask
     // pass's own depth image uses the same one.
@@ -3285,6 +3292,9 @@ void Renderer::destroySwapchainDependents() {
     // Before the render pass and the depth image it names, and before the
     // pipelines built against them.
     destroyOutlineSwapchainResources();
+#if !defined(__ANDROID__)
+    destroyUiPipeline();
+#endif
     if (gizmoPipeline_ != VK_NULL_HANDLE) {
         vkDestroyPipeline(device_, gizmoPipeline_, nullptr);
         gizmoPipeline_ = VK_NULL_HANDLE;
@@ -3422,6 +3432,12 @@ bool Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     // grid and the lines being drawn must read over the bodies they are drawn
     // against, and they leave the depth buffer untouched.
     recordSketchOverlayDraw(cmd);
+
+#if !defined(__ANDROID__)
+    // The desktop shell's own interface, over everything: it is chrome, and it
+    // reads and writes no depth.
+    recordUiDraw(cmd);
+#endif
 
     vkCmdEndRenderPass(cmd);
 #if !defined(__ANDROID__)
@@ -3892,6 +3908,10 @@ bool Renderer::drawFrame() {
     syncSketchOverlay();
     // And the gizmo's canonical list, on the stroke weight alone.
     syncGizmoGeometry();
+#if !defined(__ANDROID__)
+    // And the desktop interface's atlas, on its own revision.
+    syncUiAtlas();
+#endif
 
     // Selection feedback is presentation and rides entirely on the frame loop
     // that was going to run anyway: no Java animator, no invalidate, no
