@@ -42,7 +42,10 @@ product at `7567ff1`.
   (`CadVerticalSliceTest`, `SketchExtrudeTest`, `FaceSketchOfferTest`,
   `HoleTest`, `HomeFlowTest`) OK 33/33, each 25/25 startup tokens. The layout
   lane `41765762057` lost its first attempt to the runner (three startup log
-  captures dropped lines before any test ran) and is re-running. Deliverables (`7567ff1`): `app-debug.apk`
+  captures dropped lines before any test ran); its one re-run
+  (`EditorWorkspaceLayoutTest`, `EditorWorkspaceObjectsTest`,
+  `EditorWorkspaceCompositionTest`, `EditorWorkspaceGizmoTest`) is OK 76/76
+  with 25/25 startup tokens. Deliverables (`7567ff1`): `app-debug.apk`
   (artifact `13292617809`, SHA-256
   `3a9f1cb74d1f83c24663c6a9d5282eac70d6c3855f021d47e84bc80dcba89d68`),
   `ForgeShape-Setup-0.1.0.exe` (artifact `13292128332`, SHA-256
