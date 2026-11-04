@@ -72,16 +72,28 @@ OWNER decision of the same day; `docs/DESKTOP_AND_TABLET_PLAN.md`). **TECH PASS
   eleven of them the sketch: a line drawn and undone, a rectangle, Finish
   choosing the one region, the first Extrude creating a one-part project with
   an empty history, a click on the part's face beginning a sketch there, a
-  circle cut into the same body as one Undo, the view given back. PENDING on
-  `ce576fe`: `CI FAST` `41758183950`, `CI DESKTOP` `41758167675` and the three
-  sketch lanes of `CI DEVICE` (`41758187907`, `41758191639`, `41758195047`:
-  `SketchExtrudeTest`, `CadVerticalSliceTest`, `SpatialSketchTest`,
-  `FaceSketchOfferTest`, `SketchNavigatorCameraTest`, `HomeFlowTest`,
-  `ToFaceTest`, `RevolveFeatureTest`, `SketchKnifeUndoTest`, `SketchUxTest`,
-  `SketchPlaneTest`, `CadRevolveOwnerTest`,
-  `OwnerProjectShellSketchSupportTest`), which prove the JNI's move onto the
-  core's sketch acts; and `CI DEVICE` `41755913918` / `41756754202` (the
-  layout and gizmo lanes). A physical tablet, a Windows window, a Windows GPU
+  circle cut into the same body as one Undo, the view given back. On
+  `ce576fe`: `CI FAST` `41758183950` success; `CI DESKTOP` `41758167675`
+  success (MSVC 4743 checks 0 failed, the installer and the portable zip;
+  Linux `FORGESHAPE_DESKTOP_HEADLESS_OK`); `CI DEVICE` sketch lanes, which
+  prove the JNI's move onto the core's sketch acts: `41758187907`
+  (`SketchExtrudeTest`, `CadVerticalSliceTest`, `SpatialSketchTest`,
+  `FaceSketchOfferTest`) OK 27/27, `41758191639`
+  (`SketchNavigatorCameraTest`, `HomeFlowTest`, `ToFaceTest`,
+  `RevolveFeatureTest`, `SketchKnifeUndoTest`) OK 26/26, `41758195047`
+  (`SketchUxTest`, `SketchPlaneTest`, `CadRevolveOwnerTest`,
+  `OwnerProjectShellSketchSupportTest`) OK 30/30. The workbench's layout lane
+  `41755913918` (`EditorWorkspaceLayoutTest`, `EditorWorkspaceObjectsTest`,
+  `EditorWorkspaceCompositionTest`, `CadRetainedSketchOwnerTest`,
+  `MeasureDistanceTest`, `CadPrimitivePartTest`, `IntersectTest`) OK 56/56 and
+  the gizmo lane `41756754202` (`EditorWorkspaceGizmoTest`,
+  `CadFaceSupportedPlacementTest`) OK 48/48, every run with 25/25 startup
+  tokens. Deliverables (`ce576fe`): `app-debug.apk` (artifact `13289731349`,
+  SHA-256 `363f6d5b9aeb9be0d3424a9ac6e19cab1f4b20b854311be1b310f2637f28c146`),
+  `ForgeShape-Setup-0.1.0.exe` (artifact `13288499096`, SHA-256
+  `9dfcab33e33578a5317726cec2235364222c54453617b0f830a8a5bfd06293bb`) and
+  `ForgeShape-0.1.0-portable.zip` (SHA-256
+  `a549c0b3ecad29707b1af858341462a7f272912f1d6468dfa7d20bd23916257a`). A physical tablet, a Windows window, a Windows GPU
   and the installer on a real PC are UNVERIFIED.
 - **Not this stage:** every CAD act after Extrude on the desktop (finishes,
   holes, patterns, Revolve, measure distance, History editing), Freeform,
