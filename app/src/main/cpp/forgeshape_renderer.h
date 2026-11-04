@@ -170,7 +170,10 @@ public:
     // CPU as tightly packed RGBA8, top row first. What "Save view as image"
     // and the headless CI check read; the Android build has no such path, so
     // its frame is recorded exactly as before.
-    void requestFrameCapture() { captureRequested_ = true; }
+    void requestFrameCapture() {
+        captureRequested_ = true;
+        captureReady_ = false;  // the next capture, never the previous one
+    }
 
     // DESKTOP ONLY: the shell's own interface for the next frame, drawn after
     // everything else in the main pass (see forgeshape_ui_frame.h). Null draws

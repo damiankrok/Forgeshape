@@ -14,9 +14,14 @@
 #include <mutex>
 
 #include "forgeshape_body_dimensions.h"
+#include "forgeshape_cad_body.h"
+#include "forgeshape_cad_extrude_tool.h"
 #include "forgeshape_camera.h"
+#include "forgeshape_input.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_selection.h"
+#include "forgeshape_sketch_session.h"
+#include "forgeshape_workplane.h"
 
 namespace forgeshape {
 
@@ -59,5 +64,87 @@ GizmoActivation editorSetGizmoActive(bool active);
 // appends it for a New Body. Never the list picking, saving or export read.
 // Called under editorStateMutex(), on the thread that draws.
 void applyCadOperationPreview(SceneSnapshot* list);
+
+// ---------------------------------------------------------------------------
+// The sketch acts both shells take (`DESKTOP-R2`)
+// ---------------------------------------------------------------------------
+//
+// `SketchSession` already takes platform-neutral samples; what a shell used to
+// add around it -- the view a sketch borrows, the feature view after Finish,
+// the first-project commit -- lives here, so a sketch is framed, finished and
+// committed by ONE path whichever window it was drawn in. Every function is
+// called under editorStateMutex().
+
+// The view a sketch borrows (`CAD-R0-A1A2`): the user's own pose, projection
+// and span are saved once and framed EXACTLY along the sketch's view frame;
+// end gives them back on a cancel and on a commit. Presentation only.
+void editorBeginSketchView();
+void editorEndSketchView();
+// Forgets the saved view without restoring it (the debug camera reset).
+void editorForgetSketchView();
+
+// The view the staged extrusion is adjusted through (`CAD-UX-S1-C1`), from
+// `cadFeatureViewPose`. Unavailable installs nothing.
+CadFeatureViewSource editorBeginExtrudeFeatureView();
+// The Revolve's 3/4 view once an axis is set.
+void editorBeginRevolveFeatureView();
+// Ready entered with NO region chosen leaves the tilt PENDING, and the first
+// region chosen takes it (`CAD-VERTICAL-SLICE-R1`).
+void editorSetFeatureViewPending(bool pending);
+void editorBeginPendingExtrudeFeatureView();
+
+// Begins a sketch on a world plane: refused while sculpting, inside an open
+// Construction edit and while one is open; on success the chooser is closed,
+// the gizmo withdrawn, the gestures reset and the view framed.
+CadStatus editorSketchBegin(Workplane plane);
+// Enters spatial support selection (`CAD-A3`): `allowFaces` for New Sketch
+// inside a project. Refused (false) while sculpting, while a sketch is open
+// and inside an open Construction edit.
+bool editorSupportChooserBegin(bool allowFaces);
+// Begins the sketch on the chooser's selection, re-validated against the
+// scene as it is NOW (`CAD-V6-S2`): a world plane, or a face whose producer's
+// authored state is staged with the sketch so it can become an Add, a Cut or
+// an Intersect of that body. A stale support begins nothing, and says so
+// through `outStale` when given.
+CadStatus editorConfirmChosenSupport(bool* outStale = nullptr);
+
+// Ends the sketch, whatever its state, and gives the view back. Returns
+// whether one was open.
+bool editorSketchCancel();
+// Finish Sketch: Editing -> Ready, then the feature view (or a pending one).
+CadStatus editorSketchFinish(CadFeatureViewSource* outView);
+// Back to the authored sketch, in its exact aligned view; a reuse session
+// that may not edit its shared sketch changes nothing.
+void editorSketchBackToEditing();
+
+// THE commit: the first project when the scene is empty (`APP-H1`), a New
+// Body, an Add, a Cut or an Intersect otherwise. One transaction, one Undo.
+struct EditorSketchCommit {
+    CadStatus status = CadStatus::NotSketching;
+    ObjectId created = kNoObject;
+    bool firstProject = false;
+    CadFeatureOperation operation = CadFeatureOperation::NewBody;
+};
+EditorSketchCommit editorSketchCommit();
+
+// One pointer sample while a sketch is open: the session takes it first, a
+// Ready tap beside every region retargets a To Face extent to the face under
+// it, the camera sees only what `sketchEventReachesCamera` lets through, and
+// a Ready tap that chose the first region (or a Revolve axis) takes the view
+// that waited for it.
+struct EditorSketchTouch {
+    bool consumed = false;
+    bool tapResolved = false;               // a Ready tap reached an outcome
+    SketchTapOutcome tapOutcome = SketchTapOutcome::None;
+    size_t selectedAreas = 0;
+    bool toFaceRetargeted = false;
+    CadStatus toFaceStatus = CadStatus::Ok;
+    uint32_t toFaceFeature = 0;
+    bool revolveAxisChosen = false;
+    bool logPending = false;                // a gesture is live or just ended
+};
+EditorSketchTouch editorSketchTouch(TouchAction action, int32_t actionPointerId,
+                                    const TouchPointer* pointers, int count, int viewWidth,
+                                    int viewHeight);
 
 }  // namespace forgeshape

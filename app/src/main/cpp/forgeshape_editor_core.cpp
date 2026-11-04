@@ -6,9 +6,13 @@
 #include "forgeshape_body_commands.h"
 #include "forgeshape_cad_extrude_tool.h"
 #include "forgeshape_gizmo.h"
+#include "forgeshape_history.h"
+#include "forgeshape_project_bootstrap.h"
 #include "forgeshape_render_mesh.h"
 #include "forgeshape_sculpt.h"
 #include "forgeshape_sketch_session.h"
+#include "forgeshape_support_chooser.h"
+#include "forgeshape_surface_authoring.h"
 
 namespace forgeshape {
 
@@ -154,5 +158,304 @@ void applyCadOperationPreview(SceneSnapshot* list) {
     list->push_back(std::move(item));
 }
 
+
+// ---------------------------------------------------------------------------
+// The sketch acts both shells take (`DESKTOP-R2`)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// The view a sketch borrows (`CAD-R0-A1A2`). A sketch is drawn through a view
+// straight down its plane's normal; that view is PRESENTATION -- the sketch
+// stores no camera -- and the user's own viewpoint (pose, projection and
+// orthographic span) is kept here for exactly as long as the sketch is open.
+// Guarded by editorStateMutex() like the camera it describes.
+struct SketchViewState {
+    CameraController::Pose savedPose;
+    bool poseSaved = false;
+    // Ready entered with no region chosen: the first region takes the tilt.
+    bool featureViewPending = false;
+};
+
+SketchViewState& sketchViewState() {
+    static SketchViewState state;
+    return state;
+}
+
+}  // namespace
+
+// Frames the camera EXACTLY normal to the active sketch -- no pitch-clamp
+// approximation, and correct for a face frame at any orientation (`CAD-A3`
+// B3) -- through the session's VIEW frame, so the orientation navigator's
+// flip and roll are what the user actually sees. A world-plane and a face
+// sketch take the same path.
+void editorBeginSketchView() {
+    SketchViewState& view = sketchViewState();
+    CameraController& camera = editorCamera();
+    if (!view.poseSaved) {
+        view.savedPose = camera.capturePose();
+        view.poseSaved = true;
+    }
+    frameCameraOnSketchView(camera, sketchSession());
+}
+
+void editorEndSketchView() {
+    SketchViewState& view = sketchViewState();
+    if (view.poseSaved) {
+        editorCamera().restorePose(view.savedPose);
+        view.poseSaved = false;
+    }
+}
+
+void editorForgetSketchView() {
+    sketchViewState().poseSaved = false;
+}
+
+// The sketch's view and the extrusion's are two presentations of one authored
+// truth, and Finish Sketch is where the second begins: the first is aimed
+// EXACTLY along the support normal, which is the extrusion axis, so from it
+// the arrow has no screen extent and no axial drag can be resolved
+// (`OQ-CAD-UX-01`). The saved pre-sketch pose is deliberately NOT consumed:
+// it stays the view a cancel or a commit gives back.
+CadFeatureViewSource editorBeginExtrudeFeatureView() {
+    CadExtrudeAnchors anchors;
+    if (!sketchSession().extrudeAnchors(&anchors)) {
+        return CadFeatureViewSource::Unavailable;
+    }
+    SketchViewState& view = sketchViewState();
+    CameraController& camera = editorCamera();
+    CameraController::Pose preview;
+    const CadFeatureViewSource source =
+            cadFeatureViewPose(camera.capturePose(), view.poseSaved ? &view.savedPose : nullptr,
+                               sketchSession().frame(), anchors, &preview);
+    if (source != CadFeatureViewSource::Unavailable) {
+        // restorePose is the one clamped installer, and it leaves the sketch
+        // view: from here orbit, pan and pinch mean what they mean anywhere.
+        camera.restorePose(preview);
+    }
+    return source;
+}
+
+void editorBeginRevolveFeatureView() {
+    CameraController& camera = editorCamera();
+    CameraController::Pose pose;
+    if (sketchSession().revolveViewPose(camera.capturePose(), &pose)) {
+        camera.restorePose(pose);
+    }
+}
+
+void editorSetFeatureViewPending(bool pending) {
+    sketchViewState().featureViewPending = pending;
+}
+
+void editorBeginPendingExtrudeFeatureView() {
+    SketchViewState& view = sketchViewState();
+    if (!view.featureViewPending || sketchSession().state() != SketchSessionState::Ready) {
+        return;
+    }
+    if (editorBeginExtrudeFeatureView() != CadFeatureViewSource::Unavailable) {
+        view.featureViewPending = false;
+    }
+}
+
+CadStatus editorSketchBegin(Workplane plane) {
+    CadStatus status = CadStatus::Ok;
+    if (sculptSession().inSculptMode()) {
+        status = CadStatus::NotSketching;
+    } else if (constructionHistory().editInProgress()) {
+        status = CadStatus::RefusedEditInProgress;
+    } else {
+        // Every CAD begin ends any Surface purpose a dropped sketch left.
+        surfaceSketchPurpose() = SurfaceSketchPurpose{};
+        status = sketchSession().begin(plane);
+    }
+    if (status == CadStatus::Ok) {
+        // A plane chosen while the spatial chooser was still open supersedes
+        // it: the sketch owns the gesture from here.
+        supportChooser().cancel();
+        gizmoSession().setActive(false);
+        editorSelection().resetGesture();
+        editorCamera().resetGesture();
+        editorBeginSketchView();
+    }
+    return status;
+}
+
+bool editorSupportChooserBegin(bool allowFaces) {
+    if (sculptSession().inSculptMode() || sketchSession().active()
+        || constructionHistory().editInProgress()) {
+        return false;
+    }
+    supportChooser().begin(allowFaces);
+    return true;
+}
+
+CadStatus editorConfirmChosenSupport(bool* outStale) {
+    if (outStale != nullptr) {
+        *outStale = false;
+    }
+    // Never the frame stored at the tap (`CAD-V6-S2`): the support is
+    // re-validated against the scene as it is now and its frame recomputed,
+    // so a producer an Undo or a Redo moved or removed cannot open a sketch on
+    // where its face used to be.
+    ChosenSupport c;
+    const CadStatus fresh = refreshChosenSupport(constructionScene(), supportChooser().selected(), &c);
+    if (fresh != CadStatus::Ok) {
+        if (outStale != nullptr) {
+            *outStale = true;
+        }
+        return fresh;
+    }
+    CadStatus status = CadStatus::NotSketching;
+    if (c.kind == ChosenSupport::Kind::WorldPlane) {
+        // Every CAD begin ends any Surface purpose a dropped sketch left.
+        surfaceSketchPurpose() = SurfaceSketchPurpose{};
+        status = sketchSession().begin(c.plane);
+    } else if (c.kind == ChosenSupport::Kind::Face) {
+        // The producer's authored state is staged with the sketch
+        // (`CAD-VERTICAL-SLICE-R1`), so the sketch can become an Add or a Cut
+        // of THAT body -- the same SceneObject -- as well as a new
+        // face-supported body. Nothing is written until the one commit.
+        const SceneObject* producer = constructionScene().findBody(c.faceRef.producerObjectId);
+        const CadBody* producerCad = producer != nullptr ? producer->cadOrNull() : nullptr;
+        surfaceSketchPurpose() = SurfaceSketchPurpose{};
+        status = sketchSession().beginOnFace(c.worldFrame, c.faceRef,
+                                             producerCad != nullptr ? &producerCad->state() : nullptr);
+    } else {
+        return status;
+    }
+    if (status == CadStatus::Ok) {
+        supportChooser().cancel();
+        gizmoSession().setActive(false);
+        editorSelection().resetGesture();
+        editorCamera().resetGesture();
+        editorBeginSketchView();
+    }
+    return status;
+}
+
+bool editorSketchCancel() {
+    const bool wasActive = sketchSession().active();
+    sketchSession().cancel();
+    // A Surface sketch's purpose ends with the sketch.
+    surfaceSketchPurpose() = SurfaceSketchPurpose{};
+    editorEndSketchView();
+    return wasActive;
+}
+
+CadStatus editorSketchFinish(CadFeatureViewSource* outView) {
+    const CadStatus status = sketchSession().finish();
+    CadFeatureViewSource view = CadFeatureViewSource::Unavailable;
+    if (status == CadStatus::Ok) {
+        view = editorBeginExtrudeFeatureView();
+        editorSetFeatureViewPending(view == CadFeatureViewSource::Unavailable);
+    }
+    if (outView != nullptr) {
+        *outView = view;
+    }
+    return status;
+}
+
+void editorSketchBackToEditing() {
+    SketchSession& session = sketchSession();
+    if (session.state() == SketchSessionState::Ready && !session.canReturnToSketch()) {
+        // A reuse session extrudes a SHARED sketch it may not edit (`CAD-R2`):
+        // nothing changes, the camera included.
+        session.backToEditing();  // records SketchInUse as the last status
+        return;
+    }
+    session.backToEditing();
+    // Back to the authored sketch is back to the EXACT support-normal view
+    // (`CAD-UX-S1-C1`): the drawing is authored through the aligned one.
+    editorBeginSketchView();
+}
+
+EditorSketchCommit editorSketchCommit() {
+    EditorSketchCommit result;
+    ConstructionScene& scene = constructionScene();
+    if (surfaceSketchPurpose().active) {
+        result.status = CadStatus::NotSketching;
+    } else if (!scene.hasProject()) {
+        result.firstProject = true;
+        FirstProjectReport report;
+        result.status = commitFirstCadProject(sketchSession(), scene, sculptSession(),
+                                              constructionHistory(), &report);
+        result.created = report.bodyId;
+        if (result.status == CadStatus::Ok) {
+            supportChooser().cancel();
+            editorEndSketchView();
+        }
+    } else {
+        result.operation = sketchSession().operation();
+        result.status = sketchSession().commit(scene, constructionHistory(), &result.created);
+        if (result.status == CadStatus::Ok) {
+            editorEndSketchView();
+        }
+    }
+    return result;
+}
+
+EditorSketchTouch editorSketchTouch(TouchAction action, int32_t actionPointerId,
+                                    const TouchPointer* pointers, int count, int viewWidth,
+                                    int viewHeight) {
+    EditorSketchTouch result;
+    SketchSession& sketch = sketchSession();
+    CameraController& camera = editorCamera();
+    SelectionController& selection = editorSelection();
+    const uint32_t tapSerialBefore = sketch.tapOutcomeSerial();
+    const CadSketchEdgeRef axisBefore = sketch.revolveParameters().axis;
+    const bool pickingBefore = sketch.revolveAxisPicking();
+    result.consumed = sketch.onTouch(action, actionPointerId, pointers, count, camera.snapshot(),
+                                     viewWidth, viewHeight);
+    if (sketch.tapOutcomeSerial() != tapSerialBefore) {
+        result.tapResolved = true;
+        result.tapOutcome = sketch.lastTapOutcome();
+        result.selectedAreas = sketch.selectedAreaCount();
+        // `CAD-TO-FACE-R1`: a Ready tap beside every region, while the
+        // extrusion ends on a face, chooses the face it lands on -- the scene
+        // picked exactly where the session looked (the Down pixel through the
+        // Down camera), the face named by the chooser's own rule.
+        if (result.tapOutcome == SketchTapOutcome::Exterior && extrudeIsToFace(sketch.extrude())
+            && viewWidth > 0 && viewHeight > 0) {
+            const SceneHit faceHit = pickScene(sketch.regionTapCamera(), sketch.regionTapX(),
+                                               sketch.regionTapY(), viewWidth, viewHeight);
+            ChosenSupport faceChosen;
+            if (faceHit.hit
+                && resolveFaceSupportFromHit(constructionScene(), faceHit, &faceChosen)) {
+                result.toFaceRetargeted = true;
+                result.toFaceStatus = sketch.setToFaceTargetFromTopoRef(faceChosen.faceRef);
+                result.toFaceFeature = faceChosen.faceRef.producerLocalFeatureId;
+            }
+        }
+    }
+    // READY is the one state where an unclaimed single pointer NAVIGATES
+    // (`CAD-UX-S1-C1`), except while a Ready TAP is still armed
+    // (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): `sketchEventReachesCamera` is
+    // the whole rule, and a held-back event resets the camera's gesture so
+    // the first event after the tap disarms re-anchors without a jump.
+    const bool navigable = sketch.state() == SketchSessionState::Ready;
+    if (!sketchEventReachesCamera(sketch.state(), result.consumed, count,
+                                  sketch.readyTapArmed())) {
+        camera.resetGesture();
+        selection.resetGesture();
+    } else {
+        camera.onTouch(action, actionPointerId, count > 0 ? pointers : nullptr, count);
+        selection.resetGesture();
+    }
+    if (sketch.gestureActive() || action == TouchAction::Up || action == TouchAction::Cancel) {
+        result.logPending = true;
+    }
+    if (action == TouchAction::Up && navigable) {
+        // A Ready tap may have chosen the first region...
+        editorBeginPendingExtrudeFeatureView();
+        // ...or, in a Revolve, the axis: the ring's view follows.
+        if (pickingBefore && !sketch.revolveAxisPicking()
+            && !sameCadSketchEdgeRef(axisBefore, sketch.revolveParameters().axis)) {
+            editorBeginRevolveFeatureView();
+            result.revolveAxisChosen = true;
+        }
+    }
+    return result;
+}
 
 }  // namespace forgeshape

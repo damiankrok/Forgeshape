@@ -304,8 +304,8 @@ constexpr jint kActionPointerUp = 6;
 // here for exactly as long as the sketch is open and restored the moment it
 // ends, whether by commit or by cancel. Guarded by g_stateMutex like the
 // camera it describes.
-forgeshape::CameraController::Pose g_sketchSavedPose;
-bool g_sketchPoseSaved = false;
+// It now lives in the editor core (`DESKTOP-R2`), so both shells frame a
+// sketch through one path: editorBeginSketchView / editorEndSketchView.
 
 // Spatial support-chooser gesture state: a single-finger TAP selects the target
 // under it, a single-finger DRAG orbits, two fingers navigate.
@@ -627,92 +627,16 @@ void pickEdgeFinishOfferLocked(const forgeshape::CameraSnapshot& camera, int vie
     }
 }
 
-// Frames the camera EXACTLY normal to the active sketch -- no pitch-clamp
-// approximation, and correct for a face frame at any orientation (`CAD-A3` B3)
-// -- through the session's VIEW frame, so the orientation navigator's flip and
-// roll are what the user actually sees (`SKETCH-NAVIGATOR-OUTCOME-R1`; before
-// it, this read the authoring frame and the navigator moved only its label).
-// A world-plane and a face sketch take the same path. The pre-sketch pose is
-// saved once and restored by endSketchView on cancel and on commit.
-void beginSketchView() {
-    if (!g_sketchPoseSaved) {
-        g_sketchSavedPose = g_camera.capturePose();
-        g_sketchPoseSaved = true;
-    }
-    forgeshape::frameCameraOnSketchView(g_camera, forgeshape::sketchSession());
-}
-
-void endSketchView() {
-    if (g_sketchPoseSaved) {
-        g_camera.restorePose(g_sketchSavedPose);
-        g_sketchPoseSaved = false;
-    }
-}
-
-// Leaves the exact sketch view for the one the staged extrusion can be
-// adjusted through (`CAD-UX-S1-C1`).
-//
-// The sketch's view and the extrusion's are two presentations of one authored
-// truth, and Finish Sketch is where the second begins: the first is aimed
-// EXACTLY along the support normal, which is the extrusion axis, so from it
-// the arrow has no screen extent and no axial drag can be resolved
-// (`OQ-CAD-UX-01`). The policy itself is platform-neutral arithmetic in
-// `cadFeatureViewPose`; this is the adapter that reads the camera, hands it
-// over and installs the answer.
-//
-// `g_sketchSavedPose` is deliberately NOT consumed here. It is the view the
-// user had BEFORE the sketch, and it stays the view a cancel or a commit
-// gives back; the preview is a view the sketch borrows on top, exactly as the
-// aligned one was. Nothing installed here is project truth: no `CadBodyState`,
-// no `.forge` byte, no checkpoint, no fingerprint and no history step moves.
-// The caller holds g_stateMutex.
+// The sketch's borrowed views live in the editor core (`DESKTOP-R2`); these
+// names stay so the many JNI acts that frame a sketch read as they did.
+// Every caller holds g_stateMutex.
+void beginSketchView() { forgeshape::editorBeginSketchView(); }
+void endSketchView() { forgeshape::editorEndSketchView(); }
 forgeshape::CadFeatureViewSource beginExtrudeFeatureView() {
-    forgeshape::CadExtrudeAnchors anchors;
-    if (!forgeshape::sketchSession().extrudeAnchors(&anchors)) {
-        return forgeshape::CadFeatureViewSource::Unavailable;
-    }
-    forgeshape::CameraController::Pose preview;
-    const forgeshape::CadFeatureViewSource source = forgeshape::cadFeatureViewPose(
-        g_camera.capturePose(), g_sketchPoseSaved ? &g_sketchSavedPose : nullptr,
-        forgeshape::sketchSession().frame(), anchors, &preview);
-    if (source != forgeshape::CadFeatureViewSource::Unavailable) {
-        // restorePose is the one clamped installer, and it leaves the sketch
-        // view: from here the camera is an ordinary 3D one and orbit, pan and
-        // pinch mean what they mean everywhere else.
-        g_camera.restorePose(preview);
-    }
-    return source;
+    return forgeshape::editorBeginExtrudeFeatureView();
 }
-
-// The Revolve's view (`CAD-V6-REVOLVE-NEWBODY-E2E-R1`): once an axis is set the
-// camera leans to a 3/4 pose that sees the ring square to the axis -- the
-// extrude feature view's counterpart, presentation only. The caller holds
-// g_stateMutex.
-void beginRevolveFeatureView() {
-    forgeshape::CameraController::Pose pose;
-    if (forgeshape::sketchSession().revolveViewPose(g_camera.capturePose(), &pose)) {
-        g_camera.restorePose(pose);
-    }
-}
-
-// Whether Ready was entered with NO region chosen (`CAD-VERTICAL-SLICE-R1`):
-// a sketch of several regions selects none, so there are no anchors and the
-// tilt above is refused. The view is then still the aligned one, from which
-// the arrow points at the eye and cannot be dragged, so the FIRST region the
-// user chooses -- by a tap or from the panel -- takes the tilt Finish could
-// not. Presentation only, like the view itself. Guarded by g_stateMutex.
-bool g_featureViewPending = false;
-
-// Installs the pending tilt once anchors exist. The caller holds g_stateMutex.
-void beginPendingExtrudeFeatureView() {
-    if (!g_featureViewPending
-        || forgeshape::sketchSession().state() != forgeshape::SketchSessionState::Ready) {
-        return;
-    }
-    if (beginExtrudeFeatureView() != forgeshape::CadFeatureViewSource::Unavailable) {
-        g_featureViewPending = false;
-    }
-}
+void beginRevolveFeatureView() { forgeshape::editorBeginRevolveFeatureView(); }
+void beginPendingExtrudeFeatureView() { forgeshape::editorBeginPendingExtrudeFeatureView(); }
 
 // The last touch event's platform-neutral pointer data, kept for the DEBUG-ONLY
 // read-back hook further down. It is a diagnostic mirror and never a source of
@@ -4345,25 +4269,8 @@ Java_com_forgeshape_app_NativeViewport_sketchBegin(JNIEnv*, jclass, jint planeIn
     forgeshape::CadStatus status = forgeshape::CadStatus::Ok;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        if (forgeshape::sculptSession().inSculptMode()) {
-            status = forgeshape::CadStatus::NotSketching;
-        } else if (forgeshape::constructionHistory().editInProgress()) {
-            status = forgeshape::CadStatus::RefusedEditInProgress;
-        } else {
-            // Every CAD begin ends any Surface purpose a dropped sketch left.
-            forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
-            status = forgeshape::sketchSession().begin(plane);
-        }
-        if (status == forgeshape::CadStatus::Ok) {
-            // A by-name plane chosen while the spatial chooser was still
-            // open supersedes it: the sketch owns the gesture from here, and
-            // a chooser left active would take every touch first.
-            forgeshape::supportChooser().cancel();
-            forgeshape::gizmoSession().setActive(false);
-            g_selection.resetGesture();
-            g_camera.resetGesture();
-            beginSketchView();
-        }
+        // The one begin both shells take (`DESKTOP-R2`).
+        status = forgeshape::editorSketchBegin(plane);
     }
     if (status != forgeshape::CadStatus::Ok) {
         FS_LOGE("FORGESHAPE_SKETCH_BEGIN_REFUSED:%s", forgeshape::cadStatusName(status));
@@ -4383,44 +4290,11 @@ namespace {
 // exactly on it. The caller holds g_stateMutex. Shared by the JNI confirm and
 // the confirm-on-reselect tap. Returns the CadStatus.
 forgeshape::CadStatus confirmChosenSupportLocked() {
-    // Never the frame stored at the tap (`CAD-V6-S2`): the support is
-    // re-validated against the scene as it is now and its frame recomputed,
-    // so a producer an Undo or a Redo moved or removed cannot open a sketch on
-    // where its face used to be. A stale support begins nothing.
-    forgeshape::ChosenSupport c;
-    const forgeshape::CadStatus fresh = forgeshape::refreshChosenSupport(
-            forgeshape::constructionScene(), forgeshape::supportChooser().selected(), &c);
-    if (fresh != forgeshape::CadStatus::Ok) {
-        FS_LOGI("FORGESHAPE_SUPPORT_CHOOSER_STALE:%s", forgeshape::cadStatusName(fresh));
-        return fresh;
-    }
-    forgeshape::CadStatus status = forgeshape::CadStatus::NotSketching;
-    if (c.kind == forgeshape::ChosenSupport::Kind::WorldPlane) {
-        // Every CAD begin ends any Surface purpose a dropped sketch left.
-        forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
-        status = forgeshape::sketchSession().begin(c.plane);
-    } else if (c.kind == forgeshape::ChosenSupport::Kind::Face) {
-        // The producer's authored state is staged with the sketch
-        // (`CAD-VERTICAL-SLICE-R1`), so the sketch can become an Add or a Cut
-        // of THAT body -- the same SceneObject -- as well as a new
-        // face-supported body. Nothing is written until the one commit.
-        const forgeshape::SceneObject* producer =
-                forgeshape::constructionScene().findBody(c.faceRef.producerObjectId);
-        const forgeshape::CadBody* producerCad =
-                producer != nullptr ? producer->cadOrNull() : nullptr;
-        // Every CAD begin ends any Surface purpose a dropped sketch left.
-        forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
-        status = forgeshape::sketchSession().beginOnFace(
-                c.worldFrame, c.faceRef, producerCad != nullptr ? &producerCad->state() : nullptr);
-    } else {
-        return status;
-    }
-    if (status == forgeshape::CadStatus::Ok) {
-        forgeshape::supportChooser().cancel();
-        forgeshape::gizmoSession().setActive(false);
-        g_selection.resetGesture();
-        g_camera.resetGesture();
-        beginSketchView();
+    // The one confirm both shells take (`DESKTOP-R2`).
+    bool stale = false;
+    const forgeshape::CadStatus status = forgeshape::editorConfirmChosenSupport(&stale);
+    if (stale) {
+        FS_LOGI("FORGESHAPE_SUPPORT_CHOOSER_STALE:%s", forgeshape::cadStatusName(status));
     }
     return status;
 }
@@ -4444,11 +4318,9 @@ jint supportKindCode(const forgeshape::ChosenSupport& c) {
 JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_supportChooserBegin(
     JNIEnv*, jclass, jboolean allowFaces) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
-    if (forgeshape::sculptSession().inSculptMode() || forgeshape::sketchSession().active()
-        || forgeshape::constructionHistory().editInProgress()) {
+    if (!forgeshape::editorSupportChooserBegin(allowFaces == JNI_TRUE)) {
         return JNI_FALSE;
     }
-    forgeshape::supportChooser().begin(allowFaces == JNI_TRUE);
     FS_LOGI("FORGESHAPE_SUPPORT_CHOOSER_BEGIN allowFaces=%d", allowFaces == JNI_TRUE ? 1 : 0);
     return JNI_TRUE;
 }
@@ -5577,11 +5449,7 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_sketchCancel(JNIEn
     bool wasActive = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        wasActive = forgeshape::sketchSession().active();
-        forgeshape::sketchSession().cancel();
-        // A Surface sketch's purpose ends with the sketch.
-        forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
-        endSketchView();
+        wasActive = forgeshape::editorSketchCancel();
     }
     if (wasActive) {
         FS_LOGI("FORGESHAPE_SKETCH_CANCEL undo=%d bodies=%d",
@@ -5660,17 +5528,11 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_sketchFinish(JNIEn
     forgeshape::CadFeatureViewSource view = forgeshape::CadFeatureViewSource::Unavailable;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        status = forgeshape::sketchSession().finish();
+        // Ready and the view it is adjusted through are one moment, inside
+        // one lock: the one Finish both shells take (`DESKTOP-R2`).
+        status = forgeshape::editorSketchFinish(&view);
         profiles = forgeshape::sketchSession().profiles().profiles.size();
         chosen = forgeshape::sketchSession().selectedProfileId();
-        if (status == forgeshape::CadStatus::Ok) {
-            // Inside the same lock as the transition it belongs to: the
-            // session reaches Ready and the view it is adjusted through are
-            // one moment, and a frame taken between the two would draw an
-            // arrow nobody could grab.
-            view = beginExtrudeFeatureView();
-            g_featureViewPending = view == forgeshape::CadFeatureViewSource::Unavailable;
-        }
     }
     if (status != forgeshape::CadStatus::Ok) {
         FS_LOGI("FORGESHAPE_SKETCH_FINISH_REFUSED:%s", forgeshape::cadStatusName(status));
@@ -5687,20 +5549,15 @@ JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchBackToEditing(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
     forgeshape::SketchSession& session = forgeshape::sketchSession();
-    if (session.state() == forgeshape::SketchSessionState::Ready && !session.canReturnToSketch()) {
-        // A reuse session extrudes a SHARED sketch it may not edit (`CAD-R2`):
-        // nothing changes, the camera included.
-        session.backToEditing();  // records SketchInUse as the last status
+    const bool refused =
+        session.state() == forgeshape::SketchSessionState::Ready && !session.canReturnToSketch();
+    // The one way back both shells take (`DESKTOP-R2`): the exact aligned
+    // view, or nothing at all for a shared sketch a reuse may not edit.
+    forgeshape::editorSketchBackToEditing();
+    if (refused) {
         FS_LOGI("FORGESHAPE_SKETCH_BACK_REFUSED:%s",
                 forgeshape::cadStatusName(session.lastStatus()));
-        return;
     }
-    session.backToEditing();
-    // Back to the authored sketch is back to the EXACT support-normal view
-    // (`CAD-UX-S1-C1`). The feature preview belongs to the staged
-    // extrusion; the drawing is authored through the aligned one, where a
-    // sketch length on screen is the length it is.
-    beginSketchView();
 }
 
 JNIEXPORT jint JNICALL
@@ -5748,37 +5605,13 @@ JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_sketchCommit(JNIE
     forgeshape::CadFeatureOperation operation = forgeshape::CadFeatureOperation::NewBody;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
-        if (forgeshape::surfaceSketchPurpose().active) {
-            // A Surface sketch commits through surfaceCommitSketch; letting the
-            // CAD commit run over one would make a CAD body of it.
-            status = forgeshape::CadStatus::NotSketching;
-        } else if (!scene.hasProject()) {
-            // The CAD bootstrap (`APP-H1`): no project is open, so this commit
-            // CREATES the first one rather than adding a body to it. Decided
-            // here, from native truth, so the shell has one Extrude and no
-            // second code path; see forgeshape_project_bootstrap.h.
-            firstProject = true;
-            forgeshape::FirstProjectReport report;
-            status = forgeshape::commitFirstCadProject(
-                forgeshape::sketchSession(), scene, forgeshape::sculptSession(),
-                forgeshape::constructionHistory(), &report);
-            created = report.bodyId;
-            if (status == forgeshape::CadStatus::Ok) {
-                // A first project starts from the product's own opening view,
-                // not from the pose the sketch borrowed before there was
-                // anything to look at.
-                forgeshape::supportChooser().cancel();
-                endSketchView();
-            }
-        } else {
-            operation = forgeshape::sketchSession().operation();
-            status = forgeshape::sketchSession().commit(scene, forgeshape::constructionHistory(),
-                                                        &created);
-            if (status == forgeshape::CadStatus::Ok) {
-                endSketchView();
-            }
-        }
+        // The one commit both shells take (`DESKTOP-R2`): the CAD bootstrap
+        // when no project is open (`APP-H1`), a feature or New Body otherwise.
+        const forgeshape::EditorSketchCommit commit = forgeshape::editorSketchCommit();
+        status = commit.status;
+        created = commit.created;
+        firstProject = commit.firstProject;
+        operation = commit.operation;
         undoDepth = forgeshape::constructionHistory().undoDepth();
     }
     if (status != forgeshape::CadStatus::Ok) {
@@ -8713,8 +8546,8 @@ Java_com_forgeshape_app_NativeViewport_sketchBeginEditFeature(JNIEnv*, jclass, j
             beginSketchView();
             if (startReady == JNI_TRUE) {
                 // Straight to the extrusion: the same tilt Finish Sketch takes.
-                g_featureViewPending = beginExtrudeFeatureView()
-                        == forgeshape::CadFeatureViewSource::Unavailable;
+                forgeshape::editorSetFeatureViewPending(
+                        beginExtrudeFeatureView() == forgeshape::CadFeatureViewSource::Unavailable);
             }
         }
     }
@@ -8986,8 +8819,8 @@ Java_com_forgeshape_app_NativeViewport_sketchBeginReuseSketch(JNIEnv*, jclass, j
             g_selection.resetGesture();
             g_camera.resetGesture();
             beginSketchView();
-            g_featureViewPending = beginExtrudeFeatureView()
-                    == forgeshape::CadFeatureViewSource::Unavailable;
+            forgeshape::editorSetFeatureViewPending(
+                    beginExtrudeFeatureView() == forgeshape::CadFeatureViewSource::Unavailable);
         }
     }
     FS_LOGI("FORGESHAPE_SKETCH_REUSE body=%lld sketch=%lld op=%d %s", (long long)bodyId,
@@ -9408,7 +9241,7 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_debugResetCameraTa
 #ifndef NDEBUG
     std::lock_guard<std::mutex> lock(g_stateMutex);
     g_camera.resetTarget();
-    g_sketchPoseSaved = false;
+    forgeshape::editorForgetSketchView();
 #endif
 }
 
@@ -11292,86 +11125,34 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
             forgeshape::SketchSession& sketch = forgeshape::sketchSession();
             if (sketch.active()) {
                 sketchOwned = true;
-                const uint32_t tapSerialBefore = sketch.tapOutcomeSerial();
-                const forgeshape::CadSketchEdgeRef axisBefore = sketch.revolveParameters().axis;
-                const bool pickingBefore = sketch.revolveAxisPicking();
-                const bool consumed = sketch.onTouch(translated,
-                                                     static_cast<int32_t>(actionPointerId),
-                                                     pointers, count, g_camera.snapshot(),
-                                                     viewWidth, viewHeight);
-                if (sketch.tapOutcomeSerial() != tapSerialBefore) {
-                    sketchTapOutcome = sketch.lastTapOutcome();
-                    sketchTapSelected = sketch.selectedAreaCount();
-                    // `CAD-TO-FACE-R1`: a Ready tap beside every region, while
-                    // the extrusion ends on a face, chooses the face it lands
-                    // on -- the scene picked exactly where the session looked
-                    // (the Down pixel through the Down camera), the face named
-                    // by the chooser's own triangle-to-face rule.
-                    if (sketchTapOutcome == forgeshape::SketchTapOutcome::Exterior
-                        && forgeshape::extrudeIsToFace(sketch.extrude()) && viewWidth > 0
-                        && viewHeight > 0) {
-                        const forgeshape::SceneHit faceHit = forgeshape::pickScene(
-                                sketch.regionTapCamera(), sketch.regionTapX(), sketch.regionTapY(),
-                                viewWidth, viewHeight);
-                        forgeshape::ChosenSupport faceChosen;
-                        if (faceHit.hit
-                            && forgeshape::resolveFaceSupportFromHit(
-                                       forgeshape::constructionScene(), faceHit, &faceChosen)) {
-                            const forgeshape::CadStatus retarget =
-                                    sketch.setToFaceTargetFromTopoRef(faceChosen.faceRef);
-                            FS_LOGI("FORGESHAPE_CAD_TO_FACE_TAP:%s feature=%u",
-                                    forgeshape::cadStatusName(retarget),
-                                    (unsigned)faceChosen.faceRef.producerLocalFeatureId);
-                        }
-                    }
+                // The one sketch touch path both shells take (`DESKTOP-R2`):
+                // the session first, a To Face retarget for a Ready tap beside
+                // every region, the camera only where
+                // `sketchEventReachesCamera` lets an event through, and the
+                // view a first region or a Revolve axis was waiting for.
+                const forgeshape::EditorSketchTouch touched = forgeshape::editorSketchTouch(
+                        translated, static_cast<int32_t>(actionPointerId), pointers, count,
+                        viewWidth, viewHeight);
+                if (touched.tapResolved) {
+                    sketchTapOutcome = touched.tapOutcome;
+                    sketchTapSelected = touched.selectedAreas;
                 }
-                // READY is the one state where an unclaimed single finger
-                // NAVIGATES (`CAD-UX-S1-C1`). While the sketch is being drawn a
-                // single pointer belongs to the drawing whether or not the
-                // session took it, because an orbit would take the aligned view
-                // away under the finger placing a point -- that rule is
-                // unchanged. Once Finish Sketch has been taken there is no
-                // aligned view left to protect and no point being placed: the
-                // camera is an ordinary 3D one and the user is looking at a
-                // staged solid, so a finger that misses the arrow does what a
-                // finger does everywhere else in the product.
-                const bool navigable =
-                    sketch.state() == forgeshape::SketchSessionState::Ready;
-                // ...except while a Ready TAP is still armed
-                // (`CAD-V6-S2-CORRECTION-FILL-PICK-R2`): a finger inside the
-                // tap slop orbits nothing, and the camera's gesture is reset
-                // so the first event after the tap disarms re-anchors the
-                // orbit at the CURRENT point instead of jumping from the Down.
-                // `sketchEventReachesCamera` is the whole rule.
-                if (!forgeshape::sketchEventReachesCamera(sketch.state(), consumed, count,
-                                                          sketch.readyTapArmed())) {
-                    g_camera.resetGesture();
-                    g_selection.resetGesture();
-                } else {
-                    g_camera.onTouch(translated, static_cast<int32_t>(actionPointerId),
-                                     count > 0 ? pointers : nullptr, count);
-                    g_selection.resetGesture();
+                if (touched.toFaceRetargeted) {
+                    FS_LOGI("FORGESHAPE_CAD_TO_FACE_TAP:%s feature=%u",
+                            forgeshape::cadStatusName(touched.toFaceStatus),
+                            (unsigned)touched.toFaceFeature);
                 }
-                if (sketch.gestureActive() || translated == forgeshape::TouchAction::Up
-                    || translated == forgeshape::TouchAction::Cancel) {
+                if (touched.logPending) {
                     sketchLogPending = true;
                 }
-                if (translated == forgeshape::TouchAction::Up && navigable) {
-                    // A Ready tap may have chosen the first region.
-                    beginPendingExtrudeFeatureView();
-                    // ...or, in a Revolve, the axis: the ring's view follows.
-                    if (pickingBefore && !sketch.revolveAxisPicking()
-                        && !forgeshape::sameCadSketchEdgeRef(axisBefore,
-                                                             sketch.revolveParameters().axis)) {
-                        beginRevolveFeatureView();
 #ifndef NDEBUG
-                        // Debug-only attribution, like the Ready-tap token.
-                        FS_LOGI("FORGESHAPE_REVOLVE_AXIS_TAP:%u:%u",
-                                sketch.revolveParameters().axis.entityId,
-                                sketch.revolveParameters().axis.edgeLocalIndex);
-#endif
-                    }
+                if (touched.revolveAxisChosen) {
+                    // Debug-only attribution, like the Ready-tap token.
+                    FS_LOGI("FORGESHAPE_REVOLVE_AXIS_TAP:%u:%u",
+                            sketch.revolveParameters().axis.entityId,
+                            sketch.revolveParameters().axis.edgeLocalIndex);
                 }
+#endif
             }
         }
 

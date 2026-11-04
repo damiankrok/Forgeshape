@@ -6,17 +6,24 @@
 // It proves the renderer's desktop path and the interface draw; it does not
 // prove a Windows GPU, a real window or the owner's PC, which stay UNVERIFIED
 // until the owner runs the installer.
+#include <algorithm>
 #include <cstdio>
+#include <mutex>
 #include <cstdlib>
 #include <string>
 #include <vector>
 
 #include "desktop_editor.h"
+#include "forgeshape_cad_body.h"
 #include "forgeshape_editor_core.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_history.h"
+#include "forgeshape_mass_properties.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_render_surface.h"
+#include "forgeshape_selection.h"
+#include "forgeshape_sketch_session.h"
+#include "forgeshape_support_chooser.h"
 #include "png_writer.h"
 
 namespace {
@@ -49,6 +56,25 @@ Pixel at(const std::vector<uint8_t>& rgba, uint32_t w, uint32_t x, uint32_t y) {
 
 bool near(Pixel p, int r, int g, int b, int tol) {
     return std::abs(p.r - r) <= tol && std::abs(p.g - g) <= tol && std::abs(p.b - b) <= tol;
+}
+
+// The active body's measured volume and world bounds, off the mesh it draws.
+bool measureActive(forgeshape::MassProperties* out) {
+    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    if (!scene.hasProject()) return false;
+    for (const forgeshape::SceneDrawItem& item : forgeshape::viewSceneSnapshot()) {
+        if (item.objectId == scene.activeBodyId() && item.mesh) {
+            return forgeshape::computeMassProperties(item.mesh->vertices(), item.mesh->vertexCount(),
+                                                     item.mesh->indices(), item.mesh->indexCount(),
+                                                     item.model, out);
+        }
+    }
+    return false;
+}
+
+bool screenOf(const forgeshape::Vec3& world, uint32_t w, uint32_t h, float* x, float* y) {
+    return forgeshape::projectWorldToScreen(forgeshape::editorCamera().snapshot(), world,
+                                            static_cast<int>(w), static_cast<int>(h), x, y);
 }
 
 }  // namespace
@@ -154,6 +180,114 @@ int main(int argc, char** argv) {
               forgeshape::constructionScene().activeBody().transform().values().positionX == before);
         editor.setTransformMode(-1);
     }
+
+    // --- Sketch and Extrude with the mouse (`DESKTOP-R2`) -----------------
+    const auto drag = [&](float x0, float y0, float x1, float y1) {
+        fsui::InputState in = mouse(x0, y0);
+        in.mousePressed[0] = in.mouseDown[0] = true;
+        frameWith(in);
+        for (int i = 1; i <= 6; ++i) {
+            in = mouse(x0 + (x1 - x0) * i / 6.0f, y0 + (y1 - y0) * i / 6.0f);
+            in.mouseDown[0] = true;
+            frameWith(in);
+        }
+        in = mouse(x1, y1);
+        in.mouseReleased[0] = true;
+        frameWith(in);
+    };
+    const auto click = [&](float x, float y) {
+        fsui::InputState in = mouse(x, y);
+        frameWith(in);  // the pointer arrives (a chooser highlights)
+        in.mousePressed[0] = in.mouseDown[0] = true;
+        frameWith(in);
+        in = mouse(x, y);
+        in.mouseReleased[0] = true;
+        frameWith(in);
+    };
+    // The CAD bootstrap: Close, then New CAD part is ONE sketch over an empty
+    // scene; its first Extrude creates the project.
+    editor.closeProject();
+    frameWith(idle);
+    editor.newSketch();
+    frameWith(idle);
+    check("new_cad_part_opens_a_sketch_over_an_empty_scene",
+          forgeshape::sketchSession().active() && !forgeshape::constructionScene().hasProject());
+    editor.setSketchTool(forgeshape::sketchToolIndex(forgeshape::SketchTool::Line));
+    drag(640, 300, 700, 300);
+    const size_t afterLine = forgeshape::sketchSession().sketch().entities.size();
+    editor.undo();
+    check("a_mouse_drag_draws_a_line_and_undo_takes_it_back",
+          afterLine == 1 && forgeshape::sketchSession().sketch().entities.empty());
+    editor.setSketchTool(forgeshape::sketchToolIndex(forgeshape::SketchTool::Rectangle));
+    drag(700, 330, 900, 530);
+    check("a_mouse_drag_draws_a_rectangle", forgeshape::sketchSession().sketch().entities.size() == 1);
+    editor.finishSketch();
+    frameWith(idle);
+    check("finish_sketch_chooses_the_one_region",
+          forgeshape::sketchSession().state() == forgeshape::SketchSessionState::Ready &&
+              forgeshape::sketchSession().selectionChosen());
+    editor.commitSketch();
+    for (int i = 0; i < 3; ++i) frameWith(idle);
+    forgeshape::MassProperties block;
+    const bool measuredBlock = measureActive(&block);
+    check("extrude_creates_the_project_with_one_cad_part",
+          forgeshape::constructionScene().hasProject() &&
+              forgeshape::constructionScene().bodyCount() == 1 &&
+              forgeshape::constructionScene().activeBody().cadOrNull() != nullptr &&
+              measuredBlock && block.closed && block.volume > 0.0);
+    check("a_new_project_starts_with_an_empty_history",
+          forgeshape::constructionHistory().undoDepth() == 0);
+
+    // A sketch on the part's front face, a circle, and a Cut of the SAME body.
+    editor.newSketch();
+    frameWith(idle);
+    check("new_sketch_in_a_project_opens_the_support_chooser", forgeshape::supportChooser().active());
+    const forgeshape::Vec3 front{static_cast<float>((block.boundsMin.x + block.boundsMax.x) * 0.5),
+                                 static_cast<float>((block.boundsMin.y + block.boundsMax.y) * 0.5),
+                                 static_cast<float>(block.boundsMax.z)};
+    float fx = -1, fy = -1;
+    const bool frontShows = screenOf(front, width, height, &fx, &fy);
+    click(fx, fy);
+    check("one_click_on_a_face_begins_a_sketch_on_it",
+          frontShows && forgeshape::sketchSession().active() &&
+              forgeshape::sketchSession().operationAvailable(forgeshape::CadFeatureOperation::Cut));
+    const double radius = 0.2 * std::min(block.boundsMax.x - block.boundsMin.x,
+                                         block.boundsMax.y - block.boundsMin.y);
+    float cx = -1, cy = -1, ex = -1, ey = -1;
+    screenOf(front, width, height, &cx, &cy);
+    screenOf({front.x + static_cast<float>(radius), front.y, front.z}, width, height, &ex, &ey);
+    editor.setSketchTool(forgeshape::sketchToolIndex(forgeshape::SketchTool::Circle));
+    drag(cx, cy, ex, ey);
+    editor.finishSketch();
+    frameWith(idle);
+    {
+        std::lock_guard<std::mutex> lock(forgeshape::editorStateMutex());
+        forgeshape::SketchSession& sketch = forgeshape::sketchSession();
+        sketch.setOperation(forgeshape::CadFeatureOperation::Cut);
+        sketch.setExtrude(0.5 * (block.boundsMax.z - block.boundsMin.z), sketch.extrude().direction);
+    }
+    for (int i = 0; i < 3; ++i) frameWith(idle);
+    editor.requestCapture();
+    for (int i = 0; i < 4 && !editor.captureReady(); ++i) frameWith(idle);
+    if (editor.captureReady()) {
+        uint32_t cw = 0, ch = 0;
+        const std::vector<uint8_t>& shot = editor.capture(&cw, &ch);
+        const std::string cutPreview = out.substr(0, out.size() - 4) + "-cut-preview.png";
+        fsdesktop::writePng(cutPreview, shot.data(), cw, ch, 4);
+    }
+    const size_t undoBeforeCut = forgeshape::constructionHistory().undoDepth();
+    editor.commitSketch();
+    for (int i = 0; i < 3; ++i) frameWith(idle);
+    forgeshape::MassProperties pocketed;
+    const bool measuredPocket = measureActive(&pocketed);
+    const forgeshape::CadBody* cad = forgeshape::constructionScene().activeBody().cadOrNull();
+    check("the_cut_removes_material_from_the_same_body",
+          forgeshape::constructionScene().bodyCount() == 1 && cad != nullptr &&
+              cad->state().laterFeatures.size() == 1 && measuredPocket &&
+              pocketed.volume < block.volume - 1e-9);
+    check("the_cut_is_one_undo_step",
+          forgeshape::constructionHistory().undoDepth() == undoBeforeCut + 1);
+    check("the_sketch_view_is_given_back", !forgeshape::sketchSession().active());
 
     editor.requestCapture();
     for (int i = 0; i < 4 && !editor.captureReady(); ++i) editor.frame(width, height, 1.0f, idle);

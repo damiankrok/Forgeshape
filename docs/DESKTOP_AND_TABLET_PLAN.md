@@ -93,6 +93,6 @@ UNVERIFIED until the owner runs the build.
 | Stage | Delivers |
 | --- | --- |
 | `DESKTOP-R1` | window, renderer seam, navigation, selection, the UI kit's shell (top command row, Browser, Properties, status), New / Open / Save / Save As / Export GLB, primitives, Undo / Redo, Delete, Display settings, theme file, installer, CI |
-| `DESKTOP-R2` | Sketch and Extrude (New Body / Add / Cut / Intersect) with the mouse, by moving the sketch orchestration out of JNI into the editor core |
+| `DESKTOP-R2` | Sketch and Extrude (New Body / Add / Cut / Intersect) with the mouse. `SketchSession` already takes platform-neutral touch samples (`onTouch`, `toggleRegionAt`, `finish`, `commitSketch`); what moves out of JNI into the editor core is the sketch VIEW (`beginSketchView` / `endSketchView`, the feature view after Finish) and the first-project commit, so both shells frame and commit a sketch through one path |
 | `DESKTOP-R3` | every remaining CAD act (finishes, holes, patterns, revolve, measure, History editing), then Freeform, Surface and Sculpt with a mouse or pen |
 | later | cloud: the same `.forge` document opened from a shared location by either application |

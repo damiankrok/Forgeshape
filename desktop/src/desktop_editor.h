@@ -94,6 +94,21 @@ public:
     // Move, Rotate or Scale (0..2), or -1 to put the transform handles away.
     void setTransformMode(int mode);
 
+    // Sketch and Extrude (`DESKTOP-R2`), through the core's one sketch path
+    // (`forgeshape_editor_core.h`): the same begin, view, touch, Finish and
+    // commit the Android shell takes.
+    // With no project: the CAD bootstrap, a sketch on XY whose first Extrude
+    // creates the project. Inside one: the spatial support chooser.
+    void newSketch();
+    // A sketch on a world plane by name (0 XY, 1 XZ, 2 YZ).
+    void sketchOnPlane(int plane);
+    void setSketchTool(int tool);
+    void finishSketch();
+    void backToSketch();
+    // Extrude: the one commit, one Undo.
+    void commitSketch();
+    void cancelSketch();
+
     const std::string& status() const { return status_; }
 
     // Whether the open project differs from what the last New, Open or Save
@@ -110,6 +125,13 @@ private:
     void buildBrowser(const fsui::Rect& panel);
     void buildProperties(const fsui::Rect& panel);
     void buildStatusBar(const fsui::Rect& bar);
+    void buildSketchToolbar(const fsui::Rect& bar, float x, float y, float size);
+    void buildSketchProperties(const fsui::Rect& panel);
+    void buildChooserProperties(const fsui::Rect& panel);
+    // Routes the mouse while a sketch or the support chooser owns the
+    // viewport; false when neither does.
+    bool routeSketchInput(int width, int height, bool overUi);
+    void sketchKeys();
     void routeViewportInput(int width, int height);
     void report(const std::string& message, bool error = false);
     void refreshTitle();
@@ -130,6 +152,9 @@ private:
     bool dragTravelled_ = false;
     // A transform handle captured by the left button (the gizmo's own drag).
     bool gizmoDragging_ = false;
+    // The left button inside a sketch: one captured pointer, Down to Up.
+    bool sketchPointer_ = false;
+    float sketchLastX_ = 0, sketchLastY_ = 0;
     fsui::Rect viewportRect_;
 
     bool browserOpen_ = true;

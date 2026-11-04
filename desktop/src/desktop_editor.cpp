@@ -120,6 +120,77 @@ const char* timelineRowIcon(const fs::CadTimelineRow& row) {
     return "ic_feature_history";
 }
 
+// The Tool Rail's eight sketch tools, in its reading order.
+struct SketchToolEntry {
+    fs::SketchTool tool;
+    const char* icon;
+    const char* name;
+    const char* hint;
+};
+constexpr SketchToolEntry kSketchTools[] = {
+    {fs::SketchTool::Select, "ic_tool_select", "Select", "Click a curve to select it; Delete removes it"},
+    {fs::SketchTool::Line, "ic_tool_line", "Line", "Press, drag and release to draw a line"},
+    {fs::SketchTool::Polyline, "ic_tool_polyline", "Polyline",
+     "Click each corner; click the first point to close, Esc to end"},
+    {fs::SketchTool::Rectangle, "ic_tool_rectangle", "Rectangle", "Drag from one corner to the other"},
+    {fs::SketchTool::Circle, "ic_tool_circle", "Circle", "Drag from the centre outwards"},
+    {fs::SketchTool::Arc, "ic_tool_arc", "Arc", "Drag the chord, then click the point the arc passes"},
+    {fs::SketchTool::Spline, "ic_tool_spline", "Spline", "Click the points the curve passes; Esc to end"},
+    {fs::SketchTool::Trim, "ic_tool_trim", "Trim", "Click or swipe across a curve to cut it back"},
+};
+
+// A refusal in the user's words; the code's own name otherwise.
+std::string sketchStatusText(fs::CadStatus status) {
+    switch (status) {
+        case fs::CadStatus::OpenProfile: return "The sketch has no closed shape yet";
+        case fs::CadStatus::AmbiguousProfile: return "Click the region to extrude";
+        case fs::CadStatus::NotSketching: return "Not available now";
+        case fs::CadStatus::RefusedEditInProgress: return "Finish the current edit first";
+        case fs::CadStatus::CutNoIntersection: return "The cut does not reach the part";
+        case fs::CadStatus::CutRemovesBody: return "The cut would remove the whole part";
+        case fs::CadStatus::AddDisjoint: return "The added material does not touch the part";
+        default: return fs::cadStatusName(status);
+    }
+}
+
+const char* extentIcon(fs::ExtrudeExtentMode mode) {
+    switch (mode) {
+        case fs::ExtrudeExtentMode::Symmetric: return "ic_extent_symmetric";
+        case fs::ExtrudeExtentMode::TwoSides: return "ic_extent_two_sides";
+        case fs::ExtrudeExtentMode::ThroughAll: return "ic_extent_through_all";
+        case fs::ExtrudeExtentMode::ToFace: return "ic_extent_to_face";
+        default: return "ic_extent_one_side";
+    }
+}
+
+const char* extentLabel(fs::ExtrudeExtentMode mode) {
+    switch (mode) {
+        case fs::ExtrudeExtentMode::Symmetric: return "Symmetric";
+        case fs::ExtrudeExtentMode::TwoSides: return "Two Sides";
+        case fs::ExtrudeExtentMode::ThroughAll: return "Through All";
+        case fs::ExtrudeExtentMode::ToFace: return "To Face";
+        default: return "One Side";
+    }
+}
+
+const char* operationIcon(fs::CadFeatureOperation op) {
+    switch (op) {
+        case fs::CadFeatureOperation::Add: return "ic_op_add";
+        case fs::CadFeatureOperation::Cut: return "ic_op_cut";
+        case fs::CadFeatureOperation::Intersect: return "ic_op_intersect";
+        default: return "ic_op_new_body";
+    }
+}
+
+const char* operationLabel(fs::CadFeatureOperation op) {
+    switch (op) {
+        case fs::CadFeatureOperation::Add: return "Add";
+        case fs::CadFeatureOperation::Cut: return "Cut";
+        case fs::CadFeatureOperation::Intersect: return "Intersect";
+        default: return "New Body";
+    }
+}
+
 }  // namespace
 
 DesktopEditor::DesktopEditor() = default;
@@ -327,7 +398,8 @@ void DesktopEditor::openProjectBytes(const std::vector<uint8_t>& bytes, const st
     fs::ProjectCodecStatus status = fs::decodeProject(bytes.data(), bytes.size(), &document);
     if (status == fs::ProjectCodecStatus::Ok) {
         std::lock_guard<std::mutex> lock(fs::editorStateMutex());
-        if (fs::sketchSession().active()) fs::sketchSession().cancel();
+        fs::editorSketchCancel();
+        fs::supportChooser().cancel();
         fs::ProjectLoadReport loaded;
         status = fs::loadProjectDocument(document, fs::constructionScene(), fs::sculptSession(),
                                          fs::constructionHistory(), &loaded);
@@ -392,6 +464,12 @@ void DesktopEditor::exportGlb() {
 
 void DesktopEditor::undo() {
     std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    // While a sketch is open the pair steps its own volatile branch
+    // (`SKETCH-KNIFE-UNDO-R1`); Construction Undo stays refused under it.
+    if (fs::sketchSession().active()) {
+        if (fs::sketchSession().undoSketchEdit()) report("Undo");
+        return;
+    }
     fs::ConstructionRestoreReport restored;
     if (fs::constructionHistory().undo(&restored)) {
         fs::supportChooser().cancel();
@@ -401,6 +479,10 @@ void DesktopEditor::undo() {
 
 void DesktopEditor::redo() {
     std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    if (fs::sketchSession().active()) {
+        if (fs::sketchSession().redoSketchEdit()) report("Redo");
+        return;
+    }
     fs::ConstructionRestoreReport restored;
     if (fs::constructionHistory().redo(&restored)) {
         fs::supportChooser().cancel();
@@ -447,6 +529,15 @@ void DesktopEditor::makeCadPart() {
 
 void DesktopEditor::deleteActive() {
     std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    // Inside a sketch, Delete means the selected curve; a body is never
+    // deleted from under a sketch.
+    if (fs::sketchSession().active()) {
+        if (fs::sketchSession().state() == fs::SketchSessionState::Editing &&
+            fs::sketchSession().deleteSelected() == fs::CadStatus::Ok) {
+            report("Deleted the selected curve");
+        }
+        return;
+    }
     fs::ConstructionScene& scene = fs::constructionScene();
     if (!scene.hasProject()) return;
     const fs::ObjectId id = scene.activeBodyId();
@@ -466,7 +557,8 @@ void DesktopEditor::deleteActive() {
 void DesktopEditor::closeProject() {
     if (!settleUnsavedChanges()) return;
     std::lock_guard<std::mutex> lock(fs::editorStateMutex());
-    if (fs::sketchSession().active()) fs::sketchSession().cancel();
+    fs::editorSketchCancel();
+    fs::supportChooser().cancel();
     fs::constructionHistory().clear();
     fs::constructionScene().closeProject();
     fs::editorSelection().clearSelection();
@@ -494,6 +586,114 @@ void DesktopEditor::setTransformMode(int mode) {
         case fs::GizmoActivation::RefusedInSculpt: report("Not while sculpting", true); break;
         default: break;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Sketch and Extrude (`DESKTOP-R2`)
+// ---------------------------------------------------------------------------
+
+void DesktopEditor::newSketch() {
+    std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    if (fs::sketchSession().active() || fs::supportChooser().active()) return;
+    fs::editorSetGizmoActive(false);
+    if (!fs::constructionScene().hasProject()) {
+        // The CAD bootstrap (`APP-H1`): ONE volatile sketch over the empty
+        // scene, on XY seen along +Z, owning no ObjectId; the first Extrude
+        // creates the project, and Cancel before it costs nothing.
+        const fs::CadStatus status = fs::editorSketchBegin(fs::Workplane::XY);
+        if (status != fs::CadStatus::Ok) {
+            report("Could not start a sketch: " + sketchStatusText(status), true);
+            return;
+        }
+        homeVisible_ = false;
+        projectName_.clear();
+        report("Draw a closed shape on XY, then Finish sketch");
+        return;
+    }
+    if (!fs::editorSupportChooserBegin(true)) {
+        report("A sketch cannot start now", true);
+        return;
+    }
+    report("Click a plane or a flat face to sketch on");
+}
+
+void DesktopEditor::sketchOnPlane(int plane) {
+    fs::Workplane workplane;
+    if (!fs::workplaneFromIndex(plane, &workplane)) return;
+    std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    fs::editorSetGizmoActive(false);
+    const fs::CadStatus status = fs::editorSketchBegin(workplane);
+    if (status != fs::CadStatus::Ok) {
+        report("Could not start a sketch: " + sketchStatusText(status), true);
+        return;
+    }
+    report(std::string("Sketch on ") + fs::workplaneName(workplane));
+}
+
+void DesktopEditor::setSketchTool(int tool) {
+    fs::SketchTool chosen;
+    if (!fs::sketchToolFromIndex(tool, &chosen)) return;
+    std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    if (fs::sketchSession().setTool(chosen)) {
+        for (const SketchToolEntry& entry : kSketchTools) {
+            if (entry.tool == chosen) report(entry.hint);
+        }
+    }
+}
+
+void DesktopEditor::finishSketch() {
+    std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    fs::CadFeatureViewSource view = fs::CadFeatureViewSource::Unavailable;
+    const fs::CadStatus status = fs::editorSketchFinish(&view);
+    if (status != fs::CadStatus::Ok) {
+        report(sketchStatusText(status), true);
+        return;
+    }
+    report(fs::sketchSession().selectionChosen()
+               ? "Set the distance and Extrude, or drag the arrow"
+               : "Click the region to extrude");
+}
+
+void DesktopEditor::backToSketch() {
+    std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    fs::editorSketchBackToEditing();
+    if (fs::sketchSession().state() == fs::SketchSessionState::Ready) {
+        report(sketchStatusText(fs::sketchSession().lastStatus()), true);
+    }
+}
+
+void DesktopEditor::commitSketch() {
+    fs::EditorSketchCommit commit;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        commit = fs::editorSketchCommit();
+        if (commit.status == fs::CadStatus::Ok && commit.created != fs::kNoObject) {
+            fs::editorSelection().setSelected(commit.created);
+        }
+    }
+    if (commit.status != fs::CadStatus::Ok) {
+        report("Not extruded: " + sketchStatusText(commit.status), true);
+        return;
+    }
+    if (commit.firstProject) {
+        // A new project the user drew is work: it is unsaved until a Save,
+        // so closing asks first.
+        savedFingerprint_ = 0;
+        projectName_ = "Untitled";
+        refreshTitle();
+        report("Created the part");
+        return;
+    }
+    report(std::string("Extruded \xC2\xB7 ") + operationLabel(commit.operation));
+}
+
+void DesktopEditor::cancelSketch() {
+    std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    fs::editorSketchCancel();
+    fs::supportChooser().cancel();
+    sketchPointer_ = false;
+    if (!fs::constructionScene().hasProject()) homeVisible_ = true;
+    report("Sketch cancelled");
 }
 
 bool DesktopEditor::shortcut(char key, bool ctrl, bool shift) {
@@ -533,6 +733,9 @@ bool DesktopEditor::frame(int width, int height, float scale, const fsui::InputS
             fs::editorSetGizmoActive(true);  // re-asks the rule for the body now active
         }
     }
+    // Enter and Esc in a sketch, read before the interface so a number field
+    // that is still being typed into keeps its own Enter.
+    sketchKeys();
     ui_->begin(width, height, scale, input);
     buildInterface(width, height);
     // The viewport gets what no surface or control took this frame.
@@ -546,6 +749,7 @@ bool DesktopEditor::frame(int width, int height, float scale, const fsui::InputS
 
 void DesktopEditor::routeViewportInput(int width, int height) {
     const bool overUi = ui_->pointerCaptured() || homeVisible_;
+    if (routeSketchInput(width, height, overUi)) return;
     fs::CameraController& camera = fs::editorCamera();
     // The wheel zooms about the pointer.
     if (!overUi && input_.wheel != 0.0f) {
@@ -628,11 +832,16 @@ void DesktopEditor::routeViewportInput(int width, int height) {
 
 void DesktopEditor::buildInterface(int width, int height) {
     bool hasProject = false;
+    bool sketching = false;
     {
         std::lock_guard<std::mutex> lock(fs::editorStateMutex());
         hasProject = fs::constructionScene().hasProject();
+        sketching = fs::sketchSession().active();
     }
-    if (!hasProject) homeVisible_ = true;
+    // The CAD bootstrap's sketch stands over an EMPTY scene: no project yet,
+    // and not Home either.
+    if (!hasProject && !sketching) homeVisible_ = true;
+    if (sketching) homeVisible_ = false;
     if (homeVisible_) {
         buildHome(width, height);
         return;
@@ -672,7 +881,7 @@ void DesktopEditor::buildHome(int width, int height) {
              theme_.smallFontSize);
     y += ui.px(28);
     const float bw = card.w - ui.px(56), bh = ui.px(44);
-    if (ui.button("home_new_cad", {x, y, bw, bh}, "New CAD part", "ic_op_new_body", true)) newCadPart();
+    if (ui.button("home_new_cad", {x, y, bw, bh}, "New CAD part", "ic_sketch_new", true)) newSketch();
     y += bh + ui.px(10);
     if (ui.button("home_new_freeform", {x, y, bw, bh}, "New Freeform body", "ic_freeform")) newFreeform();
     y += bh + ui.px(10);
@@ -708,6 +917,15 @@ void DesktopEditor::buildToolbar(const Rect& bar) {
     if (tool("tb_browser", "ic_panel_browser", "Browser (objects and history)", browserOpen_))
         browserOpen_ = !browserOpen_;
     gap();
+    bool sketchOwns = false;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        sketchOwns = fs::sketchSession().active() || fs::supportChooser().active();
+    }
+    if (sketchOwns) {
+        buildSketchToolbar(bar, x, y, s);
+        return;
+    }
     if (tool("tb_open", "ic_project", "Open project\xE2\x80\xA6  Ctrl+O")) openProject();
     if (tool("tb_save", "ic_save", "Save project\xE2\x80\xA6  Ctrl+S")) saveProject();
     if (tool("tb_export", "ic_export", "Export GLB\xE2\x80\xA6  Ctrl+E")) exportGlb();
@@ -722,6 +940,7 @@ void DesktopEditor::buildToolbar(const Rect& bar) {
         if (tool(id.c_str(), primitiveIcon(kinds[i]), names[i])) addPrimitive(static_cast<int>(kinds[i]));
     }
     gap();
+    if (tool("tb_new_sketch", "ic_sketch_new", "New sketch")) newSketch();
     if (tool("tb_cad_part", "ic_op_new_body", "Make CAD part")) makeCadPart();
     if (tool("tb_delete", "ic_delete", "Delete body  Del")) deleteActive();
     gap();
@@ -795,8 +1014,11 @@ void DesktopEditor::buildBrowser(const Rect& panel) {
         if (ui.listRow(id, {x, y, w, rowH}, bodyLabel(body.first), representationIcon(body.second),
                        body.first == active, representationLabel(body.second))) {
             std::lock_guard<std::mutex> lock(fs::editorStateMutex());
-            fs::constructionScene().setActiveBody(body.first);
-            fs::editorSelection().setSelected(body.first);
+            // Body switching is refused while a sketch is open, as on Android.
+            if (!fs::sketchSession().active()) {
+                fs::constructionScene().setActiveBody(body.first);
+                fs::editorSelection().setSelected(body.first);
+            }
         }
         y += rowH + ui.px(2);
     }
@@ -828,6 +1050,22 @@ void DesktopEditor::buildProperties(const Rect& panel) {
     const float w = panel.w - 2 * inner;
     float y = panel.y + inner;
 
+    {
+        bool sketching = false, choosing = false;
+        {
+            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+            sketching = fs::sketchSession().active();
+            choosing = fs::supportChooser().active();
+        }
+        if (sketching) {
+            buildSketchProperties(panel);
+            return;
+        }
+        if (choosing) {
+            buildChooserProperties(panel);
+            return;
+        }
+    }
     fs::ObjectId active = fs::kNoObject;
     fs::BodyRepresentation representation = fs::BodyRepresentation::Construction;
     fs::TransformValues t;
@@ -1023,11 +1261,486 @@ void DesktopEditor::buildStatusBar(const Rect& bar) {
     ui.block(bar);
     ui.label({bar.x + ui.px(12), bar.y, bar.w * 0.6f, bar.h}, status_,
              statusError_ ? theme_.textError : theme_.textSecondary, theme_.smallFontSize);
+    fs::SketchSessionState sketchState = fs::SketchSessionState::Inactive;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        sketchState = fs::sketchSession().state();
+    }
     const std::string hint =
-        "Left drag: orbit \xC2\xB7 Middle or Shift+drag: pan \xC2\xB7 Wheel: zoom \xC2\xB7 Click: select";
+        sketchState == fs::SketchSessionState::Editing
+            ? "Left: draw \xC2\xB7 Middle drag: pan \xC2\xB7 Wheel: zoom \xC2\xB7 Enter: Finish sketch \xC2\xB7 Esc: end a run"
+        : sketchState == fs::SketchSessionState::Ready
+            ? "Click: choose a region \xC2\xB7 Drag the arrow: distance \xC2\xB7 Drag: orbit \xC2\xB7 Enter: Extrude"
+            : "Left drag: orbit \xC2\xB7 Middle or Shift+drag: pan \xC2\xB7 Wheel: zoom \xC2\xB7 Click: select";
     const float hw = ui.textWidth(hint, theme_.smallFontSize);
     ui.label({bar.right() - hw - ui.px(12), bar.y, hw, bar.h}, hint, theme_.textDisabled,
              theme_.smallFontSize);
+}
+
+// ---------------------------------------------------------------------------
+// The sketch's chrome (`DESKTOP-R2`)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Splits a hint into lines that fit `width` at the small size.
+std::vector<std::string> wrapText(fsui::Ui& ui, const std::string& text, float width, float size) {
+    std::vector<std::string> lines;
+    std::string line, word;
+    const auto flushWord = [&]() {
+        if (word.empty()) return;
+        const std::string candidate = line.empty() ? word : line + " " + word;
+        if (!line.empty() && ui.textWidth(candidate, size) > width) {
+            lines.push_back(line);
+            line = word;
+        } else {
+            line = candidate;
+        }
+        word.clear();
+    };
+    for (char c : text) {
+        if (c == ' ') {
+            flushWord();
+        } else {
+            word.push_back(c);
+        }
+    }
+    flushWord();
+    if (!line.empty()) lines.push_back(line);
+    return lines;
+}
+
+}  // namespace
+
+bool DesktopEditor::routeSketchInput(int width, int height, bool overUi) {
+    bool sketching = false, choosing = false;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        sketching = fs::sketchSession().active();
+        choosing = fs::supportChooser().active();
+    }
+    if (!sketching && !choosing) {
+        sketchPointer_ = false;
+        return false;
+    }
+    fs::CameraController& camera = fs::editorCamera();
+    if (!overUi && input_.wheel != 0.0f) {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        camera.zoomAtPixel(input_.mouseX, input_.mouseY, input_.wheel);
+    }
+    // Navigation: the right button orbits and the middle (or Shift) pans, as
+    // everywhere; the camera itself refuses an orbit while the exact sketch
+    // view stands. In the chooser the left button navigates too, and a click
+    // that did not travel chooses the target under it.
+    const int firstNavButton = choosing ? 0 : 1;
+    for (int b = firstNavButton; b < 3; ++b) {
+        if (input_.mousePressed[b] && !overUi && dragButton_ < 0) {
+            dragButton_ = b;
+            dragLastX_ = pressX_ = input_.mouseX;
+            dragLastY_ = pressY_ = input_.mouseY;
+            dragTravelled_ = false;
+        }
+    }
+    if (dragButton_ >= 0 && dragButton_ < firstNavButton) dragButton_ = -1;
+    if (dragButton_ >= 0) {
+        const float dx = input_.mouseX - dragLastX_;
+        const float dy = input_.mouseY - dragLastY_;
+        if (std::fabs(input_.mouseX - pressX_) + std::fabs(input_.mouseY - pressY_) > 4.0f * scale_) {
+            dragTravelled_ = true;
+        }
+        if ((dx != 0.0f || dy != 0.0f) && dragTravelled_) {
+            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+            if (dragButton_ == 2 || input_.shift) {
+                camera.panByPixels(dx, dy);
+            } else {
+                camera.orbitByPixels(dx, dy);
+            }
+        }
+        dragLastX_ = input_.mouseX;
+        dragLastY_ = input_.mouseY;
+        if (input_.mouseReleased[dragButton_]) {
+            if (choosing && dragButton_ == 0 && !dragTravelled_) {
+                std::unique_lock<std::mutex> lock(fs::editorStateMutex());
+                const fs::ChosenSupport chosen = fs::supportChooser().select(
+                    camera.snapshot(), input_.mouseX, input_.mouseY, width, height,
+                    fs::constructionScene());
+                if (chosen.kind != fs::ChosenSupport::Kind::None) {
+                    // A pointer hovers before it clicks, so one click is the
+                    // whole choice: the chooser's own confirm.
+                    const fs::CadStatus status = fs::editorConfirmChosenSupport();
+                    lock.unlock();
+                    if (status == fs::CadStatus::Ok) {
+                        report(chosen.kind == fs::ChosenSupport::Kind::Face ? "Sketch on the face"
+                                                                            : "Sketch on the plane");
+                    } else {
+                        report("Could not sketch there: " + sketchStatusText(status), true);
+                    }
+                }
+            }
+            dragButton_ = -1;
+        }
+    }
+    if (choosing && !overUi && dragButton_ < 0) {
+        // A mouse hovers: the target under it is highlighted, never chosen.
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        if (fs::supportChooser().active()) {
+            fs::supportChooser().hover(camera.snapshot(), input_.mouseX, input_.mouseY, width,
+                                       height, fs::constructionScene());
+        }
+    }
+    if (!sketching) return true;
+    // The left button IS one pointer: Down, Move, Up, through the core's one
+    // sketch touch path -- the drawing, the arrow drag and a region tap alike.
+    const auto send = [&](fs::TouchAction action) {
+        fs::TouchPointer pointer{0, input_.mouseX, input_.mouseY, fs::PointerToolType::Mouse};
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        if (!fs::sketchSession().active()) return;
+        fs::editorSketchTouch(action, 0, &pointer, 1, width, height);
+    };
+    if (input_.mousePressed[0] && !overUi && !sketchPointer_) {
+        sketchPointer_ = true;
+        sketchLastX_ = input_.mouseX;
+        sketchLastY_ = input_.mouseY;
+        send(fs::TouchAction::Down);
+    }
+    if (sketchPointer_) {
+        if (input_.mouseX != sketchLastX_ || input_.mouseY != sketchLastY_) {
+            send(fs::TouchAction::Move);
+            sketchLastX_ = input_.mouseX;
+            sketchLastY_ = input_.mouseY;
+        }
+        if (input_.mouseReleased[0] || !input_.mouseDown[0]) {
+            send(fs::TouchAction::Up);
+            sketchPointer_ = false;
+        }
+    }
+    return true;
+}
+
+void DesktopEditor::sketchKeys() {
+    if (ui_ && ui_->typing()) return;
+    for (fsui::Key key : input_.keys) {
+        fs::SketchSessionState state = fs::SketchSessionState::Inactive;
+        bool choosing = false;
+        {
+            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+            state = fs::sketchSession().state();
+            choosing = fs::supportChooser().active();
+        }
+        if (key == fsui::Key::Escape) {
+            if (choosing) {
+                std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+                fs::supportChooser().cancel();
+            } else if (state == fs::SketchSessionState::Editing) {
+                // One step, as Back is: a run being placed ends first, then
+                // the tool is put down.
+                std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+                fs::SketchSession& sketch = fs::sketchSession();
+                if (sketch.polylineInProgress()) {
+                    sketch.endPolylineInProgress();
+                } else if (sketch.tool() != fs::SketchTool::Select) {
+                    sketch.setTool(fs::SketchTool::Select);
+                }
+            } else if (state == fs::SketchSessionState::Ready) {
+                backToSketch();
+            }
+        } else if (key == fsui::Key::Enter) {
+            if (state == fs::SketchSessionState::Editing) {
+                finishSketch();
+            } else if (state == fs::SketchSessionState::Ready) {
+                commitSketch();
+            }
+        }
+    }
+}
+
+void DesktopEditor::buildSketchToolbar(const Rect& bar, float x, float y, float s) {
+    fsui::Ui& ui = *ui_;
+    fs::SketchSessionState state = fs::SketchSessionState::Inactive;
+    fs::SketchTool current = fs::SketchTool::Select;
+    bool canUndo = false, canRedo = false, canExtrude = false;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        fs::SketchSession& sketch = fs::sketchSession();
+        state = sketch.state();
+        current = sketch.tool();
+        canUndo = sketch.canUndoSketchEdit();
+        canRedo = sketch.canRedoSketchEdit();
+        if (state == fs::SketchSessionState::Ready && sketch.selectionChosen()) {
+            canExtrude = sketch.evaluateCandidate().valid;
+        }
+    }
+    const auto tool = [&](const char* id, const char* icon, const std::string& tip, bool active,
+                          bool enabled = true) {
+        const bool click = ui.iconButton(id, {x, y, s, s}, icon, tip, active, enabled);
+        x += s + ui.px(2);
+        return click;
+    };
+    if (state == fs::SketchSessionState::Editing) {
+        for (size_t i = 0; i < sizeof(kSketchTools) / sizeof(kSketchTools[0]); ++i) {
+            const SketchToolEntry& entry = kSketchTools[i];
+            const std::string id = std::string("sk_tool_") + std::to_string(i);
+            if (tool(id.c_str(), entry.icon, entry.name, entry.tool == current)) {
+                setSketchTool(fs::sketchToolIndex(entry.tool));
+            }
+        }
+        ui.rect({x + ui.px(4), y + ui.px(8), 1.0f, s - ui.px(16)}, theme_.chromeHairline, 0);
+        x += ui.px(10);
+        if (tool("sk_undo", "ic_undo", "Undo  Ctrl+Z", false, canUndo)) undo();
+        if (tool("sk_redo", "ic_redo", "Redo  Ctrl+Y", false, canRedo)) redo();
+    } else if (state == fs::SketchSessionState::Ready) {
+        if (tool("sk_back", "ic_sketch_back", "Back to sketch  Esc", false)) backToSketch();
+    }
+    // The trailing group: the way on, and the way out.
+    const float bw = ui.px(150);
+    float rx = bar.right() - ui.px(10);
+    if (state == fs::SketchSessionState::Editing) {
+        rx -= bw;
+        if (ui.button("sk_finish", {rx, y, bw, s}, "Finish sketch", "ic_sketch_keep", true)) finishSketch();
+    } else if (state == fs::SketchSessionState::Ready) {
+        rx -= bw;
+        if (ui.button("sk_extrude", {rx, y, bw, s}, "Extrude", "ic_op_new_body", true, canExtrude)) {
+            commitSketch();
+        }
+    }
+    rx -= s + ui.px(8);
+    if (ui.iconButton("sk_cancel", {rx, y, s, s}, "ic_sketch_cancel",
+                      state == fs::SketchSessionState::Inactive ? "Cancel" : "Cancel sketch")) {
+        cancelSketch();
+    }
+}
+
+void DesktopEditor::buildChooserProperties(const Rect& panel) {
+    fsui::Ui& ui = *ui_;
+    ui.panel(panel);
+    const float inner = ui.px(12);
+    const float x = panel.x + inner;
+    const float w = panel.w - 2 * inner;
+    float y = panel.y + inner;
+    ui.label({x, y, w, ui.px(24)}, "New sketch", theme_.textPrimary, 15, true);
+    y += ui.px(30);
+    for (const std::string& line :
+         wrapText(ui, "Click a plane or a flat face of a part in the view. Esc cancels.", w,
+                  theme_.smallFontSize)) {
+        ui.label({x, y, w, ui.px(18)}, line, theme_.textSecondary, theme_.smallFontSize);
+        y += ui.px(18);
+    }
+    y += ui.px(12);
+    ui.separator(x, y, w);
+    y += ui.px(10);
+    ui.label({x, y, w, ui.px(20)}, "PLANES", theme_.textSecondary, theme_.titleFontSize, true);
+    y += ui.px(24);
+    const float h = ui.px(theme_.controlHeight);
+    static const char* names[3] = {"XY plane", "XZ plane", "YZ plane"};
+    for (int i = 0; i < 3; ++i) {
+        const std::string id = std::string("chooser_plane_") + std::to_string(i);
+        if (ui.button(id, {x, y, w, h}, names[i], "ic_sketch_new")) sketchOnPlane(i);
+        y += h + ui.px(6);
+    }
+    y += ui.px(6);
+    if (ui.button("chooser_cancel", {x, y, w, h}, "Cancel", "ic_sketch_cancel")) cancelSketch();
+}
+
+void DesktopEditor::buildSketchProperties(const Rect& panel) {
+    fsui::Ui& ui = *ui_;
+    ui.panel(panel);
+    const float inner = ui.px(12);
+    const float x = panel.x + inner;
+    const float w = panel.w - 2 * inner;
+    float y = panel.y + inner;
+    const float h = ui.px(theme_.controlHeight);
+    const float labelW = ui.px(84);
+
+    // One consistent read of the session.
+    fs::SketchSessionState state;
+    fs::SketchTool current;
+    fs::Workplane plane;
+    bool onFace = false, inRun = false, chosen = false;
+    size_t entities = 0, areas = 0;
+    fs::ExtrudeFeature extrude, shown;
+    fs::CadFeatureOperation operation;
+    bool operations[4] = {false, false, false, false};
+    bool throughAll = false, toFace = false;
+    bool candidateValid = false;
+    fs::CadStatus candidateStatus = fs::CadStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        fs::SketchSession& sketch = fs::sketchSession();
+        state = sketch.state();
+        current = sketch.tool();
+        plane = sketch.plane();
+        onFace = sketch.operationAvailable(fs::CadFeatureOperation::Cut);
+        inRun = sketch.polylineInProgress();
+        entities = sketch.sketch().entities.size();
+        chosen = sketch.selectionChosen();
+        areas = sketch.selectedAreaCount();
+        extrude = sketch.extrude();
+        shown = sketch.displayExtrude();
+        operation = sketch.operation();
+        static const fs::CadFeatureOperation all[4] = {
+            fs::CadFeatureOperation::NewBody, fs::CadFeatureOperation::Add,
+            fs::CadFeatureOperation::Cut, fs::CadFeatureOperation::Intersect};
+        for (int i = 0; i < 4; ++i) operations[i] = sketch.operationAvailable(all[i]);
+        throughAll = sketch.throughAllAvailable();
+        toFace = sketch.toFaceAvailable();
+        if (state == fs::SketchSessionState::Ready && chosen) {
+            const fs::CadCandidateEvaluation& evaluation = sketch.evaluateCandidate();
+            candidateValid = evaluation.valid;
+            candidateStatus = evaluation.status;
+        }
+    }
+    const auto section = [&](const char* title) {
+        ui.separator(x, y, w);
+        y += ui.px(10);
+        ui.label({x, y, w, ui.px(20)}, title, theme_.textSecondary, theme_.titleFontSize, true);
+        y += ui.px(24);
+    };
+    const auto text = [&](const std::string& value, fsui::Color colour) {
+        for (const std::string& line : wrapText(ui, value, w, theme_.smallFontSize)) {
+            ui.label({x, y, w, ui.px(18)}, line, colour, theme_.smallFontSize);
+            y += ui.px(18);
+        }
+    };
+
+    if (state == fs::SketchSessionState::Editing) {
+        ui.label({x, y, w, ui.px(24)}, "Sketch", theme_.textPrimary, 15, true);
+        y += ui.px(24);
+        ui.label({x, y, w, ui.px(18)},
+                 onFace ? std::string("On a face of the part")
+                        : std::string("On the ") + fs::workplaneName(plane) + " plane",
+                 theme_.textSecondary, theme_.smallFontSize);
+        y += ui.px(28);
+        section("TOOL");
+        for (const SketchToolEntry& entry : kSketchTools) {
+            if (entry.tool != current) continue;
+            ui.label({x, y, w, ui.px(20)}, entry.name, theme_.textPrimary, theme_.fontSize, true);
+            y += ui.px(22);
+            text(entry.hint, theme_.textSecondary);
+        }
+        if (inRun) text("Placing a run \xC2\xB7 Esc ends it", theme_.textMeasure);
+        y += ui.px(8);
+        ui.label({x, y, w, ui.px(18)}, "Curves: " + std::to_string(entities), theme_.textSecondary,
+                 theme_.smallFontSize);
+        y += ui.px(28);
+        if (ui.button("skp_finish", {x, y, w, h}, "Finish sketch", "ic_sketch_keep", true, entities > 0)) {
+            finishSketch();
+        }
+        y += h + ui.px(6);
+        if (ui.button("skp_cancel", {x, y, w, h}, "Cancel sketch", "ic_sketch_cancel")) cancelSketch();
+        return;
+    }
+
+    // Ready: the extrusion, its extent, its distances and its operation.
+    ui.label({x, y, w, ui.px(24)}, "Extrude", theme_.textPrimary, 15, true);
+    y += ui.px(26);
+    text(chosen ? std::to_string(areas) + (areas == 1 ? " region chosen" : " regions chosen") +
+                      " \xC2\xB7 click to add or remove"
+                : std::string("Click a region in the view to choose it"),
+         chosen ? theme_.textSecondary : theme_.textMeasure);
+    y += ui.px(8);
+
+    section("EXTENT");
+    {
+        std::vector<fs::ExtrudeExtentMode> modes = {fs::ExtrudeExtentMode::OneSide,
+                                                    fs::ExtrudeExtentMode::Symmetric,
+                                                    fs::ExtrudeExtentMode::TwoSides};
+        if (throughAll) modes.push_back(fs::ExtrudeExtentMode::ThroughAll);
+        if (toFace) modes.push_back(fs::ExtrudeExtentMode::ToFace);
+        const float s = ui.px(36);
+        float bx = x;
+        for (fs::ExtrudeExtentMode mode : modes) {
+            const std::string id = "ext_mode_" + std::to_string(static_cast<int>(mode));
+            if (ui.iconButton(id, {bx, y, s, s}, extentIcon(mode), extentLabel(mode),
+                              extrude.extent == mode)) {
+                std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+                const fs::CadStatus status = fs::sketchSession().setExtrudeExtent(mode);
+                if (status != fs::CadStatus::Ok) report(sketchStatusText(status), true);
+            }
+            bx += s + ui.px(4);
+        }
+        y += s + ui.px(4);
+        ui.label({x, y, w, ui.px(18)}, extentLabel(extrude.extent), theme_.textPrimary,
+                 theme_.smallFontSize);
+        y += ui.px(26);
+    }
+    const auto distance = [&](const char* name, const char* id, double value, bool positiveSide) {
+        ui.label({x, y, labelW, h}, name, theme_.textPrimary, theme_.smallFontSize);
+        double typed = value;
+        if (ui.numberField(id, {x + labelW, y, w - labelW, h}, &typed, 3, "m")) {
+            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+            fs::SketchSession& sketch = fs::sketchSession();
+            // A typed value is a statement the user made: refused, never
+            // clamped, through the one door a drag also lands through.
+            const fs::CadStatus status =
+                extrude.extent == fs::ExtrudeExtentMode::OneSide
+                    ? sketch.setExtrude(typed, sketch.extrude().direction)
+                    : sketch.setExtrudeSide(positiveSide, typed);
+            if (status != fs::CadStatus::Ok) report(sketchStatusText(status), true);
+        }
+        y += h + ui.px(6);
+    };
+    switch (extrude.extent) {
+        case fs::ExtrudeExtentMode::OneSide:
+            distance("Distance", "ext_distance", fs::extrudePositiveDistance(shown) +
+                                                   fs::extrudeNegativeDistance(shown), true);
+            if (ui.button("ext_flip", {x, y, w, h}, "Flip direction", "ic_extrude_flip")) {
+                std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+                fs::sketchSession().flipExtrudeDirection();
+            }
+            y += h + ui.px(6);
+            break;
+        case fs::ExtrudeExtentMode::Symmetric:
+            distance("Each side", "ext_each", fs::extrudePositiveDistance(shown), true);
+            break;
+        case fs::ExtrudeExtentMode::TwoSides:
+            distance("Side A", "ext_side_a", fs::extrudePositiveDistance(shown), true);
+            distance("Side B", "ext_side_b", fs::extrudeNegativeDistance(shown), false);
+            break;
+        default:
+            // Through All and To Face derive their reach from the part.
+            ui.label({x, y, w, ui.px(20)},
+                     "Reaches " + formatNumber(shown.depth, 3) + " m", theme_.textMeasure,
+                     theme_.smallFontSize);
+            y += ui.px(26);
+            break;
+    }
+
+    section("OPERATION");
+    {
+        static const fs::CadFeatureOperation all[4] = {
+            fs::CadFeatureOperation::NewBody, fs::CadFeatureOperation::Add,
+            fs::CadFeatureOperation::Cut, fs::CadFeatureOperation::Intersect};
+        const float s = ui.px(36);
+        float bx = x;
+        for (int i = 0; i < 4; ++i) {
+            if (!operations[i]) continue;
+            const std::string id = "ext_op_" + std::to_string(i);
+            if (ui.iconButton(id, {bx, y, s, s}, operationIcon(all[i]), operationLabel(all[i]),
+                              operation == all[i])) {
+                std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+                const fs::CadStatus status = fs::sketchSession().setOperation(all[i]);
+                if (status != fs::CadStatus::Ok) report(sketchStatusText(status), true);
+            }
+            bx += s + ui.px(4);
+        }
+        y += s + ui.px(4);
+        ui.label({x, y, w, ui.px(18)}, operationLabel(operation), theme_.textPrimary,
+                 theme_.smallFontSize);
+        y += ui.px(26);
+    }
+    // The preview IS the candidate: a refusal is named before the commit.
+    if (chosen && !candidateValid) {
+        text("Cannot extrude: " + sketchStatusText(candidateStatus), theme_.textError);
+        y += ui.px(6);
+    }
+    if (ui.button("ext_commit", {x, y, w, h}, "Extrude", operationIcon(operation), true,
+                  chosen && candidateValid)) {
+        commitSketch();
+    }
+    y += h + ui.px(6);
+    if (ui.button("ext_back", {x, y, w, h}, "Back to sketch", "ic_sketch_back")) backToSketch();
+    y += h + ui.px(6);
+    if (ui.button("ext_cancel", {x, y, w, h}, "Cancel", "ic_sketch_cancel")) cancelSketch();
 }
 
 }  // namespace fsdesktop
