@@ -102,6 +102,16 @@ int main(int argc, char** argv) {
     // The gallery (`WORKBENCH-UX-R1`): named captures of the states the look
     // is iterated against, written beside the evidence image.
     const std::string gallery = out.substr(0, out.size() - 4) + "-";
+    // A capture taken while `held` stands (a drag in progress keeps its button
+    // down through the frames the capture needs).
+    const auto snapWith = [&](const char* name, const fsui::InputState& held) {
+        editor.requestCapture();
+        for (int i = 0; i < 6 && !editor.captureReady(); ++i) editor.frame(width, height, 1.0f, held);
+        if (!editor.captureReady()) return;
+        uint32_t cw = 0, ch = 0;
+        const std::vector<uint8_t>& shot = editor.capture(&cw, &ch);
+        fsdesktop::writePng(gallery + name + ".png", shot.data(), cw, ch, 4);
+    };
     const auto snap = [&](const char* name) {
         editor.requestCapture();
         for (int i = 0; i < 6 && !editor.captureReady(); ++i) editor.frame(width, height, 1.0f, idle);
@@ -238,7 +248,25 @@ int main(int argc, char** argv) {
     check("a_mouse_drag_draws_a_line_and_undo_takes_it_back",
           afterLine == 1 && forgeshape::sketchSession().sketch().entities.empty());
     editor.setSketchTool(forgeshape::sketchToolIndex(forgeshape::SketchTool::Rectangle));
-    drag(700, 330, 900, 530);
+    // A drag shows the size it is placing, beside the pointer
+    // (`WORKBENCH-UX-R1`); the release places exactly that.
+    {
+        fsui::InputState in = mouse(700, 330);
+        in.mousePressed[0] = in.mouseDown[0] = true;
+        frameWith(in);
+        for (int i = 1; i <= 6; ++i) {
+            in = mouse(700 + 200.0f * i / 6.0f, 330 + 200.0f * i / 6.0f);
+            in.mouseDown[0] = true;
+            frameWith(in);
+        }
+        const std::string live = editor.liveLabelForTest();
+        snapWith("03a-sketch-live-size", in);
+        in = mouse(900, 530);
+        in.mouseReleased[0] = true;
+        frameWith(in);
+        check("a_drag_shows_the_size_it_places",
+              live.find("\xC3\x97") != std::string::npos && live.find(" m") != std::string::npos);
+    }
     check("a_mouse_drag_draws_a_rectangle", forgeshape::sketchSession().sketch().entities.size() == 1);
     // The tools answer to their letters while a sketch is drawn
     // (`WORKBENCH-UX-R1`): L holds Line, R gives Rectangle back.

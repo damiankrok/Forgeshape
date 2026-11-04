@@ -14,6 +14,7 @@ import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.TextView;
 
 import androidx.test.ext.junit.rules.ActivityScenarioRule;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -334,6 +335,112 @@ public final class TabletWorkbenchTest {
             return null;
         });
         settleLayout();
+    }
+
+    /**
+     * `WORKBENCH-UX-R1`: a stroke the SYSTEM cancelled as a palm (its last
+     * pointer leaves with FLAG_CANCELED, API 33+) draws nothing -- it reaches
+     * native as a cancel, never as the end of a drag.
+     */
+    @Test
+    public void a_stroke_the_system_cancelled_as_a_palm_draws_nothing() {
+        org.junit.Assume.assumeTrue(android.os.Build.VERSION.SDK_INT >= 33);
+        final int began = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int s = NativeViewport.sketchBegin(NativeViewport.WORKPLANE_XY);
+            workspace.onNativeStateChanged();
+            return s;
+        });
+        assertEquals(NativeViewport.CAD_OK, began);
+        settleLayout();
+        click(R.id.tool_rail_rectangle);
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final float cx = viewport.getWidth() * 0.5f;
+            final float cy = viewport.getHeight() * 0.5f;
+            final long when = SystemClock.uptimeMillis();
+            final MotionEvent.PointerProperties[] props = {new MotionEvent.PointerProperties()};
+            props[0].id = 0;
+            props[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
+            for (int step = 0; step <= 6; step++) {
+                final MotionEvent.PointerCoords[] coords = {new MotionEvent.PointerCoords()};
+                coords[0].x = cx + step * 30.0f;
+                coords[0].y = cy + step * 20.0f;
+                coords[0].pressure = 1.0f;
+                final int action = step == 0 ? MotionEvent.ACTION_DOWN
+                        : step == 6 ? MotionEvent.ACTION_UP : MotionEvent.ACTION_MOVE;
+                final int flags = step == 6 ? MotionEvent.FLAG_CANCELED : 0;
+                final MotionEvent event = MotionEvent.obtain(when, when + step * 16L, action, 1,
+                        props, coords, 0, 0, 1.0f, 1.0f, 0, 0,
+                        InputDevice.SOURCE_TOUCHSCREEN, flags);
+                viewport.dispatchTouchEvent(event);
+                event.recycle();
+            }
+            return null;
+        });
+        settleLayout();
+        final double[] state = new double[NativeViewport.SKETCH_STATE_SIZE];
+        NativeViewport.sketchState(state);
+        final int entities = SketchTestSupport.sketchEntityCount();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.sketchCancel();
+            workspace.onNativeStateChanged();
+            return null;
+        });
+        assertEquals("a palm-cancelled stroke placed nothing", 0, entities);
+    }
+
+    @Test
+    public void a_drag_reads_the_size_it_places_and_the_reading_goes_with_it() {
+        final int began = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int s = NativeViewport.sketchBegin(NativeViewport.WORKPLANE_XY);
+            workspace.onNativeStateChanged();
+            return s;
+        });
+        assertEquals(NativeViewport.CAD_OK, began);
+        settleLayout();
+        click(R.id.tool_rail_rectangle);
+        final String[] mid = new String[1];
+        final boolean[] goneAfter = new boolean[1];
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final TextView size = workspace.findViewById(R.id.sketch_live_size);
+            final float cx = viewport.getWidth() * 0.5f;
+            final float cy = viewport.getHeight() * 0.5f;
+            final long when = SystemClock.uptimeMillis();
+            final MotionEvent.PointerProperties[] props = {new MotionEvent.PointerProperties()};
+            props[0].id = 0;
+            props[0].toolType = MotionEvent.TOOL_TYPE_FINGER;
+            for (int step = 0; step <= 6; step++) {
+                final MotionEvent.PointerCoords[] coords = {new MotionEvent.PointerCoords()};
+                coords[0].x = cx + step * 30.0f;
+                coords[0].y = cy + step * 20.0f;
+                coords[0].pressure = 1.0f;
+                final int action = step == 0 ? MotionEvent.ACTION_DOWN
+                        : step == 6 ? MotionEvent.ACTION_UP : MotionEvent.ACTION_MOVE;
+                final MotionEvent event = MotionEvent.obtain(when, when + step * 16L, action, 1,
+                        props, coords, 0, 0, 1.0f, 1.0f, 0, 0,
+                        InputDevice.SOURCE_TOUCHSCREEN, 0);
+                viewport.dispatchTouchEvent(event);
+                event.recycle();
+                if (step == 5) {
+                    mid[0] = size.getVisibility() == View.VISIBLE
+                            ? String.valueOf(size.getText()) : null;
+                }
+            }
+            goneAfter[0] = size.getVisibility() != View.VISIBLE;
+            return null;
+        });
+        settleLayout();
+        final int entities = SketchTestSupport.sketchEntityCount();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.sketchCancel();
+            workspace.onNativeStateChanged();
+            return null;
+        });
+        assertTrue("the drag read its width by its height: " + mid[0],
+                mid[0] != null && mid[0].contains("\u00D7"));
+        assertTrue("the reading went with the release", goneAfter[0]);
+        assertEquals("the release placed the rectangle", 1, entities);
     }
 
     private static android.graphics.Rect windowRect(View view) {

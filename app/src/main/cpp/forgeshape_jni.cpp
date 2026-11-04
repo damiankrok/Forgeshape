@@ -7703,6 +7703,31 @@ Java_com_forgeshape_app_NativeViewport_sketchViewState(JNIEnv* env, jclass, jdou
     env->SetDoubleArrayRegion(out, 0, kSize, values);
 }
 
+// The size of the shape a drag is placing and where to read it
+// (`WORKBENCH-UX-R1`): slots 0 tool index, 1 first value, 2 second value,
+// 3/4 the screen point beside the cursor. False when no drag is placing
+// one. Presentation only: nothing here is truth.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchLivePlacement(JNIEnv* env, jclass, jdoubleArray out,
+                                                           jint viewWidth, jint viewHeight) {
+    constexpr jsize kSize = 5;
+    if (out == nullptr || env->GetArrayLength(out) < kSize) {
+        return JNI_FALSE;
+    }
+    forgeshape::EditorLivePlacement live;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (!forgeshape::editorSketchLivePlacement(static_cast<int>(viewWidth),
+                                                   static_cast<int>(viewHeight), &live)) {
+            return JNI_FALSE;
+        }
+    }
+    const jdouble values[kSize] = {static_cast<double>(forgeshape::sketchToolIndex(live.tool)),
+                                   live.first, live.second, live.screenX, live.screenY};
+    env->SetDoubleArrayRegion(out, 0, kSize, values);
+    return JNI_TRUE;
+}
+
 // Chooses the world support plane. Refused by name -- SketchNotEmpty once the
 // sketch carries geometry, InvalidWorkplane for a face-supported sketch -- and
 // a refusal changes nothing, including the camera.

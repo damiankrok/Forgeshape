@@ -173,6 +173,13 @@ private:
     float contextX_ = 0, contextY_ = 0;
     uint64_t contextBody_ = 0;
     void buildContextMenu(int width, int height);
+    // The live size of a shape being drawn, beside the pointer.
+    void buildLivePlacementLabel(int width, int height);
+public:
+    // The last live size label drawn, for the headless check.
+    const std::string& liveLabelForTest() const { return liveLabel_; }
+private:
+    std::string liveLabel_;
     float dragLastX_ = 0, dragLastY_ = 0;
     float pressX_ = 0, pressY_ = 0;
     bool dragTravelled_ = false;

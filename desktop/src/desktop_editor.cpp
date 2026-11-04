@@ -44,6 +44,18 @@ constexpr const char* kTag = "ForgeShape";
 
 // A READ-ONLY measurement: six significant digits, never the fixed decimals
 // that print a 20 mm cube's volume as 0.000 m3, and -0 as 0.
+// A label READ at the geometry: the display precision, three decimals in
+// metres with trailing zeros stripped (the annotation rule both shells use).
+std::string formatLabel(double v) {
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), "%.3f", v);
+    std::string out = buffer;
+    while (!out.empty() && out.back() == '0') out.pop_back();
+    if (!out.empty() && out.back() == '.') out.pop_back();
+    if (out == "-0") out = "0";
+    return out + " m";
+}
+
 std::string formatMeasure(double v) {
     if (!std::isfinite(v) || std::abs(v) < 1e-15) return "0";
     char buffer[64];
@@ -960,11 +972,41 @@ void DesktopEditor::buildInterface(int width, int height) {
     viewportRect_ = {viewLeft, top, viewRight - viewLeft, bottom - top};
     buildViewCube(viewportRect_);
     buildViewBar(viewportRect_);
+    buildLivePlacementLabel(width, height);
     buildHistoryStrip(history);
     buildRibbon(ribbon);
     buildTitleBar(title);
     buildStatusBar(status);
     buildContextMenu(width, height);
+}
+
+void DesktopEditor::buildLivePlacementLabel(int width, int height) {
+    fs::EditorLivePlacement live;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        if (!fs::editorSketchLivePlacement(width, height, &live)) return;
+    }
+    // The size of what the drag is placing, beside it (`WORKBENCH-UX-R1`), on
+    // the same opaque plate as every value read at the geometry.
+    std::string text;
+    switch (live.tool) {
+        case fs::SketchTool::Line: text = "L " + formatLabel(live.first); break;
+        case fs::SketchTool::Rectangle:
+            text = formatLabel(live.first) + " \xC3\x97 " + formatLabel(live.second);
+            break;
+        case fs::SketchTool::Circle: text = "\xC3\x98 " + formatLabel(live.first); break;
+        default: return;
+    }
+    fsui::Ui& ui = *ui_;
+    const float w = ui.textWidth(text, theme_.fontSize) + ui.px(16), h = ui.px(26);
+    float x = live.screenX + ui.px(14), y = live.screenY + ui.px(14);
+    if (x + w > width - ui.px(4)) x = live.screenX - w - ui.px(14);
+    if (y + h > height - ui.px(4)) y = live.screenY - h - ui.px(14);
+    const Rect plate{x, y, w, h};
+    ui.rect(plate, theme_.surfaceFloating, ui.px(6));
+    ui.border(plate, theme_.chromeHairline, ui.px(6), 1.0f);
+    ui.label({x + ui.px(8), y, w - ui.px(16), h}, text, theme_.textPrimary, theme_.fontSize);
+    liveLabel_ = text;
 }
 
 void DesktopEditor::buildContextMenu(int width, int height) {

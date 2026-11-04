@@ -94,6 +94,41 @@ final class FeatureHistoryPresentation {
             edges = (int) v[at + NativeViewport.TIMELINE_ROW_REGIONS];
         }
 
+        /**
+         * The step's glyph (`WORKBENCH-UX-R1`): the desktop History strip's
+         * own table, so a step reads by the same drawing on both shells --
+         * a sketch, the operation of an extrusion or revolve, a finish, a
+         * pattern, a hole.
+         */
+        int icon() {
+            if (domain == DOMAIN_SURFACE) {
+                return kind == NativeViewport.TIMELINE_KIND_SKETCH ? R.drawable.ic_sketch_new
+                        : R.drawable.ic_surface;
+            }
+            switch (kind) {
+                case NativeViewport.TIMELINE_KIND_SKETCH:
+                    return R.drawable.ic_sketch_new;
+                case NativeViewport.TIMELINE_KIND_FINISH:
+                    return R.drawable.ic_edge_fillet;
+                case NativeViewport.TIMELINE_KIND_PATTERN:
+                    return R.drawable.ic_pattern_linear;
+                case NativeViewport.TIMELINE_KIND_HOLE:
+                    return R.drawable.ic_hole;
+                default:
+                    break;
+            }
+            switch (operation) {
+                case NativeViewport.OPERATION_ADD:
+                    return R.drawable.ic_op_add;
+                case NativeViewport.OPERATION_CUT:
+                    return R.drawable.ic_op_cut;
+                case NativeViewport.OPERATION_INTERSECT:
+                    return R.drawable.ic_op_intersect;
+                default:
+                    return R.drawable.ic_op_new_body;
+            }
+        }
+
         boolean isSketch() {
             return kind == NativeViewport.TIMELINE_KIND_SKETCH;
         }

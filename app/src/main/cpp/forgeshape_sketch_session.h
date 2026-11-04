@@ -1059,6 +1059,19 @@ public:
     // is active.
     const SketchPoint& cursor() const { return cursor_; }
 
+    // What is being PLACED, while a drag of the Line, Rectangle or Circle tool
+    // is under way (`WORKBENCH-UX-R1`): the live size a label shows beside the
+    // pointer, read-only -- it is the shape a release would place, from the
+    // same snapped anchor and cursor placeFromDrag reads, and nothing about it
+    // is stored, minted or exported. False when nothing is being placed.
+    struct LivePlacement {
+        SketchTool tool = SketchTool::Select;
+        double first = 0.0;    // Line length, Rectangle width, Circle diameter
+        double second = 0.0;   // Rectangle height; 0 otherwise
+        SketchPoint labelAt;   // where the label stands, in sketch (u, v)
+    };
+    bool livePlacement(LivePlacement* out) const;
+
 private:
     struct SnapResult {
         SketchPoint point;

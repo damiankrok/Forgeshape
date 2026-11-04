@@ -3409,6 +3409,22 @@ final class NativeViewport {
     /** The navigator's state, in the SKETCH_VIEW_* slots. */
     static native void sketchViewState(double[] out);
 
+    /** Slots of {@link #sketchLivePlacement}: the size a drag is placing. */
+    static final int SKETCH_LIVE_SIZE = 5;
+    static final int SKETCH_LIVE_TOOL = 0;
+    static final int SKETCH_LIVE_FIRST = 1;
+    static final int SKETCH_LIVE_SECOND = 2;
+    static final int SKETCH_LIVE_SCREEN_X = 3;
+    static final int SKETCH_LIVE_SCREEN_Y = 4;
+
+    /**
+     * The size of the Line, Rectangle or Circle a drag is placing, and the
+     * viewport point beside the cursor to read it at ({@code WORKBENCH-UX-R1}):
+     * a Line's length, a Rectangle's width and height, a Circle's diameter.
+     * False while no drag is placing one. Presentation only.
+     */
+    static native boolean sketchLivePlacement(double[] out, int viewWidth, int viewHeight);
+
     /**
      * Chooses the world support plane. Refused by name — {@code
      * CAD_SKETCH_NOT_EMPTY} once the sketch carries geometry, {@code

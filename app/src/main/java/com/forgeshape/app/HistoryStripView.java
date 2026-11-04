@@ -64,8 +64,18 @@ final class HistoryStripView extends LinearLayout {
         int index = 0;
         for (final FeatureHistoryPresentation.Row row : model.rows) {
             final String name = FeatureHistoryText.name(context, row);
+            // The step's own glyph rather than a bullet (`WORKBENCH-UX-R1`),
+            // the desktop strip's drawing; a failed step keeps its mark, which
+            // carries the failure by shape.
             final TextView chip = EditorControlStyles.chip(context, R.id.history_strip_step,
-                    row.mark() + "  " + name);
+                    row.isFailed() ? row.mark() + "  " + name : name);
+            final android.graphics.drawable.Drawable glyph =
+                    context.getDrawable(row.icon()).mutate();
+            final int glyphPx = EditorControlStyles.dp(context, 18);
+            glyph.setBounds(0, 0, glyphPx, glyphPx);
+            chip.setCompoundDrawables(glyph, null, null, null);
+            chip.setCompoundDrawablePadding(EditorControlStyles.dp(context, 8));
+            chip.setCompoundDrawableTintList(chip.getTextColors());
             chip.setTag(row);
             if (row.isFailed()) {
                 chip.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextError));
@@ -79,6 +89,7 @@ final class HistoryStripView extends LinearLayout {
             chip.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextSecondary));
             }
             EditorControlStyles.setChipActive(chip, row.editing);
+            chip.setCompoundDrawableTintList(chip.getTextColors());
             if (row.editable()) {
                 chip.setOnClickListener(new OnClickListener() {
                     @Override

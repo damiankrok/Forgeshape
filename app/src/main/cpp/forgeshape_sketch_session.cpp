@@ -1672,6 +1672,37 @@ bool SketchSession::onTouchUnrecorded(TouchAction action, int32_t actionPointerI
     }
 }
 
+bool SketchSession::livePlacement(LivePlacement* out) const {
+    if (out == nullptr || state_ != SketchSessionState::Editing || pointerId_ < 0 || !dragValid_ ||
+        !travelled_) {
+        return false;
+    }
+    LivePlacement live;
+    live.tool = tool_;
+    switch (tool_) {
+        case SketchTool::Line:
+            live.first = distance(anchor_, cursor_);
+            live.labelAt = SketchPoint{(anchor_.u + cursor_.u) * 0.5, (anchor_.v + cursor_.v) * 0.5};
+            break;
+        case SketchTool::Rectangle:
+            live.first = std::fabs(cursor_.u - anchor_.u);
+            live.second = std::fabs(cursor_.v - anchor_.v);
+            live.labelAt = cursor_;
+            break;
+        case SketchTool::Circle:
+            live.first = 2.0 * distance(anchor_, cursor_);
+            live.labelAt = cursor_;
+            break;
+        default:
+            return false;
+    }
+    if (!(live.first > kSketchCoincidenceMeters)) {
+        return false;
+    }
+    *out = live;
+    return true;
+}
+
 void SketchSession::placeFromDrag() {
     SketchEntityId id = kNoSketchEntity;
     CadStatus why = CadStatus::Ok;

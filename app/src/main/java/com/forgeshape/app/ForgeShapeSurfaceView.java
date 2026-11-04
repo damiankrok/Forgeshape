@@ -179,7 +179,21 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
             actionPointerId = event.getPointerId(event.getActionIndex());
         }
 
-        NativeViewport.touchEvent(action, actionPointerId, count,
+        // A palm the SYSTEM rejected (`WORKBENCH-UX-R1`): from API 33 the last
+        // pointer of a gesture the platform decides was never meant -- a hand
+        // resting on the glass beside a pen -- leaves with FLAG_CANCELED. That
+        // gesture is then a cancel and never an act: native restores the
+        // pre-gesture state and records nothing, the contract a second pointer
+        // already has. Real S Pen palm behaviour is a physical-device gate,
+        // UNVERIFIED here.
+        int forwarded = action;
+        if (android.os.Build.VERSION.SDK_INT >= 33 && action == MotionEvent.ACTION_UP
+                && (event.getFlags() & MotionEvent.FLAG_CANCELED) != 0) {
+            forwarded = MotionEvent.ACTION_CANCEL;
+            actionPointerId = -1;
+        }
+
+        NativeViewport.touchEvent(forwarded, actionPointerId, count,
                 pointerIds, pointerXs, pointerYs,
                 pointerToolTypes, pointerPressures, pointerTilts, pointerTiltOrientations,
                 getWidth(), getHeight());

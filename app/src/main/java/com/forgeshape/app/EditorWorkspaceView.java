@@ -431,6 +431,7 @@ final class EditorWorkspaceView extends FrameLayout
      * is open, and holding no dimension of its own.
      */
     private final BodyDimensionLabelsView bodyDimensionLabels;
+    private final SketchLivePlacementView sketchLiveSize;
     /** Reused across reads; native fills this with the sketch session's state. */
     private final double[] nativeSketch = new double[NativeViewport.SKETCH_STATE_SIZE];
     /** The canvas extrude manipulator's state (`CAD-UX-S1`), read whole. */
@@ -1037,6 +1038,10 @@ final class EditorWorkspaceView extends FrameLayout
         cadExtrudeCanvas.setDockAnchor(this::trailingDock);
         cadRevolveAngle = new CadRevolveAngleLabelView(context, this, anchorSpace, this);
         overlayRoot.addView(cadRevolveAngle, CadRevolveAngleLabelView.anchoredParams());
+        // The size of the shape being drawn, read above the finger while the
+        // drag places it (`WORKBENCH-UX-R1`); not interactive, gone on release.
+        sketchLiveSize = new SketchLivePlacementView(context, this, anchorSpace);
+        overlayRoot.addView(sketchLiveSize, SketchLivePlacementView.anchoredParams());
 
         // Stage 020M's three overall-dimension labels, on exactly those terms
         // and in the same overlay. It fills the chrome area rather than wrapping
@@ -4490,6 +4495,7 @@ final class EditorWorkspaceView extends FrameLayout
         // Both decide for themselves from native (drawn only while Editing).
         sketchModify.refreshFromNative();
         sketchDimensionLabels.refreshFromNative();
+        sketchLiveSize.refreshFromNative();
         if (drawing) {
             sketchNavigator.refreshFromNative();
             // The same state answers the Line dimension (SketchChromePolicy):

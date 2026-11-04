@@ -685,4 +685,6 @@
     <item name="apply_hole" type="id" />
     <item name="delete_hole" type="id" />
     <item name="cancel_hole" type="id" />
+    <!-- The live size of a shape a sketch drag is placing (WORKBENCH-UX-R1). -->
+    <item name="sketch_live_size" type="id" />
 </resources>

@@ -149,6 +149,19 @@ CadStatus editorSketchBeginEditSketch(ObjectId body, CadSketchId sketchId);
 // Commits an open edit: one transaction, one Undo; a refusal changes nothing.
 CadStatus editorSketchCommitEdit();
 
+// The live size of the shape a drag is placing (`WORKBENCH-UX-R1`), with the
+// screen point its label stands at: presentation for both shells' label, read
+// from the session and the camera together. False when nothing is being
+// placed or the point does not project.
+struct EditorLivePlacement {
+    SketchTool tool = SketchTool::Select;
+    double first = 0.0;
+    double second = 0.0;
+    float screenX = 0.0f;
+    float screenY = 0.0f;
+};
+bool editorSketchLivePlacement(int viewWidth, int viewHeight, EditorLivePlacement* out);
+
 // THE commit: the first project when the scene is empty (`APP-H1`), a New
 // Body, an Add, a Cut or an Intersect otherwise. One transaction, one Undo.
 struct EditorSketchCommit {

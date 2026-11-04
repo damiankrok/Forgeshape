@@ -518,6 +518,27 @@ CadStatus editorSketchBeginEditSketch(ObjectId id, CadSketchId sketchId) {
     return status;
 }
 
+bool editorSketchLivePlacement(int viewWidth, int viewHeight, EditorLivePlacement* out) {
+    SketchSession::LivePlacement live;
+    if (out == nullptr || !sketchSession().livePlacement(&live)) {
+        return false;
+    }
+    const SketchFrame& frame = sketchSession().frame();
+    const Vec3 world = vec3Add(frame.origin,
+                               vec3Add(vec3Scale(frame.u, static_cast<float>(live.labelAt.u)),
+                                       vec3Scale(frame.v, static_cast<float>(live.labelAt.v))));
+    float x = 0.0f, y = 0.0f;
+    if (!projectWorldToScreen(editorCamera().snapshot(), world, viewWidth, viewHeight, &x, &y)) {
+        return false;
+    }
+    out->tool = live.tool;
+    out->first = live.first;
+    out->second = live.second;
+    out->screenX = x;
+    out->screenY = y;
+    return true;
+}
+
 CadStatus editorSketchCommitEdit() {
     const CadStatus status = sketchSession().commitEdit(constructionScene(), constructionHistory());
     if (status == CadStatus::Ok) {
