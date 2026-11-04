@@ -1,7 +1,71 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.115.0
-**Updated:** 2026-11-03
+**Status Version:** 0.116.0
+**Updated:** 2026-11-04
+**Latest stage:** **`CAD-PRIMITIVES-R1` + `CAD-INTERSECT-R1` + `CAD-MEASURE-R1` +
+`CAD-REVOLVE-FACES-R1` — a primitive made a CAD part, Intersect, measuring a
+distance and an angle, and building on a revolved part** (2026-11-03).
+**TECH PASS (emulator) / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`claude/new-session-g87rge`, product at `cf0f2e7`. Stages 1 (Intersect), 8
+(primitives, revolved parts), 11 (sums in fields) and 12 (distance, angle) of
+`docs/FEATURE_PARITY_PLAN.md`.
+
+- **Make CAD part** (`forgeshape_cad_from_primitive.{h,cpp}`): a Box or a
+  Cylinder becomes a Symmetric extrusion on XZ, a Sphere, a Cone or a Capsule
+  a full-turn Revolve on XY, built from the primitive's parameters, as ONE
+  undo step that keeps the placement, name, visibility and lock and
+  holds the primitive in the history. A Plane and a sculpted body are refused
+  (`PrimitiveNotConvertible`, CadStatus 120); the Shape panel draws the button
+  only where native can.
+- **Intersect** (`CadFeatureOperation::Intersect`, index 3): a later feature
+  kept to what its tool shares with the body (the kernel's Intersection),
+  offered where Add and Cut are, grown into the body, no push-through;
+  `IntersectRemovesBody` / `IntersectNoEffect` (121, 122); never a pattern or
+  finish target. Its own glyph (two outlines and their lens). `CADB` v16 (§7s).
+- **Measure distance** (`forgeshape_measure.{h,cpp}`): in the part's Measure
+  section; while on, a tap picks a point (snapped to the hit triangle's corner
+  within 24 px) and neither selects nor offers; two points read the distance,
+  its X/Y/Z parts and the angle between the two faces; drawn in the overlay
+  slot; off when the panel closes or another body is shown. A read only.
+- **Building on a revolved part**: the flat discs and rings a revolve's
+  straight profile edges square to the axis sweep are eligible supports, so a
+  revolved part takes sketches, later features, holes and patterns of later
+  features; caps, curved faces and revolved-edge finishes stay refused.
+  `CADB` v17 (§7t).
+- **Sums in number fields**: `LengthUnit.parse` reads arithmetic through
+  `ExactExpression` after a plain number; the fields accept `+*/()` from a
+  hardware keyboard or a paste.
+- **Found on the way.** The emulator's userdata partition is now sized
+  explicitly (4 GB): a hosted runner without ~7.2 GB free failed every boot.
+  `CI DEVICE` gained a `lane` input so a class list can be split across
+  parallel emulators. A first Measure device run lost the mode after one tap
+  (a visibility callback during a re-layout); the mode now ends only on a
+  closed panel or a different body.
+- **Evidence.** Host `HOST_SELFTESTS_OK` (4735 checks; the CAD-feature suite 898 with 14
+  `IX_`, 5 `MS_`, 6 `RF_` and the `PR_` checks). JVM `CadHudPresentationTest`
+  (four operations), `LengthUnitTest` (arithmetic). `CI FAST` `41730755247`,
+  `41733673765`, `41741291354` success. `CI DEVICE` `41730759995`
+  (`IntersectTest`, `MeasureDistanceTest`, `CadPrimitivePartTest`,
+  `RevolvedPartHoleTest`, `HoleTest`, `CadRevolveOwnerTest`,
+  `RevolveFeatureTest`: 17/17). The whole device suite, split into eight
+  parallel `lane`s because one job cannot hold it in 120 minutes: on
+  `75520ee` seven lanes green and `ImportedMeshSculptTest` red 4/9 in one
+  class order (the baseline reset kept the camera TARGET an earlier class had
+  moved — fixed by `debugResetCameraTarget`, then 9/9 alone `41734255055`
+  and 9/9 in that very order `41734261592`); on `065f253` lanes 11, 13, 14,
+  15 and 17 green, and the red ones were tests holding pre-stage rules (the
+  word Intersect; no reuse on a revolved part), class-order and timing
+  dependencies (a sculpted baseline body; a reader thread not yet scheduled)
+  and runner faults (startup logcat drops, a 45-minute lane), each fixed in
+  the tests and re-run green on the final tree: the lane-12 set 95/95
+  (`41742900988`), the lane-16 set 95/95 (`41739506044`), the lane-18 set
+  73/73 + 22/22 (`41741282467`, `41741287475`) — all 87 classes green.
+  `CI FAST` `41741291354` on `cf0f2e7`. Physical-device behaviour UNVERIFIED.
+- **Not this stage:** a Plane part, ready-made torus/tube presets, an angle
+  between edges, a section view, a measurement kept with the project, Shell,
+  a sketch on a revolved cap or curved face.
+
+**Previous stage:** `CAD-TO-FACE-R1` + `CAD-PLANE-R1` + `CAD-INSPECT-R1` (record below, unchanged).
 **Latest stage:** **`CAD-TO-FACE-R1` + `CAD-PLANE-R1` + `CAD-INSPECT-R1` — To
 Face, a hole placed from edges, a sketch plane off a face, and Measure**
 (2026-11-03). **TECH PASS (emulator) / OWNER PHYSICAL REVIEW REQUIRED / NOT
@@ -2515,13 +2579,12 @@ lives in Git history; only what still constrains the code is kept here.
 `SCULPT-UNDO-R0` (`ARCH-OWNER-12` — a dedicated bounded volatile per-body Sculpt
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
-**Next Stage:** `CAD-PRIMITIVES-R1` — ready-made CAD parts (box, cylinder,
-sphere, cone, torus, tube; stage 8 of `docs/FEATURE_PARITY_PLAN.md`), after the
-OWNER physical-device review of the
-`CAD-EXTENT-R1` + `CAD-UI-DOCK-R1` APK (Through All, holes, patterns, sketch
-Undo/Redo, the knife, push-through to Cut, Fillet/Chamfer on outside edges,
-the docked face actions); the Delete → Undo → Redo owner
-verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See *Next Stage*.
+**Next Stage:** `CAD-SHELL-R1` — Shell (hollowing a part to a wall
+thickness with chosen faces open; stage 7 of `docs/FEATURE_PARITY_PLAN.md`),
+after the OWNER physical-device review of this APK (primitives made CAD parts,
+Intersect, Measure distance and angle, revolved parts built on); the Delete →
+Undo → Redo owner verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See
+*Next Stage*.
 
 ## Current state
 
