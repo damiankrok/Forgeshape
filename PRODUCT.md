@@ -89,7 +89,7 @@ An edge pointing away from you still looks shortened in Orthographic. That is
 foreshortening from *orientation*, which both projections have and which is
 correct: what Orthographic removes is foreshortening from *distance*.
 
-*View* picks what the viewport draws besides the model. Today that is two
+*View* picks what the viewport draws besides the model. Today that is three
 things:
 
 - **Grid — On** (the default) or **Off**. The reference floor described above.
@@ -101,8 +101,12 @@ things:
   the model unmarked, and the Objects capsule still names the selected body;
   turning it back on costs nothing and changes nothing about what you are
   building. It is correct in both projections and for every kind of body.
+- **Edges — On** (the default) or **Off**. A part is drawn with the lines
+  where its faces meet at a crease and along its open borders, as a CAD
+  drawing is, so a box reads as a box at any angle; a sculpted body draws none.
+  Turning them off leaves the shaded surfaces alone.
 
-Both choices last as long as the app is running and survive rotating the phone
+All three choices last as long as the app is running and survive rotating the phone
 and leaving the app, and neither is written into your project.
 
 Switching between Studio and MatCap changes nothing but the picture: the object,
@@ -460,16 +464,23 @@ and the bottom edge a **History strip**:
 - **The view cube** shows the world's X (red), Y (green) and Z (blue) axes as
   the camera sees them, at the top of the model on the side away from the Tool
   Rail. Tapping an axis end turns the view to look along it: +Z is Front, +Y is
-  Top, +X is Right, and the faint ends are their opposites. Top looks exactly
-  straight down, and the first orbit leaves it without a jump.
+  Top, +X is Right, and the ringed ends marked −X, −Y and −Z are their
+  opposites. Tapping the end that already faces you turns to the opposite
+  view, so Top then +Y again is Bottom. Dragging the cube turns the view
+  freely and chooses no view. Top looks exactly straight down, and the first
+  orbit leaves it without a jump. A screen reader reads the cube as six named
+  views.
 - **The view bar** at the bottom of the model: **Fit** frames everything drawn,
-  **Home** returns to the opening view, **Front**, **Top** and **Right**, and
-  the projection button switches between perspective and orthographic. A view
-  keeps how large the model is on screen; only the direction changes.
+  **Home** returns to the opening view, **Front**, **Top**, **Right** and
+  **Isometric** (looking down the cube's diagonal), and the projection button
+  switches between perspective and orthographic. A view keeps how large the
+  model is on screen; only the direction changes. Holding the pointer over, or
+  long-pressing, any icon-only control names it.
 - **The History strip** lists the active part's steps in the order they were
-  built, newest on the right, beside the Undo and Redo arrows, which step back
-  and forward one act at a time. Tapping a step does what tapping its row in
-  the History does — a sketch step opens Edit Sketch.
+  built, newest on the right, each with the glyph of what it is, beside the
+  Undo and Redo arrows, which step back and forward one act at a time. Tapping
+  a step does what tapping its row in the History does — a sketch step opens
+  Edit Sketch.
 
 All three step aside while a sketch is open and come back when it closes.
 
@@ -485,6 +496,10 @@ application:
 - **A right-button drag orbits**, and selects nothing.
 - **Ctrl+Z** undoes and **Ctrl+Y** redoes, exactly as the Undo and Redo
   controls do — the same history and the same step.
+- **Ctrl+1 … Ctrl+8** are Home, Front, Back, Left, Right, Top, Bottom and
+  Isometric, **F** fits everything, and while a sketch is drawn the letters
+  **V L P R C A S T** pick Select, Line, Polyline, Rectangle, Circle, Arc,
+  Spline and Trim.
 - **Esc** closes the topmost surface, one step, as Back does; a pinned
   Properties panel stays.
 
@@ -687,6 +702,13 @@ The Tool Rail carries the seven sketch tools:
   curve there.
 - **Select** — tap an entity to select it. Its exact values appear in *Sketch
   values*, and *Delete entity* removes it.
+
+While a Rectangle, Circle or Line is being dragged its **size reads beside the
+finger** — width × height, Ø and the diameter, L and the length — in the
+display unit, above the touch point so the finger does not cover it, and it is
+gone the moment the finger lifts; the release places exactly that shape. On
+Android 13 and later, a touch the system rejects as a resting palm places
+nothing.
 
 An Arc and a Spline are ordinary sketch entities: selectable, deletable, and
 able to close a profile with lines or with each other, as long as their ends
@@ -2670,12 +2692,18 @@ dragged on it and extruded as a Cut removes material from the same part as one
 Undo step, and the view is given back. A left drag orbits, the wheel zooms, the
 Move handles drag the part as one Undo step, and a saved project reopens and
 saves byte for byte the same. Its window is laid out as SolidCraft's is: a
-title row with the file acts and Undo/Redo, a ribbon of captioned commands
-(the Model tab's Sketch, Primitives, Part and Arrange groups, the View tab's
-views, projection, display and panels, and a Sketch tab while one is open),
-the Browser and the Properties panel beside the model, a view cube whose axis
-ends are the six views, a view bar, and a History strip along the bottom whose
-back and forward arrows undo and redo; the check clicks the View ribbon's Top,
-the cube's +Z and +X ends, Fit after a deep zoom, and the strip's arrows. A
+title row whose ForgeShape mark opens the project menu (New sketch, Open, Save,
+Export, Close project, Reload theme), a ribbon of captioned commands (the
+Model tab's Sketch, Primitives, Part and Arrange groups, the View tab's Grid,
+Selection outline and Edges, and a Sketch tab while one is open), the Browser
+and the Properties panel docked beside the model, a view cube, a view bar and
+a History strip along the bottom whose back and forward arrows undo and redo;
+Home is a full-window start page of three tiles. The check clicks the view
+bar's Top and Isometric, the cube's +Z, +X and facing +Y ends (Bottom) and
+drags the cube, Fit after a deep zoom, the strip's arrows, a History step that
+opens its staged edit and applies to the same part as one Undo, a still
+right-click that opens the body's menu and its Fit to body, the project menu,
+the keyboard and mouse sheet (`?`), the sketch tools' letters and Ctrl+6, and a
+rectangle drag whose size reads beside the pointer before release. A
 Windows window, a Windows GPU and the installer on a real PC have not been run
 by anyone yet.

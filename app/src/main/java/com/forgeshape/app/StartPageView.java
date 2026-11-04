@@ -44,7 +44,19 @@ abstract class StartPageView extends FrameLayout {
     private final LinearLayout content;
     private final TextView status;
     private final ImageView motif;
+    private final ScrollView scroller;
     private int actionCount;
+    /** The actions' own row: a column on a phone, side-by-side tiles when wide. */
+    private LinearLayout actionRow;
+    /** Whether the wide (EXPANDED) composition is in force, or null before the first measure. */
+    private Boolean wideLayout;
+
+    /** A window this wide (dp) or wider gets the centred, tiled composition. */
+    static final int WIDE_START_PAGE_DP = 840;
+    /** The wide composition's column cap (dp). */
+    static final int WIDE_COLUMN_DP = 720;
+    /** At most this many actions stand side by side as tiles. */
+    static final int MAX_TILES = 3;
 
     StartPageView(Context context, int id, int contentId, CharSequence headline,
                   CharSequence caption) {
@@ -74,7 +86,7 @@ abstract class StartPageView extends FrameLayout {
         addView(motif, motifParams);
 
         // The content scrolls, so a short window can still reach every action.
-        final ScrollView scroller = new ScrollView(context);
+        scroller = new ScrollView(context);
         scroller.setClipToPadding(false);
         content = new LinearLayout(context);
         content.setId(contentId);
@@ -176,11 +188,80 @@ abstract class StartPageView extends FrameLayout {
         textParams.leftMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         action.addView(text, textParams);
 
-        final LinearLayout.LayoutParams params = EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, first ? R.dimen.section_gap : R.dimen.row_gap));
-        params.width = ViewGroup.LayoutParams.MATCH_PARENT;
-        content.addView(action, params);
+        if (actionRow == null) {
+            actionRow = new LinearLayout(context);
+            actionRow.setOrientation(LinearLayout.VERTICAL);
+            final LinearLayout.LayoutParams rowParams = EditorControlStyles.rowParams(
+                    EditorControlStyles.dimen(context, R.dimen.section_gap));
+            rowParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            content.addView(actionRow, rowParams);
+        }
+        final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = first ? 0 : EditorControlStyles.dimen(context, R.dimen.row_gap);
+        actionRow.addView(action, params);
+        wideLayout = null;
         return action;
+    }
+
+    /**
+     * The wide composition (`WORKBENCH-UX-R1`): on an EXPANDED window the
+     * column is centred both ways, capped at {@link #WIDE_COLUMN_DP}, the mark
+     * and the name are drawn at a size that owns the page, and up to
+     * {@link #MAX_TILES} actions stand side by side as equal tiles, as the
+     * start pages of desktop CAD tools do. A phone keeps its single column.
+     */
+    private void applyWideLayout(boolean wide) {
+        if (wideLayout != null && wideLayout == wide) {
+            return;
+        }
+        wideLayout = wide;
+        final Context context = getContext();
+        final float density = context.getResources().getDisplayMetrics().density;
+        final View mark = content.findViewById(R.id.start_page_mark);
+        if (mark != null) {
+            final ViewGroup.LayoutParams markParams = mark.getLayoutParams();
+            markParams.width = markParams.height = wide ? Math.round(56 * density)
+                    : EditorControlStyles.dimen(context, R.dimen.start_page_mark_size);
+            mark.setLayoutParams(markParams);
+        }
+        final View name = content.findViewById(R.id.start_page_product_name);
+        if (name instanceof TextView) {
+            if (wide) {
+                ((TextView) name).setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 28);
+            } else {
+                ((TextView) name).setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+                        EditorControlStyles.dimen(context, R.dimen.text_display));
+            }
+        }
+        scroller.setFillViewport(wide);
+        content.setGravity(wide ? Gravity.CENTER_VERTICAL : Gravity.NO_GRAVITY);
+        final FrameLayout.LayoutParams contentParams =
+                (FrameLayout.LayoutParams) content.getLayoutParams();
+        contentParams.gravity = wide ? Gravity.CENTER_HORIZONTAL : Gravity.NO_GRAVITY;
+        content.setLayoutParams(contentParams);
+        if (actionRow != null) {
+            final boolean tiles = wide && actionRow.getChildCount() <= MAX_TILES;
+            actionRow.setOrientation(tiles ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+            final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap);
+            for (int i = 0; i < actionRow.getChildCount(); i++) {
+                final View action = actionRow.getChildAt(i);
+                final LinearLayout.LayoutParams p = tiles
+                        ? new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.0f)
+                        : new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT);
+                if (i > 0) {
+                    if (tiles) {
+                        p.leftMargin = gap;
+                    } else {
+                        p.topMargin = gap;
+                    }
+                }
+                action.setLayoutParams(p);
+                action.setMinimumHeight(tiles ? Math.round(112 * density)
+                        : EditorControlStyles.dimen(context, R.dimen.control_height));
+            }
+        }
     }
 
     /**
@@ -289,8 +370,13 @@ abstract class StartPageView extends FrameLayout {
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         final Context context = getContext();
-        final int cap = EditorControlStyles.dimen(context, R.dimen.start_page_max_width);
         final int available = MeasureSpec.getSize(widthMeasureSpec);
+        final float density = context.getResources().getDisplayMetrics().density;
+        final boolean wide = available / density >= WIDE_START_PAGE_DP;
+        applyWideLayout(wide);
+        final int cap = wide ? Math.round(WIDE_COLUMN_DP * density)
+                + content.getPaddingLeft() + content.getPaddingRight()
+                : EditorControlStyles.dimen(context, R.dimen.start_page_max_width);
         final int wanted = Math.min(cap, available);
         final ViewGroup.LayoutParams params = content.getLayoutParams();
         if (wanted > 0 && params.width != wanted) {

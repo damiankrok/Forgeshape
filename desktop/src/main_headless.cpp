@@ -608,6 +608,13 @@ int main(int argc, char** argv) {
     }
     clickId("ribbon_tab_View");
     snap("07-view-ribbon");
+    {
+        // Edges is a toggle of presentation alone: off, then on again.
+        const bool before = forgeshape::displaySettings().featureEdgesVisible();
+        const bool off = clickId("rb_edges") && !forgeshape::displaySettings().featureEdgesVisible();
+        const bool on = clickId("rb_edges") && forgeshape::displaySettings().featureEdgesVisible();
+        check("the_view_tab_edges_turns_the_feature_edges_off_and_on", before && off && on);
+    }
     clickId("ribbon_tab_Model");
     clickId("vb_home");
 

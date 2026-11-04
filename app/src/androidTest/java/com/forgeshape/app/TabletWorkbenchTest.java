@@ -476,6 +476,17 @@ public final class TabletWorkbenchTest {
         click(R.id.view_projection);
     }
 
+    @Test
+    public void the_display_popover_turns_the_feature_edges_off_and_on() {
+        assertTrue("a part is drawn with its edges by default", NativeViewport.featureEdgesVisible());
+        click(R.id.display_settings_button);
+        click(R.id.view_feature_edges_off);
+        assertFalse("Edges Off hides them", NativeViewport.featureEdgesVisible());
+        click(R.id.view_feature_edges_on);
+        assertTrue("Edges On draws them again", NativeViewport.featureEdgesVisible());
+        click(R.id.display_settings_button);
+    }
+
     private void touchCube(float x0, float y0, float x1, float y1) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final WorkbenchViewCubeView cube = workspace.viewCube();

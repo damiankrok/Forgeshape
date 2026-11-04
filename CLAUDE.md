@@ -1680,6 +1680,30 @@ on the host, with no device, and is the fast native loop.
   The strip is a VIEW of the same timeline read the History shows, a step
   chip is its row's own act, and its back and forward are Undo and Redo:
   there is no rollback marker.
+- **The workbench is one grammar on both shells** (`WORKBENCH-UX-R1`). ONE
+  selected treatment — the selected-at-rest fill plus a `fsTextPrimary` bar
+  under a horizontal item or on a vertical one's leading edge, never colour
+  alone. ONE home per act: Undo/Redo are the History strip's arrows on the
+  desktop (the history capsule on Android), the views live on the view bar,
+  and the desktop's file acts live in the project menu the ForgeShape mark
+  opens — no trailing cross on the title row. An icon-only control's name IS
+  its tooltip (`EditorControlStyles.iconButton` writes both from one setter).
+  The view cube reaches every view by touch: the end already facing the eye
+  (within 10°) names the OPPOSITE view, a press travelling past 8 dp (4 px on
+  the desktop) orbits and chooses nothing, the negative ends are labelled
+  rings, and TalkBack reads six virtual nodes; `StandardView::Isometric` is
+  APPENDED (index 7), so 0..6 never move. **Feature edges are presentation**:
+  derived from the render mesh on upload, drawn as one line list, toggled by
+  the session-only `featureEdgesVisible` (Display popover / View tab
+  *Edges*), never a revision, a rebuild or a `.forge` byte; the main pass is
+  multisampled and the outline mask is not. **The live size of a shape being
+  drawn** (a Line's length, a Rectangle's width × height, a Circle's
+  diameter, `editorSketchLivePlacement`) is read beside the pointer on an
+  opaque plate while the drag places it, and is gone on release: presentation,
+  never an input. A gesture the system cancels as a palm (API 33+,
+  `ACTION_UP` with `FLAG_CANCELED`) reaches native as a CANCEL and places
+  nothing. The desktop's status bar carries verdicts; how the mouse and keys
+  work lives on the keyboard and mouse sheet (`?`).
 - **Chrome reports, it does not instruct.** The status line carries verdicts and
   standing faults only; a message that is always true is a permanent surface
   whatever its timeout says, and the rail entry, the control that opened a panel
@@ -1919,8 +1943,12 @@ Redo; never a "timeline" with a rollback marker, which does not exist),
 *ribbon* (the desktop's captioned command row under the title row, in tabs —
 Model, View, and Sketch while one is open — and named groups), *view cube*
 (the world axes drawn from the camera, each end a standard view; never a
-"gizmo"), *view bar* (Fit, Home, Front, Top, Right and the projection, standing
-on the model), *Fit* (framing everything drawn), *Freeform* (a body shaped by
+"gizmo"), *view bar* (Fit, Home, Front, Top, Right, Isometric and the projection,
+standing on the model), *Fit* (framing everything drawn), *Isometric* (the
+standard view down the (1, 1, 1) diagonal), *project menu* (what the desktop's
+ForgeShape mark opens: New sketch, Open, Save, Export, Close, Reload theme),
+*keyboard and mouse sheet* (the desktop's list of keys and mouse acts, opened
+by `?`), *Edges* (the feature edges a part is drawn with; never "wireframe"), *Freeform* (a body shaped by
 its quad control cage, subdivided smooth; never "T-Spline" or "SubD" to the
 user), *control cage* (a Freeform body's vertices, edges and faces),
 *Surface* (a body built from open surface features), *patch* (one derived

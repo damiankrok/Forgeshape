@@ -90,6 +90,19 @@ public final class WorkbenchVisualEvidenceTest {
         });
         settleLayout();
         capture(out, "01-home");
+        // On a wide window Home's two starts stand side by side as tiles
+        // (`WORKBENCH-UX-R1`), in a centred column.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final android.view.View newProject = workspace.findViewById(R.id.home_new_project);
+            final android.view.View openFile = workspace.findViewById(R.id.home_open_file);
+            final int[] a = new int[2];
+            final int[] b = new int[2];
+            newProject.getLocationInWindow(a);
+            openFile.getLocationInWindow(b);
+            assertEquals("the two starts share a row", a[1], b[1]);
+            assertTrue("Open File stands beside New Project", b[0] > a[0] + newProject.getWidth() / 2);
+            return null;
+        });
 
         resetToBaselineConstruction(rule.getScenario());
         final int converted = onWorkspace(rule.getScenario(), (activity, workspace) -> {
