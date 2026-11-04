@@ -45,6 +45,8 @@ public:
     virtual void requestQuit() = 0;
     // Where the per-user theme file lives (may be empty).
     virtual std::string settingsDirectory() = 0;
+    // The project has changes no Save holds: 0 cancel, 1 save, 2 discard.
+    virtual int askSaveChanges() { return 2; }
 };
 
 class DesktopEditor {
@@ -92,6 +94,13 @@ public:
 
     const std::string& status() const { return status_; }
 
+    // Whether the open project differs from what the last New, Open or Save
+    // left, by the core's own semantic fingerprint (the Android rule).
+    bool hasUnsavedChanges() const;
+    // Asks the platform what to do with unsaved changes before the project is
+    // replaced or the window closes; false when the user cancelled.
+    bool settleUnsavedChanges();
+
 private:
     void buildInterface(int width, int height);
     void buildHome(int width, int height);
@@ -126,6 +135,8 @@ private:
     std::string status_;
     bool statusError_ = false;
     bool captureRequested_ = false;
+    uint64_t savedFingerprint_ = 0;
+    void noteSaved();
 };
 
 }  // namespace fsdesktop

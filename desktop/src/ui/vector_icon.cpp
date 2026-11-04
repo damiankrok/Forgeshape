@@ -27,6 +27,19 @@ float attributeFloat(const std::string& element, const char* name, float fallbac
 
 // The alpha of an Android colour literal (#RGB, #ARGB, #RRGGBB, #AARRGGBB);
 // a reference (@color/..., ?attr/...) is opaque.
+uint32_t colorValue(const std::string& color) {
+    if (color.empty() || color[0] != '#') return 0xFFFFFFFFu;
+    std::string hex = color.substr(1);
+    if (hex.size() == 3 || hex.size() == 4) {
+        std::string wide;
+        for (char c : hex) { wide.push_back(c); wide.push_back(c); }
+        hex = wide;
+    }
+    uint32_t v = static_cast<uint32_t>(std::strtoul(hex.c_str(), nullptr, 16));
+    if (hex.size() == 6) v |= 0xFF000000u;
+    return v;
+}
+
 float colorAlpha(const std::string& color) {
     if (color.empty()) return 0.0f;
     if (color[0] != '#') return 1.0f;
@@ -273,8 +286,10 @@ bool parseVectorDrawable(const std::string& xml, VectorIcon* out) {
         std::string fill, stroke, cap;
         if (attribute(element, "android:fillColor", &fill)) {
             path.fillAlpha = colorAlpha(fill) * attributeFloat(element, "android:fillAlpha", 1.0f);
+            path.fillColor = colorValue(fill);
         }
         if (attribute(element, "android:strokeColor", &stroke)) {
+            path.strokeColor = colorValue(stroke);
             path.strokeAlpha = colorAlpha(stroke) * attributeFloat(element, "android:strokeAlpha", 1.0f);
             path.strokeWidth = attributeFloat(element, "android:strokeWidth", 0.0f);
         }
@@ -309,6 +324,57 @@ void rasterizeIcon(const VectorIcon& icon, int size, std::vector<uint8_t>* out) 
                                &raster);
             }
             raster.resolveOver(out->data(), path.strokeAlpha);
+        }
+    }
+}
+
+void compositeIconRgba(const VectorIcon& icon, int width, int height, float scale, float offsetX,
+                       float offsetY, std::vector<uint8_t>* rgba) {
+    CoverageRaster raster;
+    std::vector<uint8_t> coverage;
+    const auto composite = [&](uint32_t argb, float alpha) {
+        const float r = ((argb >> 16) & 0xFF) / 255.0f;
+        const float g = ((argb >> 8) & 0xFF) / 255.0f;
+        const float b = (argb & 0xFF) / 255.0f;
+        for (size_t i = 0; i < coverage.size(); ++i) {
+            const float a = coverage[i] / 255.0f * alpha;
+            if (a <= 0.0f) continue;
+            uint8_t* px = &(*rgba)[i * 4];
+            const float da = px[3] / 255.0f;
+            const float oa = a + da * (1.0f - a);
+            const auto mix = [&](float src, uint8_t dst) {
+                const float d = dst / 255.0f;
+                const float out = oa > 0.0f ? (src * a + d * da * (1.0f - a)) / oa : 0.0f;
+                return static_cast<uint8_t>(std::lround(std::min(1.0f, out) * 255.0f));
+            };
+            px[0] = mix(r, px[0]);
+            px[1] = mix(g, px[1]);
+            px[2] = mix(b, px[2]);
+            px[3] = static_cast<uint8_t>(std::lround(std::min(1.0f, oa) * 255.0f));
+        }
+    };
+    for (const VectorPath& path : icon.paths) {
+        std::vector<std::vector<Point>> placed;
+        for (const std::vector<Point>& contour : path.contours) {
+            std::vector<Point> s;
+            for (const Point& p : contour) s.push_back({p.x * scale + offsetX, p.y * scale + offsetY});
+            placed.push_back(std::move(s));
+        }
+        if (path.fillAlpha > 0.0f) {
+            raster.reset(width, height);
+            for (const auto& c : placed) raster.polygon(c);
+            coverage.assign(static_cast<size_t>(width) * height, 0);
+            raster.resolveOver(coverage.data(), 1.0f);
+            composite(path.fillColor, path.fillAlpha);
+        }
+        if (path.strokeAlpha > 0.0f && path.strokeWidth > 0.0f) {
+            raster.reset(width, height);
+            for (size_t i = 0; i < placed.size(); ++i) {
+                strokePolyline(placed[i], path.closed[i], path.strokeWidth * scale, path.roundCaps, &raster);
+            }
+            coverage.assign(static_cast<size_t>(width) * height, 0);
+            raster.resolveOver(coverage.data(), 1.0f);
+            composite(path.strokeColor, path.strokeAlpha);
         }
     }
 }

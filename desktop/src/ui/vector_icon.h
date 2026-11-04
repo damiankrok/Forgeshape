@@ -22,6 +22,10 @@ struct VectorPath {
     float strokeAlpha = 0.0f;  // 0: no stroke
     float strokeWidth = 0.0f;
     bool roundCaps = false;
+    // The authored colours (0xAARRGGBB; a reference reads as opaque white).
+    // Only the full-colour rasteriser uses them; the interface tints.
+    uint32_t fillColor = 0xFFFFFFFFu;
+    uint32_t strokeColor = 0xFFFFFFFFu;
 };
 
 struct VectorIcon {
@@ -35,5 +39,11 @@ bool parseVectorDrawable(const std::string& xml, VectorIcon* out);
 
 // Rasterises into a size x size coverage bitmap (row-major, top row first).
 void rasterizeIcon(const VectorIcon& icon, int size, std::vector<uint8_t>* out);
+
+// Composites the icon IN ITS OWN COLOURS over a width x height RGBA8 image
+// (straight alpha), each viewport unit `scale` pixels, the viewport origin at
+// (offsetX, offsetY). What the build-time app-icon generator draws with.
+void compositeIconRgba(const VectorIcon& icon, int width, int height, float scale, float offsetX,
+                       float offsetY, std::vector<uint8_t>* rgba);
 
 }  // namespace fsui

@@ -1,0 +1,107 @@
+# CI DESKTOP (`DESKTOP-R1`): the Windows desktop application and its checks.
+#
+#   linux   - builds the one core, every host self-test suite and the desktop
+#             editor on GCC, then runs the editor HEADLESS on Mesa's software
+#             Vulkan driver and checks a drawn frame (evidence: the PNG).
+#   windows - builds ForgeShape.exe with MSVC against the Vulkan SDK, runs every
+#             host self-test suite on MSVC, and packages the installer.
+#
+# Neither closes a physical-hardware gate: a real Windows GPU and the owner's
+# PC stay UNVERIFIED until the owner runs the installer.
+name: CI DESKTOP
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/**', 'main']
+    paths:
+      - 'desktop/**'
+      - 'app/src/main/cpp/**'
+      - 'app/src/main/res/drawable/**'
+      - 'scripts/host_selftest_main.cpp'
+      - '.github/workflows/ci-desktop.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: DESKTOP (Linux GCC, headless Vulkan check)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Vulkan loader, Mesa's software driver and glslc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build libvulkan-dev \
+            mesa-vulkan-drivers glslc vulkan-tools fonts-dejavu-core
+          vulkaninfo --summary | grep -E "deviceName|driverName" || true
+      - name: Build the core, the self-tests and the desktop editor
+        run: |
+          cmake -S desktop -B build/desktop -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/desktop --parallel
+      - name: Host self-tests (GCC)
+        run: build/desktop/forgeshape_core_selftests
+      - name: Desktop editor, headless
+        run: build/desktop/forgeshape_desktop_check desktop-headless.png
+      - name: Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux-evidence
+          path: |
+            desktop-headless.png
+            build/desktop/ForgeShape.ico.png
+          if-no-files-found: warn
+
+  windows:
+    name: DESKTOP (Windows MSVC, ForgeShape.exe and installer)
+    runs-on: windows-2022
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Vulkan SDK
+        shell: pwsh
+        run: |
+          $version = '1.3.290.0'
+          $installer = "$env:RUNNER_TEMP\VulkanSDK-Installer.exe"
+          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$version/windows/VulkanSDK-$version-Installer.exe" -OutFile $installer
+          Start-Process -Wait -FilePath $installer -ArgumentList '--root','C:\VulkanSDK','--accept-licenses','--default-answer','--confirm-command','install'
+          if (-not (Test-Path 'C:\VulkanSDK\Bin\glslc.exe')) { throw 'Vulkan SDK did not install glslc' }
+          "VULKAN_SDK=C:\VulkanSDK" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "C:\VulkanSDK\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Build ForgeShape.exe and the self-tests (MSVC, Release)
+        shell: pwsh
+        run: |
+          cmake -S desktop -B build/desktop -G "Visual Studio 17 2022" -A x64
+          cmake --build build/desktop --config Release --parallel
+      - name: Host self-tests (MSVC)
+        shell: pwsh
+        run: build/desktop/Release/forgeshape_core_selftests.exe
+      - name: Package the installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+          $version = (Select-String -Path desktop/CMakeLists.txt -Pattern 'project\(ForgeShapeDesktop VERSION ([0-9.]+)').Matches[0].Groups[1].Value
+          $build = Resolve-Path build/desktop/Release
+          $icon = Resolve-Path build/desktop/ForgeShape.ico
+          & $iscc "/DAppVersion=$version" "/DBuildDir=$build" "/DIconFile=$icon" "/Obuild\installer" desktop\installer\forgeshape.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed: $LASTEXITCODE" }
+          New-Item -ItemType Directory -Force build/portable | Out-Null
+          Copy-Item build/desktop/Release/ForgeShape.exe build/portable/
+          Compress-Archive -Path build/portable/* -DestinationPath "build/installer/ForgeShape-$version-portable.zip" -Force
+          Get-ChildItem build/installer
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ForgeShape-Windows
+          path: build/installer/*
+          if-no-files-found: error

@@ -1,0 +1,29 @@
+// ForgeShape.exe resources (`DESKTOP-R1`). Configured by desktop/CMakeLists.txt:
+// the icon is generated at build time from the Android launcher icon's layers.
+#include <winver.h>
+
+FORGESHAPE_ICON ICON "@FS_APP_ICON@"
+
+1 VERSIONINFO
+FILEVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "ForgeShape"
+            VALUE "FileDescription", "ForgeShape"
+            VALUE "FileVersion", "@PROJECT_VERSION@"
+            VALUE "ProductName", "ForgeShape"
+            VALUE "ProductVersion", "@PROJECT_VERSION@"
+            VALUE "OriginalFilename", "ForgeShape.exe"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

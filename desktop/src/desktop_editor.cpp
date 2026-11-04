@@ -222,8 +222,44 @@ std::string DesktopEditor::bodyLabel(uint64_t objectId) const {
 // Acts. Each takes the state mutex for exactly the core call it makes.
 // ---------------------------------------------------------------------------
 
-void DesktopEditor::newCadPart() {
+namespace {
+
+// The caller holds the state mutex.
+uint64_t currentFingerprintLocked() {
+    const fs::ConstructionScene& scene = fs::constructionScene();
+    if (!scene.hasProject()) return 0;
+    return fs::projectSemanticFingerprint(scene, fs::sculptSession().inSculptMode()
+                                                     ? fs::ProjectKind::Sculpt
+                                                     : fs::ProjectKind::Construction);
+}
+
+}  // namespace
+
+void DesktopEditor::noteSaved() {
     std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    savedFingerprint_ = currentFingerprintLocked();
+}
+
+bool DesktopEditor::hasUnsavedChanges() const {
+    std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    if (!fs::constructionScene().hasProject()) return false;
+    return currentFingerprintLocked() != savedFingerprint_;
+}
+
+bool DesktopEditor::settleUnsavedChanges() {
+    if (platform_ == nullptr || !hasUnsavedChanges()) return true;
+    const int answer = platform_->askSaveChanges();
+    if (answer == 0) return false;
+    if (answer == 1) {
+        saveProject();
+        return !hasUnsavedChanges();
+    }
+    return true;
+}
+
+void DesktopEditor::newCadPart() {
+    if (!settleUnsavedChanges()) return;
+    std::unique_lock<std::mutex> lock(fs::editorStateMutex());
     fs::ConstructionScene& scene = fs::constructionScene();
     fs::ConstructionHistory& history = fs::constructionHistory();
     fs::constructionHistory().clear();
@@ -243,6 +279,8 @@ void DesktopEditor::newCadPart() {
         return;
     }
     fs::editorSelection().setSelected(part);
+    lock.unlock();
+    noteSaved();
     projectName_ = "Untitled";
     homeVisible_ = false;
     refreshTitle();
@@ -250,7 +288,8 @@ void DesktopEditor::newCadPart() {
 }
 
 void DesktopEditor::newFreeform() {
-    std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    if (!settleUnsavedChanges()) return;
+    std::unique_lock<std::mutex> lock(fs::editorStateMutex());
     fs::ConstructionScene& scene = fs::constructionScene();
     fs::ConstructionHistory& history = fs::constructionHistory();
     history.clear();
@@ -266,6 +305,8 @@ void DesktopEditor::newFreeform() {
         return;
     }
     fs::editorSelection().setSelected(id);
+    lock.unlock();
+    noteSaved();
     projectName_ = "Untitled";
     homeVisible_ = false;
     refreshTitle();
@@ -273,7 +314,7 @@ void DesktopEditor::newFreeform() {
 }
 
 void DesktopEditor::openProject() {
-    if (platform_ == nullptr) return;
+    if (platform_ == nullptr || !settleUnsavedChanges()) return;
     std::vector<uint8_t> bytes;
     std::string name;
     if (!platform_->openFile("ForgeShape project", "forge", &bytes, &name)) return;
@@ -296,6 +337,7 @@ void DesktopEditor::openProjectBytes(const std::vector<uint8_t>& bytes, const st
                true);
         return;
     }
+    noteSaved();
     projectName_ = name;
     homeVisible_ = false;
     refreshTitle();
@@ -322,6 +364,7 @@ void DesktopEditor::saveProject() {
                                       ? std::string("Project.forge")
                                       : projectName_;
     if (!platform_->saveFile("ForgeShape project", "forge", suggested, bytes, &name)) return;
+    noteSaved();
     projectName_ = name;
     refreshTitle();
     report("Saved " + name);
@@ -420,6 +463,7 @@ void DesktopEditor::deleteActive() {
 }
 
 void DesktopEditor::closeProject() {
+    if (!settleUnsavedChanges()) return;
     std::lock_guard<std::mutex> lock(fs::editorStateMutex());
     if (fs::sketchSession().active()) fs::sketchSession().cancel();
     fs::constructionHistory().clear();
@@ -606,8 +650,8 @@ void DesktopEditor::buildToolbar(const Rect& bar) {
         browserOpen_ = !browserOpen_;
     gap();
     if (tool("tb_open", "ic_project", "Open project\xE2\x80\xA6  Ctrl+O")) openProject();
-    if (tool("tb_save", "ic_sketch_keep", "Save project\xE2\x80\xA6  Ctrl+S")) saveProject();
-    if (tool("tb_export", "ic_object_duplicate", "Export GLB\xE2\x80\xA6  Ctrl+E")) exportGlb();
+    if (tool("tb_save", "ic_save", "Save project\xE2\x80\xA6  Ctrl+S")) saveProject();
+    if (tool("tb_export", "ic_export", "Export GLB\xE2\x80\xA6  Ctrl+E")) exportGlb();
     gap();
     static const fs::PrimitiveKind kinds[] = {fs::PrimitiveKind::Box, fs::PrimitiveKind::Cylinder,
                                               fs::PrimitiveKind::Sphere, fs::PrimitiveKind::Cone,
@@ -743,7 +787,10 @@ void DesktopEditor::buildProperties(const Rect& panel) {
 
     const float labelW = ui.px(70);
     const float fieldH = ui.px(theme_.controlHeight);
-    const float fieldW = (w - labelW - ui.px(8)) / 3.0f - ui.px(4);
+    // Three fields and a narrow unit column, so the third field is as wide as
+    // the first two.
+    const float unitCol = ui.px(16);
+    const float fieldW = (w - labelW - unitCol) / 3.0f - ui.px(4);
     const auto section = [&](const char* title) {
         ui.separator(x, y, w);
         y += ui.px(10);
@@ -769,10 +816,12 @@ void DesktopEditor::buildProperties(const Rect& panel) {
             for (int c = 0; c < 3; ++c) {
                 const std::string id = "tf_" + std::to_string(active) + "_" + std::to_string(r * 3 + c);
                 const Rect field{x + labelW + c * (fieldW + ui.px(4)), y, fieldW, fieldH};
-                if (ui.numberField(id, field, rows[r][c], r == 2 ? 3 : 3, c == 2 ? units[r] : "")) {
+                if (ui.numberField(id, field, rows[r][c], 3, "")) {
                     changed = true;
                 }
             }
+            ui.label({x + w - unitCol + ui.px(2), y, unitCol, fieldH}, units[r], theme_.textSecondary,
+                     theme_.smallFontSize);
             y += fieldH + ui.px(6);
         }
         if (changed) {
