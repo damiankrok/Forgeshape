@@ -361,6 +361,7 @@
     <string name="view_selection_outline">Selection Outline</string>
     <string name="view_selection_outline_on">On</string>
     <string name="view_selection_outline_off">Off</string>
+    <string name="view_feature_edges">Edges</string>
     <string name="status_selection_outline_on">Selection outline on — the selected body is edged. The model is unchanged.</string>
     <string name="status_selection_outline_off">Selection outline off — Objects still names the selected body.</string>
 

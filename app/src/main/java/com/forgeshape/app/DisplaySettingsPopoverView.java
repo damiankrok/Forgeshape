@@ -56,6 +56,8 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
         void onGridVisibleRequested(boolean visible);
 
         void onSelectionOutlineVisibleRequested(boolean visible);
+
+        void onFeatureEdgesVisibleRequested(boolean visible);
     }
 
     private final TextView studioChip;
@@ -67,6 +69,8 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
     private final TextView orthographicChip;
     private final TextView gridOnChip;
     private final TextView gridOffChip;
+    private final TextView edgesOnChip;
+    private final TextView edgesOffChip;
     private final TextView outlineOnChip;
     private final TextView outlineOffChip;
 
@@ -301,6 +305,38 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
         });
         outlineRow.addView(outlineOffChip, EditorControlStyles.wrap(gap));
 
+        // Edges (`WORKBENCH-UX-R1`): the bodies' feature lines, the same kind
+        // of session overlay as the two rows above and on their terms.
+        final LinearLayout edgesRow = new LinearLayout(context);
+        edgesRow.setOrientation(HORIZONTAL);
+        edgesRow.setGravity(Gravity.CENTER_VERTICAL);
+        addView(edgesRow, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+        edgesRow.addView(EditorControlStyles.fieldLabel(context,
+                context.getString(R.string.view_feature_edges)), EditorControlStyles.wrap(0));
+        edgesOnChip = EditorControlStyles.chip(context, R.id.view_feature_edges_on,
+                context.getString(R.string.view_selection_outline_on));
+        edgesOnChip.setContentDescription(context.getString(R.string.view_feature_edges) + " "
+                + context.getString(R.string.view_selection_outline_on));
+        edgesOnChip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onFeatureEdgesVisibleRequested(true);
+            }
+        });
+        edgesRow.addView(edgesOnChip, EditorControlStyles.wrap(gap));
+        edgesOffChip = EditorControlStyles.chip(context, R.id.view_feature_edges_off,
+                context.getString(R.string.view_selection_outline_off));
+        edgesOffChip.setContentDescription(context.getString(R.string.view_feature_edges) + " "
+                + context.getString(R.string.view_selection_outline_off));
+        edgesOffChip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onFeatureEdgesVisibleRequested(false);
+            }
+        });
+        edgesRow.addView(edgesOffChip, EditorControlStyles.wrap(gap));
+
         setVisibility(GONE);
     }
 
@@ -322,6 +358,9 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
         // And the outline on exactly the same terms, from the same store.
         EditorControlStyles.setChipActive(outlineOnChip, selectionOutlineVisible);
         EditorControlStyles.setChipActive(outlineOffChip, !selectionOutlineVisible);
+        final boolean edges = NativeViewport.featureEdgesVisible();
+        EditorControlStyles.setChipActive(edgesOnChip, edges);
+        EditorControlStyles.setChipActive(edgesOffChip, !edges);
         EditorControlStyles.setChipActive(studioChip, shadingModel == NativeViewport.SHADING_STUDIO);
         EditorControlStyles.setChipActive(matcapChip, shadingModel == NativeViewport.SHADING_MATCAP);
         if (debugChip != null) {

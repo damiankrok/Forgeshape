@@ -129,14 +129,18 @@ void cadOperationPreviewTint(CadFeatureOperation operation, float out[4]) {
         case CadFeatureOperation::Add:
             out[0] = 0.30f; out[1] = 0.80f; out[2] = 0.42f; out[3] = 0.30f;
             return;
+        // A Cut's candidate IS the body after the cut, so a strong tint washed
+        // out the very part being edited (`WORKBENCH-UX-R1`): a faint wash
+        // keeps its shading readable while the hatch and the tool's wire carry
+        // what is removed. Saturated red is reserved for a refusal.
         case CadFeatureOperation::Cut:
-            out[0] = 0.95f; out[1] = 0.24f; out[2] = 0.20f; out[3] = 0.34f;
+            out[0] = 0.95f; out[1] = 0.24f; out[2] = 0.20f; out[3] = 0.12f;
             return;
         case CadFeatureOperation::NewBody:
             out[0] = 0.42f; out[1] = 0.66f; out[2] = 0.98f; out[3] = 0.22f;
             return;
         case CadFeatureOperation::Intersect:
-            out[0] = 0.62f; out[1] = 0.42f; out[2] = 0.95f; out[3] = 0.30f;
+            out[0] = 0.62f; out[1] = 0.42f; out[2] = 0.95f; out[3] = 0.14f;
             return;
     }
     out[0] = out[1] = out[2] = out[3] = 0.0f;

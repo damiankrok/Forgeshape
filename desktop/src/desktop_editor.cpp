@@ -1139,6 +1139,10 @@ void DesktopEditor::buildViewRibbon(const Rect& area) {
                     "Selection outline")) {
         display.setSelectionOutlineVisible(!settings.selectionOutlineVisible);
     }
+    if (row.command("rb_edges", "ic_view_edges", "Edges", settings.featureEdgesVisible, true,
+                    "Feature edges")) {
+        display.setFeatureEdgesVisible(!settings.featureEdgesVisible);
+    }
     row.endGroup("Show");
 }
 

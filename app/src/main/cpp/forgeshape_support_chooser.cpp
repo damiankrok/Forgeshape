@@ -324,7 +324,9 @@ void SupportChooser::rebuildOverlay() {
         drawPlaneTarget(&v, plane, emphasised);
     }
     planes.vertexCount = static_cast<uint32_t>(v.size());
-    planes.style = SketchOverlayStyle::GridMinor;
+    // The major-grid weight: the chooser's planes keep the weight they had
+    // when the sketch grid's minor lines were quietened (`WORKBENCH-UX-R1`).
+    planes.style = SketchOverlayStyle::GridMajor;
     built->ranges.push_back(planes);
 
     // The hovered/selected face outline, if any, in its own emphasised range.

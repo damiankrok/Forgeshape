@@ -15,6 +15,7 @@
 // asserting the intention in prose.
 #include "forgeshape_picking.h"
 #include "forgeshape_render_mesh.h"
+#include "forgeshape_feature_edges.h"
 // UI-R1C2. The grid is presentation, so its contract is asserted in the
 // presentation suite; ConstructionScene comes with it because the strongest
 // available statement of "the grid is not in the scene" is a real scene,
@@ -2866,6 +2867,57 @@ void checkSelectionOutlineIsPresentationOnly(Recorder& r) {
 
 }  // namespace
 
+// WORKBENCH-UX-R1: the feature edges a viewport draws over a shaded body.
+// One crease rule for every representation: a box's twelve edges, a
+// cylinder's two rims and no facet lines, a plane's open boundary, nothing
+// across a flat face however it is triangulated.
+void checkFeatureEdges(Recorder& r) {
+    const auto edgesOf = [](const ConstructionMesh& source, SurfaceShading shading, size_t* count) {
+        RenderMeshData data;
+        if (!build(source, shading, &data)) return false;
+        std::vector<uint32_t> pairs;
+        if (!deriveFeatureEdges(data.vertices.data(), data.vertices.size(), data.indices.data(),
+                                data.indices.size(), &pairs)) {
+            return false;
+        }
+        *count = pairs.size() / 2;
+        return pairs.size() % 2 == 0;
+    };
+    size_t box = 0, boxFaceted = 0, cylinder = 0, plane = 0, sphere = 0;
+    r.check("ux_edges_a_box_has_exactly_its_twelve",
+            edgesOf(defaultBox(), SurfaceShading::Smooth, &box) && box == 12);
+    r.check("ux_edges_the_shading_mode_does_not_change_them",
+            edgesOf(defaultBox(), SurfaceShading::Faceted, &boxFaceted) && boxFaceted == 12);
+    // Two rims of kPrimitiveRadialSegments segments each, and not one line
+    // down the side between two facets.
+    r.check("ux_edges_a_cylinder_draws_its_two_rims_and_no_facet_lines",
+            edgesOf(defaultCylinder(), SurfaceShading::Smooth, &cylinder) &&
+                cylinder == 2u * static_cast<size_t>(kPrimitiveRadialSegments));
+    r.check("ux_edges_a_sphere_has_no_crease",
+            edgesOf(defaultSphere(), SurfaceShading::Smooth, &sphere) && sphere == 0);
+    // A plane is drawn two-sided for the renderer, so its boundary may be
+    // welded across both sides; either way it outlines four sides and only
+    // those.
+    r.check("ux_edges_a_plane_outlines_its_boundary",
+            edgesOf(defaultPlane(), SurfaceShading::Smooth, &plane) && plane >= 4 && plane <= 8);
+    // Two coplanar triangles of a square share a diagonal that is no edge.
+    const RenderVertex square[4] = {{{0, 0, 0}, {0, 0, 1}, {1, 1, 1}, 0},
+                                    {{1, 0, 0}, {0, 0, 1}, {1, 1, 1}, 0},
+                                    {{1, 1, 0}, {0, 0, 1}, {1, 1, 1}, 0},
+                                    {{0, 1, 0}, {0, 0, 1}, {1, 1, 1}, 0}};
+    const uint32_t squareIndices[6] = {0, 1, 2, 0, 2, 3};
+    std::vector<uint32_t> squarePairs;
+    r.check("ux_edges_a_flat_diagonal_is_no_edge",
+            deriveFeatureEdges(square, 4, squareIndices, 6, &squarePairs) &&
+                squarePairs.size() == 8);
+    std::vector<uint32_t> untouched = {7};
+    const uint32_t outOfRange[3] = {0, 1, 9};
+    r.check("ux_edges_malformed_input_is_refused_and_writes_nothing",
+            !deriveFeatureEdges(square, 4, outOfRange, 3, &untouched) && untouched.size() == 1 &&
+                !deriveFeatureEdges(square, 4, squareIndices, 5, &untouched) &&
+                !deriveFeatureEdges(square, 4, squareIndices, 6, nullptr));
+}
+
 int runRenderMeshSelfTests(RenderMeshSelfTestResult* out, int max) {
     Recorder r{out, max};
 
@@ -2924,6 +2976,8 @@ int runRenderMeshSelfTests(RenderMeshSelfTestResult* out, int max) {
     checkSelectionOutlineColour(r);
     checkSelectionOutlineKernel(r);
     checkSelectionOutlineIsPresentationOnly(r);
+
+    checkFeatureEdges(r);
 
     return r.n;
 }

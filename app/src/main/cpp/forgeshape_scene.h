@@ -323,6 +323,10 @@ struct SceneDrawItem {
     // selection pulse's slot in the push block -- a previewed body is not
     // being selected, it is being shown what an Add or a Cut will make it.
     float previewTint[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    // Whether this body draws feature edges (`WORKBENCH-UX-R1`): every body but
+    // one wearing a Frozen Sculpt Mesh, whose creases are brush noise rather
+    // than edges and whose mesh re-uploads on every stroke sample.
+    bool featureEdges = true;
 };
 
 using SceneSnapshot = std::vector<SceneDrawItem>;

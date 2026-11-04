@@ -52,6 +52,10 @@ struct BodyRenderResources {
     VkDeviceMemory indexMemory = VK_NULL_HANDLE;
     VkDeviceSize indexCapacityBytes = 0;
     uint32_t indexCount = 0;
+    // The feature edges (`WORKBENCH-UX-R1`): index PAIRS appended to the index
+    // buffer right after the `indexCount` triangle indices, into the same
+    // vertex buffer. Derived at upload from the render mesh, never stored.
+    uint32_t edgeIndexCount = 0;
 
     // The render-only derived geometry (positions + NORMALS + colour) the
     // buffers above actually hold. The authoritative RuntimeMesh in this body's
@@ -340,6 +344,10 @@ private:
     bool createGizmoResources();
     void destroyGizmoResources();
     bool createGizmoPipeline();
+    // The feature-edge line pipeline (`WORKBENCH-UX-R1`), swapchain-scoped
+    // like the gizmo's, over the outline mask's position-only layout.
+    bool createEdgePipeline();
+    void recordFeatureEdgeDraws(VkCommandBuffer cmd);
     // Re-uploads the canonical list when — and only when — the stroke weight
     // preference (UI-PREF-R1 F) differs from the list the device holds. The
     // one buffer is sized to the widest weight, so this is a copy and never a
@@ -456,7 +464,7 @@ private:
     // authoritative revision this render data was derived from, and is what the
     // uploaded-revision check compares.
     bool uploadRenderMesh(BodyRenderResources& body, ObjectId objectId, const RenderMeshData& mesh,
-                          MeshRevision sourceRevision);
+                          MeshRevision sourceRevision, bool featureEdges);
     // Called once per frame, before recording. For EACH body in the scene,
     // rebuilds the render-only derived mesh and uploads it ONLY when that
     // body's source revision or the surface shading actually changed; on every
@@ -687,6 +695,20 @@ private:
     VkDeviceMemory depthMemory_ = VK_NULL_HANDLE;
     VkImageView depthImageView_ = VK_NULL_HANDLE;
 
+    // The main pass's multisampling (`WORKBENCH-UX-R1`): the highest of 4, 2
+    // and 1 the device offers for colour AND depth, chosen once per physical
+    // device. Above 1 the pass renders into a swapchain-scoped multisampled
+    // colour image (TRANSIENT and lazily allocated where the device offers
+    // it, so a tile GPU resolves on chip) and resolves into the swapchain
+    // image; the depth image takes the same count. Presentation only: no
+    // revision, no mesh, no format. The outline MASK pass stays single-sample
+    // -- it is a coverage mask, and the composite reads it per pixel.
+    VkSampleCountFlagBits msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+    VkImage msaaColorImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory msaaColorMemory_ = VK_NULL_HANDLE;
+    VkImageView msaaColorView_ = VK_NULL_HANDLE;
+    bool createMsaaColorResources();
+
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
     VkPipeline pipeline_ = VK_NULL_HANDLE;
     // Swapchain-dependent exactly like pipeline_, because it bakes the viewport
@@ -694,6 +716,9 @@ private:
     VkPipeline gridPipeline_ = VK_NULL_HANDLE;
     // Swapchain-dependent for the same reason gridPipeline_ is.
     VkPipeline gizmoPipeline_ = VK_NULL_HANDLE;
+    VkPipeline edgePipeline_ = VK_NULL_HANDLE;
+    VkShaderModule edgeVertShader_ = VK_NULL_HANDLE;
+    VkShaderModule edgeFragShader_ = VK_NULL_HANDLE;
 
     // Frames in flight
     static constexpr uint32_t kMaxFramesInFlight = 2;

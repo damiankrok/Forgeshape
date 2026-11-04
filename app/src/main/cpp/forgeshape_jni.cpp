@@ -10713,6 +10713,22 @@ Java_com_forgeshape_app_NativeViewport_selectionOutlineVisible(JNIEnv*, jclass) 
     return forgeshape::displaySettings().selectionOutlineVisible() ? JNI_TRUE : JNI_FALSE;
 }
 
+// Feature edges (`WORKBENCH-UX-R1`), on the selection outline's terms:
+// session-only presentation in the process-scoped display store.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_setFeatureEdgesVisible(JNIEnv*, jclass, jboolean visible) {
+    forgeshape::DisplaySettingsStore& settings = forgeshape::displaySettings();
+    const bool changed = settings.setFeatureEdgesVisible(visible == JNI_TRUE);
+    FS_LOGI("FORGESHAPE_VIEWPORT_FEATURE_EDGES:%d changed=%d",
+            settings.featureEdgesVisible() ? 1 : 0, changed ? 1 : 0);
+    return settings.featureEdgesVisible() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_featureEdgesVisible(JNIEnv*, jclass) {
+    return forgeshape::displaySettings().featureEdgesVisible() ? JNI_TRUE : JNI_FALSE;
+}
+
 // Reduced motion: the whole of the accessibility seam, and deliberately one
 // bool.
 //

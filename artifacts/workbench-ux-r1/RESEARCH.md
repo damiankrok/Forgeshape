@@ -407,7 +407,7 @@ One fact for the parent agent: in Fusion and SolidCraft, the History or Timeline
 
 Pixel sizes come from SolidCraft's published UI kit, in points. Fusion, Onshape and SolidWorks publish no pixel metrics for toolbars or panels.
 
-# Platform and accessibility design guidance for ForgeShape's two shells: Material 3 large screens and adaptive layouts, Android large-screen 
+# Platform and accessibility design guidance for ForgeShape's two shells: Material 3 large screens and adaptive layouts, Android large-screen
 
 ## Lay out by window size class, never by device type (layout)
 Width classes: Compact < 600 dp, Medium 600–839 dp, Expanded 840–1199 dp, Large 1200–1599 dp, Extra-large >= 1600 dp. Height classes: Compact < 480 dp, Medium 480–899 dp, Expanded >= 900 dp. Width and height are classified separately, and the class can change at any moment (rotation, split screen, fold, DeX or ChromeOS window resize), so the layout must re-derive on every configuration change. Phone landscape is medium or expanded WIDTH but compact HEIGHT, so a two-pane layout is not practical there. The Compose adaptive defaults (PaneScaffoldDirective) are: Compact and Medium get 1 horizontal pane; Expanded gets 2 panes with a 24 dp spacer; Large and above get 3 panes with a 24 dp spacer. Default pane width is 360 dp (412 dp at Large and above), and a second VERTICAL pane (24 dp spacer) is used only in tabletop posture or with one column at Expanded height. For ForgeShape: the workbench gate (EXPANDED plus Browser affordance) matches the 2-pane rule. Browser + viewport + Properties as THREE docked columns is the Large/XL (>= 1200 dp) shape. Phone landscape (compact height) should keep panels transient.

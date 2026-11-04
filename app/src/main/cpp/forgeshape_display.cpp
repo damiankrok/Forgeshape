@@ -143,6 +143,7 @@ ViewportDisplaySettings DisplaySettingsStore::snapshot() const {
     out.background = viewportBackground();
     out.gridVisible = gridVisible();
     out.selectionOutlineVisible = selectionOutlineVisible();
+    out.featureEdgesVisible = featureEdgesVisible();
     out.reducedMotion = reducedMotion();
     out.gizmoStrokeWeight = gizmoStrokeWeight();
     return out;
@@ -228,6 +229,19 @@ bool DisplaySettingsStore::setSelectionOutlineVisible(bool visible) {
     // setting the user chose, and the display suite proves a real transition
     // happened by watching this counter move rather than by re-reading the flag
     // it just wrote.
+    changeCount_.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+bool DisplaySettingsStore::featureEdgesVisible() const {
+    return featureEdgesVisible_.load(std::memory_order_relaxed);
+}
+
+bool DisplaySettingsStore::setFeatureEdgesVisible(bool visible) {
+    const bool previous = featureEdgesVisible_.exchange(visible, std::memory_order_relaxed);
+    if (previous == visible) {
+        return false;
+    }
     changeCount_.fetch_add(1, std::memory_order_relaxed);
     return true;
 }

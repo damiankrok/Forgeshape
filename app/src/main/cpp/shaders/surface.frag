@@ -73,7 +73,13 @@ const vec3 kStudioKeyColor = vec3(1.00, 0.98, 0.94);
 // left 0.49, right 0.29 — a 1.7x separation, where the previous rig gave
 // 0.44 vs 0.40 and the two side faces were nearly indistinguishable.
 const vec3 kStudioFillDirection = vec3(0.35, -0.55, 0.55);
-const float kStudioFillIntensity = 0.18;
+//
+// Lifted (`WORKBENCH-UX-R1`) with the ground ambient below: the box's shadowed
+// side measured #4E4F52 against the #302E2B ground, 1.65:1, so an unselected
+// part's silhouette existed only while the selection outline was on. The fill
+// is still lower-front, so the left/right separation the paragraph above
+// measured is kept; only the floor of the shadow side rises.
+const float kStudioFillIntensity = 0.30;
 const vec3 kStudioFillColor = vec3(0.82, 0.87, 1.00);
 
 // Hemispherical ambient: what keeps an unlit region oriented instead of flat,
@@ -81,7 +87,7 @@ const vec3 kStudioFillColor = vec3(0.82, 0.87, 1.00);
 // weak. A surface facing straight away from the key still lands near 0.22
 // rather than at black.
 const vec3 kStudioSkyAmbient = vec3(0.460, 0.490, 0.540);
-const vec3 kStudioGroundAmbient = vec3(0.260, 0.250, 0.240);
+const vec3 kStudioGroundAmbient = vec3(0.340, 0.330, 0.320);
 
 // Restrained on purpose: enough to separate a curved surface from a planar one,
 // not enough to read as a material.

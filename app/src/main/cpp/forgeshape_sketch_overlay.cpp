@@ -22,19 +22,22 @@ bool sketchOverlayStyleWeights(SketchOverlayStyle style, ViewportBackground back
     // that happening again is the compiler's own -Wswitch on this switch,
     // beside the exhaustive case in the gizmo self-test.
     switch (style) {
+        // The sketch grid is a WHISPER (`WORKBENCH-UX-R1`): at 0.22 / 0.45 a
+        // major line read at the weight of the 1 px stroke the user drew on
+        // it, so the drawing did not out-read its own paper.
         case SketchOverlayStyle::GridMinor:
             weights.neutralLevel = neutral;
-            weights.alpha = kGizmoAxisAlpha * 0.22f;
+            weights.alpha = kGizmoAxisAlpha * 0.12f;
             mapped = true;
             break;
         case SketchOverlayStyle::GridMajor:
             weights.neutralLevel = neutral;
-            weights.alpha = kGizmoAxisAlpha * 0.45f;
+            weights.alpha = kGizmoAxisAlpha * 0.24f;
             mapped = true;
             break;
         case SketchOverlayStyle::Axes:
             weights.neutralLevel = neutral;
-            weights.alpha = kGizmoAxisAlpha * 0.9f;
+            weights.alpha = kGizmoAxisAlpha * 0.6f;
             mapped = true;
             break;
         case SketchOverlayStyle::Entities:

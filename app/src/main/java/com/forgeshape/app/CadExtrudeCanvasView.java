@@ -1056,7 +1056,42 @@ final class CadExtrudeCanvasView extends FrameLayout {
     }
 
     private TextView valueText(Context context, int id) {
-        final TextView text = new TextView(context);
+        // An opaque PLATE behind the value (`WORKBENCH-UX-R1`), hugging the
+        // text rather than the 48 dp touch box: a glow on the pale New Body
+        // preview read at well under 4.5:1, a plate in the floating surface
+        // with a hairline reads at the panel's own contrast on any ground.
+        final int plateFill = (EditorControlStyles.themeColor(context, R.attr.fsSurfaceFloating)
+                & 0x00FFFFFF) | 0xEB000000;
+        final int plateEdge = EditorControlStyles.themeColor(context, R.attr.fsChromeHairline);
+        final float plateRadius = 6.0f * density;
+        final float platePadX = 6.0f * density;
+        final float platePadY = 2.0f * density;
+        final android.graphics.Paint plate = new android.graphics.Paint(
+                android.graphics.Paint.ANTI_ALIAS_FLAG);
+        final android.graphics.RectF plateRect = new android.graphics.RectF();
+        final TextView text = new TextView(context) {
+            @Override
+            protected void onDraw(android.graphics.Canvas canvas) {
+                final CharSequence shown = getText();
+                if (shown != null && shown.length() > 0) {
+                    final float w = getPaint().measureText(shown, 0, shown.length());
+                    final android.graphics.Paint.FontMetrics fm = getPaint().getFontMetrics();
+                    final float h = fm.descent - fm.ascent;
+                    final float cx = getWidth() * 0.5f;
+                    final float cy = getHeight() * 0.5f;
+                    plateRect.set(cx - w * 0.5f - platePadX, cy - h * 0.5f - platePadY,
+                            cx + w * 0.5f + platePadX, cy + h * 0.5f + platePadY);
+                    plate.setStyle(android.graphics.Paint.Style.FILL);
+                    plate.setColor(plateFill);
+                    canvas.drawRoundRect(plateRect, plateRadius, plateRadius, plate);
+                    plate.setStyle(android.graphics.Paint.Style.STROKE);
+                    plate.setStrokeWidth(Math.max(1.0f, density));
+                    plate.setColor(plateEdge);
+                    canvas.drawRoundRect(plateRect, plateRadius, plateRadius, plate);
+                }
+                super.onDraw(canvas);
+            }
+        };
         text.setId(id);
         text.setGravity(Gravity.CENTER);
         text.setSingleLine(true);
@@ -1064,9 +1099,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         text.setTextSize(TypedValue.COMPLEX_UNIT_SP, CadHudPresentation.VALUE_TEXT_BASE_SP);
         text.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextPrimary));
         EditorControlStyles.applyMediumWeight(text);
-        text.setShadowLayer(3.0f * density, 0.0f, 0.0f,
-                EditorControlStyles.themeColor(context, R.attr.fsSurfaceFloating));
-        final int padH = Math.round(4.0f * density);
+        final int padH = Math.round(8.0f * density);
         text.setPadding(padH, 0, padH, 0);
         text.setMinimumHeight(hitPx);
         text.setMinimumWidth(hitPx);

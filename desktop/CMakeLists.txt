@@ -43,7 +43,7 @@ set(FS_SHADER_OUT "${CMAKE_CURRENT_BINARY_DIR}/generated_shaders")
 file(MAKE_DIRECTORY "${FS_SHADER_OUT}")
 set(FS_SHADER_HEADERS "")
 foreach(shader surface.vert surface.frag grid.vert grid.frag gizmo.vert gizmo.frag
-                outline_mask.vert outline_mask.frag outline.vert outline.frag ui.vert ui.frag)
+                outline_mask.vert outline_mask.frag outline.vert outline.frag edge.vert edge.frag ui.vert ui.frag)
     set(_src "${FS_CORE}/shaders/${shader}")
     set(_out "${FS_SHADER_OUT}/${shader}.spv.inc")
     add_custom_command(OUTPUT "${_out}"

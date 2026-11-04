@@ -876,8 +876,10 @@ int runGizmoSelfTests(GizmoSelfTestResult* out, int maxOut) {
             const SketchOverlayStyle styles[4] = {
                 SketchOverlayStyle::GridMinor, SketchOverlayStyle::GridMajor,
                 SketchOverlayStyle::Axes, SketchOverlayStyle::Entities};
-            const float alphas[4] = {kGizmoAxisAlpha * 0.22f, kGizmoAxisAlpha * 0.45f,
-                                     kGizmoAxisAlpha * 0.9f, kGizmoAxisAlpha};
+            // WORKBENCH-UX-R1 quietened the sketch grid and its axes so the
+            // drawing out-reads its paper; the entity weight did not move.
+            const float alphas[4] = {kGizmoAxisAlpha * 0.12f, kGizmoAxisAlpha * 0.24f,
+                                     kGizmoAxisAlpha * 0.6f, kGizmoAxisAlpha};
             const float levels[4] = {neutral, neutral, neutral, entityLevel};
             for (int i = 0; i < 4; ++i) {
                 SketchOverlayStyleWeights w;
@@ -886,7 +888,7 @@ int runGizmoSelfTests(GizmoSelfTestResult* out, int maxOut) {
                                   w.alpha == alphas[i] && w.neutralLevel == levels[i];
             }
         }
-        r.check("overlay_the_four_older_styles_keep_their_exact_weights", legacyUnchanged);
+        r.check("overlay_the_four_older_styles_carry_their_stated_weights", legacyUnchanged);
 
         // An annotation is read AGAINST the geometry it measures, so it stands
         // clear of the grid and under the entities. Stated as an ordering

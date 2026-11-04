@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Feature edges (`WORKBENCH-UX-R1`): a shaded block whose three visible faces
+  are parted by drawn lines — the edges themselves, not the block (that is
+  the Box primitive) and not a band round it (that is the selection outline).
+
+  Drawn white and tinted at use, like every control icon.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillAlpha="0.35"
+        android:pathData="M12,3.5 L19.5,7.5 L19.5,16.5 L12,20.5 L4.5,16.5 L4.5,7.5 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M4.5,7.5 L12,11.5 L19.5,7.5 M12,11.5 L12,20.5" />
+</vector>

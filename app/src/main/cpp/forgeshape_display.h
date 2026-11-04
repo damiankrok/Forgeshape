@@ -159,6 +159,9 @@ constexpr bool kDefaultGridVisible = true;
 // answers. An outline WIDTH or COLOUR preference is deliberately not here — see
 // forgeshape_selection_outline.h, where both are policy rather than choice.
 constexpr bool kDefaultSelectionOutlineVisible = true;
+// Feature edges are drawn by default (`WORKBENCH-UX-R1`): a CAD part without
+// its edge lines reads as a debug render beside every benchmark application.
+constexpr bool kDefaultFeatureEdgesVisible = true;
 
 // The product default. Studio Solid, so a freshly launched viewport shows a
 // neutral modelling surface rather than a diagnostic.
@@ -196,6 +199,10 @@ struct ViewportDisplaySettings {
     // would record half an outline.
     bool selectionOutlineVisible = kDefaultSelectionOutlineVisible;
 
+    // Whether bodies are drawn with their feature edges (forgeshape_feature_
+    // edges.h). Read once per frame like the outline beside it.
+    bool featureEdgesVisible = kDefaultFeatureEdgesVisible;
+
     // Whether the viewport may spend TIME expressing a change, or must land on
     // the final appearance at once. See setReducedMotion.
     bool reducedMotion = false;
@@ -224,6 +231,7 @@ public:
     ViewportBackground viewportBackground() const;
     bool gridVisible() const;
     bool selectionOutlineVisible() const;
+    bool featureEdgesVisible() const;
     bool reducedMotion() const;
 
     // All four return true when the value actually changed, so a caller can log
@@ -250,6 +258,11 @@ public:
     // re-uploaded, no MeshRevision is minted and no CAD body is regenerated —
     // see SELOUTR1-09, SELOUTR1-10 and SELOUTR1-17..19.
     bool setSelectionOutlineVisible(bool visible);
+
+    // Shows or hides the bodies' feature edges, on the outline's terms: one
+    // boolean per frame decides whether an already-uploaded index range is
+    // drawn; no mesh is rebuilt, re-uploaded or re-published.
+    bool setFeatureEdgesVisible(bool visible);
 
     // Whether the user has asked the SYSTEM for reduced motion.
     //
@@ -281,6 +294,7 @@ private:
     std::atomic<int> background_{static_cast<int>(kDefaultViewportBackground)};
     std::atomic<bool> gridVisible_{kDefaultGridVisible};
     std::atomic<bool> selectionOutlineVisible_{kDefaultSelectionOutlineVisible};
+    std::atomic<bool> featureEdgesVisible_{kDefaultFeatureEdgesVisible};
     std::atomic<bool> reducedMotion_{false};
     std::atomic<int> gizmoStrokeWeight_{static_cast<int>(kDefaultGizmoStrokeWeight)};
     std::atomic<uint64_t> changeCount_{0};

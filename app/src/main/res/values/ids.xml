@@ -223,6 +223,8 @@
     <item name="view_grid_off" type="id" />
     <item name="view_selection_outline_on" type="id" />
     <item name="view_selection_outline_off" type="id" />
+    <item name="view_feature_edges_on" type="id" />
+    <item name="view_feature_edges_off" type="id" />
 
     <!--
       The expanded window's Objects column. It HOSTS the one Objects section;

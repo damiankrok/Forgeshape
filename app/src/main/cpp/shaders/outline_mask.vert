@@ -25,6 +25,13 @@
 //                            selected body, 0 for every other one. y, z, w are
 //                            unused and written as zero.
 //
+// The SELECTED body is drawn last and nudged a hair toward the eye
+// (`WORKBENCH-UX-R1`), so where it shares a plane with another body the tie
+// resolves to it every pixel; two meshes on one plane interpolate depths a
+// unit apart, and under a plain test the band broke into speckle there. The
+// nudge is the grid's own size (kGridDepthNudge, 1e-4 of clip w), far below
+// any real separation between surfaces.
+//
 // 80 bytes, well inside the guaranteed 128.
 layout(push_constant) uniform PushConstants {
     mat4 mvp;
@@ -33,6 +40,12 @@ layout(push_constant) uniform PushConstants {
 
 layout(location = 0) in vec3 inPosition;
 
+const float kSelectedDepthNudge = 0.0001;
+
 void main() {
-    gl_Position = pc.mvp * vec4(inPosition, 1.0);
+    vec4 clip = pc.mvp * vec4(inPosition, 1.0);
+    if (pc.params.x > 0.5) {
+        clip.z -= kSelectedDepthNudge * clip.w;
+    }
+    gl_Position = clip;
 }

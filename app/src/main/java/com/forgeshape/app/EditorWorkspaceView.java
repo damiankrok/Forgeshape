@@ -7090,6 +7090,13 @@ final class EditorWorkspaceView extends FrameLayout
                 R.attr.fsTextSecondary);
     }
 
+    /** The feature edges, on the selection outline's terms (`WORKBENCH-UX-R1`). */
+    @Override
+    public void onFeatureEdgesVisibleRequested(boolean visible) {
+        NativeViewport.setFeatureEdgesVisible(visible);
+        refreshDisplaySettings();
+    }
+
     /** Repaints the popover from native truth, so a refused request shows. */
     private void refreshDisplaySettings() {
         displayPopover.showSettings(NativeViewport.shadingModel(),

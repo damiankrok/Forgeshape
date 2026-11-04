@@ -2175,6 +2175,15 @@ final class NativeViewport {
     /** @return whether the selected body's outline is currently drawn */
     static native boolean selectionOutlineVisible();
 
+    /**
+     * Shows or hides the bodies' feature edges (`WORKBENCH-UX-R1`): session
+     * presentation in native's display store, on the selection outline's
+     * terms. Returns what is in effect afterwards.
+     */
+    static native boolean setFeatureEdgesVisible(boolean visible);
+
+    static native boolean featureEdgesVisible();
+
     /** Slots in the array {@link #selectionOutlineStats} fills. */
     static final int OUTLINE_STATS_SIZE = 7;
     /** Mask + depth image allocations for the life of the process. */

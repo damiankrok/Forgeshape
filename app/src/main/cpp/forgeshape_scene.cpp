@@ -378,6 +378,7 @@ SceneSnapshot ConstructionScene::snapshot(const SceneViewRestriction& restrictio
         // Highlighting is per body. A single global "something is selected"
         // flag would tint every body at once the moment anything was picked.
         item.selected = (body->objectId() == activeBodyId_);
+        item.featureEdges = !body->frozenSculpt().mesh.frozen();
         items.push_back(std::move(item));
     }
     return items;

@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstring>
 
+#include "forgeshape_feature_edges.h"
 #include "forgeshape_matcap.h"
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
@@ -37,6 +38,12 @@ static const uint32_t kOutlineMaskFragSpv[] =
     ;
 static const uint32_t kOutlineVertSpv[] =
 #include "outline.vert.spv.inc"
+    ;
+static const uint32_t kEdgeVertSpv[] =
+#include "edge.vert.spv.inc"
+    ;
+static const uint32_t kEdgeFragSpv[] =
+#include "edge.frag.spv.inc"
     ;
 static const uint32_t kOutlineFragSpv[] =
 #include "outline.frag.spv.inc"
@@ -580,6 +587,14 @@ bool Renderer::pickPhysicalDeviceAndQueues() {
     VkPhysicalDeviceProperties props{};
     vkGetPhysicalDeviceProperties(physicalDevice_, &props);
     vkGetPhysicalDeviceMemoryProperties(physicalDevice_, &memoryProperties_);
+    {
+        const VkSampleCountFlags offered = props.limits.framebufferColorSampleCounts &
+                                           props.limits.framebufferDepthSampleCounts;
+        msaaSamples_ = (offered & VK_SAMPLE_COUNT_4_BIT)   ? VK_SAMPLE_COUNT_4_BIT
+                       : (offered & VK_SAMPLE_COUNT_2_BIT) ? VK_SAMPLE_COUNT_2_BIT
+                                                           : VK_SAMPLE_COUNT_1_BIT;
+        FS_LOGI("FORGESHAPE_RENDER_MSAA:%d", static_cast<int>(msaaSamples_));
+    }
     FS_LOGI("Physical device selected: %s (type=%d, deviceApi=%u.%u.%u, driver=%u)",
             props.deviceName, (int)props.deviceType,
             VK_VERSION_MAJOR(props.apiVersion), VK_VERSION_MINOR(props.apiVersion),
@@ -876,9 +891,20 @@ bool Renderer::ensureMeshCapacity(BodyRenderResources& body, VkDeviceSize vertex
 }
 
 bool Renderer::uploadRenderMesh(BodyRenderResources& body, ObjectId objectId,
-                                const RenderMeshData& mesh, MeshRevision sourceRevision) {
+                                const RenderMeshData& mesh, MeshRevision sourceRevision,
+                                bool featureEdges) {
     const VkDeviceSize vertexBytes = static_cast<VkDeviceSize>(mesh.vertexBytes());
-    const VkDeviceSize indexBytes = static_cast<VkDeviceSize>(mesh.indexBytes());
+    const VkDeviceSize triangleIndexBytes = static_cast<VkDeviceSize>(mesh.indexBytes());
+    // The feature edges ride in the same index buffer after the triangles, so
+    // they cost no buffer object of their own and are replaced with the mesh.
+    std::vector<uint32_t> edgePairs;
+    if (featureEdges &&
+        !deriveFeatureEdges(mesh.vertices.data(), mesh.vertices.size(), mesh.indices.data(),
+                            mesh.indices.size(), &edgePairs)) {
+        edgePairs.clear();
+    }
+    const VkDeviceSize edgeBytes = static_cast<VkDeviceSize>(edgePairs.size() * sizeof(uint32_t));
+    const VkDeviceSize indexBytes = triangleIndexBytes + edgeBytes;
     if (vertexBytes == 0 || indexBytes == 0) {
         FS_FAIL("mesh_upload_empty");
         return false;
@@ -907,7 +933,11 @@ bool Renderer::uploadRenderMesh(BodyRenderResources& body, ObjectId objectId,
                 "vkMapMemory(mesh_staging)");
     auto* bytes = static_cast<unsigned char*>(mapped);
     std::memcpy(bytes, mesh.vertices.data(), static_cast<size_t>(vertexBytes));
-    std::memcpy(bytes + vertexBytes, mesh.indices.data(), static_cast<size_t>(indexBytes));
+    std::memcpy(bytes + vertexBytes, mesh.indices.data(), static_cast<size_t>(triangleIndexBytes));
+    if (edgeBytes > 0) {
+        std::memcpy(bytes + vertexBytes + triangleIndexBytes, edgePairs.data(),
+                    static_cast<size_t>(edgeBytes));
+    }
     vkUnmapMemory(device_, stagingMemory_);
 
     FS_VK_CHECK(vkResetCommandBuffer(uploadCommandBuffer_, 0), "vkResetCommandBuffer(mesh_upload)");
@@ -951,6 +981,7 @@ bool Renderer::uploadRenderMesh(BodyRenderResources& body, ObjectId objectId,
                 "vkWaitForFences(mesh_upload)");
 
     body.indexCount = mesh.indexCount();
+    body.edgeIndexCount = static_cast<uint32_t>(edgePairs.size());
     body.uploadedRevision = sourceRevision;
     body.uploadedShading = mesh.shading;
 
@@ -1145,7 +1176,8 @@ void Renderer::syncBody(const SceneDrawItem& item) {
         return;
     }
 
-    if (!uploadRenderMesh(body, item.objectId, body.renderMesh.data(), mesh->revision())) {
+    if (!uploadRenderMesh(body, item.objectId, body.renderMesh.data(), mesh->revision(),
+                          item.featureEdges)) {
         body.failedRevision = mesh->revision();  // fail closed, keep the last good mesh
         body.uploadedShading = shading;
         meshUploadDiagnostics().recordFailure();
@@ -1306,6 +1338,20 @@ bool Renderer::createShaderModules() {
     FS_VK_CHECK(
         vkCreatePipelineLayout(device_, &maskLayoutInfo, nullptr, &outlineMaskPipelineLayout_),
         "vkCreatePipelineLayout(outline_mask)");
+
+    // The feature edges share the mask's position-only layout and 80-byte push.
+    VkShaderModuleCreateInfo edgeVertInfo{};
+    edgeVertInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    edgeVertInfo.codeSize = sizeof(kEdgeVertSpv);
+    edgeVertInfo.pCode = kEdgeVertSpv;
+    FS_VK_CHECK(vkCreateShaderModule(device_, &edgeVertInfo, nullptr, &edgeVertShader_),
+                "vkCreateShaderModule(edge_vert)");
+    VkShaderModuleCreateInfo edgeFragInfo{};
+    edgeFragInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    edgeFragInfo.codeSize = sizeof(kEdgeFragSpv);
+    edgeFragInfo.pCode = kEdgeFragSpv;
+    FS_VK_CHECK(vkCreateShaderModule(device_, &edgeFragInfo, nullptr, &edgeFragShader_),
+                "vkCreateShaderModule(edge_frag)");
 
     VkShaderModuleCreateInfo outlineVertInfo{};
     outlineVertInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -2050,6 +2096,10 @@ void Renderer::destroyOutlineDeviceResources() {
     if (outlineMaskVertShader_ != VK_NULL_HANDLE) {
         vkDestroyShaderModule(device_, outlineMaskVertShader_, nullptr);
     }
+    if (edgeVertShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, edgeVertShader_, nullptr);
+    if (edgeFragShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, edgeFragShader_, nullptr);
+    edgeVertShader_ = VK_NULL_HANDLE;
+    edgeFragShader_ = VK_NULL_HANDLE;
     // Freeing the pool frees the set allocated from it; the set must not be
     // freed separately.
     if (outlinePool_ != VK_NULL_HANDLE) vkDestroyDescriptorPool(device_, outlinePool_, nullptr);
@@ -2283,7 +2333,7 @@ bool Renderer::createDepthResources() {
     imageInfo.extent = {swapchainExtent_.width, swapchainExtent_.height, 1};
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.samples = msaaSamples_;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -2316,22 +2366,88 @@ bool Renderer::createDepthResources() {
 
     FS_LOGI("Depth resources created: format=%d extent=%ux%u",
             (int)depthFormat_, swapchainExtent_.width, swapchainExtent_.height);
+    return createMsaaColorResources();
+}
+
+bool Renderer::createMsaaColorResources() {
+    if (msaaSamples_ == VK_SAMPLE_COUNT_1_BIT) {
+        return true;
+    }
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = swapchainFormat_;
+    imageInfo.extent = {swapchainExtent_.width, swapchainExtent_.height, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = msaaSamples_;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    FS_VK_CHECK(vkCreateImage(device_, &imageInfo, nullptr, &msaaColorImage_),
+                "vkCreateImage(msaa colour)");
+    VkMemoryRequirements req{};
+    vkGetImageMemoryRequirements(device_, msaaColorImage_, &req);
+    uint32_t memoryType = 0;
+    // Lazily allocated where offered: on a tile GPU the samples then live in
+    // tile memory and are resolved on chip, costing no bandwidth to memory.
+    if (!findMemoryType(req.memoryTypeBits,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
+                        &memoryType) &&
+        !findMemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &memoryType)) {
+        FS_FAIL("no_device_local_memory_for_msaa_colour");
+        return false;
+    }
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = req.size;
+    allocInfo.memoryTypeIndex = memoryType;
+    FS_VK_CHECK(vkAllocateMemory(device_, &allocInfo, nullptr, &msaaColorMemory_),
+                "vkAllocateMemory(msaa colour)");
+    FS_VK_CHECK(vkBindImageMemory(device_, msaaColorImage_, msaaColorMemory_, 0),
+                "vkBindImageMemory(msaa colour)");
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = msaaColorImage_;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = swapchainFormat_;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.layerCount = 1;
+    FS_VK_CHECK(vkCreateImageView(device_, &viewInfo, nullptr, &msaaColorView_),
+                "vkCreateImageView(msaa colour)");
+    FS_LOGI("MSAA colour resources created: samples=%d extent=%ux%u",
+            static_cast<int>(msaaSamples_), swapchainExtent_.width, swapchainExtent_.height);
     return true;
 }
 
 bool Renderer::createRenderPass() {
-    VkAttachmentDescription attachments[2]{};
+    const bool msaa = msaaSamples_ != VK_SAMPLE_COUNT_1_BIT;
+    VkAttachmentDescription attachments[3]{};
     attachments[0].format = swapchainFormat_;
-    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[0].samples = msaaSamples_;
     attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    // With multisampling the samples are resolved and dropped; the swapchain
+    // image (attachment 2) is what is stored and presented.
+    attachments[0].storeOp = msaa ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
     attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    attachments[0].finalLayout =
+        msaa ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    attachments[2].format = swapchainFormat_;
+    attachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachments[2].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     attachments[1].format = depthFormat_;
-    attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[1].samples = msaaSamples_;
     attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -2341,12 +2457,14 @@ bool Renderer::createRenderPass() {
 
     VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     VkAttachmentReference depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference resolveRef{2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorRef;
     subpass.pDepthStencilAttachment = &depthRef;
+    subpass.pResolveAttachments = msaa ? &resolveRef : nullptr;
 
     VkSubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -2361,7 +2479,7 @@ bool Renderer::createRenderPass() {
 
     VkRenderPassCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    info.attachmentCount = 2;
+    info.attachmentCount = msaa ? 3 : 2;
     info.pAttachments = attachments;
     info.subpassCount = 1;
     info.pSubpasses = &subpass;
@@ -2369,18 +2487,20 @@ bool Renderer::createRenderPass() {
     info.pDependencies = &dependency;
 
     FS_VK_CHECK(vkCreateRenderPass(device_, &info, nullptr, &renderPass_), "vkCreateRenderPass");
-    FS_LOGI("Render pass created (color + depth)");
+    FS_LOGI("Render pass created (color + depth%s)", msaa ? " + resolve" : "");
     return true;
 }
 
 bool Renderer::createFramebuffers() {
     framebuffers_.resize(swapchainImageViews_.size());
     for (size_t i = 0; i < swapchainImageViews_.size(); ++i) {
-        VkImageView views[2] = {swapchainImageViews_[i], depthImageView_};
+        const bool msaa = msaaSamples_ != VK_SAMPLE_COUNT_1_BIT;
+        VkImageView views[3] = {msaa ? msaaColorView_ : swapchainImageViews_[i], depthImageView_,
+                                swapchainImageViews_[i]};
         VkFramebufferCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         info.renderPass = renderPass_;
-        info.attachmentCount = 2;
+        info.attachmentCount = msaa ? 3 : 2;
         info.pAttachments = views;
         info.width = swapchainExtent_.width;
         info.height = swapchainExtent_.height;
@@ -2486,7 +2606,7 @@ bool Renderer::createPipeline() {
 
     VkPipelineMultisampleStateCreateInfo multisample{};
     multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisample.rasterizationSamples = msaaSamples_;  // the main pass's count
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -2603,7 +2723,7 @@ bool Renderer::createGridPipeline() {
 
     VkPipelineMultisampleStateCreateInfo multisample{};
     multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisample.rasterizationSamples = msaaSamples_;  // the main pass's count
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -2738,7 +2858,7 @@ bool Renderer::createGizmoPipeline() {
 
     VkPipelineMultisampleStateCreateInfo multisample{};
     multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisample.rasterizationSamples = msaaSamples_;  // the main pass's count
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -2795,6 +2915,145 @@ bool Renderer::createGizmoPipeline() {
     FS_LOGI("Gizmo pipeline created (LINE_LIST, cull NONE, depth test OFF, depth write OFF, "
             "alpha blend, no descriptor set)");
     return true;
+}
+
+bool Renderer::createEdgePipeline() {
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = edgeVertShader_;
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = edgeFragShader_;
+    stages[1].pName = "main";
+
+    // The body's OWN vertex buffer, position only, as the outline mask reads it.
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(RenderVertex);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    VkVertexInputAttributeDescription attribute{};
+    attribute.location = 0;
+    attribute.binding = 0;
+    attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+    attribute.offset = offsetof(RenderVertex, position);
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = 1;
+    vertexInput.pVertexAttributeDescriptions = &attribute;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+
+    VkViewport viewport{0.0f, 0.0f, static_cast<float>(swapchainExtent_.width),
+                        static_cast<float>(swapchainExtent_.height), 0.0f, 1.0f};
+    VkRect2D scissor{{0, 0}, swapchainExtent_};
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    // A one-pixel line list, by the renderer's own contract (no wideLines);
+    // the main pass's multisampling is what smooths it.
+    VkPipelineRasterizationStateCreateInfo raster{};
+    raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.cullMode = VK_CULL_MODE_NONE;
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    raster.lineWidth = 1.0f;
+
+    VkPipelineMultisampleStateCreateInfo multisample{};
+    multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisample.rasterizationSamples = msaaSamples_;
+
+    // Depth TESTED against the bodies already drawn, never written: an edge
+    // behind a face stays hidden, and the edge leaves the buffer as the bodies
+    // left it for the grid after it.
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depthStencil.minDepthBounds = 0.0f;
+    depthStencil.maxDepthBounds = 1.0f;
+
+    VkPipelineColorBlendAttachmentState blendAttachment{};
+    blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                     VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    blendAttachment.blendEnable = VK_TRUE;
+    blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    VkPipelineColorBlendStateCreateInfo colorBlend{};
+    colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlend.attachmentCount = 1;
+    colorBlend.pAttachments = &blendAttachment;
+
+    VkGraphicsPipelineCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    info.stageCount = 2;
+    info.pStages = stages;
+    info.pVertexInputState = &vertexInput;
+    info.pInputAssemblyState = &inputAssembly;
+    info.pViewportState = &viewportState;
+    info.pRasterizationState = &raster;
+    info.pMultisampleState = &multisample;
+    info.pDepthStencilState = &depthStencil;
+    info.pColorBlendState = &colorBlend;
+    info.layout = outlineMaskPipelineLayout_;
+    info.renderPass = renderPass_;
+    info.subpass = 0;
+    FS_VK_CHECK(
+        vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &info, nullptr, &edgePipeline_),
+        "vkCreateGraphicsPipelines(edge)");
+    FS_LOGI("Edge pipeline created (LINE_LIST, depth test LESS_OR_EQUAL, depth write OFF, "
+            "eye-ward nudge 0.00010, alpha blend)");
+    return true;
+}
+
+void Renderer::recordFeatureEdgeDraws(VkCommandBuffer cmd) {
+    if (!display_.featureEdgesVisible || edgePipeline_ == VK_NULL_HANDLE) {
+        return;
+    }
+    // One ink per ground FAMILY, as every tool colour asks it.
+    const bool light = viewportBackgroundIsLight(display_.background);
+    const float ink[4] = {light ? 0.227f : 0.086f, light ? 0.220f : 0.082f,
+                          light ? 0.208f : 0.075f, light ? 0.80f : 0.85f};
+    bool bound = false;
+    for (const SceneDrawItem& item : scene_) {
+        if (!item.featureEdges) continue;
+        auto found = bodies_.find(item.objectId);
+        if (found == bodies_.end()) continue;
+        const BodyRenderResources& body = found->second;
+        if (body.vertexBuffer == VK_NULL_HANDLE || body.indexBuffer == VK_NULL_HANDLE ||
+            body.edgeIndexCount == 0) {
+            continue;
+        }
+        if (!bound) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, edgePipeline_);
+            bound = true;
+        }
+        const Mat4 mvp = mat4Multiply(camera_.proj, mat4Multiply(camera_.view, item.model));
+        OutlineMaskPush push{};
+        std::memcpy(push.mvp, mvp.m, sizeof(push.mvp));
+        std::memcpy(push.params, ink, sizeof(ink));
+        vkCmdPushConstants(cmd, outlineMaskPipelineLayout_,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(OutlineMaskPush), &push);
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &body.vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(cmd, body.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cmd, body.edgeIndexCount, 1, body.indexCount, 0, 0);
+    }
 }
 
 bool Renderer::createCommandBuffers() {
@@ -3120,7 +3379,7 @@ bool Renderer::createOutlineMaskPipeline() {
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable = VK_TRUE;
     depthStencil.depthWriteEnable = VK_TRUE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;  // the selected body wins a tie
     depthStencil.minDepthBounds = 0.0f;
     depthStencil.maxDepthBounds = 1.0f;
 
@@ -3197,7 +3456,7 @@ bool Renderer::createOutlineCompositePipeline() {
 
     VkPipelineMultisampleStateCreateInfo multisample{};
     multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisample.rasterizationSamples = msaaSamples_;  // the main pass's count
 
     // Depth test OFF and depth write OFF, exactly like the gizmo's. The mask it
     // reads is ALREADY depth resolved, so testing again against the main pass's
@@ -3270,6 +3529,7 @@ bool Renderer::createSwapchainDependents() {
     // built against it, and after the depth format is known, because the mask
     // pass's own depth image uses the same one.
     if (!createOutlineSwapchainResources()) return false;
+    if (!createEdgePipeline()) return false;
     if (!createCommandBuffers()) return false;
     needsSwapchainRebuild_ = false;
     return true;
@@ -3295,6 +3555,10 @@ void Renderer::destroySwapchainDependents() {
 #if !defined(__ANDROID__)
     destroyUiPipeline();
 #endif
+    if (edgePipeline_ != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device_, edgePipeline_, nullptr);
+        edgePipeline_ = VK_NULL_HANDLE;
+    }
     if (gizmoPipeline_ != VK_NULL_HANDLE) {
         vkDestroyPipeline(device_, gizmoPipeline_, nullptr);
         gizmoPipeline_ = VK_NULL_HANDLE;
@@ -3326,6 +3590,18 @@ void Renderer::destroySwapchainDependents() {
     if (depthMemory_ != VK_NULL_HANDLE) {
         vkFreeMemory(device_, depthMemory_, nullptr);
         depthMemory_ = VK_NULL_HANDLE;
+    }
+    if (msaaColorView_ != VK_NULL_HANDLE) {
+        vkDestroyImageView(device_, msaaColorView_, nullptr);
+        msaaColorView_ = VK_NULL_HANDLE;
+    }
+    if (msaaColorImage_ != VK_NULL_HANDLE) {
+        vkDestroyImage(device_, msaaColorImage_, nullptr);
+        msaaColorImage_ = VK_NULL_HANDLE;
+    }
+    if (msaaColorMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, msaaColorMemory_, nullptr);
+        msaaColorMemory_ = VK_NULL_HANDLE;
     }
     for (auto view : swapchainImageViews_) {
         vkDestroyImageView(device_, view, nullptr);
@@ -3401,6 +3677,10 @@ bool Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     for (const SceneDrawItem& item : scene_) {
         recordBodyDraw(cmd, item);
     }
+
+    // The feature edges over the shaded bodies, depth-tested against them and
+    // writing nothing, so the grid after them is occluded exactly as before.
+    recordFeatureEdgeDraws(cmd);
 
     // LAST, and that ordering is load-bearing. Every body has now written depth,
     // so the depth-tested, depth-biased grid is correctly occluded by the model
@@ -3698,7 +3978,18 @@ void Renderer::recordOutlineMaskPass(VkCommandBuffer cmd) {
     // the depth that occludes the selected one, and they write zero coverage —
     // which is what the attachment was cleared to — so the mask that comes out
     // is the selected body's VISIBLE silhouette and nothing else.
+    //
+    // Unselected first and the selected LAST, under a LESS_OR_EQUAL depth test
+    // (`WORKBENCH-UX-R1`): where the selected body shares a plane with another
+    // one -- a cylinder standing flush on a box -- the two write EQUAL depths,
+    // and under LESS whichever was recorded first won pixel by pixel, which
+    // broke the band into speckle inside that face. A body strictly in front
+    // still wins, so occlusion is unchanged.
+    for (int pass = 0; pass < 2; ++pass)
     for (const SceneDrawItem& item : scene_) {
+        if (item.selected != (pass == 1)) {
+            continue;
+        }
         auto found = bodies_.find(item.objectId);
         if (found == bodies_.end()) {
             continue;  // nothing uploaded for this body yet
