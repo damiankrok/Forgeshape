@@ -230,6 +230,104 @@ public final class TabletWorkbenchTest {
         assertEquals("and changed no selection", part, NativeViewport.sceneActiveBodyId());
     }
 
+    /**
+     * WORKBENCH-RIBBON-R1: the view cube, the view bar and the History strip
+     * stand on a workbench; each view act turns native's camera; a step in
+     * the strip is its History row's own act; all three step aside while a
+     * sketch owns the viewport.
+     */
+    @Test
+    public void the_view_cube_the_view_bar_and_the_history_strip() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue("the view cube stands on the model",
+                    activity.findViewById(R.id.view_cube).isShown());
+            assertTrue("the view bar stands on the model",
+                    activity.findViewById(R.id.view_bar).isShown());
+            assertTrue("the History strip stands on the bottom edge",
+                    workspace.historyStrip().isShown());
+            assertTrue("it lists the part's steps",
+                    workspace.historyStrip().stepsContainer().getChildCount() >= 2);
+            return null;
+        });
+        final float[] axes = new float[9];
+        // Top: the eye straight above, exactly.
+        click(R.id.view_top);
+        NativeViewport.cameraViewAxes(axes);
+        assertTrue("Top looks straight down: " + axes[7], axes[7] > 0.9999f);
+        // The cube's +Z end is the Front view.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final WorkbenchViewCubeView cube = workspace.viewCube();
+            final float[] end = cube.endPoint(2, true);
+            final long now = SystemClock.uptimeMillis();
+            final MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN,
+                    end[0], end[1], 0);
+            final MotionEvent up = MotionEvent.obtain(now, now + 40, MotionEvent.ACTION_UP,
+                    end[0], end[1], 0);
+            cube.dispatchTouchEvent(down);
+            cube.dispatchTouchEvent(up);
+            down.recycle();
+            up.recycle();
+            return null;
+        });
+        settleLayout();
+        NativeViewport.cameraViewAxes(axes);
+        assertTrue("the cube's +Z end is Front: " + axes[8], axes[8] > 0.9999f);
+        // Zoom far in, then Fit brings the whole part back.
+        final float[] pose = new float[NativeViewport.CAMERA_POSE_SIZE];
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            NativeViewport.cameraPointerZoom(viewport.getWidth() * 0.5f,
+                    viewport.getHeight() * 0.5f, 25.0f, viewport.getWidth(), viewport.getHeight());
+            return null;
+        });
+        NativeViewport.debugCameraPose(pose);
+        final float zoomed = pose[NativeViewport.CAMERA_POSE_DISTANCE];
+        click(R.id.view_fit);
+        NativeViewport.debugCameraPose(pose);
+        assertTrue("Fit framed the part again: " + zoomed + " -> "
+                        + pose[NativeViewport.CAMERA_POSE_DISTANCE],
+                pose[NativeViewport.CAMERA_POSE_DISTANCE] > zoomed * 1.5f);
+        click(R.id.view_home);
+        // A step in the strip is its row's act: the sketch step opens Edit Sketch.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final android.widget.LinearLayout steps = workspace.historyStrip().stepsContainer();
+            View sketchStep = null;
+            for (int i = 0; i < steps.getChildCount(); i++) {
+                final Object tag = steps.getChildAt(i).getTag();
+                if (tag instanceof FeatureHistoryPresentation.Row
+                        && ((FeatureHistoryPresentation.Row) tag).kind
+                                == NativeViewport.TIMELINE_KIND_SKETCH
+                        && steps.getChildAt(i).isClickable()) {
+                    sketchStep = steps.getChildAt(i);
+                    break;
+                }
+            }
+            assertTrue("the strip carries an editable sketch step", sketchStep != null);
+            sketchStep.performClick();
+            return null;
+        });
+        settleLayout();
+        final double[] sketch = new double[NativeViewport.SKETCH_STATE_SIZE];
+        NativeViewport.sketchState(sketch);
+        assertNotEquals("the step opened the sketch", 0.0, sketch[NativeViewport.SKETCH_STATE]);
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertFalse("the cube steps aside for a sketch",
+                    activity.findViewById(R.id.view_cube).isShown());
+            assertFalse("and the bar", activity.findViewById(R.id.view_bar).isShown());
+            assertFalse("and the strip", workspace.historyStrip().isShown());
+            NativeViewport.sketchCancel();
+            workspace.onNativeStateChanged();
+            return null;
+        });
+        settleLayout();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue("they come back with the sketch cancelled",
+                    activity.findViewById(R.id.view_cube).isShown()
+                            && workspace.historyStrip().isShown());
+            return null;
+        });
+    }
+
     // -----------------------------------------------------------------------
 
     private void click(int id) {

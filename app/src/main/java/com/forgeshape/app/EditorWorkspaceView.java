@@ -78,6 +78,8 @@ final class EditorWorkspaceView extends FrameLayout
         BodyDimensionLabelsView.OnDimensionAction,
         SculptHistoryNavigatorView.OnHistoryStateChosen,
         FeatureHistoryView.OnHistoryRowChosen,
+        WorkbenchViewCubeView.OnViewChosen,
+        WorkbenchViewBarView.Host,
         FeatureHistoryView.OnHistoryAct,
         RegenerationIssueView.OnIssueAction,
         SurfaceEditorView.Host,
@@ -251,6 +253,16 @@ final class EditorWorkspaceView extends FrameLayout
     /** The weighted gap in the middle row where the model shows. Kept so the
      *  handedness preference can re-seat the row's members around it. */
     private final View middleSpacer;
+    /**
+     * The workbench's view cube and view bar, standing on the model area
+     * (`WORKBENCH-RIBBON-R1`), and the History strip along the bottom edge
+     * with the gap it replaces there. GONE in every window that is not a
+     * workbench, so a phone and a medium window are unchanged.
+     */
+    private final WorkbenchViewCubeView viewCube;
+    private final WorkbenchViewBarView viewBar;
+    private final HistoryStripView historyStrip;
+    private final View bottomSpacer;
     /** Which edge the rail zone was last seated on; null until the first. */
     private Boolean appliedLeftHanded;
     private final UnsavedChangesPromptView unsavedPrompt;
@@ -759,7 +771,34 @@ final class EditorWorkspaceView extends FrameLayout
 
         // The empty middle is where the model lives. It is a weighted gap with
         // no background and no listener, so it costs the viewport nothing.
-        middleSpacer = EditorControlStyles.spacer(context);
+        // ...and on a workbench it carries the view cube and the view bar
+        // (`WORKBENCH-RIBBON-R1`). It is a container that is NOT clickable, so
+        // a touch anywhere but on those two falls through to the viewport
+        // exactly as it fell through the bare gap.
+        final FrameLayout modelArea = new FrameLayout(context);
+        modelArea.setId(R.id.model_area);
+        modelArea.setLayoutParams(new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1.0f));
+        EditorControlStyles.allowChildShadows(modelArea);
+        final int modelGap = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        viewCube = new WorkbenchViewCubeView(context, this);
+        viewCube.setVisibility(GONE);
+        // On the side AWAY from the trailing controls: their docked face
+        // actions and feature editors stand at the inner edge from the top
+        // (`CAD-UI-DOCK-R1`), and a surface may never cover a live control.
+        final FrameLayout.LayoutParams cubeParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.START);
+        cubeParams.setMargins(modelGap, modelGap, modelGap, modelGap);
+        modelArea.addView(viewCube, cubeParams);
+        viewBar = new WorkbenchViewBarView(context, this);
+        viewBar.setVisibility(GONE);
+        final FrameLayout.LayoutParams barParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        barParams.bottomMargin = modelGap;
+        modelArea.addView(viewBar, barParams);
+        middleSpacer = modelArea;
         middleRow.addView(middleSpacer);
 
         trailingHost = new WorkspaceTrailingHostView(context, this);
@@ -786,7 +825,17 @@ final class EditorWorkspaceView extends FrameLayout
         // The flexible child of the bottom row, and the only one: it is where
         // the model shows between the two capsules, and it is what absorbs a
         // squeeze, so neither capsule ever gives up a touch target.
-        bottomRow.addView(EditorControlStyles.spacer(context));
+        bottomSpacer = EditorControlStyles.spacer(context);
+        bottomRow.addView(bottomSpacer);
+        // On a workbench the gap gives way to the History strip: the active
+        // body's steps along the bottom edge, ending at the Undo / Redo pair
+        // (`WORKBENCH-RIBBON-R1`).
+        historyStrip = new HistoryStripView(context, this);
+        historyStrip.setVisibility(GONE);
+        final LinearLayout.LayoutParams stripParams = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        stripParams.rightMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        bottomRow.addView(historyStrip, stripParams);
 
         historyGroup = EditorControlStyles.controlGroup(context);
         historyGroup.setId(R.id.history_group);
@@ -1556,6 +1605,7 @@ final class EditorWorkspaceView extends FrameLayout
         // capsule wherever it does not.
         placeFeatureHistory(objectsDocked());
         toolbar.showBrowserToggle(workbench && projectOpen && !sculpting, !browserCollapsed);
+        post(this::refreshWorkbenchViewControls);
     }
 
     /** The Browser column's width, from the window it was laid out for. */
@@ -2489,6 +2539,12 @@ final class EditorWorkspaceView extends FrameLayout
         appliedLeftHanded = left;
         final Context context = getContext();
         trailingHost.setMirrored(left);
+        if (viewCube != null && viewCube.getLayoutParams() instanceof FrameLayout.LayoutParams) {
+            final FrameLayout.LayoutParams cubeParams =
+                    (FrameLayout.LayoutParams) viewCube.getLayoutParams();
+            cubeParams.gravity = Gravity.TOP | (left ? Gravity.END : Gravity.START);
+            viewCube.setLayoutParams(cubeParams);
+        }
 
         final int brushGap = EditorControlStyles.dimen(context, R.dimen.brush_gap);
         final LinearLayout.LayoutParams brushParams =
@@ -3469,6 +3525,75 @@ final class EditorWorkspaceView extends FrameLayout
                 timelineHeader, timelineRows, count);
     }
 
+    /**
+     * The workbench's view cube, view bar and History strip
+     * (`WORKBENCH-RIBBON-R1`): drawn on a workbench over a project, and never
+     * while a sketch is open -- its exact view owns the camera, and its own
+     * orientation navigator stands in the model's corner. The strip is drawn
+     * where the History control would be.
+     */
+    private void refreshWorkbenchViewControls() {
+        if (viewCube == null || historyStrip == null) {
+            return;
+        }
+        final boolean project = NativeViewport.projectOpen();
+        final boolean sketching = isSketching();
+        final boolean views = workbench && project && !sketching;
+        viewCube.setVisibility(views ? VISIBLE : GONE);
+        viewBar.setVisibility(views ? VISIBLE : GONE);
+        if (views) {
+            viewBar.refreshFromNative();
+            viewCube.invalidate();
+        }
+        final boolean strip = workbench && FeatureHistoryPresentation.controlShown(project,
+                sketching, isSculpting(), activeBodyHasHistory());
+        historyStrip.setVisibility(strip ? VISIBLE : GONE);
+        bottomSpacer.setVisibility(strip ? GONE : VISIBLE);
+        if (strip) {
+            historyStrip.showModel(readTimeline(false));
+        }
+    }
+
+    @Override
+    public void onStandardViewChosen(int view) {
+        if (NativeViewport.cameraStandardView(view)) {
+            afterChromeMovedCamera();
+        }
+    }
+
+    @Override
+    public void onFitAllRequested() {
+        if (NativeViewport.cameraFitAll()) {
+            afterChromeMovedCamera();
+        }
+    }
+
+    @Override
+    public void onProjectionToggleRequested() {
+        onProjectionModeRequested(
+                NativeViewport.projectionMode() == NativeViewport.PROJECTION_ORTHOGRAPHIC
+                        ? NativeViewport.PROJECTION_PERSPECTIVE
+                        : NativeViewport.PROJECTION_ORTHOGRAPHIC);
+        viewBar.refreshFromNative();
+        afterChromeMovedCamera();
+    }
+
+    /** What a camera moved by chrome owes the view: the world-anchored chrome and the cube. */
+    private void afterChromeMovedCamera() {
+        refreshWorldAnchoredUi();
+        viewCube.invalidate();
+    }
+
+    /** The workbench's view cube, for a test. */
+    WorkbenchViewCubeView viewCube() {
+        return viewCube;
+    }
+
+    /** The workbench's History strip, for a test. */
+    HistoryStripView historyStrip() {
+        return historyStrip;
+    }
+
     /** Whether the active body has a feature chain to list. */
     private boolean activeBodyHasHistory() {
         return NativeViewport.projectOpen()
@@ -3494,6 +3619,7 @@ final class EditorWorkspaceView extends FrameLayout
      * for a body with no feature chain.
      */
     private void refreshFeatureHistory() {
+        refreshWorkbenchViewControls();
         final boolean shown = FeatureHistoryPresentation.controlShown(NativeViewport.projectOpen(),
                 isSketching(), isSculpting(), activeBodyHasHistory());
         final boolean docked = historyDocked();
@@ -4374,6 +4500,10 @@ final class EditorWorkspaceView extends FrameLayout
      */
     private void refreshWorldAnchoredUi() {
         refreshSketchViewportSurfaces(isSketching());
+        // The view cube is drawn from the camera: a camera move redraws it.
+        if (viewCube != null && viewCube.getVisibility() == VISIBLE) {
+            viewCube.invalidate();
+        }
     }
 
     /**

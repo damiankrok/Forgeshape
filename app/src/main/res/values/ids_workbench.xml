@@ -3,4 +3,17 @@
 <resources>
     <item name="browser_panel_toggle" type="id" />
     <item name="browser_content" type="id" />
+    <!-- WORKBENCH-RIBBON-R1: the view cube, the view bar and the History strip. -->
+    <item name="model_area" type="id" />
+    <item name="view_cube" type="id" />
+    <item name="view_bar" type="id" />
+    <item name="view_fit" type="id" />
+    <item name="view_home" type="id" />
+    <item name="view_front" type="id" />
+    <item name="view_top" type="id" />
+    <item name="view_right" type="id" />
+    <item name="view_projection" type="id" />
+    <item name="history_strip" type="id" />
+    <item name="history_strip_steps" type="id" />
+    <item name="history_strip_step" type="id" />
 </resources>

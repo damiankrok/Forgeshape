@@ -10873,6 +10873,58 @@ Java_com_forgeshape_app_NativeViewport_cameraPointerPan(JNIEnv*, jclass, jfloat 
     g_camera.panByPixels(dx, dy);
 }
 
+// The view cube and the view bar (`WORKBENCH-RIBBON-R1`): a standard view by
+// `forgeshape::StandardView` index, and Fit, through the core's camera -- the
+// same calls the desktop makes. Presentation only. False when refused (an
+// unknown index, nothing drawn, or a sketch's exact view owning the camera).
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_cameraStandardView(JNIEnv*, jclass, jint view) {
+    forgeshape::StandardView chosen;
+    if (!forgeshape::standardViewFromIndex(static_cast<int>(view), &chosen)) {
+        return JNI_FALSE;
+    }
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const bool done = g_camera.setStandardView(chosen);
+    FS_LOGI("FORGESHAPE_VIEW_STANDARD:%s %s", forgeshape::standardViewName(chosen),
+            done ? "ok" : "refused");
+    return done ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_cameraFitAll(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const bool done = forgeshape::editorFitAll();
+    FS_LOGI("FORGESHAPE_VIEW_FIT %s", done ? "ok" : "refused");
+    return done ? JNI_TRUE : JNI_FALSE;
+}
+
+// The camera's screen-right, screen-up and toward-the-eye directions in world
+// space, three floats each, into out[0..8] -- what the view cube draws its
+// axes from: the rows of the view matrix. False only for a short array.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_cameraViewAxes(JNIEnv* env, jclass, jfloatArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 9) {
+        return JNI_FALSE;
+    }
+    float axes[9];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::CameraSnapshot snap = g_camera.snapshot();
+        for (int i = 0; i < 3; ++i) {
+            axes[i] = snap.view.m[i * 4 + 0];
+            axes[3 + i] = snap.view.m[i * 4 + 1];
+            axes[6 + i] = snap.view.m[i * 4 + 2];
+        }
+    }
+    env->SetFloatArrayRegion(out, 0, 9, axes);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_cameraSketchViewActive(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return g_camera.sketchViewActive() ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_cameraPointerZoom(JNIEnv*, jclass, jfloat x, jfloat y,
                                                          jfloat notches, jint viewWidth,

@@ -44,6 +44,34 @@ final class NativeViewport {
 
     /** One wheel movement of {@code notches} (positive = towards the user's
      *  view, i.e. zoom in) about the pixel under the cursor. */
+    /** The {@code forgeshape::StandardView} indices the view cube and view bar use. */
+    static final int VIEW_HOME = 0;
+    static final int VIEW_FRONT = 1;
+    static final int VIEW_BACK = 2;
+    static final int VIEW_LEFT = 3;
+    static final int VIEW_RIGHT = 4;
+    static final int VIEW_TOP = 5;
+    static final int VIEW_BOTTOM = 6;
+
+    /**
+     * Turns the camera to a standard view about its target, keeping the
+     * projection and the span (WORKBENCH-RIBBON-R1). Top and Bottom are exact.
+     * Refused (false) inside a sketch's exact view. Presentation only.
+     */
+    static native boolean cameraStandardView(int view);
+
+    /** Frames everything drawn, the view direction kept; false with nothing to frame. */
+    static native boolean cameraFitAll();
+
+    /**
+     * The camera's screen-right, screen-up and toward-the-eye world directions
+     * into {@code out[0..8]}, for drawing the view cube.
+     */
+    static native boolean cameraViewAxes(float[] out);
+
+    /** Whether a sketch's exact view owns the camera (the views are refused there). */
+    static native boolean cameraSketchViewActive();
+
     static native void cameraPointerZoom(float x, float y, float notches,
                                          int viewWidth, int viewHeight);
 
