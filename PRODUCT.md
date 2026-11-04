@@ -485,7 +485,9 @@ and the bottom edge a **History strip**:
 All three step aside while a sketch is open and come back when it closes.
 
 A phone, and a tablet in a narrower window, keep the layout described above:
-no panel stands at rest.
+no panel stands at rest. On such a wide window Home's column stands in the
+middle of the page and **New Project** and **Open File…** stand side by side
+as two tiles; a phone keeps them one under the other.
 
 ## A mouse and a keyboard
 

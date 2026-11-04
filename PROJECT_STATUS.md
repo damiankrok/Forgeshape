@@ -1,7 +1,107 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.118.0
+**Status Version:** 0.119.0
 **Updated:** 2026-11-04
+**Latest stage:** **`WORKBENCH-UX-R1` — the workbench's look and function,
+audited, researched, put to a design council and iterated five times on both
+shells** (2026-11-04, OWNER: "audit it, research how CAD applications look and
+work, read the documentation, ask the council about function and look, combine
+it all and do five iterations of look and function until it is good").
+**TECH PASS (emulator, headless Linux, Windows build) / OWNER PHYSICAL REVIEW
+REQUIRED (Galaxy Tab S9 Ultra, a Windows PC) / NOT MERGED.** Branch
+`claude/new-session-g87rge`, product at `d5304ae`. The research digest and the
+council's plan are `artifacts/workbench-ux-r1/` (a plan, not a statement of
+what is implemented; this record is).
+
+- **Iteration 1 — one home per act, one selected form** (`fd15b08`, after
+  `130bebc`): the desktop's panels are DOCKED (flush, square, opaque, one
+  hairline), Undo/Redo live only on the History strip, the View tab keeps only
+  what to show, sentence-case sections; ONE selected treatment on both shells
+  (fill plus a `fsTextPrimary` bar); a field draws at most twelve significant
+  digits with no binary noise and writes nothing when only focused; Finish and
+  Extrude are the ribbon's one accent commit and are drawn only when they can
+  succeed; a field border every palette can see (`fsFieldBorder`); a type
+  ramp of 16/14/12; Measure as a key/value grid; the sketch's corner column
+  stands inboard of a side-seated Properties panel; the Display popover no
+  longer covers the docked Properties panel.
+- **Iteration 2 — the viewport reads as a CAD viewport** (`e2419c6`): the
+  main pass is multisampled (4×/2×/1×), a part is drawn with its feature edges
+  (crease, boundary, non-manifold; `forgeshape_feature_edges`, the session-only
+  *Edges* toggle on both shells, default on), a softer studio fill, a quieter
+  grid and Cut/Intersect preview, and the extrude value on an opaque plate.
+- **Iteration 3 — edit what you made** (`528198a`): a History step (desktop
+  strip, Properties' Features list) opens its staged edit through the shared
+  core (`editorSketchBeginEditFeature` / `editorSketchBeginEditSketch` /
+  `editorSketchCommitEdit`), Finish applies to the SAME body as one Undo; every
+  CAD refusal reads as a sentence (`forgeshape_cad_status_text`, 123 statuses,
+  shared by Android's `CadStatusMessages`); the desktop's right-click body menu
+  (Edit sketch, Fit to body, Hide/Show, Lock/Unlock, Duplicate, Delete); tool
+  letters V L P R C A S T and Ctrl+1..7 views on both shells.
+- **Iteration 4 — sizes while drawing, steps you can read, palms that do
+  nothing** (`d6821c6`): a Line, Rectangle or Circle drag reads its length,
+  width × height or diameter beside the pointer on both shells
+  (`editorSketchLivePlacement`, presentation only); the tablet's History strip
+  steps carry their glyphs; from API 33 a gesture the system cancelled as a
+  palm reaches native as a cancel and places nothing.
+- **Iteration 5 — every view reachable, one project door, one vocabulary**
+  (`a82c872`): the view cube's facing end turns to the opposite view, a drag on
+  it orbits, its negative ends are labelled rings and TalkBack reads six
+  virtual views; `StandardView::Isometric` (appended, index 7) on both view
+  bars and Ctrl+8; the desktop's Home is a full-window start page of three
+  tiles, the ForgeShape mark opens the project menu (no trailing cross, no
+  second copy of the file acts), menus are opaque, the status bar reports and
+  the keys live on the keyboard and mouse sheet (`?`); an icon-only Android
+  control's name is its tooltip; a CAD body's panel reads *CAD Body*, the
+  Browser and the History's sketch rows count curves with plurals; Make CAD
+  part has its own glyph; on an EXPANDED window a start page centres its
+  column and stands up to three actions side by side as tiles (`6d6290d`,
+  `d5304ae`).
+- **Owner decisions this stage did not take** (recorded, not implemented):
+  making the tablet's panels flush like the desktop's (the tablet's inset
+  "tier 2" panels are a stated `UI-LAYOUT` design), moving Cancel into the
+  transition capsule (a `CAD-R0-A1A2` decision), the tablet's ribbon
+  (`WORKBENCH-RIBBON-R2`), and the deferred list in
+  `artifacts/workbench-ux-r1/COUNCIL_PLAN.md` (desktop keyboard focus and
+  Windows contrast themes, an mm default, hole presets, editable size labels
+  while placing, a finger-pans-in-sketch preference, staged live preview in
+  the Hole / Pattern / Fillet editors, a recent-projects grid, view-cube
+  corner targets, a status log, Pattern on the desktop).
+- **Evidence.** Host `HOST_SELFTESTS_OK` (4762 checks: the camera suite's
+  Isometric checks, the CAD suite's every-refusal-reads-as-a-sentence check,
+  the render-mesh suite's seven feature-edge checks). The desktop headless
+  check 55/55 with a named capture gallery (Home, two bodies, a live-sized
+  rectangle, Ready, a face Cut, the context menu, the project menu, the
+  keyboard sheet). `CI DESKTOP` success on every iteration (`41792912576`,
+  `41794440700`, `41795787857`, `41797112344`, and `41799635446` on `6d6290d`:
+  Linux `FORGESHAPE_DESKTOP_HEADLESS_OK`, Windows MSVC 4762 checks 0 failed,
+  the installer); `a82c872`'s was cancelled by the next push. `CI FAST`
+  `41792926183` on `fd15b08` failed on trailing whitespace in the research
+  digest (fixed in `e2419c6`); `41794447766`, `41795791507`, `41797131535` and
+  `41799814880` on `d5304ae` are success. `CI DEVICE`, each with 25/25 startup
+  tokens in order: `41792922292` OK 6 and `41792930043` OK 44 (iteration 1),
+  `41794452190` OK 38 (iteration 2; the selection-outline, renderer-counter,
+  extrude-HUD and visual-evidence classes), `41795795189` OK 35 (iteration 3;
+  logcat `FORGESHAPE_RENDER_MSAA:4` on the emulator), `41797135573` OK 22
+  (iteration 4; the live size and palm-cancel cases), `41798912593` OK 35
+  (iteration 5; the cube, Isometric, tooltip and Edges cases) and
+  `41799642447` OK 53 on `6d6290d` (`WorkbenchVisualEvidenceTest`'s side-by-side
+  Home tiles, `TabletWorkbenchTest`, `HomeFlowTest`, `SketchUxTest`,
+  `SettingsPreferencesTest`); `d5304ae` changed only the History's sketch-row
+  strings and is covered by `CI FAST`. Deliverables: `app-debug.apk` (`CI
+  FAST` `41799814880`, artifact `13306939019`, SHA-256
+  `b610630c1564c9dab5be111a115b15d87ea6b63b7a2b97b4c46a2be267d098e9`),
+  `ForgeShape-Setup-0.1.0.exe` (`CI DESKTOP` `41799635446`, artifact
+  `13307790828`, SHA-256
+  `521eafc5db84f8bc2736c508cf58e50b2b2e59ed12b72c637a43450367307799`) and
+  `ForgeShape-0.1.0-portable.zip` (SHA-256
+  `99717947c4422b59d3c7041110f448c07b15fdf716ee9a8a25a9d2619232f5fc`). A
+  physical tablet and its S Pen palm rejection, a real GPU's multisampling
+  cost, the grid on a real GPU, a Windows window and the installer on a real
+  PC are UNVERIFIED.
+
+**Previous stage:** `WORKBENCH-RIBBON-R1` (record below; its title row's file
+acts and Undo/Redo, its View tab's views and its Home card are superseded by
+`WORKBENCH-UX-R1` above).
 **Latest stage:** **`WORKBENCH-RIBBON-R1` — SolidCraft's arrangement on both
 shells: a ribbon, a view cube, a view bar and a History strip** (2026-11-04,
 OWNER: after comparing ForgeShape with SolidCraft, "no slider, back and
@@ -5496,6 +5596,8 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_object_id.h` | `ObjectId` type and reserved values, shared by the mesh and selection layers |
 | `app/src/main/cpp/forgeshape_mesh.{h,cpp}` | `RuntimeMesh` (immutable revision), `MeshStore`, validation, capacity policy, upload diagnostics including source-vs-render counts |
 | `app/src/main/cpp/forgeshape_render_mesh.{h,cpp}` | Derived render geometry: `RenderVertex` (position + normal + colour), `SurfaceShading`, THE crease policy (`kCreaseAngleDegrees`), per-vertex crease grouping with render-only duplication, and `RenderMeshCache`'s rebuild gate. Presentation only |
+| `app/src/main/cpp/forgeshape_feature_edges.{h,cpp}` | `WORKBENCH-UX-R1`: a body's crease, boundary and non-manifold edges derived from its render mesh on upload (`deriveFeatureEdges`, 40°, welded by exact position), appended to its index buffer and drawn as one line list. Presentation only |
+| `app/src/main/cpp/forgeshape_cad_status_text.{h,cpp}` | `WORKBENCH-UX-R1`: `cadStatusUserText`, one sentence per `CadStatus`, shared by the desktop and Android's `CadStatusMessages` |
 | `app/src/main/cpp/forgeshape_matcap.{h,cpp}` | The one ForgeShape-owned MatCap, computed at device init from the closed-form model in that file. No asset, no decoder, one preset |
 | `app/src/main/cpp/forgeshape_display.{h,cpp}` | `ShadingModel`, `ViewportBackground`, grid and selection-outline visibility, the reduced-motion bool, the process-scoped `DisplaySettingsStore`, and the UI index mapping. Presentation state, never truth |
 | `app/src/main/cpp/forgeshape_gizmo.{h,cpp}` | `GizmoSession`: which handle a pointer landed on, the captured pointer, the frozen World or Local drag basis, the Move/Rotate/Scale solvers with their degeneracy fallbacks, and the transaction around ONE drag (over a `ConstructionScene` and `ConstructionHistory` handed in by reference). Also the closed mode/space/handle enums, the canonical reference-unit geometry for all three modes, the screen-constant scale, the axis/highlight/neutral palette, and the placement and quantization seam. Owns no transform of its own |
@@ -5541,26 +5643,32 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: OWNER physical review of the 0.118.0 builds** — the
+**Exactly one next step: OWNER physical review of the 0.119.0 builds** — the
 APK on the Galaxy Tab S9 Ultra and the Windows installer on the OWNER's PC
-(artifacts named in the latest-stage record above). On the tablet in landscape:
-the Browser (Objects and the History) and the Properties panel stand docked at
-rest, each collapses with its one control and comes back; a Bluetooth mouse's
-wheel zooms about the pointer, a right drag orbits, a middle drag pans; Ctrl+Z
-/ Ctrl+Y / Ctrl+S / Delete / Esc do what the controls do; the phone layout is
-unchanged in portrait and on a phone. On Windows: install
-`ForgeShape-Setup-<version>.exe` (or unzip the portable build), open it from
-the Start menu, New CAD part → draw a rectangle → Finish sketch → Extrude;
-New sketch → click the part's face → a circle → Finish → Cut → Extrude; save,
-reopen the `.forge` on the tablet and back, byte for byte the same project;
-a `theme.json` restyles it; the ribbon, the view cube (click an axis end),
-the view bar's Fit and the History strip's arrows on both. This one review also carries every earlier
-pending checklist below, whose APK it supersedes. If the OWNER then wants the
-desktop to reach the tablet's modelling depth, the next development stage is
-`WORKBENCH-RIBBON-R2` (the tablet's ribbon, carrying the face actions), then
-`DESKTOP-R3` (every remaining CAD act, then Freeform, Surface and Sculpt with
-a mouse or pen) — proposed in `docs/DESKTOP_AND_TABLET_PLAN.md`, not
-authorised here.
+(artifacts named in the latest-stage record above), judging the five
+`WORKBENCH-UX-R1` iterations by eye and by hand. On the tablet in landscape:
+Home's two tiles; a part drawn with its edges (Display → Edges toggles them);
+the docked Browser and Properties, each collapsing with its one control; a
+History step opening its edit; drawing a rectangle and reading its size above
+the finger as it grows; the S Pen with a palm resting on the glass placing
+nothing; the view cube (tap +Y twice for Bottom, drag it to turn the view,
+the ringed −X/−Y/−Z ends), the view bar's Isometric; a long press on any
+icon-only control naming it; a Bluetooth keyboard's V L P R C A S T, F and
+Ctrl+1..8. On Windows: install `ForgeShape-Setup-<version>.exe` (or unzip the
+portable build), Home's tiles, New CAD part → a rectangle whose size reads
+beside the pointer → Finish sketch → Extrude; New sketch → the part's face →
+a circle → Cut; click a History step, change it, Finish — the same part, one
+Undo; right-click the part (Edit sketch, Fit to body, Hide, Lock, Duplicate,
+Delete); the ForgeShape mark's project menu (Save, Open, Export, Close); `?`
+for the keyboard and mouse sheet; the view cube and Ctrl+8. Real-GPU
+multisampling cost and the grid's look on a real GPU (the software renderer
+draws the far grid as a dark staircase) are judged there too. This one review
+also carries every earlier pending checklist below, whose APK it supersedes.
+If the OWNER then wants the desktop to reach the tablet's modelling depth, the
+next development stage is `WORKBENCH-RIBBON-R2` (the tablet's ribbon,
+carrying the face actions), then `DESKTOP-R3` (every remaining CAD act, then
+Freeform, Surface and Sculpt with a mouse or pen) — proposed in
+`docs/DESKTOP_AND_TABLET_PLAN.md`, not authorised here.
 
 The earlier review it subsumes: the
 `SKETCH-NAVIGATOR-OUTCOME-R1` APK (`ci-fast-evidence` artifact `13179561711`
