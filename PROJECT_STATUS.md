@@ -1,7 +1,56 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.119.0
+**Status Version:** 0.120.0
 **Updated:** 2026-11-04
+**Latest stage:** **`PRECISION-SCULPT-INTERCHANGE-R1` — lay a part out
+precisely, sculpt detail into it, and move it in and out in five formats**
+(2026-11-04, OWNER: "arrange elements as precisely as in CAD, then go into
+Sculpt to add detail; look at the app, improve what can be improved, improve
+the menu, and exports and imports in various formats"). **TECH PASS (emulator,
+headless Linux, Windows build) / OWNER PHYSICAL REVIEW REQUIRED (Galaxy Tab S9
+Ultra, a Windows PC) / NOT MERGED.** Branch `claude/new-session-g87rge`,
+product at `dee045b`. Three owner decisions it records lift earlier bans in
+`CLAUDE.md`: CAD → Sculpt, OBJ/STL/PLY/3MF interchange, and the `← CAD Body`
+short form.
+
+- **A CAD Body can be sculpted** (`CAD-SCULPT-R1`, `9e5a545`, `dee045b`):
+  `buildSculptSeedFromSolid` (`forgeshape_sculpt_seed.{h,cpp}`) welds the
+  chain's solid into one surface and refines it by conforming edge splits to
+  the part's diagonal / 96 (≤ 320 000 triangles); a CAD edit after the freeze
+  marks the sculpt mesh stale, with its own CAD wording; *Back to CAD Body*
+  (`← CAD Body`) and *Reset Sculpt from CAD Body…*; a face-supported CAD body
+  stays unsculptable; `SCUL` over `CADB` is valid (no version change), over a
+  face-supported one refused.
+- **Precise arrangement** (`PLACEMENT-PRECISION-R1`, `9e5a545`, `aef7425`):
+  Drop to ground and Centre on origin (one Undo each, by drawn bounds), and
+  snap while dragging — move 1 mm / 1 cm / 10 cm / 1 m, rotate 5° / 15° / 45° —
+  frozen at pointer-down; on Android in the Transform exact-value panel, on
+  Windows in Properties.
+- **Five interchange formats** (`INTERCHANGE-R1`, `e559aec`): Export as GLB,
+  STL, 3MF (millimetres), OBJ, PLY (metres) from the GLB exporter's one
+  snapshot, deterministic and one file each; Import mesh reads the same five
+  (STL welded; 3MF with its own ZIP and inflater) into the one durable import
+  path. Android: the Export chip opens the format menu, the project drawer's
+  one import row reads every format. Windows: the project menu's rows, Ctrl+I
+  and drag-and-drop. FBX and STEP stay absent.
+- **Evidence.** Host `HOST_SELFTESTS_OK` 4820 checks (GLTF_EXPORT 124,
+  GLTF_IMPORT 242, the SCENE suite's twelve `cadsculpt_*`, the GIZMO suite's
+  snap checks, the PROJECT suite's two `CADSCULPT_*` codec checks). The
+  desktop headless check passes, including every exported format imported back
+  as one body and one Undo. `CI DESKTOP` `41863478533` on `aef7425` success
+  (Linux headless, Windows MSVC, the installer). `CI FAST` `41863065545` on
+  `e559aec` success. `CI DEVICE` on `e559aec`: lane 3 `41863078501` success;
+  lanes `41863069887`, `41863074153` and `41863083269` reached 25/25 startup
+  tokens and failed six older cases that asserted the lifted bans ("no OBJ
+  anywhere", "Import GLB…") or read the selected control's layer-list
+  background as a plain shape — updated in `160fd8a`. The re-runs of those
+classes (`160fd8a`) and of the sculpt classes after the stale-warning wording
+(`dee045b`) were still running when this record was written.
+  A physical tablet (S Pen strokes on a sculpted part, a real drag landing on
+  a snap step, the system picker naming `.stl`/`.ply`), a slicer opening the
+  STL/3MF, and the installer on a real PC are UNVERIFIED.
+
+**Previous stage:** `WORKBENCH-UX-R1` (record below).
 **Latest stage:** **`WORKBENCH-UX-R1` — the workbench's look and function,
 audited, researched, put to a design council and iterated five times on both
 shells** (2026-11-04, OWNER: "audit it, research how CAD applications look and
@@ -5643,9 +5692,18 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: OWNER physical review of the 0.119.0 builds** — the
+**Exactly one next step: OWNER physical review of the 0.120.0 builds** — the
 APK on the Galaxy Tab S9 Ultra and the Windows installer on the OWNER's PC
-(artifacts named in the latest-stage record above), judging the five
+(artifacts named in the latest-stage record above). First this stage's
+workflow: make a CAD part, Transform → its exact values → Drop to ground and
+Centre on origin; turn Snap to 1 cm and drag the Move handle (the position
+lands on whole centimetres) and Rotate at 15°; Start Sculpting on the part,
+brush across an edge with the S Pen, Back to CAD Body, change its depth,
+Resume Sculpt (the stale warning names the CAD part), Reset Sculpt from CAD
+Body…; Export → STL and 3MF, opened in a slicer (millimetres; the part lies on
+its back because a slicer's up is +Z); Export → OBJ and PLY; Import mesh with
+each of those files. On Windows the same through Properties, the project
+menu, Ctrl+I and dropping a file on the window. Then the five
 `WORKBENCH-UX-R1` iterations by eye and by hand. On the tablet in landscape:
 Home's two tiles; a part drawn with its edges (Display → Edges toggles them);
 the docked Browser and Properties, each collapsing with its one control; a
