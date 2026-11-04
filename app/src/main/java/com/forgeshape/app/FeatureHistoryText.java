@@ -84,13 +84,15 @@ final class FeatureHistoryText {
             if (row.onFeatureFace && (row.positive != 0.0 || row.angle != 0.0)) {
                 return context.getString(R.string.history_detail_sketch_off_face,
                         unit.formatWithUnit(row.positive), CadRevolvePresentation.label(row.angle),
-                        row.entities);
+                        curves(context, row.entities));
             }
             if (row.onBodyFace || row.onFeatureFace) {
-                return context.getString(R.string.history_detail_sketch_face, row.entities);
+                return context.getString(R.string.history_detail_sketch_face,
+                        curves(context, row.entities));
             }
             return context.getString(R.string.history_detail_sketch_plane,
-                    context.getString(CadFeatureEditorView.planeName(row.plane)), row.entities);
+                    context.getString(CadFeatureEditorView.planeName(row.plane)),
+                    curves(context, row.entities));
         }
         if (row.featureKind == NativeViewport.FEATURE_KIND_REVOLVE) {
             return context.getString(R.string.history_detail_revolve,
@@ -116,12 +118,17 @@ final class FeatureHistoryText {
         }
     }
 
+    /** How many curves a sketch holds, counted properly: "1 curve", "3 curves". */
+    private static String curves(Context context, int count) {
+        return context.getResources().getQuantityString(R.plurals.sketch_curve_count, count, count);
+    }
+
     /** A Surface row: a sketch's plane, offset and size, or a feature's one value. */
     private static String surfaceDetail(Context context, LengthUnit unit, FeatureHistoryPresentation.Row row) {
         if (row.isSketch()) {
             return context.getString(R.string.history_detail_surface_sketch,
                     context.getString(CadFeatureEditorView.planeName(row.plane)),
-                    unit.formatWithUnit(row.positive), row.entities);
+                    unit.formatWithUnit(row.positive), curves(context, row.entities));
         }
         switch (SurfacePresentation.rowValue(row)) {
             case SurfacePresentation.VALUE_ANGLE:

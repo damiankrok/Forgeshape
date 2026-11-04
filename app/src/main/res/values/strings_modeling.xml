@@ -14,9 +14,9 @@
     <string name="history_row_sketch">Sketch %1$d</string>
     <string name="history_row_extrude">Extrude %1$d · %2$s</string>
     <string name="history_row_revolve">Revolve %1$d</string>
-    <string name="history_detail_sketch_plane">%1$s · %2$d entities</string>
-    <string name="history_detail_sketch_face">On a face · %1$d entities</string>
-    <string name="history_detail_sketch_off_face">Off a face by %1$s, at %2$s · %3$d entities</string>
+    <string name="history_detail_sketch_plane">%1$s · %2$s</string>
+    <string name="history_detail_sketch_face">On a face · %1$s</string>
+    <string name="history_detail_sketch_off_face">Off a face by %1$s, at %2$s · %3$s</string>
     <string name="history_detail_one_side">One Side %1$s</string>
     <string name="history_detail_symmetric">Symmetric %1$s each side</string>
     <string name="history_detail_two_sides">Two Sides %1$s / %2$s</string>
@@ -126,7 +126,7 @@
     <string name="status_surface_stitched">Stitched.</string>
     <string name="status_surface_thickened">Thickened into a solid.</string>
     <string name="history_row_surface">%1$s %2$d</string>
-    <string name="history_detail_surface_sketch">%1$s · offset %2$s · %3$d entities</string>
+    <string name="history_detail_surface_sketch">%1$s · offset %2$s · %3$s</string>
     <string name="history_detail_surface_angle">%1$s°</string>
     <string name="history_detail_surface_plain">No value to edit</string>
     <string name="surface_refused_axis">Revolve needs exactly one Construction line as its axis.</string>
