@@ -1026,6 +1026,10 @@ final class EditorWorkspaceView extends FrameLayout
         overlayRoot.addView(sketchModify, SketchOrientationNavigatorView.anchoredParams(context));
         sketchNavigator.addOnLayoutChangeListener(
                 (v, l, t, r, b, ol, ot, or, ob) -> placeSketchModifyUnderNavigator());
+        // A side-seated precision surface stands where the navigator's corner
+        // is; the column moves inboard of it rather than over its fields.
+        middleRow.addOnLayoutChangeListener(
+                (v, l, t, r, b, ol, ot, or, ob) -> post(this::placeSketchCornerColumn));
         cadExtrudeCanvas = new CadExtrudeCanvasView(context, this, anchorSpace, this);
         overlayRoot.addView(cadExtrudeCanvas, CadExtrudeCanvasView.anchoredParams());
         // The face actions and the feature editors dock beside the trailing
@@ -4416,6 +4420,9 @@ final class EditorWorkspaceView extends FrameLayout
                     (int) nativeSketch[NativeViewport.SKETCH_STATE]);
         }
         sketchNavigator.setVisibility(drawing ? VISIBLE : GONE);
+        if (drawing) {
+            placeSketchCornerColumn();
+        }
         // Both decide for themselves from native (drawn only while Editing).
         sketchModify.refreshFromNative();
         sketchDimensionLabels.refreshFromNative();
@@ -4975,6 +4982,39 @@ final class EditorWorkspaceView extends FrameLayout
         if (snap != 0 && (int) nativeDraft[NativeViewport.SKETCH_DRAFT_LAST_SNAP]
                 != NativeViewport.SNAP_GRID) {
             announceForAccessibility(context.getString(snap));
+        }
+    }
+
+    /**
+     * Seats the orientation navigator and the sketch actions column in the
+     * sketch's upper trailing corner, INBOARD of a side-seated precision
+     * surface when one stands there (`WORKBENCH-UX-R1`): on a workbench the
+     * docked Properties panel occupies that corner, and a surface may stand on
+     * the model but never on another live control. Writes only on a change.
+     */
+    private void placeSketchCornerColumn() {
+        final Context context = getContext();
+        int margin = EditorControlStyles.dimen(context, R.dimen.trailing_host_width)
+                + EditorControlStyles.dimen(context, R.dimen.brush_gap)
+                + EditorControlStyles.dimen(context, R.dimen.row_gap);
+        if (!leftHanded() && inspector.getParent() == middleRow
+                && inspector.getVisibility() == VISIBLE && inspector.getWidth() > 0
+                && overlayRoot.getWidth() > 0) {
+            final int[] at = new int[2];
+            final int[] root = new int[2];
+            inspector.getLocationInWindow(at);
+            overlayRoot.getLocationInWindow(root);
+            final int inspectorLeft = at[0] - root[0];
+            margin = Math.max(margin, overlayRoot.getWidth() - overlayRoot.getPaddingRight()
+                    - inspectorLeft + EditorControlStyles.dimen(context, R.dimen.row_gap));
+        }
+        for (View corner : new View[]{sketchNavigator, sketchModify}) {
+            final FrameLayout.LayoutParams params =
+                    (FrameLayout.LayoutParams) corner.getLayoutParams();
+            if (params != null && params.rightMargin != margin) {
+                params.rightMargin = margin;
+                corner.setLayoutParams(params);
+            }
         }
     }
 

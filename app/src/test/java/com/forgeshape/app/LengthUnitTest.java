@@ -41,6 +41,24 @@ public final class LengthUnitTest {
     }
 
     @Test
+    public void aFieldDrawsItsValueWithoutBinaryNoise() {
+        // WORKBENCH-UX-R1: a rectangle's height derived from two snapped corners
+        // read "1.0000000000000002" in the tablet capture.
+        assertEquals("1", LengthUnit.withoutBinaryNoise("1.0000000000000002", 12));
+        assertEquals("0.3", LengthUnit.withoutBinaryNoise("0.30000000000000004", 12));
+        assertEquals("2.35935211182", LengthUnit.withoutBinaryNoise("2.3593521118164062", 12));
+        assertEquals("twelve typed digits are drawn whole", "-98765.4321098",
+                LengthUnit.withoutBinaryNoise("-98765.4321098", 12));
+        assertEquals("a short value is untouched, trailing zeros and all", "1.50",
+                LengthUnit.withoutBinaryNoise("1.50", 12));
+        assertEquals("an expression is untouched", "40+2.5",
+                LengthUnit.withoutBinaryNoise("40+2.5", 12));
+        assertEquals("", LengthUnit.withoutBinaryNoise("", 12));
+        assertEquals("no exponent form", "0.000001",
+                LengthUnit.withoutBinaryNoise("0.0000010000000000000001", 12));
+    }
+
+    @Test
     public void aLabelIsWrittenAtTheDisplayPrecisionNeverTheDoublesExpansion() {
         // CAD-FOUNDATION-C2: the OWNER's device showed a dragged depth as
         // "2.3593521118164062 m". A label is READ, so it takes the one bounded

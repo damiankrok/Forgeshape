@@ -188,6 +188,16 @@ final class FeatureHistoryView extends AnchoredSurfaceView {
     private TextView segmentChip(Context context, int id, int label, int description,
                                  final int which) {
         final TextView chip = EditorControlStyles.chip(context, id, context.getString(label));
+        // Three equal thirds of a 220 dp column: the chip's own padding would
+        // leave "Sketches" clipped to "Sketche", so the segments keep a small one.
+        final int padding = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        chip.setPadding(padding, 0, padding, 0);
+        // And a long translation steps the type down to the caption size
+        // rather than losing its last letters.
+        chip.setAutoSizeTextTypeUniformWithConfiguration(
+                EditorControlStyles.dimen(context, R.dimen.text_caption),
+                EditorControlStyles.dimen(context, R.dimen.text_body),
+                1, android.util.TypedValue.COMPLEX_UNIT_PX);
         chip.setContentDescription(context.getString(description));
         chip.setOnClickListener(new OnClickListener() {
             @Override

@@ -114,6 +114,27 @@ enum LengthUnit {
         return present(shifted) + " " + unit.label + "³";
     }
 
+    /**
+     * A field's text as it is DRAWN: a plain decimal with more than
+     * {@code significantDigits} significant digits rounded to them (half-even,
+     * trailing zeros stripped), anything else — a shorter number, an expression,
+     * text that is not a number — exactly as it is. Presentation only: the
+     * caller keeps the complete text and submits that.
+     */
+    static String withoutBinaryNoise(String complete, int significantDigits) {
+        final BigDecimal parsed;
+        try {
+            parsed = new BigDecimal(complete.trim());
+        } catch (NumberFormatException notAPlainNumber) {
+            return complete;
+        }
+        if (parsed.precision() <= significantDigits) {
+            return complete;
+        }
+        return present(parsed.round(new java.math.MathContext(significantDigits,
+                java.math.RoundingMode.HALF_EVEN)));
+    }
+
     /** Converts a value written in this unit into authoritative meters, exactly. */
     BigDecimal toMeters(BigDecimal display) {
         return display.movePointLeft(decimalExponent);

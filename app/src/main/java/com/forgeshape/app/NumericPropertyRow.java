@@ -43,7 +43,7 @@ import java.math.BigDecimal;
  *       its column is set one step smaller, down to the caption size, which is
  *       enough to hold a signed 14-digit coordinate in a 117 dp field. Smaller
  *       type is a presentation; a missing minus sign is a different number.</li>
- *   <li><b>Editing</b> shows the complete value, and a field that gains focus
+ *   <li><b>Editing</b> shows the complete value (less binary noise, below), and a field that gains focus
  *       selects all of it, so the first keystroke replaces rather than appends.
  *       Correcting one digit is still a tap on that digit.</li>
  *   <li><b>Not editing</b>, if it still does not fit, shows as much as does,
@@ -57,12 +57,24 @@ import java.math.BigDecimal;
  * typed: the 15-significant-digit round trip through this field is a property of
  * the value, and the ellipsis is a property of the drawing. A shortened display
  * is never parsed and never submitted.
+ *
+ * <p><b>Binary noise is not a digit</b> (`WORKBENCH-UX-R1`). A value native
+ * derived — a rectangle's height from two grid-snapped corners — can come back
+ * as {@code 1.0000000000000002}: one unit in the last place of a binary64, a
+ * digit nobody typed. The DRAWING rounds to {@link #DRAWN_SIGNIFICANT_DIGITS}
+ * significant digits, which keeps every digit a person enters (a signed
+ * 14-character coordinate has twelve) and drops what a double adds below them.
+ * The complete value is untouched: an Apply that edited nothing still submits
+ * it to the last digit, and a keystroke makes what is on screen the value.
  */
 final class NumericPropertyRow extends LinearLayout {
 
     /** What a shortened display ends with. One character, so what fits is
      *  measured exactly rather than guessed at a font's ellipsis glyph. */
     private static final String ELLIPSIS = "…";
+
+    /** Significant digits the field DRAWS; see the class comment. */
+    static final int DRAWN_SIGNIFICANT_DIGITS = 12;
 
     private final EditText field;
     private final String label;
@@ -220,7 +232,12 @@ final class NumericPropertyRow extends LinearLayout {
      * sign", because only the second is the interesting one.
      */
     boolean displayIsShortened() {
-        return !value.contentEquals(field.getText());
+        return !drawable(value).contentEquals(field.getText());
+    }
+
+    /** The value as it is drawn before any shortening; see the class comment. */
+    private static String drawable(String complete) {
+        return LengthUnit.withoutBinaryNoise(complete, DRAWN_SIGNIFICANT_DIGITS);
     }
 
     /** Puts the caret in this field and selects it, so a correction is one type. */
@@ -242,8 +259,9 @@ final class NumericPropertyRow extends LinearLayout {
     private void render() {
         // Size first, then what to draw: a smaller face may make the whole value
         // fit, and then there is nothing to shorten.
-        applyTextSizeFor(value);
-        final String shown = field.hasFocus() ? value : fitToField(value);
+        final String clean = drawable(value);
+        applyTextSizeFor(clean);
+        final String shown = field.hasFocus() ? clean : fitToField(clean);
         if (shown.contentEquals(field.getText())) {
             return;
         }
