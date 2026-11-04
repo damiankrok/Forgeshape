@@ -428,28 +428,71 @@ void CameraController::applyZoom(float spanDelta) {
     if (!std::isfinite(spanDelta) || spanDelta == 0.0f) {
         return;
     }
-    const float scale = std::exp(-spanDelta * kPinchLogPerPixel);
+    applyZoomScale(std::exp(-spanDelta * kPinchLogPerPixel));
+}
+
+float CameraController::applyZoomScale(float scale) {
     if (!std::isfinite(scale) || scale <= 0.0f) {
-        return;
+        return 1.0f;
     }
 
     if (projection_ == ProjectionMode::Orthographic) {
         const float next = orthoHalfHeightMeters_ * scale;
         if (!std::isfinite(next)) {
-            return;
+            return 1.0f;
         }
+        const float before = orthoHalfHeightMeters_;
         orthoHalfHeightMeters_ =
             clampf(next, kMinOrthoHalfHeightMeters, kMaxOrthoHalfHeightMeters);
         ++zoomCount_;
-        return;
+        return orthoHalfHeightMeters_ / before;
     }
 
     const float next = distance_ * scale;
     if (!std::isfinite(next)) {
-        return;
+        return 1.0f;
     }
+    const float before = distance_;
     distance_ = clampf(next, kMinDistance, kMaxDistance);
     ++zoomCount_;
+    return distance_ / before;
+}
+
+void CameraController::orbitByPixels(float dx, float dy) {
+    applyOrbit(dx, dy);
+}
+
+void CameraController::panByPixels(float dx, float dy) {
+    applyPan(dx, dy);
+}
+
+void CameraController::zoomAtPixel(float x, float y, float notches) {
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(notches) || notches == 0.0f) {
+        return;
+    }
+    // One notch is a fixed RATIO, so the wheel feels the same at every
+    // distance: 0.85 per notch in, its inverse out.
+    constexpr float kWheelZoomRatioPerNotch = 0.85f;
+    float worldPerPixel = 0.0f;
+    const bool anchored = worldPerPixelAtTargetPlane(&worldPerPixel);
+    const float applied = applyZoomScale(std::pow(kWheelZoomRatioPerNotch, notches));
+    if (!anchored || applied == 1.0f) {
+        return;
+    }
+    // The point under the cursor on the target plane is
+    //   target + right·ox·wpp − up·oy·wpp   (screen y grows downward),
+    // and after the zoom a pixel is worth wpp·applied. Keeping that point
+    // under the cursor moves the target by the same offset times (1 − applied).
+    const float ox = x - 0.5f * static_cast<float>(viewportWidth_);
+    const float oy = y - 0.5f * static_cast<float>(viewportHeight_);
+    Vec3 right, up;
+    cameraBasis(&right, &up);
+    const float k = worldPerPixel * (1.0f - applied);
+    Vec3 moved = vec3Add(target_, vec3Scale(right, ox * k));
+    moved = vec3Add(moved, vec3Scale(up, -oy * k));
+    if (vec3Finite(moved)) {
+        target_ = moved;
+    }
 }
 
 CameraSnapshot CameraController::snapshot() const {

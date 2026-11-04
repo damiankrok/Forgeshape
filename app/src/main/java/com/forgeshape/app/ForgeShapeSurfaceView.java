@@ -54,8 +54,90 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
         setFocusableInTouchMode(true);
     }
 
+    /**
+     * A mouse's own navigation (TABLET-WORKBENCH-R1), decided at its button's
+     * press and held until its release: the right button orbits, the middle
+     * button (or Shift with the right) pans. The left button is not ours — it
+     * keeps exactly the meaning a finger has, so a click selects, a drag in a
+     * sketch draws and a drag in Sculpt strokes.
+     */
+    private static final int MOUSE_NAV_NONE = 0;
+    private static final int MOUSE_NAV_ORBIT = 1;
+    private static final int MOUSE_NAV_PAN = 2;
+    private int mouseNav = MOUSE_NAV_NONE;
+    private float mouseLastX;
+    private float mouseLastY;
+
+    /** Handles a right- or middle-button drag; false for everything else. */
+    private boolean handleMouseNavigation(MotionEvent event) {
+        final int action = event.getActionMasked();
+        if (mouseNav == MOUSE_NAV_NONE) {
+            if (action != MotionEvent.ACTION_DOWN
+                    || !event.isFromSource(android.view.InputDevice.SOURCE_MOUSE)) {
+                return false;
+            }
+            final int buttons = event.getButtonState();
+            if ((buttons & MotionEvent.BUTTON_TERTIARY) != 0
+                    || ((buttons & MotionEvent.BUTTON_SECONDARY) != 0 && event.isShiftPressed())) {
+                mouseNav = MOUSE_NAV_PAN;
+            } else if ((buttons & MotionEvent.BUTTON_SECONDARY) != 0) {
+                mouseNav = MOUSE_NAV_ORBIT;
+            } else {
+                return false;
+            }
+            mouseLastX = event.getX();
+            mouseLastY = event.getY();
+            takeFocusFromEditor();
+            return true;
+        }
+        if (action == MotionEvent.ACTION_MOVE) {
+            final float dx = event.getX() - mouseLastX;
+            final float dy = event.getY() - mouseLastY;
+            mouseLastX = event.getX();
+            mouseLastY = event.getY();
+            if (mouseNav == MOUSE_NAV_PAN) {
+                NativeViewport.cameraPointerPan(dx, dy);
+            } else {
+                NativeViewport.cameraPointerOrbit(dx, dy);
+            }
+            return true;
+        }
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            mouseNav = MOUSE_NAV_NONE;
+            if (gestureSettled != null) {
+                gestureSettled.onViewportGestureSettled();
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The mouse wheel zooms about the pointer (TABLET-WORKBENCH-R1): the point
+     * under the cursor stays under it, as a pinch keeps the point between the
+     * fingers.
+     */
+    @Override
+    public boolean onGenericMotionEvent(MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_SCROLL
+                && event.isFromSource(android.view.InputDevice.SOURCE_CLASS_POINTER)) {
+            final float steps = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+            if (steps != 0.0f) {
+                NativeViewport.cameraPointerZoom(event.getX(), event.getY(), steps,
+                        getWidth(), getHeight());
+                if (gestureSettled != null) {
+                    gestureSettled.onViewportGestureSettled();
+                }
+                return true;
+            }
+        }
+        return super.onGenericMotionEvent(event);
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (handleMouseNavigation(event)) {
+            return true;
+        }
         final int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
             // A viewport gesture has begun. Nothing about it is interpreted

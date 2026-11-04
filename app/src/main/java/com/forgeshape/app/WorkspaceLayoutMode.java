@@ -150,8 +150,36 @@ enum WorkspaceLayoutMode {
             return false;
         }
         final int remaining =
-                widthDp - sideDockWidthDp(widthDp) - RAIL_WIDTH_DP - OBJECTS_DOCK_WIDTH_DP;
+                widthDp - sideDockWidthDp(widthDp) - RAIL_WIDTH_DP - browserWidthDp(widthDp);
         return remaining >= MIN_CENTRAL_VIEWPORT_DP;
+    }
+
+    /**
+     * Whether this window is a WORKBENCH ({@code TABLET-WORKBENCH-R1}): the
+     * window that earned the leading column, where the Browser (Objects and the
+     * active body's History) and the Properties panel are docked at rest.
+     *
+     * <p>The same answer as {@link #objectsDocked} by definition, named for what
+     * it now decides: the column IS the Browser, and a window too narrow for it
+     * keeps every panel on demand exactly as a phone does.
+     */
+    boolean workbench(int widthDp) {
+        return objectsDocked(widthDp);
+    }
+
+    /**
+     * How wide the leading column is: 18 % of the window between
+     * {@link #OBJECTS_DOCK_WIDTH_DP} and 260 dp.
+     *
+     * <p>Proportional now that the column carries the History as well as the
+     * scene list: a feature row reads a name, a state and an operation, and on a
+     * 1480 dp tablet a 180 dp column wraps every one of them. The floor keeps
+     * the narrowest workbench where it was, and the decision above subtracts this
+     * same number, so the 480 dp central viewport still holds wherever a column
+     * is granted.
+     */
+    static int browserWidthDp(int windowWidthDp) {
+        return clamp(Math.round(windowWidthDp * 0.18f), OBJECTS_DOCK_WIDTH_DP, 260);
     }
 
     // -----------------------------------------------------------------------

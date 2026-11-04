@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TABLET-WORKBENCH-R1: the tablet workbench's own words. -->
+<resources>
+    <string name="browser_panel_collapse">Hide the Browser (objects and history)</string>
+    <string name="browser_panel_expand">Show the Browser (objects and history)</string>
+</resources>

@@ -33,6 +33,21 @@ final class NativeViewport {
     static native void surfaceDestroyed();
 
     /**
+     * A pointer device's navigation (TABLET-WORKBENCH-R1): a mouse has no second
+     * finger, so its orbit, pan and wheel zoom arrive as explicit amounts in
+     * pixels and notches. The camera's own arithmetic and clamps, the same ones
+     * the touch gestures use; nothing here selects, draws or strokes.
+     */
+    static native void cameraPointerOrbit(float dxPixels, float dyPixels);
+
+    static native void cameraPointerPan(float dxPixels, float dyPixels);
+
+    /** One wheel movement of {@code notches} (positive = towards the user's
+     *  view, i.e. zoom in) about the pixel under the cursor. */
+    static native void cameraPointerZoom(float x, float y, float notches,
+                                         int viewWidth, int viewHeight);
+
+    /**
      * Forwards one complete Android touch event to the native camera owner.
      *
      * <p>Nothing here is interpreted on the Java side beyond mapping the Android

@@ -1651,13 +1651,23 @@ on the host, with no device, and is the fast native loop.
   pad or resize it — that would change the render target and rebuild the
   swapchain for a problem about where buttons are drawn. Insets go on the chrome
   containers.
-- **No surface owns the resting workspace.** The viewport is the workspace; the
-  exact-value panel and every context surface are opened from a control, grow out
-  of it, and are absent otherwise. Nothing may reintroduce a permanently visible
-  panel anchored to a window edge — a collapsed panel is still one. A surface may
-  stand on the *model*; it may never partially cover another live control, and
-  moving it in front by z-order is not a fix — the control is still under it and
-  still taking touches.
+- **No surface owns the resting workspace — except the tablet WORKBENCH**
+  (`TABLET-WORKBENCH-R1`, OWNER decision 2026-11-04). The viewport is the
+  workspace; the exact-value panel and every context surface are opened from a
+  control, grow out of it, and are absent otherwise. The one exception is a
+  window that is `EXPANDED` AND affords the Browser column
+  (`WorkspaceLayoutMode.workbench`): there the Browser (Objects plus the active
+  body's History — the same `FeatureHistoryView`, re-parented, never a copy)
+  and the Properties panel (the precision surface) are DOCKED at rest, each
+  collapsed and restored by ONE control, the collapse remembered for the
+  session and never persisted. A phone and a medium window keep no permanent
+  panel, and a collapsed panel there is still one. A surface may stand on the
+  *model*; it may never partially cover another live control, and moving it in
+  front by z-order is not a fix — the control is still under it and still
+  taking touches. The one exception is a transient menu (the Display popover,
+  the project drawer, Add Primitive) standing over a DOCKED workbench panel
+  while it is open: it consumes every touch in its bounds and closes on the
+  next act, exactly as a desktop menu over a side panel does.
 - **Chrome reports, it does not instruct.** The status line carries verdicts and
   standing faults only; a message that is always true is a permanent surface
   whatever its timeout says, and the rail entry, the control that opened a panel
@@ -1831,16 +1841,27 @@ on the host, with no device, and is the fast native loop.
   guard.
 - **A control's corner is concentric with its host's** (`inner = outer − gap`),
   or a crescent of the host shows at each end and reads as a rendering fault.
-- **The domain is platform-neutral; the Android layer is an adapter.** Android is
-  the first and only production platform, and no Apple target, Metal backend,
-  MoltenVK dependency, Xcode project or cross-platform UI framework is
-  authorized. But Construction, geometry, sculpt, picking, camera and selection
-  code stays platform-neutral C++: no `View`, `Activity`, `MotionEvent`,
-  `Surface`, `jobject` or other Android/JNI type may become domain truth, they
-  stop at `forgeshape_jni.cpp`, input crosses the boundary as platform-neutral
-  semantic samples (`forgeshape_input.h`), and the renderer's platform-surface
-  coupling stays one explicit seam. Do not build a portability abstraction for a
-  platform that has no target — keep the seams where they are.
+- **The domain is platform-neutral, and Android and Windows are its two
+  shells** (`DESKTOP-R1`, OWNER decision 2026-11-04;
+  `docs/DESKTOP_AND_TABLET_PLAN.md`). Android and a Windows desktop `.exe` are
+  the two production platforms and share ONE C++ core in `app/src/main/cpp`:
+  the desktop target compiles those sources unchanged and nothing is forked. No
+  Apple target, Metal backend, MoltenVK dependency, Xcode project or
+  cross-platform UI framework is authorized. Construction, geometry, sculpt,
+  picking, camera and selection code stays platform-neutral C++: no `View`,
+  `Activity`, `MotionEvent`, `Surface`, `jobject`, `HWND` or other platform
+  type may become domain truth; they stop at `forgeshape_jni.cpp` and at
+  `desktop/`, input crosses the boundary as platform-neutral semantic samples
+  (`forgeshape_input.h`), and the renderer's platform coupling is ONE seam —
+  `forgeshape_log.h` and `forgeshape_render_surface.h` (an `ANativeWindow`, an
+  `HWND` or a headless surface). Glue that both shells need moves out of JNI
+  into the platform-neutral editor core (`forgeshape_editor_core.{h,cpp}`) act
+  by act, so no rule is implemented twice. **The desktop UI is ForgeShape's
+  own**: drawn by the renderer from one atlas, themed by the same roles as
+  `attrs.xml` plus a user theme file, glyphs from the platform font API and
+  icons from the Android vector drawables' own `pathData` — no third-party UI
+  library. The installer is built by Inno Setup, a BUILD tool that never ships
+  inside the product.
 
 ## Naming and comments
 

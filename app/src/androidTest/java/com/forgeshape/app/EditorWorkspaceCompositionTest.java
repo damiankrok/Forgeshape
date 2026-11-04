@@ -399,7 +399,7 @@ public final class EditorWorkspaceCompositionTest {
                     workspace.findViewById(R.id.objects_section));
             // Its host is one of exactly two, never the inspector.
             final boolean inDock = workspace.objectsSection().getParent()
-                    == workspace.objectsDock();
+                    == workspace.browserContent();
             final boolean inPanel = workspace.objectsPopover()
                     .hosts(workspace.objectsSection());
             assertTrue("the section hangs in a column or in the panel, never elsewhere",

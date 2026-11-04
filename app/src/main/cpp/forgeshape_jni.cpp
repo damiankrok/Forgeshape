@@ -11267,6 +11267,32 @@ Java_com_forgeshape_app_NativeViewport_surfaceDestroyed(JNIEnv*, jclass) {
 //
 // Every array is indexed by pointer index, so slot i of each describes the same
 // pointer, and each is read only up to the bounded pointer count.
+// A pointer device's navigation (`TABLET-WORKBENCH-R1`): the camera's own
+// arithmetic under the state mutex, the render thread drawing the result on its
+// next frame like any other camera change.
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_cameraPointerOrbit(JNIEnv*, jclass, jfloat dx, jfloat dy) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    g_camera.orbitByPixels(dx, dy);
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_cameraPointerPan(JNIEnv*, jclass, jfloat dx, jfloat dy) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    g_camera.panByPixels(dx, dy);
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_cameraPointerZoom(JNIEnv*, jclass, jfloat x, jfloat y,
+                                                         jfloat notches, jint viewWidth,
+                                                         jint viewHeight) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (viewWidth > 0 && viewHeight > 0) {
+        g_camera.setViewport(viewWidth, viewHeight);
+    }
+    g_camera.zoomAtPixel(x, y, notches);
+}
+
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint action,
                                                   jint actionPointerId, jint pointerCount,

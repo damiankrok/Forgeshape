@@ -166,7 +166,9 @@ public final class EditorWorkspaceLayoutTest {
                 assertEquals("the capsule withdraws where a column names the body",
                         View.GONE, workspace.objectsCapsule().getVisibility());
                 assertEquals("the one Objects section is what is in the column",
-                        dock, workspace.objectsSection().getParent());
+                        workspace.browserContent(), workspace.objectsSection().getParent());
+                assertEquals("inside the column's own scroller",
+                        dock, workspace.browserContent().getParent());
                 assertEquals("a docked window docks the inspector too",
                         WorkspaceLayoutMode.InspectorPlacement.SIDE_DOCK,
                         workspace.inspectorPlacement());

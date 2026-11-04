@@ -986,6 +986,59 @@ int runCameraSelfTests(CameraSelfTestResult* out, int maxOut) {
                   std::fabs(c.pitch()) <= kPitchLimitRadians + 1e-4f);
     }
 
+    // 17. A pointer device's navigation (`TABLET-WORKBENCH-R1`): the wheel
+    // zooms about the cursor, so a point on the target plane under the cursor
+    // stays under it, in both projections; orbit and pan are the touch
+    // gestures' own arithmetic.
+    for (int mode = 0; mode < 2; ++mode) {
+        CameraController c = makeController();
+        if (mode == 1) {
+            c.setProjectionMode(ProjectionMode::Orthographic);
+        }
+        const CameraSnapshot before = c.snapshot();
+        // The view matrix's first two rows are screen right and screen up.
+        const Vec3 right{before.view.m[0], before.view.m[4], before.view.m[8]};
+        const Vec3 up{before.view.m[1], before.view.m[5], before.view.m[9]};
+        const Vec3 onPlane = vec3Add(before.target,
+                                     vec3Add(vec3Scale(right, 1.3f), vec3Scale(up, -0.9f)));
+        const NdcPoint was = projectPoint(before, onPlane);
+        const float px = (was.x + 1.0f) * 0.5f * 1080.0f;
+        const float py = (was.y + 1.0f) * 0.5f * 2400.0f;
+        const uint32_t zoomsBefore = c.zoomCount();
+        c.zoomAtPixel(px, py, 2.0f);
+        const CameraSnapshot after = c.snapshot();
+        const NdcPoint now = projectPoint(after, onPlane);
+        const char* name = mode == 0 ? "pointer_zoom_keeps_cursor_point_perspective"
+                                     : "pointer_zoom_keeps_cursor_point_orthographic";
+        rec.check(name, nearly(now.x, was.x, 2e-3f) && nearly(now.y, was.y, 2e-3f) &&
+                            c.zoomCount() == zoomsBefore + 1);
+        rec.check(mode == 0 ? "pointer_zoom_in_moves_closer" : "pointer_zoom_in_narrows_span",
+                  mode == 0 ? after.distance < before.distance
+                            : after.orthoHalfHeightMeters < before.orthoHalfHeightMeters);
+    }
+    {
+        CameraController c = makeController();
+        const float distance = c.distance();
+        c.zoomAtPixel(100.0f, 100.0f, 0.0f);
+        c.zoomAtPixel(100.0f, 100.0f, std::nanf(""));
+        rec.check("pointer_zoom_zero_or_nan_moves_nothing", c.distance() == distance);
+        const float yaw = c.yaw();
+        c.orbitByPixels(40.0f, 0.0f);
+        rec.check("pointer_orbit_is_the_gesture_rate", c.yaw() != yaw && c.orbitCount() == 1u);
+        const Vec3 target = c.target();
+        c.panByPixels(30.0f, -20.0f);
+        rec.check("pointer_pan_moves_the_target",
+                  !(c.target().x == target.x && c.target().y == target.y &&
+                    c.target().z == target.z) && c.panCount() == 1u);
+        c.frameSketchView(Vec3{0.0f, 0.0f, 0.0f}, Vec3{1.0f, 0.0f, 0.0f},
+                          Vec3{0.0f, 1.0f, 0.0f}, Vec3{0.0f, 0.0f, 1.0f});
+        const float lockedYaw = c.yaw();
+        const uint32_t orbits = c.orbitCount();
+        c.orbitByPixels(80.0f, 30.0f);
+        rec.check("pointer_orbit_refused_in_sketch_view",
+                  c.yaw() == lockedYaw && c.orbitCount() == orbits);
+    }
+
     runProjectionSelfTests(rec);
 
     return rec.n;

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TABLET-WORKBENCH-R1: the tablet workbench's own controls. -->
+<resources>
+    <item name="browser_panel_toggle" type="id" />
+    <item name="browser_content" type="id" />
+</resources>

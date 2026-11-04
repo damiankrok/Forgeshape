@@ -523,6 +523,36 @@ final class EditorWorkspaceView extends FrameLayout
      */
     private boolean objectsColumnAffordable;
 
+    /**
+     * Whether the current WINDOW is a workbench ({@code TABLET-WORKBENCH-R1}):
+     * expanded and wide enough for the leading column, where the Browser and
+     * the Properties panel are docked at rest. Window arithmetic, remembered
+     * like {@link #objectsColumnAffordable} and for the same reason.
+     */
+    private boolean workbench;
+
+    /**
+     * The user's session choices to collapse the workbench's two panels.
+     * Presentation in the strongest sense: never persisted, never an
+     * {@code AppPreferences} field, never a project byte, and meaningless in a
+     * window that is not a workbench.
+     */
+    private boolean browserCollapsed;
+    private boolean propertiesCollapsed;
+
+    /** The window width in dp as last laid out, so the Browser's width follows it. */
+    private int appliedWindowWidthDp;
+
+    /**
+     * The Browser column's content inside {@link #objectsDock}: the one Objects
+     * section, then the one History surface while it is docked there.
+     */
+    private final LinearLayout browserContent;
+
+    /** The History's overlay placement, kept so an undock restores it exactly. */
+    private ViewGroup.LayoutParams featureHistoryOverlayParams;
+    private int featureHistoryOverlayIndex = -1;
+
     EditorWorkspaceView(Context context, View viewport) {
         super(context);
         this.viewport = viewport;
@@ -694,6 +724,13 @@ final class EditorWorkspaceView extends FrameLayout
         // of one layout.
         final int dockPad = EditorControlStyles.dimen(context, R.dimen.inspector_padding);
         objectsDock.setPadding(dockPad, dockPad, dockPad, dockPad);
+        // The Browser's one scrolling column: the scene list on top and, on a
+        // workbench, the active body's History beneath it (TABLET-WORKBENCH-R1).
+        browserContent = new LinearLayout(context);
+        browserContent.setId(R.id.browser_content);
+        browserContent.setOrientation(LinearLayout.VERTICAL);
+        objectsDock.addView(browserContent, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         // Top-aligned and WRAPPING its content, bounded by the row: a two-body
         // scene is a short list, not an arm's length of empty panel, and a
         // scene that outgrows the window scrolls instead of stretching it.
@@ -985,7 +1022,10 @@ final class EditorWorkspaceView extends FrameLayout
         // Tool Labels (`CAD-VERTICAL-SLICE-R1`) is application state read once
         // here and again on every change; the canvas holds only the flag.
         cadExtrudeCanvas.setToolLabelsVisible(currentPreferences().toolLabels());
-        cadExtrudeCanvas.setRetainedChipWithdrawnWhen(featureHistory::isOpen);
+        // A DOCKED History stands in the Browser, nowhere near the chip's
+        // anchor, so only the floating one withdraws it.
+        cadExtrudeCanvas.setRetainedChipWithdrawnWhen(
+                () -> featureHistory.isOpen() && !historyDocked());
         settingsPage.setVisibility(GONE);
         addView(settingsPage, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
@@ -1154,6 +1194,68 @@ final class EditorWorkspaceView extends FrameLayout
      *
      * @return whether a surface was dismissed; false means Back is not ours
      */
+    /**
+     * A hardware keyboard's shortcuts (TABLET-WORKBENCH-R1): a Samsung keyboard
+     * cover, DeX or any Bluetooth keyboard. Every key is one more caller of the
+     * ONE handler its control already uses, so a key can do nothing the control
+     * could not, and refuses exactly where the control is withdrawn.
+     *
+     * <p>Reached only for keys no focused view consumed: a field being typed in
+     * keeps its own Delete and its own Ctrl+Z.
+     *
+     * @return whether the key was consumed
+     */
+    boolean onHardwareShortcut(int keyCode, android.view.KeyEvent event) {
+        if (event.getRepeatCount() > 0 && keyCode != android.view.KeyEvent.KEYCODE_Z
+                && keyCode != android.view.KeyEvent.KEYCODE_Y) {
+            return false;
+        }
+        final boolean ctrl = event.isCtrlPressed() || event.isMetaPressed();
+        switch (keyCode) {
+            case android.view.KeyEvent.KEYCODE_Z:
+                if (!ctrl || !historyControlsLive()) {
+                    return false;
+                }
+                onHistoryStepRequested(event.isShiftPressed());
+                return true;
+            case android.view.KeyEvent.KEYCODE_Y:
+                if (!ctrl || !historyControlsLive()) {
+                    return false;
+                }
+                onHistoryStepRequested(true);
+                return true;
+            case android.view.KeyEvent.KEYCODE_S:
+                if (!ctrl || !NativeViewport.projectOpen() || startPageVisible()) {
+                    return false;
+                }
+                onSaveProjectRequested();
+                return true;
+            case android.view.KeyEvent.KEYCODE_FORWARD_DEL:
+            case android.view.KeyEvent.KEYCODE_DEL:
+                if (ctrl || startPageVisible()) {
+                    return false;
+                }
+                return objectsSection.deleteActiveFromKeyboard();
+            case android.view.KeyEvent.KEYCODE_ESCAPE:
+                // Always ours: unconsumed, Esc falls back to Back, and Back with
+                // nothing to dismiss leaves the app -- never what Esc means.
+                dismissTopmostSurface();
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /** Whether a full-window start page (Home, New Project, Settings) owns the window. */
+    private boolean startPageVisible() {
+        return homeVisible() || newProjectChooserVisible() || settingsVisible();
+    }
+
+    /** Whether Undo and Redo are drawn now, so a key answers only where they do. */
+    private boolean historyControlsLive() {
+        return undoAction.isShown() || redoAction.isShown();
+    }
+
     boolean dismissTopmostSurface() {
         // The questions first, innermost outward: a question is answered
         // "Cancel" by Back, never "Discard" or "Save". Then the CAD bootstrap,
@@ -1421,7 +1523,13 @@ final class EditorWorkspaceView extends FrameLayout
         brushControls.setTrackHeightPx(Math.round(heightPx * 0.45f));
 
         objectsColumnAffordable = layoutMode.objectsDocked(widthDp);
+        workbench = layoutMode.workbench(widthDp);
+        appliedWindowWidthDp = widthDp;
         applyObjectsPlacement();
+        applyBrowserWidth();
+        // Opening a panel is a transition, and this runs inside onMeasure:
+        // the pinned panel is opened on the next pass instead.
+        post(this::ensurePinnedProperties);
         trailingHost.refreshParentPlacement();
         placeInspector(layoutMode.inspectorPlacement(heightDp), widthDp, heightDp);
         renderTrailingHost(isSculpting());
@@ -1441,7 +1549,98 @@ final class EditorWorkspaceView extends FrameLayout
     private void applyObjectsPlacement() {
         // And only over a project: the CAD bootstrap has no bodies to list and
         // no creation to offer, so an expanded window gets no column for it.
-        placeObjects(objectsColumnAffordable && !isSculpting() && NativeViewport.projectOpen());
+        final boolean projectOpen = NativeViewport.projectOpen();
+        final boolean sculpting = isSculpting();
+        placeObjects(objectsColumnAffordable && !browserCollapsed && !sculpting && projectOpen);
+        // The History docks wherever the Browser stands, and floats back to its
+        // capsule wherever it does not.
+        placeFeatureHistory(objectsDocked());
+        toolbar.showBrowserToggle(workbench && projectOpen && !sculpting, !browserCollapsed);
+    }
+
+    /** The Browser column's width, from the window it was laid out for. */
+    private void applyBrowserWidth() {
+        if (!objectsDocked()) {
+            return;
+        }
+        final ViewGroup.LayoutParams params = objectsDock.getLayoutParams();
+        final int width = dpToPx(WorkspaceLayoutMode.browserWidthDp(appliedWindowWidthDp));
+        if (params != null && params.width != width) {
+            params.width = width;
+            objectsDock.setLayoutParams(params);
+        }
+    }
+
+    /**
+     * Docks the one History surface in the Browser, or hands it back to the
+     * overlay it grows from on a phone ({@code TABLET-WORKBENCH-R1}).
+     *
+     * <p>One instance, re-parented, exactly as the Objects section is: a second
+     * History would be a second reading of a chain native already answers.
+     * Instant, for the reason {@link #placeObjects} is.
+     */
+    private void placeFeatureHistory(boolean docked) {
+        if (docked == historyDocked()) {
+            return;
+        }
+        featureHistory.closeImmediately();
+        EditorControlStyles.setIconButtonActive(featureHistoryAction, false);
+        final ViewParent parent = featureHistory.getParent();
+        if (parent == overlayRoot) {
+            featureHistoryOverlayParams = featureHistory.getLayoutParams();
+            featureHistoryOverlayIndex = overlayRoot.indexOfChild(featureHistory);
+        }
+        if (parent instanceof ViewGroup) {
+            ((ViewGroup) parent).removeView(featureHistory);
+        }
+        featureHistory.setDocked(docked);
+        if (docked) {
+            final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.topMargin = EditorControlStyles.dimen(getContext(), R.dimen.row_gap);
+            browserContent.addView(featureHistory, params);
+        } else {
+            final int index = featureHistoryOverlayIndex < 0
+                    ? overlayRoot.getChildCount()
+                    : Math.min(featureHistoryOverlayIndex, overlayRoot.getChildCount());
+            overlayRoot.addView(featureHistory, index, featureHistoryOverlayParams);
+        }
+        // Drawn as soon as it can be, rather than at the next gesture -- on the
+        // next pass, because this runs inside onMeasure and an open is a
+        // transition.
+        post(this::refreshFeatureHistory);
+    }
+
+    /** Whether the History currently stands in the workbench Browser. */
+    boolean historyDocked() {
+        return featureHistory.getParent() == browserContent;
+    }
+
+    /**
+     * Whether the Properties panel is pinned open: a workbench over a project,
+     * and the user has not collapsed it this session.
+     */
+    boolean propertiesPinned() {
+        return workbench && !propertiesCollapsed && NativeViewport.projectOpen()
+                && inspectorPlacement == WorkspaceLayoutMode.InspectorPlacement.SIDE_DOCK;
+    }
+
+    /** Opens the pinned Properties panel if anything has closed it. */
+    private void ensurePinnedProperties() {
+        if (!propertiesPinned() || inspector.isOpen()) {
+            return;
+        }
+        final boolean sculpting = isSculpting();
+        uiState.setPrecisionOpen(sculpting, true);
+        showPrecisionToggle(sculpting);
+    }
+
+    /** The workbench Browser's collapse control. */
+    @Override
+    public void onBrowserPanelToggleRequested() {
+        browserCollapsed = !browserCollapsed;
+        applyObjectsPlacement();
+        applyBrowserWidth();
     }
 
     /**
@@ -1486,11 +1685,11 @@ final class EditorWorkspaceView extends FrameLayout
         if (objectsSection.getParent() instanceof ViewGroup) {
             ((ViewGroup) objectsSection.getParent()).removeView(objectsSection);
         }
-        objectsDock.addView(objectsSection, new FrameLayout.LayoutParams(
+        browserContent.addView(objectsSection, 0, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         final ViewGroup.LayoutParams params = objectsDock.getLayoutParams();
         if (params != null) {
-            params.width = dpToPx(WorkspaceLayoutMode.OBJECTS_DOCK_WIDTH_DP);
+            params.width = dpToPx(WorkspaceLayoutMode.browserWidthDp(appliedWindowWidthDp));
             objectsDock.setLayoutParams(params);
         }
         objectsDock.setVisibility(VISIBLE);
@@ -2927,6 +3126,7 @@ final class EditorWorkspaceView extends FrameLayout
         // re-ask. The window's half of the answer is remembered from the last
         // adaptive pass, so this costs one comparison whenever nothing changed.
         applyObjectsPlacement();
+        ensurePinnedProperties();
 
         // Creation is refused below JNI while sculpting, so it is not OFFERED
         // while sculpting. Both hosts are told, from the one refresh, in every
@@ -3296,11 +3496,22 @@ final class EditorWorkspaceView extends FrameLayout
     private void refreshFeatureHistory() {
         final boolean shown = FeatureHistoryPresentation.controlShown(NativeViewport.projectOpen(),
                 isSketching(), isSculpting(), activeBodyHasHistory());
-        featureHistoryAction.setVisibility(shown ? View.VISIBLE : View.GONE);
+        final boolean docked = historyDocked();
+        // A docked History IS the History control's surface, so the capsule
+        // does not draw a second door to it.
+        featureHistoryAction.setVisibility(shown && !docked ? View.VISIBLE : View.GONE);
         if (!shown) {
             if (featureHistory.isOpen()) {
                 setFeatureHistoryOpen(false);
             }
+            return;
+        }
+        if (docked && !featureHistory.isOpen()) {
+            // Docked, it is drawn exactly when the control would be: at rest,
+            // on Steps with nothing selected, like every fresh open.
+            featureHistory.resetSegment();
+            showHistoryModel();
+            featureHistory.setOpen(true);
             return;
         }
         if (featureHistory.isOpen()) {
@@ -3310,7 +3521,9 @@ final class EditorWorkspaceView extends FrameLayout
 
     private void setFeatureHistoryOpen(boolean open) {
         if (open) {
-            dismissPrimarySurfacesExcept(featureHistory);
+            if (!historyDocked()) {
+                dismissPrimarySurfacesExcept(featureHistory);
+            }
             // Every open starts on Steps with nothing selected: the segment and
             // the selection are presentation, never carried across opens.
             featureHistory.resetSegment();
@@ -3880,15 +4093,30 @@ final class EditorWorkspaceView extends FrameLayout
      */
     @Override
     public void onPrecisionRequested() {
-        setPrecisionOpen(!inspector.isOpen());
+        final boolean open = !inspector.isOpen();
+        // On a workbench the toggle collapses and restores the pinned panel,
+        // and the choice holds for the session (TABLET-WORKBENCH-R1).
+        if (workbench) {
+            propertiesCollapsed = !open;
+        }
+        setPrecisionOpen(open);
     }
 
     @Override
     public void onPrecisionCloseRequested() {
+        if (workbench) {
+            propertiesCollapsed = true;
+        }
         setPrecisionOpen(false);
     }
 
     private void setPrecisionOpen(boolean open) {
+        if (!open && propertiesPinned()) {
+            // Pinned: what would have closed the panel on a phone only ends
+            // the typing in it. The user's own toggle un-pins first.
+            finishEditing();
+            return;
+        }
         final boolean sculpting = isSculpting();
         uiState.setPrecisionOpen(sculpting, open);
         if (open) {
@@ -6576,7 +6804,7 @@ final class EditorWorkspaceView extends FrameLayout
      * ownership and active styling cannot drift.
      */
     private void dismissPrimarySurfacesExcept(AnchoredSurfaceView keeper) {
-        if (keeper != inspector && inspector.isOpen()) {
+        if (keeper != inspector && inspector.isOpen() && !propertiesPinned()) {
             setPrecisionOpen(false);
         }
         if (keeper != objectsPopover && objectsPopover.isOpen()) {
@@ -6596,7 +6824,7 @@ final class EditorWorkspaceView extends FrameLayout
         if (keeper != historyNavigator && historyNavigator.isOpen()) {
             setHistoryNavigatorOpen(false);
         }
-        if (keeper != featureHistory && featureHistory.isOpen()) {
+        if (keeper != featureHistory && featureHistory.isOpen() && !historyDocked()) {
             setFeatureHistoryOpen(false);
         }
         if (keeper != surfaceFinish && surfaceFinish.isOpen()) {
@@ -6869,9 +7097,19 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     /** Whether Objects currently has a surface of its own. */
+    /** The Browser column's content, for verification (TABLET-WORKBENCH-R1). */
+    LinearLayout browserContent() {
+        return browserContent;
+    }
+
+    /** Whether the user collapsed the workbench Properties panel this session. */
+    boolean propertiesCollapsedForTest() {
+        return propertiesCollapsed;
+    }
+
     boolean objectsDocked() {
         return objectsDock.getVisibility() == VISIBLE
-                && objectsSection.getParent() == objectsDock;
+                && objectsSection.getParent() == browserContent;
     }
 
     /** The scene panel, so a test can open it and measure what it costs. */

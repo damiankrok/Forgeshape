@@ -340,6 +340,20 @@ final class ObjectsSectionView extends LinearLayout {
         return commandsAvailable;
     }
 
+    /**
+     * The hardware Delete key's door (TABLET-WORKBENCH-R1): deletes the ACTIVE
+     * body through the row's own path, exactly when the row would offer Delete.
+     *
+     * @return whether the key was this list's to take
+     */
+    boolean deleteActiveFromKeyboard() {
+        if (!deletionAvailable || !NativeViewport.projectOpen()) {
+            return false;
+        }
+        onBodyDeleted(NativeViewport.sceneActiveBodyId());
+        return true;
+    }
+
     void showDeletionAvailable(boolean available) {
         deletionAvailable = available;
         for (int i = 0; i < list.getChildCount(); i++) {

@@ -145,6 +145,42 @@ final class FeatureHistoryView extends AnchoredSurfaceView {
         addView(caption, EditorControlStyles.rowParams(rowGap));
     }
 
+    /**
+     * Rows visible in the workbench Browser before the list scrolls: the
+     * column is the History's own there, so it shows a longer chain at once.
+     */
+    static final int DOCKED_VISIBLE_ROWS = 9;
+
+    /** Whether this surface stands in the workbench Browser (TABLET-WORKBENCH-R1). */
+    private boolean docked;
+
+    /**
+     * Seats the surface in the workbench Browser, or back on the model.
+     *
+     * <p>Docked, the Browser column is the card, so this surface drops its own
+     * material and padding rather than drawing a card inside a card.
+     */
+    void setDocked(boolean docked) {
+        if (this.docked == docked) {
+            return;
+        }
+        this.docked = docked;
+        if (docked) {
+            setBackground(null);
+            setElevation(0.0f);
+            setPadding(0, 0, 0, 0);
+        } else {
+            EditorControlStyles.applyContextSurface(this);
+            final int pad = EditorControlStyles.dimen(getContext(), R.dimen.inspector_padding);
+            setPadding(pad, pad, pad, pad);
+        }
+        render();
+    }
+
+    boolean isDocked() {
+        return docked;
+    }
+
     void setActListener(OnHistoryAct actListener) {
         this.actListener = actListener;
     }
@@ -279,7 +315,8 @@ final class FeatureHistoryView extends AnchoredSurfaceView {
             focus = lastModel.failedRowIndex();
         }
         final int rowHeight = EditorControlStyles.dimen(context, R.dimen.control_height) * 2;
-        scroller.setMaxHeightPx(VISIBLE_ROWS * rowHeight + (VISIBLE_ROWS - 1) * rowGap);
+        final int visible = docked ? DOCKED_VISIBLE_ROWS : VISIBLE_ROWS;
+        scroller.setMaxHeightPx(visible * rowHeight + (visible - 1) * rowGap);
         if (focus >= 0) {
             scrollRowIntoView(focus);
         }

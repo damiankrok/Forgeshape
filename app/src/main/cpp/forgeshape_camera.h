@@ -203,6 +203,21 @@ public:
     // ACTION_CANCEL and whenever the Surface goes away.
     void resetGesture();
 
+    // A POINTER DEVICE's navigation (`TABLET-WORKBENCH-R1`, `DESKTOP-R1`). A
+    // mouse has no second finger, so its orbit, pan and wheel zoom arrive as
+    // explicit amounts rather than being read out of touch samples. They are
+    // the touch gestures' own arithmetic — the same per-pixel rates, the same
+    // clamps, the same counters — so a mouse can reach no view a finger
+    // cannot, and a sketch view stays locked against orbit exactly as it is
+    // for a finger. Any gesture in flight is left alone.
+    void orbitByPixels(float dx, float dy);
+    void panByPixels(float dx, float dy);
+    // `notches` wheel notches (positive zooms IN) about the pixel (x, y) of the
+    // current viewport: the point under the cursor on the target plane stays
+    // under it, as a pinch keeps the point between the fingers. A zoom the
+    // clamps refuse moves nothing, the target included.
+    void zoomAtPixel(float x, float y, float notches);
+
     // Restores the initial pose. Not wired to any gesture; used by self-tests.
     void resetCamera();
     // The orbit target back at the world origin, out of any sketch view, with
@@ -295,6 +310,9 @@ private:
     void applyOrbit(float dx, float dy);
     void applyPan(float dx, float dy);
     void applyZoom(float spanDelta);
+    // The zoom both doors share: multiplies the zoomed quantity by `scale`,
+    // clamped, and returns the ratio actually applied (1 when nothing moved).
+    float applyZoomScale(float scale);
 
     // World meters per screen pixel at the target plane, for the ACTIVE
     // projection. Pan is authored in pixels and has to be resolved in world

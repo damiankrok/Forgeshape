@@ -471,7 +471,7 @@ public final class EditorWorkspaceObjectsTest {
                 // cannot fight over a drag.
                 assertEquals("a docked list scrolls in its own column",
                         workspace.objectsDock(),
-                        workspace.objectsSection().getParent());
+                        workspace.objectsSection().getParent().getParent());
             }
 
             // Selecting the last body still works with a full list.

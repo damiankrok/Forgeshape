@@ -188,7 +188,7 @@ public final class WorkspaceLayoutModeTest {
             final int viewport = widthDp
                     - WorkspaceLayoutMode.sideDockWidthDp(widthDp)
                     - WorkspaceLayoutMode.RAIL_WIDTH_DP
-                    - WorkspaceLayoutMode.OBJECTS_DOCK_WIDTH_DP;
+                    - WorkspaceLayoutMode.browserWidthDp(widthDp);
             assertTrue("viewport " + viewport + " dp of " + widthDp + " dp with three columns",
                     viewport >= WorkspaceLayoutMode.MIN_CENTRAL_VIEWPORT_DP);
         }

@@ -400,6 +400,16 @@ public final class ForgeShapeActivity extends Activity {
      */
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // A hardware keyboard's shortcuts first (TABLET-WORKBENCH-R1): Ctrl+Z,
+        // Ctrl+Y, Ctrl+S, Delete and Esc reach the workspace's one handler for
+        // each act. A plain letter is never a shortcut, so the debug keys below
+        // keep their meaning.
+        // A field being typed in keeps its own keys: Ctrl+Z there undoes the
+        // typing, not the model.
+        if (workspace != null && !(getCurrentFocus() instanceof android.widget.EditText)
+                && workspace.onHardwareShortcut(keyCode, event)) {
+            return true;
+        }
         final int command;
         switch (keyCode) {
             case KeyEvent.KEYCODE_1: command = 1; break;  // Fixture A: baseline

@@ -67,6 +67,9 @@ final class GlobalToolbarView extends LinearLayout {
 
         /** The CAD bootstrap's way out before its first commit (APP-H1). */
         void onBackToHomeRequested();
+
+        /** Collapses or restores the workbench Browser (TABLET-WORKBENCH-R1). */
+        void onBrowserPanelToggleRequested();
     }
 
     private final TextView contextLabel;
@@ -102,6 +105,9 @@ final class GlobalToolbarView extends LinearLayout {
     private final ImageView projectMark;
     /** The mark's own floating capsule, ahead of the editing group. */
     private final LinearLayout markGroup;
+    /** The workbench Browser's collapse control, beside the mark; GONE in
+     *  every window that is not a workbench (TABLET-WORKBENCH-R1). */
+    private final ImageView browserToggle;
     private final TextView backToHomeButton;
     /** Whether the CAD bootstrap is open: no project yet, so the project and
      *  export controls are withdrawn and Back to Home is drawn. */
@@ -184,6 +190,18 @@ final class GlobalToolbarView extends LinearLayout {
         markGroup.addView(projectMark, new LinearLayout.LayoutParams(
                 EditorControlStyles.dimen(context, R.dimen.icon_button_size),
                 EditorControlStyles.dimen(context, R.dimen.icon_button_size)));
+        // In the mark's capsule because the Browser hangs from this corner of
+        // the window: the control that collapses a panel stands at the panel.
+        browserToggle = EditorControlStyles.iconButton(context, R.id.browser_panel_toggle,
+                R.drawable.ic_panel_browser, context.getString(R.string.browser_panel_collapse));
+        browserToggle.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                actions.onBrowserPanelToggleRequested();
+            }
+        });
+        browserToggle.setVisibility(GONE);
+        markGroup.addView(browserToggle, EditorControlStyles.iconButtonParams(context, gap));
         final LinearLayout.LayoutParams markParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         markParams.rightMargin = gap;
@@ -981,6 +999,22 @@ final class GlobalToolbarView extends LinearLayout {
     /** The same, for the project drawer the ForgeShape mark opens. */
     void showProjectActionsOpen(boolean open) {
         EditorControlStyles.setIconButtonActive(projectMark, open);
+    }
+
+    /**
+     * Shows the Browser's collapse control, or withdraws it where the window is
+     * not a workbench; {@code expanded} says which way it now goes, by its
+     * active state and its description.
+     */
+    void showBrowserToggle(boolean shown, boolean expanded) {
+        browserToggle.setVisibility(shown ? VISIBLE : GONE);
+        EditorControlStyles.setIconButtonActive(browserToggle, shown && expanded);
+        browserToggle.setContentDescription(getContext().getString(expanded
+                ? R.string.browser_panel_collapse : R.string.browser_panel_expand));
+    }
+
+    View browserToggle() {
+        return browserToggle;
     }
 
     /** The ForgeShape mark, for verification and for anchoring its drawer. */
