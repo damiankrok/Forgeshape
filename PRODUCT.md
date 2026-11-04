@@ -1653,6 +1653,29 @@ The object starts at position 0, 0, 0 m, rotation 0, 0, 0° and scale 1, 1, 1.
 Placement belongs to the object, not to the shape, so it survives any change of
 shape untouched — Box, Cylinder, Sphere, Cone and Capsule alike.
 
+### Putting a part down exactly, and snapping while dragging
+
+The exact-value panel of **Transform** carries two more rows.
+
+**Arrange** has two acts. **Drop to ground** moves the active body straight
+down or up until its lowest point stands on the ground (y = 0); **Centre on
+origin** slides it sideways until its middle is over the world origin, leaving
+its height alone. Each is one Undo step, a body already there is told so and
+nothing moves, and a locked body — or one standing on another body's face — is
+refused with the reason rather than moved.
+
+**Snap while dragging** chooses a step for the handles. Move snaps to **1 mm,
+1 cm, 10 cm or 1 m**, Rotate to **5°, 15° or 45°**, and **Off** drags freely, as
+before. A World move lands the body's position on a whole multiple of the step,
+so a part dragged with 1 cm on stands at a round number; a Local move goes in
+whole steps from where the drag began; a rotation turns in whole steps. The
+step is taken when a drag begins, belongs to this session only, and is never
+saved in a project. The same two rows are in the Windows build's Properties
+panel.
+
+Checked on the emulator and on the desktop's headless check. Snapping a real
+finger or S Pen drag on the tablet is UNVERIFIED.
+
 ### Scaling is not redimensioning
 
 Shape and placement are two independent things, and each has its own Apply.
@@ -2020,6 +2043,31 @@ and Back to Imported Mesh still showing the original.
 **Sending it to another program** follows the same rule every sculpted body
 already follows: exporting while you are sculpting writes the sculpted shape, and
 exporting from the imported view writes the imported shape.
+
+### Sculpting a CAD part
+
+A **CAD Body** can be sculpted too: lay the part out precisely first, with its
+sketches, features and exact numbers, then press **Start Sculpting** to carve
+the detail into it. ForgeShape makes a sculptable copy of the part as it stands
+— one smooth, connected surface, divided finely enough that the brushes have
+something to move across every face, so a stroke over an edge pulls both faces
+together instead of tearing them apart.
+
+**The part itself is never changed by sculpting.** Its feature chain stays
+exactly what you built. The way out reads **Back to CAD Body** (`← CAD Body`
+where the row is tight), which shows the part as designed; **Resume Sculpt**
+returns to the sculpting exactly as you left it. If you edit the part's sketch
+or features after you started sculpting, the sculpt mesh is marked as made
+from an older shape, and **Reset Sculpt from CAD Body…** — the one act that
+cannot be undone — starts the sculpting again from the part as it now is.
+
+A part whose sketch stands on another body's face cannot be sculpted (it has no
+place of its own to stand), and Start Sculpting is not offered for one. Saving
+and reopening keep both halves: the part's features and the sculpting on top of
+it. Exporting while you sculpt writes the sculpted shape.
+
+Checked on the emulator; brushing a part with the S Pen on the tablet is
+UNVERIFIED.
 
 ### Isolate
 
@@ -2423,10 +2471,18 @@ open: see **Importing a GLB file** below. Exporting does not alter your model,
 your Undo history or your saved project; cancelling does nothing at all; and if
 a file cannot be written, ForgeShape says so and your work is untouched.
 
+**Other formats.** Export opens a menu: **GLB**, **STL**, **3MF**, **OBJ** and
+**PLY**. STL and 3MF are what slicers and 3D printers read, and they are written
+in **millimetres** (a 1 m part is 1000 mm); OBJ and PLY are written in metres for
+modelling programs. Every format writes the same shapes in the same places as
+the GLB, one file and nothing beside it (an OBJ has no `.mtl`). A slicer treats
++Z as up while ForgeShape's up is +Y, so a part arrives in a slicer lying on its
+back and is turned on the build plate there. The Windows build offers the same
+five from its project menu.
+
 Not there yet: materials, colours and textures of your choosing, UVs, object
 grouping and export options are not implemented — every body is exported with
-one plain default surface. Nothing else can be exported: there is no OBJ and no
-FBX.
+one plain default surface. FBX and STEP cannot be exported.
 
 ## Importing a GLB file
 
@@ -2495,8 +2551,18 @@ read, or its own geometry does not add up — and your project is left exactly a
 it was. Nothing is half-imported: either every object in the file arrives or none
 of them does, and a refusal leaves no trace to undo.
 
-Reading OBJ or FBX is still not implemented, and neither is bringing in
-animation, rigging, materials or textures.
+**Other formats.** The same row — **Import mesh — GLB, STL, OBJ, PLY, 3MF…** —
+reads an **STL** (binary or text, in millimetres), an **OBJ**, a **PLY** and a
+**3MF** (in the unit it declares), on exactly these terms: each mesh becomes one
+object you keep, the whole file is one Undo, nothing is turned or rescaled
+beyond the file's own unit, and a file that cannot be read is refused with the
+reason and changes nothing. ForgeShape decides the format from the file's
+contents, not its name. An STL's loose triangles are joined into one surface,
+so an imported STL can be sculpted without tearing. On Windows the project menu,
+Ctrl+I and dropping a file on the window all import.
+
+Reading FBX or STEP is not implemented, and neither is bringing in animation,
+rigging, materials or textures.
 
 ## Diagnostics
 
@@ -2666,14 +2732,14 @@ later Save replaced.
 
 **A ForgeShape project file is not an interchange file.** It is ForgeShape's own
 format, meant to be readable by another ForgeShape installation, and it is not
-GLB, glTF, OBJ or FBX. Open File… reads ForgeShape projects and refuses
+GLB, STL, 3MF, OBJ or PLY. Open File… reads ForgeShape projects and refuses
 everything else.
 
-**Interchange is GLB and nothing else, one direction at a time.** ForgeShape
-writes `.glb` and reads `.glb`, and neither is a project: a `.glb` you import
-becomes objects in your project and is then never consulted again. There is no
-OBJ and no FBX in either direction, and no animation, rigging, material or
-texture crosses in either.
+**Interchange is GLB, STL, 3MF, OBJ and PLY, one direction at a time.**
+ForgeShape writes and reads each of them, and none is a project: a file you
+import becomes objects in your project and is then never consulted again. There
+is no FBX and no STEP in either direction, and no animation, rigging, material
+or texture crosses in either.
 
 **A stylus is simply another pointer.** Nothing anywhere reads pressure, tilt,
 hover or which kind of pointer is touching the screen, so an S Pen grabs a

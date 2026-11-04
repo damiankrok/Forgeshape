@@ -29,7 +29,8 @@ import android.widget.TextView;
  * that source may be either representation. The two names are for two different
  * readers and both are accurate.
  *
- * <p>The stale-source warning is Construction-only in practice and not by a
+ * <p>The stale-source warning appears over a Construction Body or a CAD part
+ * (whose wording it then takes), never over an Imported Mesh, and not by a
  * branch here: an Imported Mesh is immutable for the life of its body, so
  * nothing can make one stale and the flag is never set for one.
  */
@@ -190,6 +191,12 @@ final class SculptContextView extends LinearLayout {
         // state either way rather than special-cased here.
         staleWarning.setVisibility(
                 nativeState[NativeViewport.SCULPT_SOURCE_STALE] != 0.0 ? VISIBLE : GONE);
+        // A CAD part (`CAD-SCULPT-R1`) can go stale too, when its features are
+        // edited after the freeze; its warning names the part, not a shape.
+        final String staleText = context.getString(NativeViewport.sceneActiveBodyIsCad()
+                ? R.string.stale_source_warning_cad : R.string.stale_source_warning);
+        staleWarning.setText(staleText);
+        staleWarning.setContentDescription(staleText);
         // The destructive act is the same act for both representations -- it
         // re-freezes from whatever the body's source IS -- but its NAME may not
         // be. "from Shape" names a Construction shape, and an imported body has

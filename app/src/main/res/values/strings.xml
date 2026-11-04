@@ -775,6 +775,7 @@
     <string name="sculpt_mesh_summary">Sculpt mesh: %1$d vertices · %2$s</string>
     <string name="sculpt_gesture_rule">One finger on the model — %1$s; elsewhere it orbits.</string>
     <string name="stale_source_warning">The Construction shape changed after you started sculpting. Your sculpt is kept as it is — Reset Sculpt from Shape to start again from the new shape.</string>
+    <string name="stale_source_warning_cad">The CAD part changed after you started sculpting. Your sculpt is kept as it is — Reset Sculpt from CAD Body to start again from the new part.</string>
 
     <!-- The destructive reset's confirmation. Names the consequence, and the
          button carries the verb rather than "OK". -->

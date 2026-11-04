@@ -82,6 +82,43 @@ public final class PrecisionSculptInterchangeTest {
     }
 
     @Test
+    public void editing_the_part_after_sculpting_marks_the_sculpt_stale_in_cad_words() {
+        final int froze = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int s = NativeViewport.freezeToSculpt();
+            workspace.onNativeStateChanged();
+            return s;
+        });
+        assertEquals(NativeViewport.SCULPT_OK, froze);
+        // Back to the part, a CAD edit (a deeper extrusion), then Resume.
+        final double[] cad = new double[NativeViewport.CAD_STATE_SIZE];
+        final int applied = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.enterConstructionMode();
+            NativeViewport.cadState(cad);
+            final int s = NativeViewport.cadApplyExtrude(cad[NativeViewport.CAD_DEPTH] * 1.5,
+                    (int) cad[NativeViewport.CAD_DIRECTION]);
+            NativeViewport.enterSculptMode();
+            workspace.onNativeStateChanged();
+            return s;
+        });
+        settleLayout();
+        assertEquals("the CAD edit applies", NativeViewport.APPLY_APPLIED, applied);
+        final double[] sculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
+        NativeViewport.sculptState(sculpt);
+        assertTrue("the sculpt mesh is marked as made from an older part",
+                sculpt[NativeViewport.SCULPT_SOURCE_STALE] != 0.0);
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final String expected = activity.getString(R.string.stale_source_warning_cad);
+            final android.widget.TextView warning = workspace.sculptContext()
+                    .findViewById(R.id.stale_source_warning);
+            assertNotNull(warning);
+            assertEquals("the warning is shown", View.VISIBLE, warning.getVisibility());
+            assertEquals("and it names the CAD part", expected,
+                    String.valueOf(warning.getText()));
+            return null;
+        });
+    }
+
+    @Test
     public void drop_to_ground_and_centre_on_origin_are_one_step_each() {
         final double[] placement = new double[NativeViewport.TRANSFORM_SIZE];
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {

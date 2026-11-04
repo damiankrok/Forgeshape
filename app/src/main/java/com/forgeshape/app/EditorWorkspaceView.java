@@ -4172,7 +4172,11 @@ final class EditorWorkspaceView extends FrameLayout
      */
     private void showDefaultStatus(boolean sculpting) {
         if (sculpting && nativeSculpt[NativeViewport.SCULPT_SOURCE_STALE] != 0.0) {
-            toolbar.showStandingStatus(getContext().getString(R.string.stale_source_warning),
+            // Over a sculpted CAD part (`CAD-SCULPT-R1`) the warning names the
+            // part and its own reset, never a Construction shape it does not have.
+            toolbar.showStandingStatus(getContext().getString(
+                    NativeViewport.sceneActiveBodyIsCad() ? R.string.stale_source_warning_cad
+                            : R.string.stale_source_warning),
                     R.attr.fsTextMeasure);
             return;
         }
