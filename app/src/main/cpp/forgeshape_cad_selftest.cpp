@@ -1,5 +1,7 @@
 #include "forgeshape_cad_selftest.h"
 
+#include "forgeshape_cad_status_text.h"
+
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -1050,6 +1052,23 @@ const char* cadPerformanceReport() { return g_performance.c_str(); }
 
 int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
     Recorder r{out, maxOut};
+    // WORKBENCH-UX-R1: every refusal reads as a sentence on every shell --
+    // never the enum's name, never empty, always closed by a full stop.
+    {
+        bool all = true;
+        for (int code = 0; code < kCadStatusCount; ++code) {
+            CadStatus status;
+            if (!cadStatusFromCode(code, &status)) {
+                all = false;
+                continue;
+            }
+            const char* text = cadStatusUserText(status);
+            const size_t n = text != nullptr ? std::strlen(text) : 0;
+            all = all && n > 3 && std::strcmp(text, cadStatusName(status)) != 0 &&
+                  (text[n - 1] == '.' || text[n - 1] == '?' || text[n - 1] == '!');
+        }
+        r.check("ux_every_cad_refusal_reads_as_a_sentence", all);
+    }
     testExtent(r);
     testExtentCorpus(r);
 

@@ -72,6 +72,10 @@ bool editorSceneBounds(Vec3* outMin, Vec3* outMax);
 // Fit (`WORKBENCH-RIBBON-R1`): the camera framed on that box, the view
 // direction kept. False with nothing to frame or inside a sketch view.
 bool editorFitAll();
+// The same bounds and framing for ONE drawn body (a context menu's Fit to
+// body); false when that body is not drawn.
+bool editorBodyBounds(ObjectId id, Vec3* outMin, Vec3* outMax);
+bool editorFitBody(ObjectId id);
 
 // ---------------------------------------------------------------------------
 // The sketch acts both shells take (`DESKTOP-R2`)
@@ -124,6 +128,26 @@ CadStatus editorSketchFinish(CadFeatureViewSource* outView);
 // Back to the authored sketch, in its exact aligned view; a reuse session
 // that may not edit its shared sketch changes nothing.
 void editorSketchBackToEditing();
+
+// --- Editing what was made (`WORKBENCH-UX-R1`), moved out of JNI so the
+// desktop reaches the same acts: a feature of a CAD body's chain, or one of
+// its retained sketches, opened as a STAGED edit -- nothing is truth until
+// editorSketchCommitEdit, which is ONE Construction step on the same body.
+
+// Where feature `featureId` of CAD body `body` is authored in WORLD space: its
+// body-local placement through the body's resolved world model. False when
+// the feature does not place.
+bool editorCadFeatureWorldFrame(ObjectId body, uint32_t featureId, SketchFrame* out);
+// The same for retained sketch `sketchId`.
+bool editorRetainedSketchWorldFrame(ObjectId body, CadSketchId sketchId, SketchFrame* out);
+// Opens a staged edit of ONE feature (the base is id 1). With `startReady`
+// the session opens on the extrusion, in the feature-preview view; otherwise
+// on its sketch in the exact aligned view.
+CadStatus editorSketchBeginEditFeature(ObjectId body, uint32_t featureId, bool startReady);
+// Opens a staged edit of a retained sketch by id.
+CadStatus editorSketchBeginEditSketch(ObjectId body, CadSketchId sketchId);
+// Commits an open edit: one transaction, one Undo; a refusal changes nothing.
+CadStatus editorSketchCommitEdit();
 
 // THE commit: the first project when the scene is empty (`APP-H1`), a New
 // Body, an Add, a Cut or an Intersect otherwise. One transaction, one Undo.

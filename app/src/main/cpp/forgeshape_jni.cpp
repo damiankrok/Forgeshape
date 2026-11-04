@@ -94,6 +94,7 @@
 #include "forgeshape_render_recovery.h"
 #include "forgeshape_render_recovery_selftest.h"
 #include "forgeshape_renderer.h"
+#include "forgeshape_cad_status_text.h"
 #include "forgeshape_editor_core.h"
 #include "forgeshape_viewport_frame.h"
 #include "forgeshape_scene.h"
@@ -6335,38 +6336,6 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
     env->SetDoubleArrayRegion(out, 0, kSlots, values);
 }
 
-namespace {
-
-// Where one FEATURE's sketch stands in WORLD space (`CAD-VERTICAL-SLICE-R1`):
-// the body's world model composed with the feature's placement in the body --
-// for the first feature its workplane, for a later one its support face's
-// frame, derived from the chain before it.
-bool resolveCadFeatureWorldFrame(forgeshape::ConstructionScene& scene, forgeshape::ObjectId id,
-                                 const forgeshape::CadBody& body, uint32_t featureId,
-                                 forgeshape::SketchFrame* out) {
-    if (out == nullptr) {
-        return false;
-    }
-    forgeshape::CadFeatureGeometry geometry;
-    if (forgeshape::buildCadFeatureGeometry(body.state(), featureId, &geometry)
-        != forgeshape::CadStatus::Ok) {
-        return false;
-    }
-    const forgeshape::Vec3 localOrigin = forgeshape::vec3FromDVec3(geometry.placement.origin);
-    const forgeshape::Vec3 localU = forgeshape::vec3FromDVec3(geometry.placement.u);
-    const forgeshape::Vec3 localV = forgeshape::vec3FromDVec3(geometry.placement.v);
-    const forgeshape::Vec3 localN = forgeshape::vec3FromDVec3(geometry.placement.n);
-    forgeshape::Mat4 model = forgeshape::mat4Identity();
-    scene.resolveWorldModel(id, &model);
-    out->origin = forgeshape::mat4TransformPoint(model, localOrigin);
-    out->u = forgeshape::vec3Normalize(forgeshape::mat4TransformDirection(model, localU));
-    out->v = forgeshape::vec3Normalize(forgeshape::mat4TransformDirection(model, localV));
-    out->n = forgeshape::vec3Normalize(forgeshape::mat4TransformDirection(model, localN));
-    return true;
-}
-
-}  // namespace
-
 // How many features a CAD body's chain carries (base included), or 0 for a
 // body that is not a CAD body (`CAD-VERTICAL-SLICE-R1`).
 JNIEXPORT jint JNICALL
@@ -8527,44 +8496,14 @@ JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchBeginEditFeature(JNIEnv*, jclass, jlong bodyId,
                                                               jlong featureId,
                                                               jboolean startReady) {
-    forgeshape::CadStatus status = forgeshape::CadStatus::Ok;
+    forgeshape::CadStatus status;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
-        if (!scene.hasProject() || forgeshape::sculptSession().inSculptMode()) {
-            status = forgeshape::CadStatus::NotSketching;
-        } else if (forgeshape::constructionHistory().editInProgress()) {
-            status = forgeshape::CadStatus::RefusedEditInProgress;
-        } else {
-            const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
-            forgeshape::SceneObject* object = scene.findBody(id);
-            const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
-            forgeshape::SketchFrame frame;
-            if (body == nullptr) {
-                status = forgeshape::CadStatus::NotCadBody;
-            } else if (!resolveCadFeatureWorldFrame(scene, id, *body,
-                                                    static_cast<uint32_t>(featureId), &frame)) {
-                status = forgeshape::CadStatus::ProfileNotFound;
-            } else {
-                // Every CAD begin ends any Surface purpose a dropped sketch left.
-                forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
-                status = forgeshape::sketchSession().beginEditFeature(
-                    id, body->state(), static_cast<uint32_t>(featureId), frame,
-                    startReady == JNI_TRUE);
-            }
-        }
-        if (status == forgeshape::CadStatus::Ok) {
-            forgeshape::supportChooser().cancel();
-            forgeshape::gizmoSession().setActive(false);
-            g_selection.resetGesture();
-            g_camera.resetGesture();
-            beginSketchView();
-            if (startReady == JNI_TRUE) {
-                // Straight to the extrusion: the same tilt Finish Sketch takes.
-                forgeshape::editorSetFeatureViewPending(
-                        beginExtrudeFeatureView() == forgeshape::CadFeatureViewSource::Unavailable);
-            }
-        }
+        // The editor core's act (`WORKBENCH-UX-R1`), so the desktop opens the
+        // very same staged edit.
+        status = forgeshape::editorSketchBeginEditFeature(
+            static_cast<forgeshape::ObjectId>(bodyId), static_cast<uint32_t>(featureId),
+            startReady == JNI_TRUE);
     }
     if (status != forgeshape::CadStatus::Ok) {
         FS_LOGE("FORGESHAPE_SKETCH_EDIT_REFUSED:%s", forgeshape::cadStatusName(status));
@@ -8599,11 +8538,7 @@ Java_com_forgeshape_app_NativeViewport_sketchCommitEdit(JNIEnv*, jclass) {
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         edited = forgeshape::sketchSession().editingBodyId();
-        status = forgeshape::sketchSession().commitEdit(forgeshape::constructionScene(),
-                                                        forgeshape::constructionHistory());
-        if (status == forgeshape::CadStatus::Ok) {
-            endSketchView();
-        }
+        status = forgeshape::editorSketchCommitEdit();
         undoDepth = forgeshape::constructionHistory().undoDepth();
     }
     if (status != forgeshape::CadStatus::Ok) {
@@ -8852,33 +8787,11 @@ Java_com_forgeshape_app_NativeViewport_sketchBeginEditSketch(JNIEnv*, jclass, jl
     forgeshape::CadStatus status;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        status = retainedSketchActRefusal();
-        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
-        const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
-        const forgeshape::SceneObject* object = scene.findBody(id);
-        const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
-        forgeshape::SketchFrame frame;
-        if (status == forgeshape::CadStatus::Ok && body == nullptr) {
-            status = forgeshape::CadStatus::NotCadBody;
-        } else if (status == forgeshape::CadStatus::Ok
-                   && (sketchId <= 0 || sketchId > 0xFFFFFFFFll
-                       || !resolveRetainedSketchWorldFrame(
-                               scene, id, *body, static_cast<forgeshape::CadSketchId>(sketchId),
-                               &frame))) {
-            status = forgeshape::CadStatus::SketchNotFound;
-        }
-        if (status == forgeshape::CadStatus::Ok) {
-            forgeshape::surfaceSketchPurpose() = forgeshape::SurfaceSketchPurpose{};
-            status = forgeshape::sketchSession().beginEditSketch(
-                    id, body->state(), static_cast<forgeshape::CadSketchId>(sketchId), frame);
-        }
-        if (status == forgeshape::CadStatus::Ok) {
-            forgeshape::supportChooser().cancel();
-            forgeshape::gizmoSession().setActive(false);
-            g_selection.resetGesture();
-            g_camera.resetGesture();
-            beginSketchView();
-        }
+        status = (sketchId <= 0 || sketchId > 0xFFFFFFFFll)
+                     ? forgeshape::CadStatus::SketchNotFound
+                     : forgeshape::editorSketchBeginEditSketch(
+                           static_cast<forgeshape::ObjectId>(bodyId),
+                           static_cast<forgeshape::CadSketchId>(sketchId));
     }
     FS_LOGI("FORGESHAPE_SKETCH_EDIT_SKETCH body=%lld sketch=%lld %s", (long long)bodyId,
             (long long)sketchId, forgeshape::cadStatusName(status));
@@ -8970,6 +8883,18 @@ Java_com_forgeshape_app_NativeViewport_cadStatusToken(JNIEnv* env, jclass, jint 
         return env->NewStringUTF("unknown");
     }
     return env->NewStringUTF(forgeshape::cadStatusName(status));
+}
+
+// The core's sentence for a refusal (`WORKBENCH-UX-R1`): what the status line
+// says for a code with no string resource of its own, never the enum's name.
+// The sentences are ASCII plus the em dash, so modified UTF-8 carries them.
+JNIEXPORT jstring JNICALL
+Java_com_forgeshape_app_NativeViewport_cadStatusUserText(JNIEnv* env, jclass, jint code) {
+    forgeshape::CadStatus status;
+    if (!forgeshape::cadStatusFromCode(static_cast<int>(code), &status)) {
+        return env->NewStringUTF("That change was refused.");
+    }
+    return env->NewStringUTF(forgeshape::cadStatusUserText(status));
 }
 
 // --- the CAD Body ------------------------------------------------------------

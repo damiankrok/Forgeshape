@@ -290,6 +290,52 @@ public final class TabletWorkbenchTest {
         click(R.id.display_settings_button);
     }
 
+    /**
+     * `WORKBENCH-UX-R1`: a keyboard cover's letters hold the sketch tools while
+     * a sketch is drawn, through the Tool Rail entries' own clicks, and F and
+     * Ctrl+6 reach Fit and the Top view outside one.
+     */
+    @Test
+    public void a_keyboard_cover_holds_sketch_tools_and_views() {
+        final float[] axes = new float[9];
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue(activity.onKeyDown(KeyEvent.KEYCODE_6, new KeyEvent(0, 0,
+                    KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_6, 0, KeyEvent.META_CTRL_ON)));
+            return null;
+        });
+        settleLayout();
+        NativeViewport.cameraViewAxes(axes);
+        assertTrue("Ctrl+6 is the Top view: " + axes[7], axes[7] > 0.9999f);
+        final int began = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int s = NativeViewport.sketchBegin(NativeViewport.WORKPLANE_XY);
+            workspace.onNativeStateChanged();
+            return s;
+        });
+        assertEquals(NativeViewport.CAD_OK, began);
+        settleLayout();
+        final double[] state = new double[NativeViewport.SKETCH_STATE_SIZE];
+        final int[] keys = {KeyEvent.KEYCODE_R, KeyEvent.KEYCODE_C, KeyEvent.KEYCODE_L};
+        final int[] tools = {NativeViewport.SKETCH_TOOL_RECTANGLE, NativeViewport.SKETCH_TOOL_CIRCLE,
+                NativeViewport.SKETCH_TOOL_LINE};
+        for (int i = 0; i < keys.length; i++) {
+            final int key = keys[i];
+            doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+                assertTrue(activity.onKeyDown(key, new KeyEvent(KeyEvent.ACTION_DOWN, key)));
+                return null;
+            });
+            settleLayout();
+            NativeViewport.sketchState(state);
+            assertEquals("key " + KeyEvent.keyCodeToString(key) + " holds its tool", tools[i],
+                    (int) state[NativeViewport.SKETCH_TOOL]);
+        }
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.sketchCancel();
+            workspace.onNativeStateChanged();
+            return null;
+        });
+        settleLayout();
+    }
+
     private static android.graphics.Rect windowRect(View view) {
         final int[] at = new int[2];
         view.getLocationInWindow(at);

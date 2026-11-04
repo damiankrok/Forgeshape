@@ -112,6 +112,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_project_state.cpp
     forgeshape_render_mesh.cpp
     forgeshape_feature_edges.cpp
+    forgeshape_cad_status_text.cpp
     forgeshape_render_recovery.cpp
     forgeshape_scene.cpp
     forgeshape_sculpt.cpp

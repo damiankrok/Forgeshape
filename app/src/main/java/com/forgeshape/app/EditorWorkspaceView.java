@@ -1278,7 +1278,11 @@ final class EditorWorkspaceView extends FrameLayout
                 onHistoryStepRequested(true);
                 return true;
             case android.view.KeyEvent.KEYCODE_S:
-                if (!ctrl || !NativeViewport.projectOpen() || startPageVisible()) {
+                if (!ctrl) {
+                    // A plain S is the Spline tool while a sketch is drawn.
+                    return onToolOrViewKey(keyCode, false, event.isShiftPressed());
+                }
+                if (!NativeViewport.projectOpen() || startPageVisible()) {
                     return false;
                 }
                 onSaveProjectRequested();
@@ -1295,8 +1299,65 @@ final class EditorWorkspaceView extends FrameLayout
                 dismissTopmostSurface();
                 return true;
             default:
-                return false;
+                return onToolOrViewKey(keyCode, ctrl, event.isShiftPressed());
         }
+    }
+
+    /**
+     * The single-letter and view keys of a keyboard cover (`WORKBENCH-UX-R1`),
+     * the desktop's table on this shell: while a sketch is drawn, V L P R C A
+     * S T hold Select, Line, Polyline, Rectangle, Circle, Arc, Spline and Trim
+     * by clicking the Tool Rail entry itself, so a key cannot do what a
+     * withdrawn entry cannot; F fits everything and Ctrl+1..7 are the standard
+     * views, through the view bar's own handlers. A field being typed in never
+     * reaches here (the Activity keeps its keys).
+     */
+    private boolean onToolOrViewKey(int keyCode, boolean ctrl, boolean shift) {
+        if (startPageVisible() || shift) {
+            return false;
+        }
+        if (ctrl && keyCode >= android.view.KeyEvent.KEYCODE_1
+                && keyCode <= android.view.KeyEvent.KEYCODE_7) {
+            if (!NativeViewport.projectOpen() || NativeViewport.cameraSketchViewActive()) {
+                return false;
+            }
+            onStandardViewChosen(NativeViewport.VIEW_HOME
+                    + (keyCode - android.view.KeyEvent.KEYCODE_1));
+            return true;
+        }
+        if (ctrl) {
+            return false;
+        }
+        if (keyCode == android.view.KeyEvent.KEYCODE_F) {
+            if (!NativeViewport.projectOpen() || NativeViewport.cameraSketchViewActive()) {
+                return false;
+            }
+            onFitAllRequested();
+            return true;
+        }
+        final double[] state = new double[NativeViewport.SKETCH_STATE_SIZE];
+        NativeViewport.sketchState(state);
+        if (state[NativeViewport.SKETCH_STATE] != NativeViewport.SKETCH_EDITING) {
+            return false;
+        }
+        final int entry;
+        switch (keyCode) {
+            case android.view.KeyEvent.KEYCODE_V: entry = R.id.tool_rail_select; break;
+            case android.view.KeyEvent.KEYCODE_L: entry = R.id.tool_rail_line; break;
+            case android.view.KeyEvent.KEYCODE_P: entry = R.id.tool_rail_polyline; break;
+            case android.view.KeyEvent.KEYCODE_R: entry = R.id.tool_rail_rectangle; break;
+            case android.view.KeyEvent.KEYCODE_C: entry = R.id.tool_rail_circle; break;
+            case android.view.KeyEvent.KEYCODE_A: entry = R.id.tool_rail_arc; break;
+            case android.view.KeyEvent.KEYCODE_S: entry = R.id.tool_rail_spline; break;
+            case android.view.KeyEvent.KEYCODE_T: entry = R.id.tool_rail_trim; break;
+            default: return false;
+        }
+        final View rail = findViewById(entry);
+        if (rail == null || !rail.isShown()) {
+            return false;
+        }
+        rail.performClick();
+        return true;
     }
 
     /** Whether a full-window start page (Home, New Project, Settings) owns the window. */

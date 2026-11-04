@@ -24,6 +24,7 @@
 #include "ui/ui.h"
 
 namespace forgeshape {
+struct CadTimelineRow;
 class Renderer;
 }
 
@@ -108,6 +109,9 @@ public:
     // Extrude: the one commit, one Undo.
     void commitSketch();
     void cancelSketch();
+    // Opens the staged edit a History row stands for (`WORKBENCH-UX-R1`): a
+    // sketch row its sketch, a feature row its extrusion. True when opened.
+    bool editHistoryRow(const forgeshape::CadTimelineRow& row);
 
     // The view (`WORKBENCH-RIBBON-R1`): a standard view by index
     // (`forgeshape::StandardView`), and Fit, framing everything drawn.
@@ -162,6 +166,13 @@ private:
 
     // Viewport navigation state (presentation only).
     int dragButton_ = -1;
+    // The context menu (`WORKBENCH-UX-R1`): a still right click on a body
+    // opens its acts at the pointer. Presentation; it closes on any act, on
+    // Esc and on a click elsewhere.
+    bool contextOpen_ = false;
+    float contextX_ = 0, contextY_ = 0;
+    uint64_t contextBody_ = 0;
+    void buildContextMenu(int width, int height);
     float dragLastX_ = 0, dragLastY_ = 0;
     float pressX_ = 0, pressY_ = 0;
     bool dragTravelled_ = false;

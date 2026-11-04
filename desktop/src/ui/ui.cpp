@@ -411,6 +411,25 @@ bool Ui::tab(const std::string& id, const Rect& r, const std::string& textValue,
     return click;
 }
 
+bool Ui::stepChip(const std::string& id, const Rect& r, const std::string& iconName,
+                  const std::string& textValue, bool editing, bool enabled, Color ink,
+                  Color borderColor, const std::string& tip) {
+    const bool click = clicked(id, r, enabled);
+    const bool over = enabled && hotId_ == id;
+    const float radius = px(theme_.radius);
+    if (editing) {
+        selectedMark(r, false);
+    } else {
+        rect(r, over ? theme_.controlSurfacePressed : theme_.controlSurface, radius);
+    }
+    border(r, borderColor, radius, 1.0f);
+    const float s = px(18);
+    icon(iconName, {r.x + px(7), r.y + (r.h - s) * 0.5f, s, s}, ink);
+    label({r.x + px(30), r.y, r.w - px(34), r.h}, textValue, ink, theme_.smallFontSize);
+    if (over && !tip.empty()) tooltip(tip);
+    return click;
+}
+
 bool Ui::listRow(const std::string& id, const Rect& r, const std::string& textValue,
                  const std::string& iconName, bool selected, const std::string& detail) {
     const bool click = clicked(id, r, true);

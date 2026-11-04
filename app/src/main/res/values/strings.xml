@@ -553,7 +553,6 @@
     <string name="status_cad_dependent_face_lost">That edit would remove a face another body is sketched on. Edit or delete the dependent body first.</string>
     <string name="status_cad_zero_length">A length must be a positive number.</string>
     <string name="status_cad_branching">Lines meet at a fork — a profile is one loop.</string>
-    <string name="status_cad_refused">Refused: %1$s. Nothing was changed.</string>
     <string name="status_cad_no_sculpt">A CAD Body cannot be sculpted in this version.</string>
 
     <!-- Brush -->

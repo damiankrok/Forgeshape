@@ -10,7 +10,9 @@
   cell of one control.
 
   And a leading INDICATOR BAR (`WORKBENCH-UX-R1`): the fill alone was a 1.2:1
-  lift, so the held tool is now also stated by a shape.
+  lift, so the held tool is now also stated by a shape. It stands beside the
+  ICON, in the entry's upper part, because the caption under it runs the
+  entry's whole width.
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
@@ -21,7 +23,7 @@
                 <corners android:radius="@dimen/radius_rail_entry" />
             </shape>
         </item>
-        <item android:gravity="start|center_vertical" android:width="3dp" android:height="20dp" android:start="2dp">
+        <item android:gravity="start|top" android:width="3dp" android:height="18dp" android:start="2dp" android:top="11dp">
             <shape android:shape="rectangle">
                 <solid android:color="?attr/fsTextPrimary" />
                 <corners android:radius="1.5dp" />
@@ -37,7 +39,7 @@
                 <corners android:radius="@dimen/radius_rail_entry" />
             </shape>
         </item>
-        <item android:gravity="start|center_vertical" android:width="3dp" android:height="20dp" android:start="2dp">
+        <item android:gravity="start|top" android:width="3dp" android:height="18dp" android:start="2dp" android:top="11dp">
             <shape android:shape="rectangle">
                 <solid android:color="?attr/fsTextPrimary" />
                 <corners android:radius="1.5dp" />

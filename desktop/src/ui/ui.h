@@ -103,6 +103,11 @@ public:
                       const std::string& tip = std::string(), bool primary = false);
     // A ribbon tab: its label, underlined when chosen.
     bool tab(const std::string& id, const Rect& r, const std::string& text, bool active);
+    // A History step: an icon and a label in a bordered chip. Clickable when
+    // `enabled`; a step being edited takes the selected treatment.
+    bool stepChip(const std::string& id, const Rect& r, const std::string& iconName,
+                  const std::string& text, bool editing, bool enabled, Color ink, Color border,
+                  const std::string& tip = std::string());
     bool listRow(const std::string& id, const Rect& r, const std::string& text,
                  const std::string& iconName, bool selected, const std::string& detail = "");
     bool toggle(const std::string& id, const Rect& r, const std::string& text, bool* value);

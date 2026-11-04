@@ -240,6 +240,18 @@ int main(int argc, char** argv) {
     editor.setSketchTool(forgeshape::sketchToolIndex(forgeshape::SketchTool::Rectangle));
     drag(700, 330, 900, 530);
     check("a_mouse_drag_draws_a_rectangle", forgeshape::sketchSession().sketch().entities.size() == 1);
+    // The tools answer to their letters while a sketch is drawn
+    // (`WORKBENCH-UX-R1`): L holds Line, R gives Rectangle back.
+    {
+        fsui::InputState key;
+        key.text = U"l";
+        frameWith(key);
+        const bool line = forgeshape::sketchSession().tool() == forgeshape::SketchTool::Line;
+        key.text = U"r";
+        frameWith(key);
+        check("sketch_tools_answer_to_their_letters",
+              line && forgeshape::sketchSession().tool() == forgeshape::SketchTool::Rectangle);
+    }
     frameWith(idle);
     check("finish_appears_once_there_is_a_curve", editor.widgetRect("sk_finish", nullptr));
     snap("03-sketch-rectangle");
@@ -345,6 +357,7 @@ int main(int argc, char** argv) {
           frontClicked && eyeDirection().z > 0.9999f);
     const bool rightClicked = clickId("cube_+x");
     check("the_view_cube_x_end_is_the_right_view", rightClicked && eyeDirection().x > 0.9999f);
+    check("ctrl_6_is_the_top_view", editor.shortcut('6', true, false) && eyeDirection().y > 0.9999f);
     clickId("vb_home");
     // Zoom far in, then Fit: the whole part is back on screen.
     {
@@ -415,6 +428,86 @@ int main(int argc, char** argv) {
         }
         check("an_untouched_field_writes_nothing",
               forgeshape::constructionHistory().undoDepth() == depthBefore);
+    }
+    // Editing what was made (`WORKBENCH-UX-R1`): the Cut's History step opens
+    // its staged edit; a new depth and one Extrude apply it to the SAME body
+    // as one Undo step.
+    {
+        const forgeshape::CadBody* part = forgeshape::constructionScene().activeBody().cadOrNull();
+        const uint32_t cutId = part != nullptr && !part->state().laterFeatures.empty()
+                                   ? part->state().laterFeatures[0].featureId
+                                   : 0;
+        const std::string stepId = "hist_feature_" + std::to_string(cutId);
+        const bool opened = cutId != 0 && clickId(stepId.c_str());
+        frameWith(idle);
+        check("a_history_step_opens_its_staged_edit",
+              opened && forgeshape::sketchSession().active() &&
+                  forgeshape::sketchSession().editingBodyId() ==
+                      forgeshape::constructionScene().activeBodyId() &&
+                  forgeshape::sketchSession().state() == forgeshape::SketchSessionState::Ready);
+        const size_t depthBeforeEdit = forgeshape::constructionHistory().undoDepth();
+        forgeshape::MassProperties beforeEdit;
+        measureActive(&beforeEdit);
+        {
+            std::lock_guard<std::mutex> lock(forgeshape::editorStateMutex());
+            forgeshape::SketchSession& sketch = forgeshape::sketchSession();
+            sketch.setExtrude(0.25 * (block.boundsMax.z - block.boundsMin.z), sketch.extrude().direction);
+        }
+        frameWith(idle);
+        const bool committed = clickId("sk_extrude");
+        for (int i = 0; i < 3; ++i) frameWith(idle);
+        forgeshape::MassProperties afterEdit;
+        measureActive(&afterEdit);
+        check("the_edit_applies_to_the_same_body_as_one_step",
+              committed && !forgeshape::sketchSession().active() &&
+                  forgeshape::constructionScene().bodyCount() == 1 &&
+                  forgeshape::constructionHistory().undoDepth() == depthBeforeEdit + 1 &&
+                  afterEdit.volume > beforeEdit.volume + 1e-9);
+        editor.undo();
+        for (int i = 0; i < 2; ++i) frameWith(idle);
+        forgeshape::MassProperties undoneEdit;
+        measureActive(&undoneEdit);
+        check("one_undo_takes_the_edit_back",
+              std::abs(undoneEdit.volume - beforeEdit.volume) < 1e-9);
+        frameWith(idle);
+        check("the_properties_list_the_features",
+              editor.widgetRect(("feat_feature_" + std::to_string(cutId)).c_str(), nullptr));
+    }
+    // The context menu (`WORKBENCH-UX-R1`): a still right click on the part
+    // opens its acts at the pointer; Fit to body is one of them.
+    {
+        float px = -1, py = -1;
+        const forgeshape::Vec3 centre{static_cast<float>((block.boundsMin.x + block.boundsMax.x) * 0.5),
+                                      static_cast<float>((block.boundsMin.y + block.boundsMax.y) * 0.5),
+                                      static_cast<float>(block.boundsMax.z)};
+        clickId("vb_fit");
+        const bool shows = screenOf(centre, width, height, &px, &py);
+        fsui::InputState in = mouse(px, py);
+        frameWith(in);
+        in.mousePressed[1] = in.mouseDown[1] = true;
+        frameWith(in);
+        in = mouse(px, py);
+        in.mouseReleased[1] = true;
+        frameWith(in);
+        frameWith(mouse(px, py));
+        check("a_still_right_click_opens_the_context_menu",
+              shows && editor.widgetRect("ctx_fit_body", nullptr) &&
+                  editor.widgetRect("ctx_edit_sketch", nullptr) &&
+                  editor.widgetRect("ctx_toggle_lock", nullptr));
+        snap("08-context-menu");
+        const float before = forgeshape::editorCamera().distance();
+        {
+            fsui::InputState zoom = mouse(800, 450);
+            zoom.wheel = 6.0f;
+            frameWith(zoom);
+        }
+        const float zoomed = forgeshape::editorCamera().distance();
+        (void)before;
+        const bool fit = clickId("ctx_fit_body");
+        frameWith(idle);
+        check("fit_to_body_frames_it_and_closes_the_menu",
+              fit && forgeshape::editorCamera().distance() > zoomed &&
+                  !editor.widgetRect("ctx_fit_body", nullptr));
     }
     clickId("ribbon_tab_View");
     snap("07-view-ribbon");

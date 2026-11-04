@@ -15,6 +15,7 @@
 #include "forgeshape_camera.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_display.h"
+#include "forgeshape_cad_status_text.h"
 #include "forgeshape_editor_core.h"
 #include "forgeshape_freeform_session.h"
 #include "forgeshape_gizmo.h"
@@ -136,31 +137,29 @@ struct SketchToolEntry {
     const char* icon;
     const char* name;
     const char* hint;
+    // The single key that holds the tool while a sketch is drawn
+    // (`WORKBENCH-UX-R1`), the letters every CAD application uses.
+    char key;
 };
 constexpr SketchToolEntry kSketchTools[] = {
-    {fs::SketchTool::Select, "ic_tool_select", "Select", "Click a curve to select it; Delete removes it"},
-    {fs::SketchTool::Line, "ic_tool_line", "Line", "Press, drag and release to draw a line"},
+    {fs::SketchTool::Select, "ic_tool_select", "Select", "Click a curve to select it; Delete removes it", 'V'},
+    {fs::SketchTool::Line, "ic_tool_line", "Line", "Press, drag and release to draw a line", 'L'},
     {fs::SketchTool::Polyline, "ic_tool_polyline", "Polyline",
-     "Click each corner; click the first point to close, Esc to end"},
-    {fs::SketchTool::Rectangle, "ic_tool_rectangle", "Rectangle", "Drag from one corner to the other"},
-    {fs::SketchTool::Circle, "ic_tool_circle", "Circle", "Drag from the centre outwards"},
-    {fs::SketchTool::Arc, "ic_tool_arc", "Arc", "Drag the chord, then click the point the arc passes"},
-    {fs::SketchTool::Spline, "ic_tool_spline", "Spline", "Click the points the curve passes; Esc to end"},
-    {fs::SketchTool::Trim, "ic_tool_trim", "Trim", "Click or swipe across a curve to cut it back"},
+     "Click each corner; click the first point to close, Esc to end", 'P'},
+    {fs::SketchTool::Rectangle, "ic_tool_rectangle", "Rectangle", "Drag from one corner to the other", 'R'},
+    {fs::SketchTool::Circle, "ic_tool_circle", "Circle", "Drag from the centre outwards", 'C'},
+    {fs::SketchTool::Arc, "ic_tool_arc", "Arc", "Drag the chord, then click the point the arc passes", 'A'},
+    {fs::SketchTool::Spline, "ic_tool_spline", "Spline", "Click the points the curve passes; Esc to end", 'S'},
+    {fs::SketchTool::Trim, "ic_tool_trim", "Trim", "Click or swipe across a curve to cut it back", 'T'},
 };
 
 // A refusal in the user's words; the code's own name otherwise.
 std::string sketchStatusText(fs::CadStatus status) {
-    switch (status) {
-        case fs::CadStatus::OpenProfile: return "The sketch has no closed shape yet";
-        case fs::CadStatus::AmbiguousProfile: return "Click the region to extrude";
-        case fs::CadStatus::NotSketching: return "Not available now";
-        case fs::CadStatus::RefusedEditInProgress: return "Finish the current edit first";
-        case fs::CadStatus::CutNoIntersection: return "The cut does not reach the part";
-        case fs::CadStatus::CutRemovesBody: return "The cut would remove the whole part";
-        case fs::CadStatus::AddDisjoint: return "The added material does not touch the part";
-        default: return fs::cadStatusName(status);
-    }
+    // One sentence per refusal, the core's table (`WORKBENCH-UX-R1`): the
+    // desktop never shows an enum's name to a person.
+    std::string text = fs::cadStatusUserText(status);
+    if (!text.empty() && text.back() == '.') text.pop_back();
+    return text;
 }
 
 const char* extentIcon(fs::ExtrudeExtentMode mode) {
@@ -676,6 +675,17 @@ void DesktopEditor::commitSketch() {
     fs::EditorSketchCommit commit;
     {
         std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        // A staged edit of a committed part commits as ONE step on the same
+        // body (`WORKBENCH-UX-R1`); a new sketch commits as before.
+        if (fs::sketchSession().editingBodyId() != fs::kNoObject) {
+            const fs::CadStatus edited = fs::editorSketchCommitEdit();
+            if (edited != fs::CadStatus::Ok) {
+                report("Not applied: " + sketchStatusText(edited), true);
+            } else {
+                report("Edit applied \xC2\xB7 one Undo takes it back");
+            }
+            return;
+        }
         commit = fs::editorSketchCommit();
         if (commit.status == fs::CadStatus::Ok && commit.created != fs::kNoObject) {
             fs::editorSelection().setSelected(commit.created);
@@ -695,6 +705,31 @@ void DesktopEditor::commitSketch() {
         return;
     }
     report(std::string("Extruded \xC2\xB7 ") + operationLabel(commit.operation));
+}
+
+bool DesktopEditor::editHistoryRow(const fs::CadTimelineRow& row) {
+    fs::CadStatus status = fs::CadStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        if (!fs::constructionScene().hasProject()) return false;
+        const fs::ObjectId body = fs::constructionScene().activeBodyId();
+        if (row.kind == fs::CadTimelineRowKind::Feature) {
+            status = fs::editorSketchBeginEditFeature(body, row.id, /*startReady=*/true);
+        } else if (row.kind == fs::CadTimelineRowKind::Sketch) {
+            status = row.editFeatureId != 0
+                         ? fs::editorSketchBeginEditFeature(body, row.editFeatureId, false)
+                         : fs::editorSketchBeginEditSketch(body, row.sketchId);
+        } else {
+            return false;
+        }
+    }
+    if (status != fs::CadStatus::Ok) {
+        report("Cannot edit " + timelineRowLabel(row) + ": " + sketchStatusText(status), true);
+        return false;
+    }
+    sketchPointer_ = false;
+    report("Editing " + timelineRowLabel(row) + " \xC2\xB7 Extrude or Finish applies it as one step");
+    return true;
 }
 
 void DesktopEditor::setStandardView(int view) {
@@ -724,6 +759,12 @@ void DesktopEditor::cancelSketch() {
 
 bool DesktopEditor::shortcut(char key, bool ctrl, bool shift) {
     if (ui_ && ui_->typing()) return false;
+    if (ctrl && key >= '1' && key <= '7') {
+        // Ctrl+1..7: Home, Front, Back, Left, Right, Top, Bottom -- refused by
+        // the camera inside a sketch's exact view, as the view bar's are.
+        setStandardView(key - '1');
+        return true;
+    }
     if (ctrl) {
         switch (key) {
             case 'Z': shift ? redo() : undo(); return true;
@@ -841,6 +882,22 @@ void DesktopEditor::routeViewportInput(int width, int height) {
         dragLastX_ = input_.mouseX;
         dragLastY_ = input_.mouseY;
         if (input_.mouseReleased[dragButton_]) {
+            if (dragButton_ == 1 && !dragTravelled_) {
+                // A still right click on a body: its context menu, at the
+                // pointer. The pick selects it first, as a left click would,
+                // so the menu is about the body the user is looking at.
+                std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+                const fs::SceneHit hit =
+                    fs::pickScene(camera.snapshot(), input_.mouseX, input_.mouseY, width, height);
+                contextOpen_ = hit.hit;
+                if (hit.hit) {
+                    fs::editorSelection().applyPick(hit);
+                    fs::constructionScene().setActiveBody(hit.objectId);
+                    contextBody_ = hit.objectId;
+                    contextX_ = input_.mouseX;
+                    contextY_ = input_.mouseY;
+                }
+            }
             if (dragButton_ == 0 && !dragTravelled_) {
                 // A click: the same pick the Android tap makes.
                 std::lock_guard<std::mutex> lock(fs::editorStateMutex());
@@ -907,6 +964,106 @@ void DesktopEditor::buildInterface(int width, int height) {
     buildRibbon(ribbon);
     buildTitleBar(title);
     buildStatusBar(status);
+    buildContextMenu(width, height);
+}
+
+void DesktopEditor::buildContextMenu(int width, int height) {
+    if (!contextOpen_) return;
+    fsui::Ui& ui = *ui_;
+    struct Row { const char* id; const char* icon; std::string text; int act; };
+    std::vector<Row> rows;
+    bool visible = true, locked = false, cad = false, sketching = false;
+    size_t bodies = 0;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        fs::ConstructionScene& scene = fs::constructionScene();
+        const fs::SceneObject* body = scene.hasProject() ? scene.findBody(contextBody_) : nullptr;
+        sketching = fs::sketchSession().active() || fs::supportChooser().active();
+        if (body == nullptr || sketching) {
+            contextOpen_ = false;
+            return;
+        }
+        visible = body->visible();
+        locked = body->locked();
+        cad = body->cadOrNull() != nullptr;
+        bodies = scene.bodyCount();
+    }
+    // Only acts that already exist, each drawn only where it can succeed.
+    if (cad) rows.push_back({"ctx_edit_sketch", "ic_sketch_new", "Edit sketch", 0});
+    rows.push_back({"ctx_fit_body", "ic_view_fit", "Fit to body", 1});
+    rows.push_back({"ctx_toggle_visibility", visible ? "ic_object_hidden" : "ic_object_visible",
+                    visible ? "Hide" : "Show", 2});
+    rows.push_back({"ctx_toggle_lock", locked ? "ic_object_unlocked" : "ic_object_locked",
+                    locked ? "Unlock" : "Lock", 3});
+    rows.push_back({"ctx_duplicate", "ic_object_duplicate", "Duplicate", 4});
+    if (bodies > 1) rows.push_back({"ctx_delete", "ic_delete", "Delete", 5});
+    const float rowH = ui.px(32), w = ui.px(200), pad = ui.px(6);
+    const float h = rows.size() * rowH + 2 * pad;
+    // Flipped to stay on screen near the window's edges.
+    float x = contextX_ + ui.px(4), y = contextY_ + ui.px(4);
+    if (x + w > width - ui.px(4)) x = contextX_ - w - ui.px(4);
+    if (y + h > height - ui.px(4)) y = contextY_ - h - ui.px(4);
+    const Rect menu{x, y, w, h};
+    ui.panel(menu);
+    int chosen = -1;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const Rect r{x + pad, y + pad + i * rowH, w - 2 * pad, rowH};
+        if (ui.listRow(rows[i].id, r, rows[i].text, rows[i].icon, false)) chosen = rows[i].act;
+    }
+    const bool escape = std::find(input_.keys.begin(), input_.keys.end(), fsui::Key::Escape) !=
+                        input_.keys.end();
+    const bool clickedAway = (input_.mousePressed[0] || input_.mousePressed[1] ||
+                              input_.mousePressed[2]) &&
+                             !menu.contains(input_.mouseX, input_.mouseY);
+    if (chosen < 0) {
+        if (escape || clickedAway) contextOpen_ = false;
+        return;
+    }
+    contextOpen_ = false;
+    const fs::ObjectId id = contextBody_;
+    switch (chosen) {
+        case 0: {
+            fs::CadStatus status;
+            {
+                std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+                status = fs::editorSketchBeginEditFeature(id, 1, false);
+            }
+            if (status != fs::CadStatus::Ok) report(sketchStatusText(status), true);
+            break;
+        }
+        case 1: {
+            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+            fs::editorFitBody(id);
+            break;
+        }
+        case 2: case 3: case 4: {
+            fs::BodyCommandStatus status;
+            {
+                std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+                fs::ConstructionScene& scene = fs::constructionScene();
+                fs::ConstructionHistory& history = fs::constructionHistory();
+                status = chosen == 2   ? fs::setSceneBodyVisible(id, !visible, scene, history)
+                         : chosen == 3 ? fs::setSceneBodyLocked(id, !locked, scene, history)
+                                       : fs::duplicateSceneBody(id, scene, history);
+                if (chosen == 4 && status == fs::BodyCommandStatus::Ok && scene.hasProject()) {
+                    fs::editorSelection().setSelected(scene.activeBodyId());
+                }
+            }
+            if (status != fs::BodyCommandStatus::Ok) {
+                report(std::string("Refused: ") + fs::bodyCommandStatusName(status), true);
+            } else {
+                report(chosen == 2 ? (visible ? "Hidden" : "Shown")
+                       : chosen == 3 ? (locked ? "Unlocked" : "Locked")
+                                     : "Duplicated");
+            }
+            break;
+        }
+        case 5:
+            deleteActive();
+            break;
+        default:
+            break;
+    }
 }
 
 void DesktopEditor::buildHome(int width, int height) {
@@ -1086,7 +1243,8 @@ void DesktopEditor::buildModelRibbon(const Rect& area) {
             deletable = scene.bodyCount() > 1;
         }
     }
-    if (row.command("rb_new_sketch", "ic_sketch_new", "New sketch")) newSketch();
+    if (row.command("rb_new_sketch", "ic_sketch_new", "New sketch", false, true,
+                    "New sketch  Shift+S")) newSketch();
     row.endGroup("Sketch");
     static const fs::PrimitiveKind kinds[] = {fs::PrimitiveKind::Box, fs::PrimitiveKind::Cylinder,
                                               fs::PrimitiveKind::Sphere, fs::PrimitiveKind::Cone,
@@ -1207,16 +1365,23 @@ void DesktopEditor::buildHistoryStrip(const Rect& bar) {
         const Rect chip{cx, y, widths[i], s};
         const bool failed = row.state == fs::CadTimelineRowState::Failed;
         const bool stale = row.state == fs::CadTimelineRowState::NotRegenerated;
-        ui.rect(chip, theme_.controlSurface, ui.px(theme_.radius));
-        ui.border(chip, failed ? theme_.textError : theme_.fieldBorder.alpha(0.6f), ui.px(theme_.radius),
-                  1.0f);
         // A step not rebuilt reads in secondary ink, not the disabled grey:
         // it is live content, and the chip's own glyph carries the state.
         const fsui::Color ink = failed ? theme_.textError : stale ? theme_.textSecondary : theme_.textPrimary;
-        ui.icon(timelineRowIcon(row), {chip.x + ui.px(7), chip.y + (s - ui.px(18)) * 0.5f, ui.px(18),
-                                       ui.px(18)}, ink);
-        ui.label({chip.x + ui.px(30), chip.y, chip.w - ui.px(34), s}, timelineRowLabel(row), ink,
-                 theme_.smallFontSize);
+        // A sketch or an extrusion step opens its staged edit (`WORKBENCH-UX-R1`):
+        // the History is how a part is changed after the fact, as in every
+        // parametric CAD application. A hole, a pattern and a finish have no
+        // desktop editor yet, so their steps are drawn and not clickable.
+        const bool editable = !sketching && (row.kind == fs::CadTimelineRowKind::Sketch ||
+                                             row.kind == fs::CadTimelineRowKind::Feature);
+        const std::string id = std::string("hist_") +
+                               (row.kind == fs::CadTimelineRowKind::Sketch ? "sketch_" : "feature_") +
+                               std::to_string(row.id);
+        if (ui.stepChip(id, chip, timelineRowIcon(row), timelineRowLabel(row), row.editing, editable,
+                        ink, failed ? theme_.textError : theme_.fieldBorder.alpha(0.6f),
+                        editable ? std::string("Edit ") + timelineRowLabel(row) : std::string())) {
+            editHistoryRow(row);
+        }
         cx += widths[i] + ui.px(6);
     }
     ui.popClip();
@@ -1314,10 +1479,10 @@ void DesktopEditor::buildViewBar(const Rect& vp) {
         return click;
     };
     if (tool("vb_fit", "ic_view_fit", "Fit everything  F")) fitAll();
-    if (tool("vb_home", "ic_view_home", "Home view")) setStandardView(0);
-    if (tool("vb_front", "ic_view_front", "Front view")) setStandardView(static_cast<int>(fs::StandardView::Front));
-    if (tool("vb_top", "ic_view_top", "Top view")) setStandardView(static_cast<int>(fs::StandardView::Top));
-    if (tool("vb_right", "ic_view_right", "Right view")) setStandardView(static_cast<int>(fs::StandardView::Right));
+    if (tool("vb_home", "ic_view_home", "Home view  Ctrl+1")) setStandardView(0);
+    if (tool("vb_front", "ic_view_front", "Front view  Ctrl+2")) setStandardView(static_cast<int>(fs::StandardView::Front));
+    if (tool("vb_top", "ic_view_top", "Top view  Ctrl+6")) setStandardView(static_cast<int>(fs::StandardView::Top));
+    if (tool("vb_right", "ic_view_right", "Right view  Ctrl+5")) setStandardView(static_cast<int>(fs::StandardView::Right));
     ui.rect({x + ui.px(3), y + ui.px(6), 1.0f, s - ui.px(12)}, theme_.chromeHairline, 0);
     x += ui.px(8);
     if (tool("vb_projection", ortho ? "ic_projection_orthographic" : "ic_projection_perspective",
@@ -1535,6 +1700,39 @@ void DesktopEditor::buildProperties(const Rect& panel) {
         }
         y += fieldH + ui.px(10);
     }
+    // Features (`WORKBENCH-UX-R1`): a CAD part's chain, each step the door to
+    // its staged edit -- the same rows and acts the History strip carries.
+    if (representation == fs::BodyRepresentation::Cad) {
+        std::vector<fs::CadTimelineRow> rows;
+        {
+            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+            const fs::SceneObject* object = fs::constructionScene().findBody(active);
+            if (const fs::CadBody* cad = object != nullptr ? object->cadOrNull() : nullptr) {
+                rows = fs::buildCadTimelineFor(cad->state()).rows;
+            }
+        }
+        if (!rows.empty()) {
+            section("Features");
+            const float rowH = ui.px(theme_.rowHeight);
+            for (const fs::CadTimelineRow& row : rows) {
+                const bool editable = row.kind == fs::CadTimelineRowKind::Sketch ||
+                                      row.kind == fs::CadTimelineRowKind::Feature;
+                const bool failed = row.state == fs::CadTimelineRowState::Failed;
+                const std::string id = std::string("feat_") +
+                                       (row.kind == fs::CadTimelineRowKind::Sketch ? "sketch_" : "feature_") +
+                                       std::to_string(row.id);
+                if (ui.stepChip(id, {x, y, w, rowH}, timelineRowIcon(row), timelineRowLabel(row),
+                                false, editable, failed ? theme_.textError : theme_.textPrimary,
+                                failed ? theme_.textError : theme_.chromeHairline,
+                                editable ? std::string("Edit ") + timelineRowLabel(row)
+                                         : std::string())) {
+                    editHistoryRow(row);
+                }
+                y += rowH + ui.px(4);
+            }
+            y += ui.px(6);
+        }
+    }
     // Measure: read off the mesh as drawn, never stored.
     section("Measure");
     if (measured) {
@@ -1722,9 +1920,32 @@ bool DesktopEditor::routeSketchInput(int width, int height, bool overUi) {
 
 void DesktopEditor::sketchKeys() {
     if (ui_ && ui_->typing()) return;
-    // F frames everything, as in most CAD applications.
-    for (char32_t c : input_.text) {
-        if (c == U'f' || c == U'F') fitAll();
+    // F frames everything, as in most CAD applications; while a sketch is
+    // drawn its tools answer to their letters, and Shift+S begins a sketch.
+    fs::SketchSessionState letterState = fs::SketchSessionState::Inactive;
+    bool letterChoosing = false;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        letterState = fs::sketchSession().state();
+        letterChoosing = fs::supportChooser().active();
+    }
+    if (!input_.ctrl) {
+        for (char32_t c : input_.text) {
+            if (c == U'f' || c == U'F') {
+                fitAll();
+                continue;
+            }
+            if (c == U'S' && input_.shift && letterState == fs::SketchSessionState::Inactive &&
+                !letterChoosing && !homeVisible_) {
+                newSketch();
+                continue;
+            }
+            if (letterState != fs::SketchSessionState::Editing || c > 0x7F) continue;
+            const char upper = static_cast<char>(c >= U'a' && c <= U'z' ? c - 32 : c);
+            for (const SketchToolEntry& entry : kSketchTools) {
+                if (entry.key == upper) setSketchTool(fs::sketchToolIndex(entry.tool));
+            }
+        }
     }
     for (fsui::Key key : input_.keys) {
         fs::SketchSessionState state = fs::SketchSessionState::Inactive;
@@ -1794,7 +2015,8 @@ void DesktopEditor::buildSketchRibbon(const Rect& area) {
             (void)group;
             const SketchToolEntry& entry = kSketchTools[index];
             if (row.command("sk_tool_" + std::to_string(index), entry.icon, entry.name,
-                            entry.tool == current, true, entry.hint)) {
+                            entry.tool == current, true,
+                            std::string(entry.name) + "  " + entry.key + " \xC2\xB7 " + entry.hint)) {
                 setSketchTool(fs::sketchToolIndex(entry.tool));
             }
         };

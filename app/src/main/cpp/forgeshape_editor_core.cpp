@@ -5,6 +5,7 @@
 
 #include "forgeshape_body_commands.h"
 #include "forgeshape_cad_extrude_tool.h"
+#include "forgeshape_cad_feature.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_history.h"
 #include "forgeshape_project_bootstrap.h"
@@ -160,10 +161,15 @@ void applyCadOperationPreview(SceneSnapshot* list) {
 
 
 bool editorSceneBounds(Vec3* outMin, Vec3* outMax) {
+    return editorBodyBounds(kNoObject, outMin, outMax);
+}
+
+bool editorBodyBounds(ObjectId only, Vec3* outMin, Vec3* outMax) {
     bool any = false;
     Vec3 lo{0.0f, 0.0f, 0.0f}, hi{0.0f, 0.0f, 0.0f};
     for (const SceneDrawItem& item : viewSceneSnapshot()) {
         if (!item.mesh) continue;
+        if (only != kNoObject && item.objectId != only) continue;
         const MeshVertex* vertices = item.mesh->vertices();
         for (uint32_t i = 0; i < item.mesh->vertexCount(); ++i) {
             const Vec3 local{vertices[i].position[0], vertices[i].position[1],
@@ -188,6 +194,11 @@ bool editorSceneBounds(Vec3* outMin, Vec3* outMax) {
 bool editorFitAll() {
     Vec3 lo, hi;
     return editorSceneBounds(&lo, &hi) && editorCamera().frameBounds(lo, hi);
+}
+
+bool editorFitBody(ObjectId id) {
+    Vec3 lo, hi;
+    return editorBodyBounds(id, &lo, &hi) && editorCamera().frameBounds(lo, hi);
 }
 
 // ---------------------------------------------------------------------------
@@ -399,6 +410,120 @@ void editorSketchBackToEditing() {
     // Back to the authored sketch is back to the EXACT support-normal view
     // (`CAD-UX-S1-C1`): the drawing is authored through the aligned one.
     editorBeginSketchView();
+}
+
+bool editorCadFeatureWorldFrame(ObjectId id, uint32_t featureId, SketchFrame* out) {
+    if (out == nullptr) return false;
+    ConstructionScene& scene = constructionScene();
+    const SceneObject* object = scene.findBody(id);
+    const CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    if (body == nullptr) return false;
+    CadFeatureGeometry geometry;
+    if (buildCadFeatureGeometry(body->state(), featureId, &geometry) != CadStatus::Ok) {
+        return false;
+    }
+    Mat4 model = mat4Identity();
+    scene.resolveWorldModel(id, &model);
+    out->origin = mat4TransformPoint(model, vec3FromDVec3(geometry.placement.origin));
+    out->u = vec3Normalize(mat4TransformDirection(model, vec3FromDVec3(geometry.placement.u)));
+    out->v = vec3Normalize(mat4TransformDirection(model, vec3FromDVec3(geometry.placement.v)));
+    out->n = vec3Normalize(mat4TransformDirection(model, vec3FromDVec3(geometry.placement.n)));
+    return true;
+}
+
+bool editorRetainedSketchWorldFrame(ObjectId id, CadSketchId sketchId, SketchFrame* out) {
+    if (out == nullptr) return false;
+    ConstructionScene& scene = constructionScene();
+    const SceneObject* object = scene.findBody(id);
+    const CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    CadFrame64 placement;
+    if (body == nullptr || cadSketchPlacement(body->state(), sketchId, &placement) != CadStatus::Ok) {
+        return false;
+    }
+    Mat4 model = mat4Identity();
+    scene.resolveWorldModel(id, &model);
+    out->origin = mat4TransformPoint(model, vec3FromDVec3(placement.origin));
+    out->u = vec3Normalize(mat4TransformDirection(model, vec3FromDVec3(placement.u)));
+    out->v = vec3Normalize(mat4TransformDirection(model, vec3FromDVec3(placement.v)));
+    out->n = vec3Normalize(mat4TransformDirection(model, vec3FromDVec3(placement.n)));
+    return true;
+}
+
+namespace {
+
+// What every staged-edit begin does once the session has accepted it.
+void enterEditedSketch() {
+    supportChooser().cancel();
+    gizmoSession().setActive(false);
+    editorSelection().resetGesture();
+    editorCamera().resetGesture();
+    editorBeginSketchView();
+}
+
+}  // namespace
+
+CadStatus editorSketchBeginEditFeature(ObjectId id, uint32_t featureId, bool startReady) {
+    ConstructionScene& scene = constructionScene();
+    CadStatus status = CadStatus::Ok;
+    SketchFrame frame;
+    const SceneObject* object = scene.hasProject() ? scene.findBody(id) : nullptr;
+    const CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    if (!scene.hasProject() || sculptSession().inSculptMode()) {
+        status = CadStatus::NotSketching;
+    } else if (constructionHistory().editInProgress()) {
+        status = CadStatus::RefusedEditInProgress;
+    } else if (body == nullptr) {
+        status = CadStatus::NotCadBody;
+    } else if (!editorCadFeatureWorldFrame(id, featureId, &frame)) {
+        status = CadStatus::ProfileNotFound;
+    } else {
+        // Every CAD begin ends any Surface purpose a dropped sketch left.
+        surfaceSketchPurpose() = SurfaceSketchPurpose{};
+        status = sketchSession().beginEditFeature(id, body->state(), featureId, frame, startReady);
+    }
+    if (status == CadStatus::Ok) {
+        enterEditedSketch();
+        if (startReady) {
+            // Straight to the extrusion: the same tilt Finish Sketch takes.
+            editorSetFeatureViewPending(editorBeginExtrudeFeatureView() ==
+                                        CadFeatureViewSource::Unavailable);
+        }
+    }
+    return status;
+}
+
+CadStatus editorSketchBeginEditSketch(ObjectId id, CadSketchId sketchId) {
+    ConstructionScene& scene = constructionScene();
+    CadStatus status = CadStatus::Ok;
+    if (!scene.hasProject() || sculptSession().inSculptMode() || sketchSession().active()) {
+        status = CadStatus::NotSketching;
+    } else if (constructionHistory().editInProgress()) {
+        status = CadStatus::RefusedEditInProgress;
+    }
+    const SceneObject* object = status == CadStatus::Ok ? scene.findBody(id) : nullptr;
+    const CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    SketchFrame frame;
+    if (status == CadStatus::Ok && body == nullptr) {
+        status = CadStatus::NotCadBody;
+    } else if (status == CadStatus::Ok && !editorRetainedSketchWorldFrame(id, sketchId, &frame)) {
+        status = CadStatus::SketchNotFound;
+    }
+    if (status == CadStatus::Ok) {
+        surfaceSketchPurpose() = SurfaceSketchPurpose{};
+        status = sketchSession().beginEditSketch(id, body->state(), sketchId, frame);
+    }
+    if (status == CadStatus::Ok) {
+        enterEditedSketch();
+    }
+    return status;
+}
+
+CadStatus editorSketchCommitEdit() {
+    const CadStatus status = sketchSession().commitEdit(constructionScene(), constructionHistory());
+    if (status == CadStatus::Ok) {
+        editorEndSketchView();
+    }
+    return status;
 }
 
 EditorSketchCommit editorSketchCommit() {

@@ -204,8 +204,9 @@ final class CadStatusMessages {
             case NativeViewport.CAD_PRIMITIVE_NOT_CONVERTIBLE:
                 return context.getString(R.string.status_primitive_not_convertible);
             default:
-                return context.getString(R.string.status_cad_refused,
-                        NativeViewport.cadStatusToken(code));
+                // The core's sentence, never the enum's name (`WORKBENCH-UX-R1`);
+                // the name stays in the log, by cadStatusToken.
+                return NativeViewport.cadStatusUserText(code);
         }
     }
 

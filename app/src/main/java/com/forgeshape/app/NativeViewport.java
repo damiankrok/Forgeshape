@@ -3629,6 +3629,9 @@ final class NativeViewport {
 
     static native String cadStatusToken(int code);
 
+    /** The core's one-sentence reading of a CAD refusal (`WORKBENCH-UX-R1`). */
+    static native String cadStatusUserText(int code);
+
     /** 1 Construction, 2 Imported, 3 CAD, 4 Freeform; 0 for an unknown id. */
     static native int sceneBodyRepresentation(long objectId);
 
