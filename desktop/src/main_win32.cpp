@@ -241,8 +241,8 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     app->editor.shortcut(0x7F, ctrl, shift);
                     break;
                 default:
-                    // Ctrl+letter acts, and Ctrl+1..7 the standard views.
-                    if (ctrl && ((wp >= 'A' && wp <= 'Z') || (wp >= '1' && wp <= '7'))) {
+                    // Ctrl+letter acts, and Ctrl+1..8 the standard views.
+                    if (ctrl && ((wp >= 'A' && wp <= 'Z') || (wp >= '1' && wp <= '8'))) {
                         app->editor.shortcut(static_cast<char>(wp), ctrl, shift);
                     }
                     break;

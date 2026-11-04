@@ -172,9 +172,12 @@ enum class StandardView : uint8_t {
     Right,
     Top,
     Bottom,
+    // Appended (`WORKBENCH-UX-R1`) so the indices above never move: the true
+    // isometric, looking down the (1, 1, 1) diagonal from front right above.
+    Isometric,
 };
 
-constexpr int kStandardViewCount = 7;
+constexpr int kStandardViewCount = 8;
 const char* standardViewName(StandardView view);
 bool standardViewFromIndex(int index, StandardView* out);
 

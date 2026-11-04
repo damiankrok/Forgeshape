@@ -108,6 +108,10 @@ public:
     bool stepChip(const std::string& id, const Rect& r, const std::string& iconName,
                   const std::string& text, bool editing, bool enabled, Color ink, Color border,
                   const std::string& tip = std::string());
+    // A start tile on Home: a large target with its icon, a title and one
+    // secondary line, as the start pages of desktop CAD tools carry.
+    bool tile(const std::string& id, const Rect& r, const std::string& iconName,
+              const std::string& title, const std::string& line, bool primary = false);
     bool listRow(const std::string& id, const Rect& r, const std::string& text,
                  const std::string& iconName, bool selected, const std::string& detail = "");
     bool toggle(const std::string& id, const Rect& r, const std::string& text, bool* value);

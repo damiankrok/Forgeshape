@@ -386,6 +386,38 @@ int main(int argc, char** argv) {
     const bool rightClicked = clickId("cube_+x");
     check("the_view_cube_x_end_is_the_right_view", rightClicked && eyeDirection().x > 0.9999f);
     check("ctrl_6_is_the_top_view", editor.shortcut('6', true, false) && eyeDirection().y > 0.9999f);
+    // The end facing the eye names the opposite view (`WORKBENCH-UX-R1`): in
+    // Top, the +Y end gives Bottom.
+    frameWith(idle);
+    check("the_cube_end_facing_you_gives_the_opposite_view",
+          clickId("cube_+y") && eyeDirection().y < -0.9999f);
+    {
+        // A drag on the cube turns the camera and chooses no view.
+        editor.shortcut('1', true, false);
+        frameWith(idle);
+        fsui::Rect cube;
+        const bool drawn = editor.widgetRect("cube_+x", &cube);
+        const float yaw = forgeshape::editorCamera().yaw();
+        const float x0 = cube.x + cube.w * 0.5f, y0 = cube.y + cube.h * 0.5f;
+        fsui::InputState in = mouse(x0, y0);
+        in.mousePressed[0] = in.mouseDown[0] = true;
+        frameWith(in);
+        for (int i = 1; i <= 4; ++i) {
+            in = mouse(x0 - 6.0f * i, y0);
+            in.mouseDown[0] = true;
+            frameWith(in);
+        }
+        in = mouse(x0, y0);
+        in.mouseReleased[0] = true;
+        frameWith(in);
+        const forgeshape::Vec3 d = eyeDirection();
+        check("a_drag_on_the_cube_turns_the_view_and_snaps_nothing",
+              drawn && forgeshape::editorCamera().yaw() != yaw && d.x < 0.9999f);
+    }
+    check("the_view_bar_isometric_looks_down_the_diagonal",
+          clickId("vb_iso") && std::fabs(eyeDirection().x - 0.57735f) < 1e-3f &&
+              std::fabs(eyeDirection().y - 0.57735f) < 1e-3f &&
+              std::fabs(eyeDirection().z - 0.57735f) < 1e-3f);
     clickId("vb_home");
     // Zoom far in, then Fit: the whole part is back on screen.
     {
@@ -430,6 +462,43 @@ int main(int argc, char** argv) {
                                              editor.widgetRect("hist_back", nullptr) &&
                                              !editor.widgetRect("cube_home", nullptr) &&
                                              !editor.widgetRect("disp_grid", nullptr));
+    // The mark is the one project door (`WORKBENCH-UX-R1`): no trailing
+    // cross, no second copy of the file acts on the title row.
+    frameWith(idle);
+    check("the_title_row_carries_no_close_cross_and_no_file_icons",
+          !editor.widgetRect("tb_close", nullptr) && !editor.widgetRect("tb_save", nullptr) &&
+              !editor.widgetRect("tb_theme", nullptr) && editor.widgetRect("tb_project", nullptr));
+    {
+        const bool opened = clickId("tb_project");
+        frameWith(idle);
+        const bool rows = editor.widgetRect("pm_save", nullptr) &&
+                          editor.widgetRect("pm_close", nullptr) &&
+                          editor.widgetRect("pm_export", nullptr);
+        snap("09-project-menu");
+        fsui::InputState esc;
+        esc.keys.push_back(fsui::Key::Escape);
+        frameWith(esc);
+        frameWith(idle);
+        check("the_mark_opens_the_project_menu_and_escape_closes_it",
+              opened && rows && !editor.widgetRect("pm_save", nullptr));
+    }
+    {
+        // The status bar reports; the instructions live on the sheet.
+        const bool opened = clickId("sb_shortcuts") && editor.shortcutsOpenForTest();
+        fsui::InputState esc;
+        esc.keys.push_back(fsui::Key::Escape);
+        frameWith(esc);
+        const bool closed = !editor.shortcutsOpenForTest();
+        fsui::InputState question;
+        question.text = U"?";
+        frameWith(question);
+        frameWith(idle);
+        const bool byKey = editor.shortcutsOpenForTest();
+        snap("10-shortcuts");
+        frameWith(esc);
+        check("the_keyboard_and_mouse_sheet_opens_from_the_status_bar_and_from_question_mark",
+              opened && closed && byKey && !editor.shortcutsOpenForTest());
+    }
     // A field draws without binary noise, and focusing then leaving one
     // writes nothing.
     check("a_field_draws_twelve_significant_digits",

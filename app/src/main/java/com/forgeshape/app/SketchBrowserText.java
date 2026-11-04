@@ -62,7 +62,8 @@ final class SketchBrowserText {
                           FeatureHistoryPresentation.Model timeline) {
         return row.mark() + "  " + name(context, row) + "\n" + context.getString(
                 R.string.sketch_browser_detail, usage(context, row, timeline),
-                where(context, row, timeline), row.entities);
+                where(context, row, timeline), context.getResources().getQuantityString(
+                        R.plurals.sketch_curve_count, row.entities, row.entities));
     }
 
     /**

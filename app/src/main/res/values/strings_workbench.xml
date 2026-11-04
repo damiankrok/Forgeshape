@@ -4,7 +4,7 @@
     <string name="browser_panel_collapse">Hide the Browser (objects and history)</string>
     <string name="browser_panel_expand">Show the Browser (objects and history)</string>
     <!-- WORKBENCH-RIBBON-R1 -->
-    <string name="view_cube_description">View cube: tap an axis end to look along it</string>
+    <string name="view_cube_description">View cube: tap an axis end to look along it, tap the end facing you for the opposite side, drag to turn the view</string>
     <string name="view_fit">Fit everything</string>
     <string name="view_home">Home view</string>
     <string name="view_front">Front view</string>
@@ -13,6 +13,7 @@
     <string name="view_back">Back view</string>
     <string name="view_left">Left view</string>
     <string name="view_bottom">Bottom view</string>
+    <string name="view_iso">Isometric view</string>
     <string name="view_projection_to_orthographic">Perspective. Switch to orthographic</string>
     <string name="view_projection_to_perspective">Orthographic. Switch to perspective</string>
     <string name="history_strip_title">History</string>

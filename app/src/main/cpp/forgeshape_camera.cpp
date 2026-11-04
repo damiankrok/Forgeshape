@@ -121,6 +121,7 @@ const char* standardViewName(StandardView view) {
         case StandardView::Right: return "Right";
         case StandardView::Top: return "Top";
         case StandardView::Bottom: return "Bottom";
+        case StandardView::Isometric: return "Isometric";
     }
     return "Unknown";
 }
@@ -149,6 +150,12 @@ bool CameraController::setStandardView(StandardView view) {
         case StandardView::Back: yaw_ = kPi; pitch_ = 0.0f; break;
         case StandardView::Right: yaw_ = kHalfPi; pitch_ = 0.0f; break;
         case StandardView::Left: yaw_ = -kHalfPi; pitch_ = 0.0f; break;
+        case StandardView::Isometric:
+            // Azimuth 45 degrees, elevation asin(1/sqrt(3)) = 35.264 degrees:
+            // the three axes foreshorten equally.
+            yaw_ = 0.5f * kHalfPi;
+            pitch_ = 0.61547971f;
+            break;
         case StandardView::Top:
         case StandardView::Bottom: {
             // Exact: screen-right +X, and Front at the bottom of a Top view

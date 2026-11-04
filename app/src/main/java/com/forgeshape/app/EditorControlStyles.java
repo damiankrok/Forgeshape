@@ -579,7 +579,17 @@ final class EditorControlStyles {
      */
     static ImageView iconButton(Context context, int id, int iconRes,
                                 CharSequence description) {
-        final ImageView button = new ImageView(context);
+        // Its name is also its TOOLTIP (`WORKBENCH-UX-R1`): a mouse hover or a
+        // long press says what an icon-only control does, and the two can
+        // never disagree because one setter writes both, however often a
+        // control renames itself (the projection button does on every switch).
+        final ImageView button = new ImageView(context) {
+            @Override
+            public void setContentDescription(CharSequence contentDescription) {
+                super.setContentDescription(contentDescription);
+                setTooltipText(contentDescription);
+            }
+        };
         button.setId(id);
         button.setImageResource(iconRes);
         button.setScaleType(ImageView.ScaleType.FIT_CENTER);

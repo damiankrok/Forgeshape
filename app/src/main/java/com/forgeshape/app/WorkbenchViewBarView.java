@@ -7,7 +7,7 @@ import android.widget.LinearLayout;
 
 /**
  * The workbench's view bar ({@code WORKBENCH-RIBBON-R1}): Fit, the Home view,
- * Front, Top and Right, and the projection — one floating capsule standing on
+ * Front, Top, Right and Isometric, and the projection — one floating capsule standing on
  * the model, as SolidCraft's and Shapr3D's do.
  *
  * <p>Every button is one call into native's camera (the core the desktop
@@ -49,6 +49,8 @@ final class WorkbenchViewBarView extends LinearLayout {
                 view(host, NativeViewport.VIEW_TOP));
         addButton(context, group, R.id.view_right, R.drawable.ic_view_right, R.string.view_right,
                 gap, view(host, NativeViewport.VIEW_RIGHT));
+        addButton(context, group, R.id.view_iso, R.drawable.ic_view_iso, R.string.view_iso,
+                gap, view(host, NativeViewport.VIEW_ISOMETRIC));
         projection = addButton(context, group, R.id.view_projection,
                 R.drawable.ic_projection_perspective, R.string.view_projection_to_orthographic,
                 gap, new OnClickListener() {

@@ -1077,6 +1077,17 @@ int runCameraSelfTests(CameraSelfTestResult* out, int maxOut) {
         const Vec3 after = eyeDir(c.snapshot());
         rec.check("an_orbit_leaves_the_exact_view_without_a_jump",
                   !c.alignedViewActive() && vec3Dot(after, Vec3{0.0f, 1.0f, 0.0f}) > 0.99f);
+        {
+            const float k = 0.57735027f;
+            const bool iso = c.setStandardView(StandardView::Isometric);
+            const Vec3 d = eyeDir(c.snapshot());
+            StandardView bottom;
+            rec.check("the_isometric_view_looks_down_the_diagonal",
+                      iso && vec3Dot(d, Vec3{k, k, k}) > 0.99999f && !c.alignedViewActive());
+            rec.check("isometric_is_appended_and_the_older_indices_do_not_move",
+                      standardViewFromIndex(6, &bottom) && bottom == StandardView::Bottom &&
+                          static_cast<int>(StandardView::Isometric) == 7 && kStandardViewCount == 8);
+        }
         c.setStandardView(StandardView::Home);
         rec.check("home_is_the_opening_pose",
                   c.yaw() == kInitialYaw && c.pitch() == kInitialPitch && !c.alignedViewActive());

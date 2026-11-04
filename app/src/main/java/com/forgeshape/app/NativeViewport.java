@@ -52,6 +52,8 @@ final class NativeViewport {
     static final int VIEW_RIGHT = 4;
     static final int VIEW_TOP = 5;
     static final int VIEW_BOTTOM = 6;
+    /** Appended (`WORKBENCH-UX-R1`): the true isometric, front right above. */
+    static final int VIEW_ISOMETRIC = 7;
 
     /**
      * Turns the camera to a standard view about its target, keeping the

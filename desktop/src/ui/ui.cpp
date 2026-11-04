@@ -268,7 +268,11 @@ void Ui::label(const Rect& r, const std::string& utf8, Color c, float sizeDp, bo
 void Ui::panel(const Rect& r) {
     const float radius = px(theme_.panelRadius);
     shadow(r, theme_.shadow, radius, px(theme_.shadowBlur));
-    rect(r, theme_.surfaceFloating, radius);
+    // OPAQUE: a menu or a card over the ribbon and the panels must not let
+    // their labels read through it (`WORKBENCH-UX-R1`).
+    Color ground = theme_.surfaceFloating;
+    ground.a = 255;
+    rect(r, ground, radius);
     border(r, theme_.chromeHairline.alpha(0.8f), radius, 1.0f);
     block(r);
 }
@@ -341,6 +345,26 @@ bool Ui::button(const std::string& id, const Rect& r, const std::string& textVal
     } else {
         label({x, r.y, r.right() - x - px(8), r.h}, textValue, ink, theme_.fontSize, false);
     }
+    return click;
+}
+
+bool Ui::tile(const std::string& id, const Rect& r, const std::string& iconName,
+              const std::string& title, const std::string& line, bool primary) {
+    const bool click = clicked(id, r, true);
+    const bool over = hotId_ == id;
+    const float radius = px(theme_.panelRadius);
+    Color fill = theme_.surfaceFloating;
+    if (over) fill = theme_.controlSurfacePressed;
+    rect(r, fill, radius);
+    border(r, primary ? theme_.accent : theme_.controlBorder.alpha(0.7f), radius,
+           primary ? std::max(1.0f, px(1.5f)) : 1.0f);
+    const float pad = px(18);
+    const float s = px(28);
+    icon(iconName, {r.x + pad, r.y + pad, s, s}, primary ? theme_.accent : theme_.textPrimary);
+    label({r.x + pad, r.y + pad + s + px(14), r.w - 2 * pad, px(24)}, title, theme_.textPrimary,
+          theme_.panelTitleFontSize, true);
+    label({r.x + pad, r.y + pad + s + px(40), r.w - 2 * pad, px(20)}, line, theme_.textSecondary,
+          theme_.smallFontSize + 1.0f);
     return click;
 }
 

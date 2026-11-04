@@ -17,7 +17,12 @@
     <string name="sketch_where_plane">on the %1$s plane</string>
     <string name="sketch_where_body_face">on another body\'s face</string>
     <string name="sketch_where_feature">on a face of %1$s</string>
-    <string name="sketch_browser_detail">%1$s · %2$s · %3$d entities</string>
+    <string name="sketch_browser_detail">%1$s · %2$s · %3$s</string>
+    <!-- WORKBENCH-UX-R1: one word for sketch geometry on both shells, counted properly. -->
+    <plurals name="sketch_curve_count">
+        <item quantity="one">%d curve</item>
+        <item quantity="other">%d curves</item>
+    </plurals>
     <string name="sketch_support_lost">Its face is gone: %1$s</string>
     <string name="sketch_dependencies">Dependencies: %1$s</string>
     <string name="sketch_dependencies_none">nothing builds from it</string>

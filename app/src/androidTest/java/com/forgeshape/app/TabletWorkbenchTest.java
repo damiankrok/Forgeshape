@@ -451,6 +451,88 @@ public final class TabletWorkbenchTest {
     }
 
     @Test
+    public void an_icon_only_control_explains_itself_on_hover_and_long_press() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            for (int id : new int[] {R.id.display_settings_button, R.id.view_fit, R.id.view_iso,
+                    R.id.browser_panel_toggle}) {
+                final View view = activity.findViewById(id);
+                assertTrue(activity.getResources().getResourceEntryName(id) + " is drawn",
+                        view != null && view.isShown());
+                assertEquals(activity.getResources().getResourceEntryName(id)
+                                + "'s tooltip is its name",
+                        String.valueOf(view.getContentDescription()),
+                        String.valueOf(view.getTooltipText()));
+            }
+            return null;
+        });
+        // A control that renames itself renames its tooltip with it.
+        click(R.id.view_projection);
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View projection = activity.findViewById(R.id.view_projection);
+            assertEquals(String.valueOf(projection.getContentDescription()),
+                    String.valueOf(projection.getTooltipText()));
+            return null;
+        });
+        click(R.id.view_projection);
+    }
+
+    private void touchCube(float x0, float y0, float x1, float y1) {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final WorkbenchViewCubeView cube = workspace.viewCube();
+            final long now = SystemClock.uptimeMillis();
+            final MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x0, y0, 0);
+            cube.dispatchTouchEvent(down);
+            down.recycle();
+            for (int i = 1; i <= 4; i++) {
+                final MotionEvent move = MotionEvent.obtain(now, now + i * 16L,
+                        MotionEvent.ACTION_MOVE, x0 + (x1 - x0) * i / 4.0f,
+                        y0 + (y1 - y0) * i / 4.0f, 0);
+                cube.dispatchTouchEvent(move);
+                move.recycle();
+            }
+            final MotionEvent up = MotionEvent.obtain(now, now + 90, MotionEvent.ACTION_UP, x1, y1, 0);
+            cube.dispatchTouchEvent(up);
+            up.recycle();
+            return null;
+        });
+        settleLayout();
+    }
+
+    @Test
+    public void the_cube_reaches_every_view_turns_by_drag_and_reads_to_talkback() {
+        final float[] axes = new float[9];
+        // In Top the +Y end faces the eye: tapping it again gives Bottom.
+        click(R.id.view_top);
+        final float[] yEnd = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> workspace.viewCube().endPoint(1, true));
+        touchCube(yEnd[0], yEnd[1], yEnd[0], yEnd[1]);
+        NativeViewport.cameraViewAxes(axes);
+        assertTrue("the end facing you turned to Bottom: " + axes[7], axes[7] < -0.9999f);
+        // A drag on the cube turns the camera and snaps to nothing.
+        click(R.id.view_home);
+        final float[] pose = new float[NativeViewport.CAMERA_POSE_SIZE];
+        NativeViewport.debugCameraPose(pose);
+        final float yaw = pose[NativeViewport.CAMERA_POSE_YAW];
+        final int size = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> workspace.viewCube().getWidth());
+        touchCube(size * 0.3f, size * 0.5f, size * 0.8f, size * 0.5f);
+        NativeViewport.debugCameraPose(pose);
+        assertNotEquals("a drag on the cube turned the camera", yaw,
+                pose[NativeViewport.CAMERA_POSE_YAW], 1e-4f);
+        // The Isometric view looks down the diagonal.
+        click(R.id.view_iso);
+        NativeViewport.cameraViewAxes(axes);
+        assertTrue("Isometric looks down the diagonal: " + axes[6] + "," + axes[7] + "," + axes[8],
+                Math.abs(axes[6] - 0.57735f) < 1e-3f && Math.abs(axes[7] - 0.57735f) < 1e-3f
+                        && Math.abs(axes[8] - 0.57735f) < 1e-3f);
+        // TalkBack reads six views, by name.
+        final int nodes = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> workspace.viewCube().accessibilityViewCount());
+        assertEquals("one virtual node per view", 6, nodes);
+        click(R.id.view_home);
+    }
+
+    @Test
     public void the_view_cube_the_view_bar_and_the_history_strip() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertTrue("the view cube stands on the model",

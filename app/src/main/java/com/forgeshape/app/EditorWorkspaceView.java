@@ -1313,7 +1313,7 @@ final class EditorWorkspaceView extends FrameLayout
      * the desktop's table on this shell: while a sketch is drawn, V L P R C A
      * S T hold Select, Line, Polyline, Rectangle, Circle, Arc, Spline and Trim
      * by clicking the Tool Rail entry itself, so a key cannot do what a
-     * withdrawn entry cannot; F fits everything and Ctrl+1..7 are the standard
+     * withdrawn entry cannot; F fits everything and Ctrl+1..8 are the standard
      * views, through the view bar's own handlers. A field being typed in never
      * reaches here (the Activity keeps its keys).
      */
@@ -1322,7 +1322,7 @@ final class EditorWorkspaceView extends FrameLayout
             return false;
         }
         if (ctrl && keyCode >= android.view.KeyEvent.KEYCODE_1
-                && keyCode <= android.view.KeyEvent.KEYCODE_7) {
+                && keyCode <= android.view.KeyEvent.KEYCODE_8) {
             if (!NativeViewport.projectOpen() || NativeViewport.cameraSketchViewActive()) {
                 return false;
             }
@@ -3652,6 +3652,11 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     /** What a camera moved by chrome owes the view: the world-anchored chrome and the cube. */
+    @Override
+    public void onViewCubeOrbited() {
+        afterChromeMovedCamera();
+    }
+
     private void afterChromeMovedCamera() {
         refreshWorldAnchoredUi();
         viewCube.invalidate();
@@ -4239,7 +4244,7 @@ final class EditorWorkspaceView extends FrameLayout
         } else if (NativeViewport.sceneActiveBodyIsCad()) {
             // Shape, for a CAD Body, is its sketch and its extrusion.
             inspector.setBody(cadEditor,
-                    context.getString(R.string.inspector_shape_title_for_body, body));
+                    context.getString(R.string.inspector_cad_title_for_body, body));
         } else if (activeBodyIsSurface()) {
             // Shape, for a Surface body, is its feature list.
             inspector.setBody(surfaceEditor,

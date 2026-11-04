@@ -12,6 +12,7 @@
     <item name="view_front" type="id" />
     <item name="view_top" type="id" />
     <item name="view_right" type="id" />
+    <item name="view_iso" type="id" />
     <item name="view_projection" type="id" />
     <item name="history_strip" type="id" />
     <item name="history_strip_steps" type="id" />

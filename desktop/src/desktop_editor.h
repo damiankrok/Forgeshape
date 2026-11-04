@@ -170,14 +170,27 @@ private:
     // opens its acts at the pointer. Presentation; it closes on any act, on
     // Esc and on a click elsewhere.
     bool contextOpen_ = false;
+    bool projectMenuOpen_ = false;
+    bool shortcutsOpen_ = false;
+    float projectMenuX_ = 0, projectMenuY_ = 0;
+    // A press on the view cube: a drag past 4 px turns the camera and chooses
+    // nothing (`WORKBENCH-UX-R1`). Presentation state, never truth.
+    bool cubePress_ = false;
+    bool cubeDragging_ = false;
+    float cubeDownX_ = 0, cubeDownY_ = 0, cubeLastX_ = 0, cubeLastY_ = 0;
     float contextX_ = 0, contextY_ = 0;
     uint64_t contextBody_ = 0;
     void buildContextMenu(int width, int height);
+    // The ForgeShape mark's project menu: every file act in one place.
+    void buildProjectMenu(int width, int height);
+    // The keyboard and mouse sheet (? or the status bar's button).
+    void buildShortcutsSheet(int width, int height);
     // The live size of a shape being drawn, beside the pointer.
     void buildLivePlacementLabel(int width, int height);
 public:
     // The last live size label drawn, for the headless check.
     const std::string& liveLabelForTest() const { return liveLabel_; }
+    bool shortcutsOpenForTest() const { return shortcutsOpen_; }
 private:
     std::string liveLabel_;
     float dragLastX_ = 0, dragLastY_ = 0;

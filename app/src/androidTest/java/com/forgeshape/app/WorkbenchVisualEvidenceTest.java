@@ -144,6 +144,11 @@ public final class WorkbenchVisualEvidenceTest {
         });
         capture(out, "07-top-view");
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.view_iso).performClick();
+            return null;
+        });
+        capture(out, "07b-iso-view");
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             workspace.findViewById(R.id.view_home).performClick();
             workspace.findViewById(R.id.browser_panel_toggle).performClick();
             workspace.findViewById(R.id.precision_toggle).performClick();

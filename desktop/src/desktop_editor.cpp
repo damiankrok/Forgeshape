@@ -80,7 +80,7 @@ const char* representationIcon(fs::BodyRepresentation r) {
 
 const char* representationLabel(fs::BodyRepresentation r) {
     switch (r) {
-        case fs::BodyRepresentation::Cad: return "CAD part";
+        case fs::BodyRepresentation::Cad: return "CAD Body";
         case fs::BodyRepresentation::Freeform: return "Freeform";
         case fs::BodyRepresentation::Surface: return "Surface";
         case fs::BodyRepresentation::Imported: return "Imported mesh";
@@ -771,8 +771,8 @@ void DesktopEditor::cancelSketch() {
 
 bool DesktopEditor::shortcut(char key, bool ctrl, bool shift) {
     if (ui_ && ui_->typing()) return false;
-    if (ctrl && key >= '1' && key <= '7') {
-        // Ctrl+1..7: Home, Front, Back, Left, Right, Top, Bottom -- refused by
+    if (ctrl && key >= '1' && key <= '8') {
+        // Ctrl+1..8: Home, Front, Back, Left, Right, Top, Bottom, Isometric -- refused by
         // the camera inside a sketch's exact view, as the view bar's are.
         setStandardView(key - '1');
         return true;
@@ -978,6 +978,8 @@ void DesktopEditor::buildInterface(int width, int height) {
     buildTitleBar(title);
     buildStatusBar(status);
     buildContextMenu(width, height);
+    buildProjectMenu(width, height);
+    buildShortcutsSheet(width, height);
 }
 
 void DesktopEditor::buildLivePlacementLabel(int width, int height) {
@@ -1113,26 +1115,40 @@ void DesktopEditor::buildHome(int width, int height) {
     ui.rect({0, 0, static_cast<float>(width), static_cast<float>(height)},
             theme_.startPageSurface, 0);
     ui.block({0, 0, static_cast<float>(width), static_cast<float>(height)});
-    const float w = ui.px(420), h = ui.px(360);
-    const Rect card{(width - w) * 0.5f, (height - h) * 0.5f, w, h};
-    ui.panel(card);
-    const float x = card.x + ui.px(28);
-    float y = card.y + ui.px(28);
-    ui.icon("ic_forgeshape_mark", {x, y, ui.px(40), ui.px(40)}, theme_.accent);
-    ui.label({x + ui.px(52), y, card.w, ui.px(40)}, "ForgeShape", theme_.textPrimary, 22, true);
-    y += ui.px(56);
-    ui.label({x, y, card.w - ui.px(56), ui.px(20)}, "Start a project", theme_.textSecondary,
-             theme_.smallFontSize);
-    y += ui.px(28);
-    const float bw = card.w - ui.px(56), bh = ui.px(44);
-    if (ui.button("home_new_cad", {x, y, bw, bh}, "New CAD part", "ic_sketch_new", true)) newSketch();
-    y += bh + ui.px(10);
-    if (ui.button("home_new_freeform", {x, y, bw, bh}, "New Freeform body", "ic_freeform")) newFreeform();
-    y += bh + ui.px(10);
-    if (ui.button("home_open", {x, y, bw, bh}, "Open project\xE2\x80\xA6", "ic_project")) openProject();
-    y += bh + ui.px(18);
-    ui.label({x, y, bw, ui.px(20)}, status_, statusError_ ? theme_.textError : theme_.textSecondary,
-             theme_.smallFontSize);
+    // A full-window start PAGE, not a card on a scrim (`SKETCH-UX-R1`, the
+    // Android start page's shape): one centred column at most 720 px wide,
+    // the mark and the wordmark, and the starts as tiles side by side. Only
+    // what the desktop editor can open today is offered.
+    const float columnW = std::min(ui.px(720), width - ui.px(64));
+    const float x = (width - columnW) * 0.5f;
+    const float tileH = ui.px(128);
+    const float blockH = ui.px(64) + ui.px(40) + tileH + ui.px(48);
+    float y = std::max(ui.px(32), (height - blockH) * 0.5f);
+    ui.icon("ic_forgeshape_mark", {x, y, ui.px(64), ui.px(64)}, theme_.accent);
+    ui.label({x + ui.px(80), y + ui.px(4), columnW - ui.px(80), ui.px(36)}, "ForgeShape",
+             theme_.textPrimary, 28, true);
+    ui.label({x + ui.px(80), y + ui.px(40), columnW - ui.px(80), ui.px(20)},
+             "Parametric parts and freeform bodies", theme_.textSecondary, theme_.fontSize);
+    y += ui.px(64) + ui.px(40);
+    const float gap = ui.px(16);
+    const float tileW = (columnW - 2 * gap) / 3.0f;
+    if (ui.tile("home_new_cad", {x, y, tileW, tileH}, "ic_sketch_new", "New CAD part",
+                "Sketch, then extrude", true)) {
+        newSketch();
+    }
+    if (ui.tile("home_new_freeform", {x + tileW + gap, y, tileW, tileH}, "ic_freeform",
+                "New Freeform body", "A smooth body from a cage")) {
+        newFreeform();
+    }
+    if (ui.tile("home_open", {x + 2 * (tileW + gap), y, tileW, tileH}, "ic_project",
+                "Open project\xE2\x80\xA6", "A ForgeShape .forge file")) {
+        openProject();
+    }
+    y += tileH + ui.px(20);
+    // A verdict only: a refused open says why; nothing stands here at rest.
+    if (statusError_) {
+        ui.label({x, y, columnW, ui.px(20)}, status_, theme_.textError, theme_.fontSize);
+    }
 }
 
 namespace {
@@ -1185,36 +1201,24 @@ void DesktopEditor::buildTitleBar(const Rect& bar) {
     const float s = ui.px(32);
     const float y = bar.y + (bar.h - s) * 0.5f;
     float x = bar.x + ui.px(10);
+    // The ForgeShape mark is the ONE door to the project (as on Android): it
+    // opens the project menu that holds every file act, so the title row
+    // carries no second copy of them and no ambiguous trailing cross.
+    if (ui.iconButton("tb_project", {x, y, s, s}, "", "Project  (open, save, export, close)",
+                      projectMenuOpen_)) {
+        projectMenuOpen_ = !projectMenuOpen_;
+    }
     ui.icon("ic_forgeshape_mark", {x + ui.px(4), y + ui.px(4), ui.px(24), ui.px(24)}, theme_.accent);
     x += ui.px(36);
     const std::string name = projectName_.empty() ? std::string("ForgeShape") : projectName_;
     const float titleW = std::min(ui.px(200), ui.textWidth(name, theme_.fontSize, true) + ui.px(8));
     ui.label({x, bar.y, titleW, bar.h}, name, theme_.textPrimary, theme_.fontSize, true);
     x += titleW + ui.px(10);
-    const auto gap = [&]() {
-        ui.rect({x + ui.px(4), y + ui.px(7), 1.0f, s - ui.px(14)}, theme_.chromeHairline, 0);
-        x += ui.px(10);
-    };
-    const auto tool = [&](const char* id, const char* icon, const char* tip, bool active = false,
-                          bool enabled = true) {
-        const bool click = ui.iconButton(id, {x, y, s, s}, icon, tip, active, enabled);
-        x += s + ui.px(2);
-        return click;
-    };
-    bool sketching = false;
-    {
-        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
-        sketching = fs::sketchSession().active();
-    }
+    projectMenuX_ = bar.x + ui.px(10);
+    projectMenuY_ = bar.bottom();
     // Undo and Redo have ONE home, the History strip's leading end, as its
     // back and forward arrows (`WORKBENCH-UX-R1`); Ctrl+Z and Ctrl+Y are
-    // unchanged.
-    if (!sketching) {
-        gap();
-        if (tool("tb_open", "ic_project", "Open project\xE2\x80\xA6  Ctrl+O")) openProject();
-        if (tool("tb_save", "ic_save", "Save project\xE2\x80\xA6  Ctrl+S")) saveProject();
-        if (tool("tb_export", "ic_export", "Export GLB\xE2\x80\xA6  Ctrl+E")) exportGlb();
-    }
+    // unchanged. Open, Save, Export and Close live in the project menu.
 
     float rx = bar.right() - ui.px(10) - s;
     const auto right = [&](const char* id, const char* icon, const char* tip, bool active = false) {
@@ -1222,11 +1226,68 @@ void DesktopEditor::buildTitleBar(const Rect& bar) {
         rx -= s + ui.px(2);
         return click;
     };
-    if (!sketching && right("tb_close", "ic_sketch_cancel", "Close project")) closeProject();
     if (right("tb_properties", "ic_precision", "Properties", propertiesOpen_))
         propertiesOpen_ = !propertiesOpen_;
     if (right("tb_browser", "ic_panel_browser", "Browser", browserOpen_)) browserOpen_ = !browserOpen_;
-    if (right("tb_theme", "ic_settings", "Reload theme (theme.json)")) reloadTheme();
+}
+
+void DesktopEditor::buildProjectMenu(int width, int height) {
+    if (!projectMenuOpen_) return;
+    fsui::Ui& ui = *ui_;
+    bool project = false, sketching = false;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        project = fs::constructionScene().hasProject();
+        sketching = fs::sketchSession().active() || fs::supportChooser().active();
+    }
+    struct Row { const char* id; const char* icon; const char* text; const char* key; int act; };
+    std::vector<Row> rows;
+    // Each act drawn only where it can succeed: a half-drawn sketch is not
+    // project truth, so the file acts wait for it to finish or cancel.
+    if (!sketching) {
+        if (project) rows.push_back({"pm_new_sketch", "ic_sketch_new", "New sketch", "Shift+S", 0});
+        rows.push_back({"pm_open", "ic_project", "Open project\xE2\x80\xA6", "Ctrl+O", 1});
+        if (project) {
+            rows.push_back({"pm_save", "ic_save", "Save project\xE2\x80\xA6", "Ctrl+S", 2});
+            rows.push_back({"pm_export", "ic_export", "Export GLB\xE2\x80\xA6", "Ctrl+E", 3});
+            rows.push_back({"pm_close", "ic_sketch_cancel", "Close project", "", 4});
+        }
+    }
+    rows.push_back({"pm_reload_theme", "ic_settings", "Reload theme", "", 5});
+    const float rowH = ui.px(32), w = ui.px(260), pad = ui.px(6);
+    const float h = rows.size() * rowH + 2 * pad;
+    const Rect menu{projectMenuX_, projectMenuY_ + ui.px(2), w, h};
+    ui.panel(menu);
+    int chosen = -1;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const Rect r{menu.x + pad, menu.y + pad + i * rowH, w - 2 * pad, rowH};
+        if (ui.listRow(rows[i].id, r, rows[i].text, rows[i].icon, false, rows[i].key)) {
+            chosen = rows[i].act;
+        }
+    }
+    const bool escape = std::find(input_.keys.begin(), input_.keys.end(), fsui::Key::Escape) !=
+                        input_.keys.end();
+    Rect mark;
+    const bool onMark = ui.widgetRect("tb_project", &mark) && mark.contains(input_.mouseX, input_.mouseY);
+    const bool clickedAway = (input_.mousePressed[0] || input_.mousePressed[1] ||
+                              input_.mousePressed[2]) &&
+                             !menu.contains(input_.mouseX, input_.mouseY) && !onMark;
+    (void)width;
+    (void)height;
+    if (chosen < 0) {
+        if (escape || clickedAway) projectMenuOpen_ = false;
+        return;
+    }
+    projectMenuOpen_ = false;
+    switch (chosen) {
+        case 0: newSketch(); break;
+        case 1: openProject(); break;
+        case 2: saveProject(); break;
+        case 3: exportGlb(); break;
+        case 4: closeProject(); break;
+        case 5: reloadTheme(); break;
+        default: break;
+    }
 }
 
 void DesktopEditor::buildRibbon(const Rect& bar) {
@@ -1300,7 +1361,7 @@ void DesktopEditor::buildModelRibbon(const Rect& area) {
     row.endGroup("Primitives");
     // Drawn only where it can succeed: a primitive body becomes a part.
     if (convertible) {
-        if (row.command("rb_cad_part", "ic_op_new_body", "CAD part", false, true,
+        if (row.command("rb_cad_part", "ic_cad_part", "CAD part", false, true,
                         "Make the primitive a CAD part")) {
             makeCadPart();
         }
@@ -1384,10 +1445,19 @@ void DesktopEditor::buildHistoryStrip(const Rect& bar) {
     ui.rect({x, y + ui.px(4), 1.0f, s - ui.px(8)}, theme_.chromeHairline, 0);
     x += ui.px(10);
     if (rows.empty()) {
-        ui.label({x, bar.y, bar.right() - x - ui.px(12), bar.h},
-                 sketching ? std::string("Sketching \xC2\xB7 Finish to add the step")
-                           : std::string("The active body has no feature history"),
-                 theme_.textSecondary, theme_.smallFontSize);
+        // The empty state follows the stage the user is at: what the next
+        // act adds, never a standing instruction.
+        fs::SketchSessionState state = fs::SketchSessionState::Inactive;
+        {
+            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+            state = fs::sketchSession().state();
+        }
+        const std::string empty =
+            state == fs::SketchSessionState::Editing ? "Finish the sketch to add it"
+            : state == fs::SketchSessionState::Ready ? "Choose a region, then Extrude"
+                                                     : "No steps: this body has no feature history";
+        ui.label({x, bar.y, bar.right() - x - ui.px(12), bar.h}, empty, theme_.textSecondary,
+                 theme_.smallFontSize);
         return;
     }
     // The steps in construction order, newest at the right; when they do not
@@ -1446,6 +1516,29 @@ void DesktopEditor::buildViewCube(const Rect& vp) {
                    2 * radius + ui.px(16)};
     ui.circle(cx, cy, radius + ui.px(8), theme_.surfaceFloating.alpha(0.55f));
     ui.block(box);
+    // The cube is a handle on the view: a press that travels past 4 px turns
+    // the camera as a drag on the model does, and chooses no view.
+    if (!sketchView) {
+        const float mx = input_.mouseX, my = input_.mouseY;
+        if (input_.mousePressed[0] && box.contains(mx, my)) {
+            cubePress_ = true;
+            cubeDragging_ = false;
+            cubeDownX_ = cubeLastX_ = mx;
+            cubeDownY_ = cubeLastY_ = my;
+        }
+        if (cubePress_ && input_.mouseDown[0]) {
+            if (!cubeDragging_ && std::hypot(mx - cubeDownX_, my - cubeDownY_) > ui.px(4)) {
+                cubeDragging_ = true;
+            }
+            if (cubeDragging_) {
+                std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+                fs::editorCamera().orbitByPixels(mx - cubeLastX_, my - cubeLastY_);
+                camera = fs::editorCamera().snapshot();
+                cubeLastX_ = mx;
+                cubeLastY_ = my;
+            }
+        }
+    }
     // The view matrix's rows are screen right, screen up and toward the eye.
     const float right[3] = {camera.view.m[0], camera.view.m[4], camera.view.m[8]};
     const float up[3] = {camera.view.m[1], camera.view.m[5], camera.view.m[9]};
@@ -1470,7 +1563,7 @@ void DesktopEditor::buildViewCube(const Rect& vp) {
         {fs::StandardView::Front, fs::StandardView::Back}};
     for (const End& end : ends) {
         const fsui::Color colour = colours[end.axis];
-        const float r = end.positive ? ui.px(10) : ui.px(7);
+        const float r = ui.px(10);
         if (end.positive) ui.line(cx, cy, end.sx, end.sy, ui.px(2.5f), colour);
         const std::string id = std::string("cube_") + (end.positive ? "+" : "-") +
                                static_cast<char>('x' + end.axis);
@@ -1478,20 +1571,35 @@ void DesktopEditor::buildViewCube(const Rect& vp) {
         // the camera, so its ends are not controls there.
         bool hot = false;
         if (!sketchView) {
+            // The end already facing the eye (within 10 degrees) names the
+            // OPPOSITE view, so Bottom, Back and Left are one click away.
+            const bool facing = end.depth > 0.985f;
+            const fs::StandardView named = views[end.axis][(end.positive != facing) ? 0 : 1];
             const Rect target{end.sx - ui.px(12), end.sy - ui.px(12), ui.px(24), ui.px(24)};
             if (ui.iconButton(id, target, "", std::string(end.positive ? "" : "-") + letters[end.axis] +
-                                                  " \xC2\xB7 " + fs::standardViewName(views[end.axis][end.positive ? 0 : 1]) + " view")) {
-                setStandardView(static_cast<int>(views[end.axis][end.positive ? 0 : 1]));
+                                                  " \xC2\xB7 " + fs::standardViewName(named) + " view") &&
+                !cubeDragging_) {
+                setStandardView(static_cast<int>(named));
             }
             hot = target.contains(input_.mouseX, input_.mouseY);
         }
+        const float grow = hot ? ui.px(2) : 0.0f;
         if (end.positive) {
-            ui.circle(end.sx, end.sy, r + (hot ? ui.px(2) : 0.0f), colour);
+            ui.circle(end.sx, end.sy, r + grow, colour);
             ui.label({end.sx - r, end.sy - r, 2 * r, 2 * r}, letters[end.axis],
                      fsui::Color::hex(0xFF12110F), theme_.smallFontSize - 1.0f, true, true);
         } else {
-            ui.circle(end.sx, end.sy, r + (hot ? ui.px(2) : 0.0f), colour.alpha(0.45f));
+            // A labelled RING at the axis colour: the opposite end is a view
+            // too, and reads as one at rest.
+            ui.circle(end.sx, end.sy, r + grow, colour);
+            ui.circle(end.sx, end.sy, r + grow - ui.px(1.5f), theme_.surfaceFloating);
+            ui.label({end.sx - r, end.sy - r, 2 * r, 2 * r}, std::string("\xE2\x88\x92") + letters[end.axis],
+                     colour, theme_.smallFontSize - 3.0f, true, true);
         }
+    }
+    if (input_.mouseReleased[0]) {
+        cubePress_ = false;
+        cubeDragging_ = false;
     }
 }
 
@@ -1506,7 +1614,7 @@ void DesktopEditor::buildViewBar(const Rect& vp) {
     if (sketchView) return;  // the sketch's exact view owns the camera
     fsui::Ui& ui = *ui_;
     const float s = ui.px(32);
-    const int count = 6;
+    const int count = 7;
     const float w = count * (s + ui.px(2)) + ui.px(10) + ui.px(10);
     const Rect bar{vp.x + (vp.w - w) * 0.5f, vp.bottom() - s - ui.px(18), w, s + ui.px(8)};
     if (bar.x < vp.x) return;
@@ -1525,6 +1633,7 @@ void DesktopEditor::buildViewBar(const Rect& vp) {
     if (tool("vb_front", "ic_view_front", "Front view  Ctrl+2")) setStandardView(static_cast<int>(fs::StandardView::Front));
     if (tool("vb_top", "ic_view_top", "Top view  Ctrl+6")) setStandardView(static_cast<int>(fs::StandardView::Top));
     if (tool("vb_right", "ic_view_right", "Right view  Ctrl+5")) setStandardView(static_cast<int>(fs::StandardView::Right));
+    if (tool("vb_iso", "ic_view_iso", "Isometric view  Ctrl+8")) setStandardView(static_cast<int>(fs::StandardView::Isometric));
     ui.rect({x + ui.px(3), y + ui.px(6), 1.0f, s - ui.px(12)}, theme_.chromeHairline, 0);
     x += ui.px(8);
     if (tool("vb_projection", ortho ? "ic_projection_orthographic" : "ic_projection_perspective",
@@ -1737,7 +1846,7 @@ void DesktopEditor::buildProperties(const Rect& panel) {
                 report("Those dimensions were refused", true);
             }
         }
-        if (ui.button("make_cad_part", {x, y, w, fieldH}, "Make CAD part", "ic_op_new_body")) {
+        if (ui.button("make_cad_part", {x, y, w, fieldH}, "Make CAD part", "ic_cad_part")) {
             makeCadPart();
         }
         y += fieldH + ui.px(10);
@@ -1809,15 +1918,73 @@ void DesktopEditor::buildStatusBar(const Rect& bar) {
         std::lock_guard<std::mutex> lock(fs::editorStateMutex());
         sketchState = fs::sketchSession().state();
     }
-    const std::string hint =
-        sketchState == fs::SketchSessionState::Editing
-            ? "Left: draw \xC2\xB7 Middle drag: pan \xC2\xB7 Wheel: zoom \xC2\xB7 Enter: Finish sketch \xC2\xB7 Esc: end a run"
-        : sketchState == fs::SketchSessionState::Ready
-            ? "Click: choose a region \xC2\xB7 Drag the arrow: distance \xC2\xB7 Drag: orbit \xC2\xB7 Enter: Extrude"
-            : "Left drag: orbit \xC2\xB7 Middle or Shift+drag: pan \xC2\xB7 Wheel: zoom \xC2\xB7 Click: select";
-    const float hw = ui.textWidth(hint, theme_.smallFontSize);
-    ui.label({bar.right() - hw - ui.px(12), bar.y, hw, bar.h}, hint, theme_.textSecondary,
-             theme_.smallFontSize);
+    (void)sketchState;
+    // The status bar carries verdicts; how the mouse and the keys work is one
+    // click (or ?) away on the sheet, not a permanent line of instructions
+    // (`WORKBENCH-UX-R1`, "chrome reports, it does not instruct").
+    const std::string open = "Keyboard & mouse  ?";
+    const float hw = ui.textWidth(open, theme_.fontSize) + ui.px(24);
+    if (ui.button("sb_shortcuts", {bar.right() - hw - ui.px(6), bar.y + ui.px(2), hw, bar.h - ui.px(4)},
+                  open)) {
+        shortcutsOpen_ = !shortcutsOpen_;
+    }
+}
+
+void DesktopEditor::buildShortcutsSheet(int width, int height) {
+    if (!shortcutsOpen_) return;
+    fsui::Ui& ui = *ui_;
+    struct Line { const char* keys; const char* act; };
+    struct Group { const char* title; std::vector<Line> lines; };
+    const std::vector<Group> groups = {
+        {"Mouse", {{"Left drag", "Orbit (on a body handle: move it)"},
+                   {"Middle drag, Shift+drag", "Pan"},
+                   {"Wheel", "Zoom about the pointer"},
+                   {"Click", "Select a body"},
+                   {"Right click", "The body's menu"},
+                   {"Drag the view cube", "Turn the view"}}},
+        {"Views", {{"Ctrl+1 \xE2\x80\xA6 Ctrl+8", "Home, Front, Back, Left, Right, Top, Bottom, Isometric"},
+                   {"F", "Fit everything"},
+                   {"A view cube end facing you", "The opposite view"}}},
+        {"Sketch", {{"Shift+S", "New sketch"},
+                    {"V L P R C A S T", "Select, Line, Polyline, Rectangle, Circle, Arc, Spline, Trim"},
+                    {"Enter", "Finish sketch, then Extrude"},
+                    {"Esc", "End a run, then cancel"}}},
+        {"Project", {{"Ctrl+Z, Ctrl+Y", "Undo, Redo"},
+                     {"Ctrl+S, Ctrl+O, Ctrl+E", "Save, Open, Export GLB"},
+                     {"Delete", "Delete the selected body"}}},
+    };
+    const float rowH = ui.px(24), titleH = ui.px(30), pad = ui.px(20);
+    float contentH = 0;
+    for (const Group& g : groups) contentH += titleH + g.lines.size() * rowH + ui.px(8);
+    const float w = std::min(ui.px(760), width - ui.px(40));
+    const float h = std::min(contentH + 2 * pad + ui.px(30), height - ui.px(40));
+    const Rect sheet{(width - w) * 0.5f, (height - h) * 0.5f, w, h};
+    ui.panel(sheet);
+    ui.label({sheet.x + pad, sheet.y + pad - ui.px(4), w - 2 * pad, ui.px(26)}, "Keyboard and mouse",
+             theme_.textPrimary, theme_.panelTitleFontSize, true);
+    float y = sheet.y + pad + ui.px(30);
+    const float keyW = ui.px(250);
+    for (const Group& g : groups) {
+        ui.label({sheet.x + pad, y, w - 2 * pad, titleH}, g.title, theme_.textSecondary,
+                 theme_.smallFontSize, true);
+        y += titleH;
+        for (const Line& line : g.lines) {
+            ui.label({sheet.x + pad, y, keyW, rowH}, line.keys, theme_.textPrimary, theme_.fontSize, true);
+            ui.label({sheet.x + pad + keyW, y, w - 2 * pad - keyW, rowH}, line.act, theme_.textSecondary,
+                     theme_.fontSize);
+            y += rowH;
+        }
+        y += ui.px(8);
+    }
+    Rect toggle;
+    const bool onToggle = ui.widgetRect("sb_shortcuts", &toggle) &&
+                          toggle.contains(input_.mouseX, input_.mouseY);
+    const bool escape = std::find(input_.keys.begin(), input_.keys.end(), fsui::Key::Escape) !=
+                        input_.keys.end();
+    const bool clickedAway = (input_.mousePressed[0] || input_.mousePressed[1] ||
+                              input_.mousePressed[2]) &&
+                             !sheet.contains(input_.mouseX, input_.mouseY) && !onToggle;
+    if (escape || clickedAway) shortcutsOpen_ = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1975,6 +2142,10 @@ void DesktopEditor::sketchKeys() {
         for (char32_t c : input_.text) {
             if (c == U'f' || c == U'F') {
                 fitAll();
+                continue;
+            }
+            if (c == U'?') {  // the keyboard and mouse sheet
+                shortcutsOpen_ = !shortcutsOpen_;
                 continue;
             }
             if (c == U'S' && input_.shift && letterState == fs::SketchSessionState::Inactive &&

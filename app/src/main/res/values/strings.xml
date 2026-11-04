@@ -591,6 +591,9 @@
     <string name="primitive_plane">Plane</string>
     <string name="objects">Objects</string>
     <string name="inspector_shape_title_for_body">Exact Shape — %1$s</string>
+    <!-- WORKBENCH-UX-R1: a CAD Body's panel is titled by what the body IS, the
+         word the Browser and the desktop use, not by the primitive editor's title. -->
+    <string name="inspector_cad_title_for_body">CAD Body — %1$s</string>
     <string name="inspector_place_title_for_body">Exact Transform — %1$s</string>
     <!-- The `+`. It opens Add Primitive; it never creates a body by itself. -->
     <string name="add_body">Add body</string>
