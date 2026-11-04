@@ -84,9 +84,12 @@ final class CadFeatureEditorView extends LinearLayout
         final int smallGap = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
         final int sectionGap = EditorControlStyles.dimen(context, R.dimen.section_gap);
 
-        planeSummary = EditorControlStyles.titleText(context, R.id.cad_plane_summary, "");
+        // Facts about the part, not titles: body size, secondary ink.
+        planeSummary = EditorControlStyles.bodyText(context, R.id.cad_plane_summary, "");
+        planeSummary.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextSecondary));
         addView(planeSummary, EditorControlStyles.rowParams(0));
-        profileSummary = EditorControlStyles.titleText(context, R.id.cad_profile_summary, "");
+        profileSummary = EditorControlStyles.bodyText(context, R.id.cad_profile_summary, "");
+        profileSummary.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextSecondary));
         addView(profileSummary, EditorControlStyles.rowParams(smallGap));
 
         rectangleRow = buildRow(context, R.id.cad_row_rectangle, rectangleFields,
@@ -157,7 +160,12 @@ final class CadFeatureEditorView extends LinearLayout
         // the user types here, which is presentation and reaches no file.
         addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.measure_section)),
                 EditorControlStyles.rowParams(sectionGap));
-        measureText = EditorControlStyles.titleText(context, R.id.cad_mass_properties, "");
+        // A readout, not a title (`WORKBENCH-UX-R1`): body-size values in
+        // primary ink beside caption-size keys, on one tab stop, with tabular
+        // figures so the digits stand in columns.
+        measureText = EditorControlStyles.bodyText(context, R.id.cad_mass_properties, "");
+        measureText.setFontFeatureSettings("tnum");
+        measureText.setLineSpacing(EditorControlStyles.dimen(context, R.dimen.text_line_spacing), 1.0f);
         addView(measureText, EditorControlStyles.rowParams(smallGap));
         densityField = new NumericPropertyRow(context, R.id.field_density,
                 context.getString(R.string.label_density), true);
@@ -197,7 +205,8 @@ final class CadFeatureEditorView extends LinearLayout
         final LinearLayout.LayoutParams measureParams = EditorControlStyles.rowParams(gap);
         measureParams.width = LayoutParams.MATCH_PARENT;
         addView(measureDistance, measureParams);
-        measureDistanceText = EditorControlStyles.titleText(context, R.id.measure_distance_result, "");
+        measureDistanceText = EditorControlStyles.bodyText(context, R.id.measure_distance_result, "");
+        measureDistanceText.setFontFeatureSettings("tnum");
         addView(measureDistanceText, EditorControlStyles.rowParams(smallGap));
 
         addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.unit_selector)),
@@ -262,8 +271,8 @@ final class CadFeatureEditorView extends LinearLayout
             measureText.setText("");
             return;
         }
-        measureText.setText(MassPresentation.describe(getContext(), host.uiState().displayUnit(),
-                mass, density));
+        measureText.setText(EditorControlStyles.keyValueGrid(getContext(),
+                MassPresentation.rows(getContext(), host.uiState().displayUnit(), mass, density)));
     }
 
     /** Rewrites every field from the active CAD Body. A no-op for any other body. */

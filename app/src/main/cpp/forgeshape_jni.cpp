@@ -2364,6 +2364,21 @@ Java_com_forgeshape_app_NativeViewport_debugLastPointerEvent(JNIEnv* env, jclass
 #endif
 }
 
+// Whether hardware keys may drive the fixtures below: only when a developer
+// set `debug.forgeshape.debugkeys` to 1, and never in a release build.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_debugKeysEnabled(JNIEnv*, jclass) {
+#ifndef NDEBUG
+    char value[PROP_VALUE_MAX] = {0};
+    if (__system_property_get("debug.forgeshape.debugkeys", value) <= 0) {
+        return JNI_FALSE;
+    }
+    return (value[0] == '1' && value[1] == '\0') ? JNI_TRUE : JNI_FALSE;
+#else
+    return JNI_FALSE;
+#endif
+}
+
 // DEBUG-ONLY mesh fixture trigger.
 //
 // Compiled to a no-op in release, so no product surface, no exported component

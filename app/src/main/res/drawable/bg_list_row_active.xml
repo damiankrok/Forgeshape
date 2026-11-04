@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The selected LIST ROW (the active body in Objects): the selected-at-rest fill
+  and an indicator bar on its leading edge (`WORKBENCH-UX-R1`), the vertical
+  item's form of bg_control_active's bar.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <layer-list>
+        <item>
+            <shape android:shape="rectangle">
+                <solid android:color="?attr/fsAccentFillPressed" />
+                <corners android:radius="@dimen/radius_control" />
+            </shape>
+        </item>
+        <item android:gravity="start|center_vertical" android:width="3dp" android:height="20dp" android:start="3dp">
+            <shape android:shape="rectangle">
+                <solid android:color="?attr/fsTextPrimary" />
+                <corners android:radius="1.5dp" />
+            </shape>
+        </item>
+    </layer-list>
+    </item>
+    <item>
+        <layer-list>
+        <item>
+            <shape android:shape="rectangle">
+                <solid android:color="?attr/fsAccentFill" />
+                <corners android:radius="@dimen/radius_control" />
+            </shape>
+        </item>
+        <item android:gravity="start|center_vertical" android:width="3dp" android:height="20dp" android:start="3dp">
+            <shape android:shape="rectangle">
+                <solid android:color="?attr/fsTextPrimary" />
+                <corners android:radius="1.5dp" />
+            </shape>
+        </item>
+    </layer-list>
+    </item>
+</selector>

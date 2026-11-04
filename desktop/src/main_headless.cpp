@@ -227,8 +227,10 @@ int main(int argc, char** argv) {
           forgeshape::sketchSession().active() && !forgeshape::constructionScene().hasProject());
     // The ribbon gives the Model tab up to the Sketch tab while drawing.
     check("a_sketch_brings_the_sketch_tab_and_its_tools",
-          editor.widgetRect("ribbon_tab_Sketch", nullptr) && editor.widgetRect("sk_finish", nullptr) &&
+          editor.widgetRect("ribbon_tab_Sketch", nullptr) &&
               editor.widgetRect("sk_tool_3", nullptr) && !editor.widgetRect("rb_add_0", nullptr));
+    // An empty sketch has nothing to finish, so Finish is not drawn yet.
+    check("finish_is_withdrawn_while_the_sketch_is_empty", !editor.widgetRect("sk_finish", nullptr));
     editor.setSketchTool(forgeshape::sketchToolIndex(forgeshape::SketchTool::Line));
     drag(640, 300, 700, 300);
     const size_t afterLine = forgeshape::sketchSession().sketch().entities.size();
@@ -238,6 +240,8 @@ int main(int argc, char** argv) {
     editor.setSketchTool(forgeshape::sketchToolIndex(forgeshape::SketchTool::Rectangle));
     drag(700, 330, 900, 530);
     check("a_mouse_drag_draws_a_rectangle", forgeshape::sketchSession().sketch().entities.size() == 1);
+    frameWith(idle);
+    check("finish_appears_once_there_is_a_curve", editor.widgetRect("sk_finish", nullptr));
     snap("03-sketch-rectangle");
     editor.finishSketch();
     frameWith(idle);
@@ -324,8 +328,13 @@ int main(int argc, char** argv) {
     check("the_model_ribbon_is_back_after_the_sketch",
           editor.widgetRect("rb_new_sketch", nullptr) && editor.widgetRect("rb_add_0", nullptr));
     const bool viewTab = clickId("ribbon_tab_View");
-    const bool topClicked = viewTab && clickId("rb_view_top");
-    check("the_view_ribbon_top_command_looks_straight_down",
+    // One home per act (`WORKBENCH-UX-R1`): the views live on the view bar,
+    // the View tab keeps only what to show.
+    check("the_view_tab_carries_show_and_no_second_set_of_views",
+          viewTab && editor.widgetRect("rb_grid", nullptr) && !editor.widgetRect("rb_view_top", nullptr));
+    clickId("ribbon_tab_Model");
+    const bool topClicked = clickId("vb_top");
+    check("the_view_bar_top_command_looks_straight_down",
           topClicked && forgeshape::editorCamera().alignedViewActive());
     const auto eyeDirection = []() {
         const forgeshape::CameraSnapshot snap = forgeshape::editorCamera().snapshot();
@@ -376,6 +385,37 @@ int main(int argc, char** argv) {
     check("history_forward_redoes_it",
           forward && forgeshape::constructionHistory().undoDepth() == depth &&
               std::abs(redone.volume - pocketed.volume) < 1e-9);
+    check("undo_and_redo_have_one_home", !editor.widgetRect("tb_undo", nullptr) &&
+                                             editor.widgetRect("hist_back", nullptr) &&
+                                             !editor.widgetRect("cube_home", nullptr) &&
+                                             !editor.widgetRect("disp_grid", nullptr));
+    // A field draws without binary noise, and focusing then leaving one
+    // writes nothing.
+    check("a_field_draws_twelve_significant_digits",
+          fsui::Ui::formatFieldNumber(1.0000000000000002) == "1" &&
+              fsui::Ui::formatFieldNumber(0.0004) == "0.0004" &&
+              fsui::Ui::formatFieldNumber(-0.0) == "0" &&
+              fsui::Ui::formatFieldNumber(-98765.4321098) == "-98765.4321098" &&
+              fsui::Ui::formatFieldNumber(1.0e-7) == "0.0000001" &&
+              fsui::Ui::formatFieldNumber(2500000.0) == "2500000");
+    {
+        frameWith(idle);
+        const size_t depthBefore = forgeshape::constructionHistory().undoDepth();
+        fsui::Rect field;
+        const std::string fieldId =
+            "tf_" + std::to_string(forgeshape::constructionScene().activeBodyId()) + "_0";
+        const bool shown = editor.widgetRect(fieldId, &field) ||
+                           (frameWith(idle), editor.widgetRect(fieldId, &field));
+        if (shown) {
+            click(field.x + field.w * 0.5f, field.y + field.h * 0.5f);
+            fsui::InputState tab;
+            tab.keys.push_back(fsui::Key::Tab);
+            frameWith(tab);
+            frameWith(idle);
+        }
+        check("an_untouched_field_writes_nothing",
+              forgeshape::constructionHistory().undoDepth() == depthBefore);
+    }
     clickId("ribbon_tab_View");
     snap("07-view-ribbon");
     clickId("ribbon_tab_Model");

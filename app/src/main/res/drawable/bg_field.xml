@@ -5,7 +5,9 @@
 
   Both are deliberate. The field is RECESSED — `fsFieldSurface` sits below the
   panel around it rather than above it — because it is a well you type into
-  rather than a button you press, and the hairline is what closes that well. And
+  rather than a button you press, and the border is what closes that well — in
+  fsFieldBorder, at least 3:1 against the panel (`WORKBENCH-UX-R1`; the control
+  border it used to borrow measured 1.25:1 and the well read as a hole). And
   the focused state is the single place in the product where a 2 dp accent ring
   is spent: which field the keyboard is about to type into is the one question
   where an unmistakable answer outranks restraint.
@@ -26,7 +28,7 @@
             <corners android:radius="@dimen/radius_control" />
             <stroke
                 android:width="@dimen/control_border_width"
-                android:color="?attr/fsControlBorder" />
+                android:color="?attr/fsFieldBorder" />
         </shape>
     </item>
 </selector>

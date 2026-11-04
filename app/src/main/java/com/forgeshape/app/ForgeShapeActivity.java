@@ -410,6 +410,12 @@ public final class ForgeShapeActivity extends Activity {
                 && workspace.onHardwareShortcut(keyCode, event)) {
             return true;
         }
+        // The fixture keys below answer only when a developer asked for them
+        // (`debug.forgeshape.debugkeys`): a plain letter on the owner's
+        // keyboard cover is otherwise the key's own, never a stress mesh.
+        if (!NativeViewport.debugKeysEnabled()) {
+            return super.onKeyDown(keyCode, event);
+        }
         final int command;
         switch (keyCode) {
             case KeyEvent.KEYCODE_1: command = 1; break;  // Fixture A: baseline

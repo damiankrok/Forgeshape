@@ -30,6 +30,35 @@ final class MassPresentation {
                 + " kg";
     }
 
+    /**
+     * The same reading as key/value ROWS (`WORKBENCH-UX-R1`): what the Measure
+     * section lays out as an aligned two-column grid rather than a bold block.
+     */
+    static String[][] rows(Context context, LengthUnit unit, double[] mass, double density) {
+        final boolean closed = mass[NativeViewport.MASS_CLOSED] != 0.0;
+        final String size = unit.formatWithUnit(mass[NativeViewport.MASS_SIZE_X]) + " × "
+                + unit.formatWithUnit(mass[NativeViewport.MASS_SIZE_X + 1]) + " × "
+                + unit.formatWithUnit(mass[NativeViewport.MASS_SIZE_X + 2]);
+        final String area = LengthUnit.formatArea(unit, mass[NativeViewport.MASS_AREA]);
+        if (!closed) {
+            return new String[][] {
+                    {context.getString(R.string.measure_key_volume),
+                            context.getString(R.string.measure_value_open)},
+                    {context.getString(R.string.measure_key_area), area},
+                    {context.getString(R.string.measure_key_size), size}};
+        }
+        final double volume = mass[NativeViewport.MASS_VOLUME];
+        return new String[][] {
+                {context.getString(R.string.measure_key_volume), LengthUnit.formatVolume(unit, volume)},
+                {context.getString(R.string.measure_key_area), area},
+                {context.getString(R.string.measure_key_size), size},
+                {context.getString(R.string.measure_key_centre),
+                        unit.formatWithUnit(mass[NativeViewport.MASS_CENTROID_X]) + ", "
+                                + unit.formatWithUnit(mass[NativeViewport.MASS_CENTROID_X + 1]) + ", "
+                                + unit.formatWithUnit(mass[NativeViewport.MASS_CENTROID_X + 2])},
+                {context.getString(R.string.measure_key_mass), formatMass(volume * density)}};
+    }
+
     static String describe(Context context, LengthUnit unit, double[] mass, double density) {
         final boolean closed = mass[NativeViewport.MASS_CLOSED] != 0.0;
         final String size = context.getString(R.string.measure_size,

@@ -51,6 +51,7 @@
         <item name="fsControlSurface">@color/p1_control_surface</item>
         <item name="fsControlSurfacePressed">@color/p1_control_surface_pressed</item>
         <item name="fsControlBorder">@color/p1_control_border</item>
+        <item name="fsFieldBorder">@color/p1_field_border</item>
         <item name="fsFieldSurface">@color/p1_field_surface</item>
 
         <item name="fsAccent">@color/p1_accent</item>
@@ -94,6 +95,7 @@
         <item name="fsControlSurface">@color/p2_control_surface</item>
         <item name="fsControlSurfacePressed">@color/p2_control_surface_pressed</item>
         <item name="fsControlBorder">@color/p2_control_border</item>
+        <item name="fsFieldBorder">@color/p2_field_border</item>
         <item name="fsFieldSurface">@color/p2_field_surface</item>
 
         <item name="fsAccent">@color/p2_accent</item>
@@ -137,6 +139,7 @@
         <item name="fsControlSurface">@color/p3_control_surface</item>
         <item name="fsControlSurfacePressed">@color/p3_control_surface_pressed</item>
         <item name="fsControlBorder">@color/p3_control_border</item>
+        <item name="fsFieldBorder">@color/p3_field_border</item>
         <item name="fsFieldSurface">@color/p3_field_surface</item>
 
         <item name="fsAccent">@color/p3_accent</item>
@@ -194,6 +197,7 @@
         <item name="fsControlSurface">@color/p4_control_surface</item>
         <item name="fsControlSurfacePressed">@color/p4_control_surface_pressed</item>
         <item name="fsControlBorder">@color/p4_control_border</item>
+        <item name="fsFieldBorder">@color/p4_field_border</item>
         <item name="fsFieldSurface">@color/p4_field_surface</item>
 
         <item name="fsAccent">@color/p4_accent</item>
@@ -237,6 +241,7 @@
         <item name="fsControlSurface">@color/p5_control_surface</item>
         <item name="fsControlSurfacePressed">@color/p5_control_surface_pressed</item>
         <item name="fsControlBorder">@color/p5_control_border</item>
+        <item name="fsFieldBorder">@color/p5_field_border</item>
         <item name="fsFieldSurface">@color/p5_field_surface</item>
 
         <item name="fsAccent">@color/p5_accent</item>

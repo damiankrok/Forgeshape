@@ -443,7 +443,10 @@ final class FeatureHistoryView extends AnchoredSurfaceView {
         } else if (row.state == NativeViewport.TIMELINE_STATE_NOT_REGENERATED
                 || row.state == NativeViewport.TIMELINE_STATE_PENDING
                 || row.state == NativeViewport.TIMELINE_STATE_UNUSED) {
-            view.setAlpha(0.6f);
+            // Live content in secondary ink, never faded (`WORKBENCH-UX-R1`):
+            // 60 % alpha put the label at 2.1:1; the row's own mark carries the
+            // state by shape.
+            view.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextSecondary));
         }
         EditorControlStyles.setListRowActive(view, row.editing);
         final boolean live = chosen != null && row.editable();

@@ -273,6 +273,17 @@ void Ui::panel(const Rect& r) {
     block(r);
 }
 
+void Ui::dockedPanel(const Rect& r, int hairlineSide) {
+    rect(r, theme_.chromeSurface, 0);
+    switch (hairlineSide) {
+        case 1: rect({r.right() - 1.0f, r.y, 1.0f, r.h}, theme_.chromeHairline, 0); break;
+        case 2: rect({r.x, r.y, 1.0f, r.h}, theme_.chromeHairline, 0); break;
+        case 3: rect({r.x, r.y, r.w, 1.0f}, theme_.chromeHairline, 0); break;
+        default: break;
+    }
+    block(r);
+}
+
 void Ui::separator(float x, float y, float w) {
     rect({x, std::round(y), w, 1.0f}, theme_.chromeHairline, 0);
 }
@@ -333,41 +344,55 @@ bool Ui::button(const std::string& id, const Rect& r, const std::string& textVal
     return click;
 }
 
+void Ui::selectedMark(const Rect& r, bool leadingBar) {
+    rect(r, theme_.accentFill, px(theme_.radius));
+    if (leadingBar) {
+        const float h = std::min(px(16), r.h - px(8));
+        rect({r.x + px(2), r.y + (r.h - h) * 0.5f, std::max(2.0f, px(2.5f)), h}, theme_.textPrimary,
+             px(1.5f));
+    } else {
+        const float w = std::min(px(16), r.w - px(8));
+        rect({r.x + (r.w - w) * 0.5f, r.bottom() - px(4), w, std::max(2.0f, px(2.0f))},
+             theme_.textPrimary, px(1.0f));
+    }
+}
+
 bool Ui::iconButton(const std::string& id, const Rect& r, const std::string& iconName,
                     const std::string& tip, bool active, bool enabled) {
     const bool click = clicked(id, r, enabled);
     const bool over = enabled && hotId_ == id;
     const float radius = px(theme_.radius);
     if (active) {
-        rect(r, theme_.accent.alpha(0.22f), radius);
-        border(r, theme_.accent.alpha(0.55f), radius, 1.0f);
+        selectedMark(r, false);
     } else if (over) {
         rect(r, theme_.controlSurfacePressed.alpha(0.85f), radius);
     }
     const float s = px(theme_.iconSize);
-    const Color ink = !enabled ? theme_.textDisabled : active ? theme_.accent : theme_.textPrimary;
-    icon(iconName, {r.x + (r.w - s) * 0.5f, r.y + (r.h - s) * 0.5f, s, s}, ink);
+    const Color ink = !enabled ? theme_.textDisabled : theme_.textPrimary;
+    icon(iconName, {r.x + (r.w - s) * 0.5f, r.y + (r.h - s) * 0.5f - (active ? px(1) : 0.0f), s, s},
+         ink);
     if (over && !tip.empty()) tooltip(tip);
     return click;
 }
 
 bool Ui::ribbonButton(const std::string& id, const Rect& r, const std::string& iconName,
                       const std::string& caption, bool active, bool enabled,
-                      const std::string& tip) {
+                      const std::string& tip, bool primary) {
     const bool click = clicked(id, r, enabled);
     const bool over = enabled && hotId_ == id;
     const float radius = px(theme_.radius);
-    if (active) {
-        rect(r, theme_.accent.alpha(0.22f), radius);
-        border(r, theme_.accent.alpha(0.55f), radius, 1.0f);
+    Color ink = !enabled ? theme_.textDisabled : theme_.textPrimary;
+    if (primary && enabled) {
+        rect(r, over ? theme_.primaryFillPressed : theme_.accent, radius);
+        ink = theme_.textOnPrimary;
+    } else if (active) {
+        selectedMark(r, false);
     } else if (over) {
         rect(r, theme_.controlSurfacePressed.alpha(0.85f), radius);
     }
     const float s = px(24);
-    const Color ink = !enabled ? theme_.textDisabled : active ? theme_.accent : theme_.textPrimary;
     icon(iconName, {r.x + (r.w - s) * 0.5f, r.y + px(6), s, s}, ink);
-    label({r.x + px(2), r.y + px(34), r.w - px(4), px(16)}, caption,
-          enabled ? theme_.textPrimary : theme_.textDisabled, theme_.smallFontSize - 1.0f, false,
+    label({r.x + px(2), r.y + px(33), r.w - px(4), px(16)}, caption, ink, theme_.smallFontSize, false,
           true);
     if (over && !tip.empty()) tooltip(tip);
     return click;
@@ -377,11 +402,12 @@ bool Ui::tab(const std::string& id, const Rect& r, const std::string& textValue,
     const bool click = clicked(id, r, true);
     const bool over = hotId_ == id;
     if (active) {
-        rect(r, theme_.accent.alpha(0.18f), px(theme_.radius));
+        selectedMark(r, false);
     } else if (over) {
         rect(r, theme_.controlSurfacePressed.alpha(0.7f), px(theme_.radius));
     }
-    label(r, textValue, active ? theme_.accent : theme_.textPrimary, theme_.fontSize, active, true);
+    label({r.x, r.y - (active ? px(1) : 0.0f), r.w, r.h}, textValue,
+          active ? theme_.textPrimary : theme_.textSecondary, theme_.fontSize, active, true);
     return click;
 }
 
@@ -391,15 +417,15 @@ bool Ui::listRow(const std::string& id, const Rect& r, const std::string& textVa
     const bool over = hotId_ == id;
     const float radius = px(theme_.radius);
     if (selected) {
-        rect(r, theme_.accent.alpha(0.20f), radius);
+        selectedMark(r, true);
     } else if (over) {
         rect(r, theme_.controlSurfacePressed.alpha(0.6f), radius);
     }
-    float x = r.x + px(8);
+    float x = r.x + px(10);
     if (!iconName.empty()) {
         const float s = px(theme_.iconSize) * 0.8f;
         icon(iconName, {x, r.y + (r.h - s) * 0.5f, s, s},
-             selected ? theme_.accent : theme_.textSecondary);
+             selected ? theme_.textPrimary : theme_.textSecondary);
         x += s + px(8);
     }
     float detailW = 0;
@@ -408,21 +434,27 @@ bool Ui::listRow(const std::string& id, const Rect& r, const std::string& textVa
         label({r.right() - detailW - px(8), r.y, detailW, r.h}, detail, theme_.textSecondary,
               theme_.smallFontSize);
     }
-    label({x, r.y, r.right() - x - detailW - px(12), r.h}, textValue,
-          selected ? theme_.textPrimary : theme_.textPrimary, theme_.fontSize, selected);
+    // A selected row keeps its weight: the fill and the bar carry the state,
+    // so the label does not jump wider when it is chosen.
+    label({x, r.y, r.right() - x - detailW - px(12), r.h}, textValue, theme_.textPrimary,
+          theme_.fontSize, false);
     return click;
 }
 
 bool Ui::toggle(const std::string& id, const Rect& r, const std::string& textValue, bool* value) {
     const bool click = clicked(id, r, true);
     if (click) *value = !*value;
-    const float tw = px(34), th = px(18);
+    const float tw = px(36), th = px(20);
     const Rect track{r.right() - tw - px(4), r.y + (r.h - th) * 0.5f, tw, th};
-    rect(track, *value ? theme_.accent : theme_.fieldSurface, th * 0.5f);
-    border(track, theme_.controlBorder, th * 0.5f, 1.0f);
-    const float knob = th - px(4);
-    const float kx = *value ? track.right() - knob - px(2) : track.x + px(2);
-    rect({kx, track.y + px(2), knob, knob}, theme_.textPrimary, knob * 0.5f);
+    // ON: a textPrimary thumb at the trailing end on the selected fill; OFF: a
+    // textSecondary thumb on the field well. Shape and position carry the
+    // state, never the accent.
+    rect(track, *value ? theme_.accentFill : theme_.fieldSurface, th * 0.5f);
+    border(track, theme_.fieldBorder, th * 0.5f, 1.0f);
+    const float knob = th - px(6);
+    const float kx = *value ? track.right() - knob - px(3) : track.x + px(3);
+    rect({kx, track.y + px(3), knob, knob}, *value ? theme_.textPrimary : theme_.textSecondary,
+         knob * 0.5f);
     label({r.x, r.y, r.w - tw - px(12), r.h}, textValue, theme_.textPrimary, theme_.fontSize);
     return click;
 }
@@ -459,13 +491,33 @@ bool Ui::textField(const std::string& id, const Rect& r, std::string* value) {
         if (over && !editing) {
             editId_ = id;
             editBuffer_ = *value;
+            editInitial_ = *value;
             editCursor_ = decode(editBuffer_).size();
+            // Focus selects the whole value, so the first keystroke replaces
+            // it -- the Android fields' rule.
+            editSelectAll_ = true;
         } else if (!over && editing) {
             editCommitPending_ = true;
         }
     }
     if (editId_ == id) {
         std::u32string cps = decode(editBuffer_);
+        if (editSelectAll_) {
+            bool replaces = false;
+            for (char32_t ch : input_.text) replaces |= ch >= 0x20 && ch != 0x7F;
+            bool erases = false, moves = false;
+            for (Key k : input_.keys) {
+                erases |= k == Key::Backspace || k == Key::Delete;
+                moves |= k == Key::Left || k == Key::Right || k == Key::Home || k == Key::End;
+            }
+            if (replaces || erases) {
+                cps.clear();
+                editCursor_ = 0;
+                editSelectAll_ = false;
+            } else if (moves) {
+                editSelectAll_ = false;
+            }
+        }
         for (char32_t ch : input_.text) {
             if (ch >= 0x20 && ch != 0x7F) {
                 cps.insert(cps.begin() + std::min(editCursor_, cps.size()), ch);
@@ -491,13 +543,17 @@ bool Ui::textField(const std::string& id, const Rect& r, std::string* value) {
         editBuffer_ = encode(cps);
     }
     rect(r, theme_.fieldSurface, radius);
-    border(r, editId_ == id ? theme_.accent : over ? theme_.controlBorder : theme_.chromeHairline,
-           radius, editId_ == id ? 1.5f : 1.0f);
+    border(r, editId_ == id ? theme_.accent : over ? theme_.textSecondary : theme_.fieldBorder,
+           radius, editId_ == id ? 2.0f : 1.0f);
     const Rect inner{r.x + px(8), r.y, r.w - px(16), r.h};
     pushClip(inner);
     const std::string shown = editId_ == id ? editBuffer_ : *value;
+    if (editId_ == id && editSelectAll_ && !shown.empty()) {
+        const float sw = textWidth(shown, theme_.fontSize);
+        rect({inner.x - px(1), r.y + px(6), sw + px(2), r.h - px(12)}, theme_.accent.alpha(0.45f), 0);
+    }
     label(inner, shown, theme_.textPrimary, theme_.fontSize);
-    if (editId_ == id) {
+    if (editId_ == id && !editSelectAll_) {
         const std::u32string cps = decode(editBuffer_);
         const float caret = inner.x + textWidth(encode(cps.substr(0, editCursor_)), theme_.fontSize);
         rect({caret, r.y + px(7), std::max(1.0f, px(1.2f)), r.h - px(14)}, theme_.accent, 0);
@@ -511,19 +567,61 @@ bool Ui::textField(const std::string& id, const Rect& r, std::string* value) {
     return false;
 }
 
+std::string Ui::formatFieldNumber(double value) {
+    if (!std::isfinite(value)) return "0";
+    if (value == 0.0) return "0";  // and -0 is 0
+    // Twelve significant digits keep every digit a person types and drop the
+    // binary noise a derived double carries below them (1.0000000000000002).
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), "%.11e", value);
+    // buffer: [-]d.ddddddddddde[+-]XX
+    std::string digits;
+    bool negative = false;
+    const char* p = buffer;
+    if (*p == '-') {
+        negative = true;
+        ++p;
+    }
+    for (; *p != '\0' && *p != 'e'; ++p) {
+        if (*p != '.') digits.push_back(*p);
+    }
+    const int exponent = (*p == 'e') ? std::atoi(p + 1) : 0;
+    // The decimal point stands after digit (exponent + 1).
+    const int point = exponent + 1;
+    std::string intPart, fracPart;
+    if (point <= 0) {
+        intPart = "0";
+        fracPart = std::string(static_cast<size_t>(-point), '0') + digits;
+    } else if (point >= static_cast<int>(digits.size())) {
+        intPart = digits + std::string(static_cast<size_t>(point - static_cast<int>(digits.size())), '0');
+    } else {
+        intPart = digits.substr(0, static_cast<size_t>(point));
+        fracPart = digits.substr(static_cast<size_t>(point));
+    }
+    while (!fracPart.empty() && fracPart.back() == '0') fracPart.pop_back();
+    std::string out = negative ? "-" : "";
+    out += intPart;
+    if (!fracPart.empty()) out += "." + fracPart;
+    if (out == "-0") out = "0";
+    return out;
+}
+
 bool Ui::numberField(const std::string& id, const Rect& r, double* value, int decimals,
                      const std::string& unit) {
-    char buffer[64];
-    std::snprintf(buffer, sizeof(buffer), "%.*f", decimals, *value);
-    std::string text = buffer;
+    (void)decimals;
+    std::string text = formatFieldNumber(*value);
     const float unitW = unit.empty() ? 0.0f : textWidth(unit, theme_.smallFontSize) + px(10);
     const Rect field{r.x, r.y, r.w - unitW, r.h};
+    const bool wasEditing = editId_ == id;
+    const std::string initial = wasEditing ? editInitial_ : text;
     const bool committed = textField(id, field, &text);
     if (!unit.empty()) {
         label({field.right() + px(6), r.y, unitW, r.h}, unit, theme_.textSecondary,
               theme_.smallFontSize);
     }
-    if (!committed) return false;
+    // Untouched text is not a statement: Tab, Enter or a click away from a
+    // field that still reads what it showed submits nothing.
+    if (!committed || text == initial) return false;
     std::string normalised = text;
     std::replace(normalised.begin(), normalised.end(), ',', '.');
     char* end = nullptr;

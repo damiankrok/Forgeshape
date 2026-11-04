@@ -8,18 +8,41 @@
   crescent of rail showing at the top and bottom entries, and the hairline made
   the held tool read as an outlined box in a stack rather than as the one lit
   cell of one control.
+
+  And a leading INDICATOR BAR (`WORKBENCH-UX-R1`): the fill alone was a 1.2:1
+  lift, so the held tool is now also stated by a shape.
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
-        <shape android:shape="rectangle">
-            <solid android:color="?attr/fsAccentFillPressed" />
-            <corners android:radius="@dimen/radius_rail_entry" />
-        </shape>
+        <layer-list>
+        <item>
+            <shape android:shape="rectangle">
+                <solid android:color="?attr/fsAccentFillPressed" />
+                <corners android:radius="@dimen/radius_rail_entry" />
+            </shape>
+        </item>
+        <item android:gravity="start|center_vertical" android:width="3dp" android:height="20dp" android:start="2dp">
+            <shape android:shape="rectangle">
+                <solid android:color="?attr/fsTextPrimary" />
+                <corners android:radius="1.5dp" />
+            </shape>
+        </item>
+    </layer-list>
     </item>
     <item>
-        <shape android:shape="rectangle">
-            <solid android:color="?attr/fsAccentFill" />
-            <corners android:radius="@dimen/radius_rail_entry" />
-        </shape>
+        <layer-list>
+        <item>
+            <shape android:shape="rectangle">
+                <solid android:color="?attr/fsAccentFill" />
+                <corners android:radius="@dimen/radius_rail_entry" />
+            </shape>
+        </item>
+        <item android:gravity="start|center_vertical" android:width="3dp" android:height="20dp" android:start="2dp">
+            <shape android:shape="rectangle">
+                <solid android:color="?attr/fsTextPrimary" />
+                <corners android:radius="1.5dp" />
+            </shape>
+        </item>
+    </layer-list>
     </item>
 </selector>

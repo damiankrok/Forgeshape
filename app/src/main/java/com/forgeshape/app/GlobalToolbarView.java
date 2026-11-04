@@ -220,6 +220,11 @@ final class GlobalToolbarView extends LinearLayout {
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         contextLabel = EditorControlStyles.titleText(context, R.id.editing_context_label, "");
+        // The toolbar row is budgeted (ToolbarRowBudget) against the context
+        // label at its own size; a panel title's growth to 16 sp is not a
+        // reason to re-fit every phone's toolbar.
+        contextLabel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+                EditorControlStyles.dimen(context, R.dimen.text_toolbar_context));
         contextLabel.setSingleLine(true);
         contextLabel.setEllipsize(TextUtils.TruncateAt.END);
         contextLabel.setMaxWidth(

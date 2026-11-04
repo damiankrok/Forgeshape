@@ -41,10 +41,18 @@ namespace {
 
 constexpr const char* kTag = "ForgeShape";
 
-std::string formatNumber(double v, int decimals) {
+// A READ-ONLY measurement: six significant digits, never the fixed decimals
+// that print a 20 mm cube's volume as 0.000 m3, and -0 as 0.
+std::string formatMeasure(double v) {
+    if (!std::isfinite(v) || std::abs(v) < 1e-15) return "0";
     char buffer[64];
-    std::snprintf(buffer, sizeof(buffer), "%.*f", decimals, v);
-    return buffer;
+    std::snprintf(buffer, sizeof(buffer), "%.6g", v);
+    std::string out = buffer;
+    if (out.find('e') != std::string::npos) {
+        // Plain decimals only: re-express through the field rule.
+        out = fsui::Ui::formatFieldNumber(std::stod(out));
+    }
+    return out;
 }
 
 const char* representationIcon(fs::BodyRepresentation r) {
@@ -869,24 +877,26 @@ void DesktopEditor::buildInterface(int width, int height) {
     // the Properties panel beside the model, the History strip along the
     // bottom, and the view cube and view bar standing on the model.
     fsui::Ui& ui = *ui_;
-    const float pad = ui.px(theme_.panelInset);
     const float w = static_cast<float>(width);
     const Rect title{0, 0, w, ui.px(theme_.toolbarHeight)};
     const Rect ribbon{0, title.bottom(), w, ui.px(theme_.ribbonHeight)};
     const Rect status{0, height - ui.px(theme_.statusHeight), w, ui.px(theme_.statusHeight)};
-    const Rect history{pad, status.y - pad * 0.6f - ui.px(theme_.historyHeight), w - 2 * pad,
-                       ui.px(theme_.historyHeight)};
-    const float top = ribbon.bottom() + pad;
-    const float bottom = history.y - pad;
+    // The panels are DOCKED (`WORKBENCH-UX-R1`): flush to the window edges,
+    // square, opaque and unshadowed, as SolidCraft's and Fusion's are -- five
+    // floating cards with a gutter round each read as card soup, and the
+    // model showed through them.
+    const Rect history{0, status.y - ui.px(theme_.historyHeight), w, ui.px(theme_.historyHeight)};
+    const float top = ribbon.bottom();
+    const float bottom = history.y;
     float viewLeft = 0, viewRight = w;
     if (browserOpen_) {
-        const Rect browser{pad, top, ui.px(theme_.browserWidth), bottom - top};
+        const Rect browser{0, top, ui.px(theme_.browserWidth), bottom - top};
         buildBrowser(browser);
         viewLeft = browser.right();
     }
     if (propertiesOpen_) {
         const float pw = ui.px(theme_.propertiesWidth);
-        const Rect properties{w - pw - pad, top, pw, bottom - top};
+        const Rect properties{w - pw, top, pw, bottom - top};
         buildProperties(properties);
         viewRight = properties.x;
     }
@@ -902,7 +912,7 @@ void DesktopEditor::buildInterface(int width, int height) {
 void DesktopEditor::buildHome(int width, int height) {
     fsui::Ui& ui = *ui_;
     ui.rect({0, 0, static_cast<float>(width), static_cast<float>(height)},
-            fsui::Color::hex(0xFF262421), 0);
+            theme_.startPageSurface, 0);
     ui.block({0, 0, static_cast<float>(width), static_cast<float>(height)});
     const float w = ui.px(420), h = ui.px(360);
     const Rect card{(width - w) * 0.5f, (height - h) * 0.5f, w, h};
@@ -936,17 +946,18 @@ public:
         : ui_(ui), theme_(theme), area_(area), x_(area.x + ui.px(10)), groupStart_(x_) {}
 
     bool command(const std::string& id, const char* icon, const std::string& caption,
-                 bool active = false, bool enabled = true, const std::string& tip = std::string()) {
-        const float w = std::max(ui_.px(58), ui_.textWidth(caption, theme_.smallFontSize - 1.0f) +
-                                                 ui_.px(14));
-        const bool click = ui_.ribbonButton(id, {x_, area_.y, w, ui_.px(52)}, icon, caption, active,
-                                            enabled, tip);
+                 bool active = false, bool enabled = true, const std::string& tip = std::string(),
+                 bool primary = false) {
+        const float w = std::max(ui_.px(60), ui_.textWidth(caption, theme_.smallFontSize) +
+                                                 ui_.px(16));
+        const bool click = ui_.ribbonButton(id, {x_, area_.y, w, ui_.px(54)}, icon, caption, active,
+                                            enabled, tip, primary);
         x_ += w + ui_.px(2);
         return click;
     }
     void endGroup(const std::string& name) {
-        ui_.label({groupStart_, area_.y + ui_.px(52), x_ - groupStart_, ui_.px(14)}, name,
-                  theme_.textSecondary, theme_.smallFontSize - 1.5f, false, true);
+        ui_.label({groupStart_, area_.y + ui_.px(54), x_ - groupStart_, ui_.px(16)}, name,
+                  theme_.textSecondary, theme_.smallFontSize, false, true);
         ui_.rect({x_ + ui_.px(3), area_.y + ui_.px(6), 1.0f, area_.h - ui_.px(12)},
                  theme_.chromeHairline, 0);
         x_ += ui_.px(10);
@@ -991,24 +1002,20 @@ void DesktopEditor::buildTitleBar(const Rect& bar) {
         x += s + ui.px(2);
         return click;
     };
-    bool sketching = false, canUndo = false, canRedo = false;
+    bool sketching = false;
     {
         std::lock_guard<std::mutex> lock(fs::editorStateMutex());
         sketching = fs::sketchSession().active();
-        canUndo = sketching ? fs::sketchSession().canUndoSketchEdit()
-                            : fs::constructionHistory().canUndo();
-        canRedo = sketching ? fs::sketchSession().canRedoSketchEdit()
-                            : fs::constructionHistory().canRedo();
     }
-    gap();
+    // Undo and Redo have ONE home, the History strip's leading end, as its
+    // back and forward arrows (`WORKBENCH-UX-R1`); Ctrl+Z and Ctrl+Y are
+    // unchanged.
     if (!sketching) {
+        gap();
         if (tool("tb_open", "ic_project", "Open project\xE2\x80\xA6  Ctrl+O")) openProject();
         if (tool("tb_save", "ic_save", "Save project\xE2\x80\xA6  Ctrl+S")) saveProject();
         if (tool("tb_export", "ic_export", "Export GLB\xE2\x80\xA6  Ctrl+E")) exportGlb();
-        gap();
     }
-    if (tool("tb_undo", "ic_undo", "Undo  Ctrl+Z", false, canUndo)) undo();
-    if (tool("tb_redo", "ic_redo", "Redo  Ctrl+Y", false, canRedo)) redo();
 
     float rx = bar.right() - ui.px(10) - s;
     const auto right = [&](const char* id, const char* icon, const char* tip, bool active = false) {
@@ -1120,40 +1127,9 @@ void DesktopEditor::buildModelRibbon(const Rect& area) {
 }
 
 void DesktopEditor::buildViewRibbon(const Rect& area) {
+    // The standard views, Fit and the projection have ONE home, the view bar
+    // standing on the model; the panels' toggles stand at the title row's end.
     RibbonRow row(*ui_, theme_, area);
-    bool sketchView = false, ortho = false;
-    {
-        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
-        sketchView = fs::editorCamera().sketchViewActive();
-        ortho = fs::editorCamera().projectionMode() == fs::ProjectionMode::Orthographic;
-    }
-    // A sketch is drawn through its own exact view, which owns the camera:
-    // the views and the projection come back the moment it is finished.
-    if (!sketchView) {
-        if (row.command("rb_view_home", "ic_view_home", "Home")) setStandardView(0);
-        if (row.command("rb_view_fit", "ic_view_fit", "Fit", false, true, "Fit everything  F")) fitAll();
-        if (row.command("rb_view_front", "ic_view_front", "Front")) {
-            setStandardView(static_cast<int>(fs::StandardView::Front));
-        }
-        if (row.command("rb_view_top", "ic_view_top", "Top")) {
-            setStandardView(static_cast<int>(fs::StandardView::Top));
-        }
-        if (row.command("rb_view_right", "ic_view_right", "Right")) {
-            setStandardView(static_cast<int>(fs::StandardView::Right));
-        }
-        row.endGroup("Views");
-        const auto project = [&](fs::ProjectionMode mode) {
-            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
-            fs::editorCamera().setProjectionMode(mode);
-        };
-        if (row.command("rb_perspective", "ic_projection_perspective", "Perspective", !ortho)) {
-            project(fs::ProjectionMode::Perspective);
-        }
-        if (row.command("rb_orthographic", "ic_projection_orthographic", "Orthographic", ortho)) {
-            project(fs::ProjectionMode::Orthographic);
-        }
-        row.endGroup("Projection");
-    }
     fs::DisplaySettingsStore& display = fs::displaySettings();
     const fs::ViewportDisplaySettings settings = display.snapshot();
     if (row.command("rb_grid", "ic_view_grid", "Grid", settings.gridVisible)) {
@@ -1164,17 +1140,11 @@ void DesktopEditor::buildViewRibbon(const Rect& area) {
         display.setSelectionOutlineVisible(!settings.selectionOutlineVisible);
     }
     row.endGroup("Show");
-    if (row.command("rb_browser", "ic_panel_browser", "Browser", browserOpen_)) browserOpen_ = !browserOpen_;
-    if (row.command("rb_properties", "ic_precision", "Properties", propertiesOpen_)) {
-        propertiesOpen_ = !propertiesOpen_;
-    }
-    row.endGroup("Panels");
 }
 
 void DesktopEditor::buildHistoryStrip(const Rect& bar) {
     fsui::Ui& ui = *ui_;
-    ui.panel(bar);
-    ui.block(bar);
+    ui.dockedPanel(bar, 3);
     std::vector<fs::CadTimelineRow> rows;
     bool sketching = false, canUndo = false, canRedo = false;
     {
@@ -1213,7 +1183,7 @@ void DesktopEditor::buildHistoryStrip(const Rect& bar) {
         ui.label({x, bar.y, bar.right() - x - ui.px(12), bar.h},
                  sketching ? std::string("Sketching \xC2\xB7 Finish to add the step")
                            : std::string("The active body has no feature history"),
-                 theme_.textDisabled, theme_.smallFontSize);
+                 theme_.textSecondary, theme_.smallFontSize);
         return;
     }
     // The steps in construction order, newest at the right; when they do not
@@ -1234,8 +1204,11 @@ void DesktopEditor::buildHistoryStrip(const Rect& bar) {
         const bool failed = row.state == fs::CadTimelineRowState::Failed;
         const bool stale = row.state == fs::CadTimelineRowState::NotRegenerated;
         ui.rect(chip, theme_.controlSurface, ui.px(theme_.radius));
-        ui.border(chip, failed ? theme_.textError : theme_.controlBorder, ui.px(theme_.radius), 1.0f);
-        const fsui::Color ink = failed ? theme_.textError : stale ? theme_.textDisabled : theme_.textPrimary;
+        ui.border(chip, failed ? theme_.textError : theme_.fieldBorder.alpha(0.6f), ui.px(theme_.radius),
+                  1.0f);
+        // A step not rebuilt reads in secondary ink, not the disabled grey:
+        // it is live content, and the chip's own glyph carries the state.
+        const fsui::Color ink = failed ? theme_.textError : stale ? theme_.textSecondary : theme_.textPrimary;
         ui.icon(timelineRowIcon(row), {chip.x + ui.px(7), chip.y + (s - ui.px(18)) * 0.5f, ui.px(18),
                                        ui.px(18)}, ink);
         ui.label({chip.x + ui.px(30), chip.y, chip.w - ui.px(34), s}, timelineRowLabel(row), ink,
@@ -1309,12 +1282,6 @@ void DesktopEditor::buildViewCube(const Rect& vp) {
             ui.circle(end.sx, end.sy, r + (hot ? ui.px(2) : 0.0f), colour.alpha(0.45f));
         }
     }
-    if (!sketchView) {
-        const float s = ui.px(26);
-        if (ui.iconButton("cube_home", {box.x - s - ui.px(2), box.y, s, s}, "ic_view_home", "Home view")) {
-            setStandardView(0);
-        }
-    }
 }
 
 void DesktopEditor::buildViewBar(const Rect& vp) {
@@ -1359,13 +1326,13 @@ void DesktopEditor::buildViewBar(const Rect& vp) {
 
 void DesktopEditor::buildBrowser(const Rect& panel) {
     fsui::Ui& ui = *ui_;
-    ui.panel(panel);
-    const float inner = ui.px(10);
+    ui.dockedPanel(panel, 1);
+    const float inner = ui.px(theme_.panelInset);
     float y = panel.y + inner;
     const float x = panel.x + inner;
     const float w = panel.w - 2 * inner;
-    ui.label({x + ui.px(4), y, w, ui.px(22)}, "OBJECTS", theme_.textSecondary, theme_.titleFontSize, true);
-    y += ui.px(26);
+    ui.label({x, y, w, ui.px(22)}, "Objects", theme_.textPrimary, theme_.titleFontSize, true);
+    y += ui.px(28);
     const float rowH = ui.px(theme_.rowHeight);
     std::vector<std::pair<fs::ObjectId, fs::BodyRepresentation>> bodies;
     fs::ObjectId active = fs::kNoObject;
@@ -1396,8 +1363,8 @@ void DesktopEditor::buildBrowser(const Rect& panel) {
 
 void DesktopEditor::buildProperties(const Rect& panel) {
     fsui::Ui& ui = *ui_;
-    ui.panel(panel);
-    const float inner = ui.px(12);
+    ui.dockedPanel(panel, 2);
+    const float inner = ui.px(theme_.panelInset);
     const float x = panel.x + inner;
     const float w = panel.w - 2 * inner;
     float y = panel.y + inner;
@@ -1449,7 +1416,7 @@ void DesktopEditor::buildProperties(const Rect& panel) {
         }
     }
 
-    ui.label({x, y, w, ui.px(24)}, bodyLabel(active), theme_.textPrimary, 15, true);
+    ui.label({x, y, w, ui.px(24)}, bodyLabel(active), theme_.textPrimary, theme_.panelTitleFontSize, true);
     y += ui.px(24);
     ui.label({x, y, w, ui.px(18)}, representationLabel(representation), theme_.textSecondary,
              theme_.smallFontSize);
@@ -1464,12 +1431,14 @@ void DesktopEditor::buildProperties(const Rect& panel) {
     const auto section = [&](const char* title) {
         ui.separator(x, y, w);
         y += ui.px(10);
-        ui.label({x, y, w, ui.px(20)}, title, theme_.textSecondary, theme_.titleFontSize, true);
-        y += ui.px(24);
+        // A heading in sentence case, primary ink: it names the section, and
+        // an uppercase grey caption read as one more piece of chrome.
+        ui.label({x, y, w, ui.px(20)}, title, theme_.textPrimary, theme_.titleFontSize, true);
+        y += ui.px(26);
     };
     // Placement: the authored transform, typed. A face-supported part stands
     // where its producer's face puts it, so it has no placement of its own.
-    section("PLACEMENT");
+    section("Placement");
     if (derived) {
         ui.label({x, y, w, ui.px(20)}, "Placed by the face it stands on", theme_.textSecondary,
                  theme_.smallFontSize);
@@ -1508,7 +1477,7 @@ void DesktopEditor::buildProperties(const Rect& panel) {
     }
     // Shape: a Construction primitive's own parameters.
     if (hasPrimitive) {
-        section("SHAPE");
+        section("Shape");
         const auto field = [&](const char* name, double* value, const char* id) {
             ui.label({x, y, labelW, fieldH}, name, theme_.textPrimary, theme_.smallFontSize);
             const bool committed = ui.numberField(std::string(id) + std::to_string(active),
@@ -1563,46 +1532,24 @@ void DesktopEditor::buildProperties(const Rect& panel) {
         y += fieldH + ui.px(10);
     }
     // Measure: read off the mesh as drawn, never stored.
-    section("MEASURE");
+    section("Measure");
     if (measured) {
         const auto line = [&](const char* name, const std::string& value) {
             ui.label({x, y, labelW + ui.px(20), ui.px(22)}, name, theme_.textSecondary, theme_.smallFontSize);
             ui.label({x + labelW + ui.px(20), y, w - labelW - ui.px(20), ui.px(22)}, value,
-                     theme_.textMeasure, theme_.smallFontSize);
+                     theme_.textPrimary, theme_.fontSize);
             y += ui.px(22);
         };
         const fs::DVec3 size{mass.boundsMax.x - mass.boundsMin.x, mass.boundsMax.y - mass.boundsMin.y,
                              mass.boundsMax.z - mass.boundsMin.z};
-        line("Size", formatNumber(size.x, 3) + " \xC3\x97 " + formatNumber(size.y, 3) + " \xC3\x97 " +
-                         formatNumber(size.z, 3) + " m");
-        line("Area", formatNumber(mass.area, 4) + " m\xC2\xB2");
-        line("Volume", mass.closed ? formatNumber(mass.volume, 5) + " m\xC2\xB3" : std::string("open surface"));
+        line("Size", formatMeasure(size.x) + " \xC3\x97 " + formatMeasure(size.y) + " \xC3\x97 " +
+                         formatMeasure(size.z) + " m");
+        line("Area", formatMeasure(mass.area) + " m\xC2\xB2");
+        line("Volume", mass.closed ? formatMeasure(mass.volume) + " m\xC2\xB3" : std::string("open surface"));
         if (mass.closed) {
-            line("Centre", formatNumber(mass.centroid.x, 3) + ", " + formatNumber(mass.centroid.y, 3) +
-                               ", " + formatNumber(mass.centroid.z, 3));
+            line("Centre", formatMeasure(mass.centroid.x) + ", " + formatMeasure(mass.centroid.y) +
+                               ", " + formatMeasure(mass.centroid.z) + " m");
         }
-    }
-    y += ui.px(8);
-    // Display: presentation the core already owns.
-    section("DISPLAY");
-    fs::DisplaySettingsStore& display = fs::displaySettings();
-    const fs::ViewportDisplaySettings settings = display.snapshot();
-    bool grid = settings.gridVisible;
-    bool outline = settings.selectionOutlineVisible;
-    bool ortho = false;
-    {
-        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
-        ortho = fs::editorCamera().projectionMode() == fs::ProjectionMode::Orthographic;
-    }
-    if (ui.toggle("disp_grid", {x, y, w, fieldH}, "Grid", &grid)) display.setGridVisible(grid);
-    y += fieldH + ui.px(4);
-    if (ui.toggle("disp_outline", {x, y, w, fieldH}, "Selection outline", &outline))
-        display.setSelectionOutlineVisible(outline);
-    y += fieldH + ui.px(4);
-    if (ui.toggle("disp_ortho", {x, y, w, fieldH}, "Orthographic", &ortho)) {
-        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
-        fs::editorCamera().setProjectionMode(ortho ? fs::ProjectionMode::Orthographic
-                                                   : fs::ProjectionMode::Perspective);
     }
 }
 
@@ -1625,7 +1572,7 @@ void DesktopEditor::buildStatusBar(const Rect& bar) {
             ? "Click: choose a region \xC2\xB7 Drag the arrow: distance \xC2\xB7 Drag: orbit \xC2\xB7 Enter: Extrude"
             : "Left drag: orbit \xC2\xB7 Middle or Shift+drag: pan \xC2\xB7 Wheel: zoom \xC2\xB7 Click: select";
     const float hw = ui.textWidth(hint, theme_.smallFontSize);
-    ui.label({bar.right() - hw - ui.px(12), bar.y, hw, bar.h}, hint, theme_.textDisabled,
+    ui.label({bar.right() - hw - ui.px(12), bar.y, hw, bar.h}, hint, theme_.textSecondary,
              theme_.smallFontSize);
 }
 
@@ -1814,8 +1761,9 @@ void DesktopEditor::buildSketchRibbon(const Rect& area) {
     RibbonRow row(*ui_, theme_, area);
     fs::SketchSessionState state = fs::SketchSessionState::Inactive;
     fs::SketchTool current = fs::SketchTool::Select;
-    bool canUndo = false, canRedo = false, canExtrude = false, oneSide = false, selected = false;
+    bool canExtrude = false, oneSide = false, selected = false;
     bool choosing = false;
+    size_t entities = 0;
     fs::CadFeatureOperation operation = fs::CadFeatureOperation::NewBody;
     {
         std::lock_guard<std::mutex> lock(fs::editorStateMutex());
@@ -1823,8 +1771,7 @@ void DesktopEditor::buildSketchRibbon(const Rect& area) {
         choosing = fs::supportChooser().active();
         state = sketch.state();
         current = sketch.tool();
-        canUndo = sketch.canUndoSketchEdit();
-        canRedo = sketch.canRedoSketchEdit();
+        entities = sketch.sketch().entities.size();
         selected = !sketch.selectedEntityIds().empty();
         oneSide = sketch.extrude().extent == fs::ExtrudeExtentMode::OneSide;
         operation = sketch.operation();
@@ -1856,10 +1803,11 @@ void DesktopEditor::buildSketchRibbon(const Rect& area) {
             deleteActive();
         }
         row.endGroup("Modify");
-        if (row.command("sk_undo", "ic_undo", "Undo", false, canUndo)) undo();
-        if (row.command("sk_redo", "ic_redo", "Redo", false, canRedo)) redo();
-        row.endGroup("Edit");
-        if (row.command("sk_finish", "ic_sketch_keep", "Finish", true, true, "Finish sketch  Enter")) {
+        // The sketch's Undo / Redo are the History strip's arrows. Finish is
+        // the screen's ONE primary, drawn where native would accept it: a
+        // sketch with nothing in it has nothing to finish.
+        if (entities > 0 && row.command("sk_finish", "ic_sketch_keep", "Finish", false, true,
+                                        "Finish sketch  Enter", true)) {
             finishSketch();
         }
         if (row.command("sk_cancel", "ic_sketch_cancel", "Cancel", false, true, "Cancel sketch")) {
@@ -1868,8 +1816,11 @@ void DesktopEditor::buildSketchRibbon(const Rect& area) {
         row.endGroup("Sketch");
     } else if (state == fs::SketchSessionState::Ready) {
         // The operation's own glyph: what this Extrude will do to the part.
-        if (row.command("sk_extrude", operationIcon(operation), "Extrude", true, canExtrude,
-                        std::string("Extrude \xC2\xB7 ") + operationLabel(operation) + "  Enter")) {
+        // Withdrawn while the candidate would be refused: Properties names why.
+        if (canExtrude && row.command("sk_extrude", operationIcon(operation), "Extrude", false, true,
+                                      std::string("Extrude \xC2\xB7 ") + operationLabel(operation) +
+                                          "  Enter",
+                                      true)) {
             commitSketch();
         }
         if (oneSide && row.command("sk_flip", "ic_extrude_flip", "Flip", false, true,
@@ -1890,12 +1841,12 @@ void DesktopEditor::buildSketchRibbon(const Rect& area) {
 
 void DesktopEditor::buildChooserProperties(const Rect& panel) {
     fsui::Ui& ui = *ui_;
-    ui.panel(panel);
-    const float inner = ui.px(12);
+    ui.dockedPanel(panel, 2);
+    const float inner = ui.px(theme_.panelInset);
     const float x = panel.x + inner;
     const float w = panel.w - 2 * inner;
     float y = panel.y + inner;
-    ui.label({x, y, w, ui.px(24)}, "New sketch", theme_.textPrimary, 15, true);
+    ui.label({x, y, w, ui.px(24)}, "New sketch", theme_.textPrimary, theme_.panelTitleFontSize, true);
     y += ui.px(30);
     for (const std::string& line :
          wrapText(ui, "Click a plane or a flat face of a part in the view. Esc cancels.", w,
@@ -1906,7 +1857,7 @@ void DesktopEditor::buildChooserProperties(const Rect& panel) {
     y += ui.px(12);
     ui.separator(x, y, w);
     y += ui.px(10);
-    ui.label({x, y, w, ui.px(20)}, "PLANES", theme_.textSecondary, theme_.titleFontSize, true);
+    ui.label({x, y, w, ui.px(20)}, "Planes", theme_.textPrimary, theme_.titleFontSize, true);
     y += ui.px(24);
     const float h = ui.px(theme_.controlHeight);
     static const char* names[3] = {"XY plane", "XZ plane", "YZ plane"};
@@ -1921,8 +1872,8 @@ void DesktopEditor::buildChooserProperties(const Rect& panel) {
 
 void DesktopEditor::buildSketchProperties(const Rect& panel) {
     fsui::Ui& ui = *ui_;
-    ui.panel(panel);
-    const float inner = ui.px(12);
+    ui.dockedPanel(panel, 2);
+    const float inner = ui.px(theme_.panelInset);
     const float x = panel.x + inner;
     const float w = panel.w - 2 * inner;
     float y = panel.y + inner;
@@ -1970,8 +1921,10 @@ void DesktopEditor::buildSketchProperties(const Rect& panel) {
     const auto section = [&](const char* title) {
         ui.separator(x, y, w);
         y += ui.px(10);
-        ui.label({x, y, w, ui.px(20)}, title, theme_.textSecondary, theme_.titleFontSize, true);
-        y += ui.px(24);
+        // A heading in sentence case, primary ink: it names the section, and
+        // an uppercase grey caption read as one more piece of chrome.
+        ui.label({x, y, w, ui.px(20)}, title, theme_.textPrimary, theme_.titleFontSize, true);
+        y += ui.px(26);
     };
     const auto text = [&](const std::string& value, fsui::Color colour) {
         for (const std::string& line : wrapText(ui, value, w, theme_.smallFontSize)) {
@@ -1981,43 +1934,39 @@ void DesktopEditor::buildSketchProperties(const Rect& panel) {
     };
 
     if (state == fs::SketchSessionState::Editing) {
-        ui.label({x, y, w, ui.px(24)}, "Sketch", theme_.textPrimary, 15, true);
+        ui.label({x, y, w, ui.px(24)}, "Sketch", theme_.textPrimary, theme_.panelTitleFontSize, true);
         y += ui.px(24);
         ui.label({x, y, w, ui.px(18)},
                  onFace ? std::string("On a face of the part")
                         : std::string("On the ") + fs::workplaneName(plane) + " plane",
                  theme_.textSecondary, theme_.smallFontSize);
         y += ui.px(28);
-        section("TOOL");
+        section("Tool");
         for (const SketchToolEntry& entry : kSketchTools) {
             if (entry.tool != current) continue;
             ui.label({x, y, w, ui.px(20)}, entry.name, theme_.textPrimary, theme_.fontSize, true);
             y += ui.px(22);
             text(entry.hint, theme_.textSecondary);
         }
-        if (inRun) text("Placing a run \xC2\xB7 Esc ends it", theme_.textMeasure);
+        if (inRun) text("Placing a run \xC2\xB7 Esc ends it", theme_.textSecondary);
         y += ui.px(8);
-        ui.label({x, y, w, ui.px(18)}, "Curves: " + std::to_string(entities), theme_.textSecondary,
-                 theme_.smallFontSize);
-        y += ui.px(28);
-        if (ui.button("skp_finish", {x, y, w, h}, "Finish sketch", "ic_sketch_keep", true, entities > 0)) {
-            finishSketch();
-        }
-        y += h + ui.px(6);
-        if (ui.button("skp_cancel", {x, y, w, h}, "Cancel sketch", "ic_sketch_cancel")) cancelSketch();
+        ui.label({x, y, w, ui.px(18)},
+                 std::to_string(entities) + (entities == 1 ? " curve" : " curves"),
+                 theme_.textSecondary, theme_.smallFontSize);
+        // Finish and Cancel have one home, the ribbon's Sketch group.
         return;
     }
 
     // Ready: the extrusion, its extent, its distances and its operation.
-    ui.label({x, y, w, ui.px(24)}, "Extrude", theme_.textPrimary, 15, true);
+    ui.label({x, y, w, ui.px(24)}, "Extrude", theme_.textPrimary, theme_.panelTitleFontSize, true);
     y += ui.px(26);
     text(chosen ? std::to_string(areas) + (areas == 1 ? " region chosen" : " regions chosen") +
                       " \xC2\xB7 click to add or remove"
                 : std::string("Click a region in the view to choose it"),
-         chosen ? theme_.textSecondary : theme_.textMeasure);
+         theme_.textSecondary);
     y += ui.px(8);
 
-    section("EXTENT");
+    section("Extent");
     {
         std::vector<fs::ExtrudeExtentMode> modes = {fs::ExtrudeExtentMode::OneSide,
                                                     fs::ExtrudeExtentMode::Symmetric,
@@ -2077,13 +2026,13 @@ void DesktopEditor::buildSketchProperties(const Rect& panel) {
         default:
             // Through All and To Face derive their reach from the part.
             ui.label({x, y, w, ui.px(20)},
-                     "Reaches " + formatNumber(shown.depth, 3) + " m", theme_.textMeasure,
+                     "Reaches " + formatMeasure(shown.depth) + " m", theme_.textSecondary,
                      theme_.smallFontSize);
             y += ui.px(26);
             break;
     }
 
-    section("OPERATION");
+    section("Operation");
     {
         static const fs::CadFeatureOperation all[4] = {
             fs::CadFeatureOperation::NewBody, fs::CadFeatureOperation::Add,
@@ -2111,14 +2060,12 @@ void DesktopEditor::buildSketchProperties(const Rect& panel) {
         text("Cannot extrude: " + sketchStatusText(candidateStatus), theme_.textError);
         y += ui.px(6);
     }
-    if (ui.button("ext_commit", {x, y, w, h}, "Extrude", operationIcon(operation), true,
-                  chosen && candidateValid)) {
+    // A SECONDARY Extrude beside the typed values (the ribbon's is the one
+    // primary); Back and Cancel have one home, the ribbon's Sketch group.
+    if (chosen && candidateValid &&
+        ui.button("ext_commit", {x, y, w, h}, "Extrude", operationIcon(operation), false, true)) {
         commitSketch();
     }
-    y += h + ui.px(6);
-    if (ui.button("ext_back", {x, y, w, h}, "Back to sketch", "ic_sketch_back")) backToSketch();
-    y += h + ui.px(6);
-    if (ui.button("ext_cancel", {x, y, w, h}, "Cancel", "ic_sketch_cancel")) cancelSketch();
 }
 
 }  // namespace fsdesktop

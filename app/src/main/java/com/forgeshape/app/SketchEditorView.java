@@ -594,6 +594,10 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         lineRow.setVisibility(GONE);
         deleteEntity.setVisibility(selected ? VISIBLE : GONE);
         applyEntity.setEnabled(false);
+        // Apply is drawn only while there are exact values to apply
+        // (`WORKBENCH-UX-R1`): with nothing selected, a primary Apply that
+        // applied nothing was the panel's loudest control.
+        applyEntity.setVisibility(GONE);
         if (!selected) {
             entitySummary.setText(context.getString(R.string.sketch_no_selection));
             return;
@@ -607,12 +611,14 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
                 rectangleFields[0].setText(unit.format(nativeEntity[v + 2]));
                 rectangleFields[1].setText(unit.format(nativeEntity[v + 3]));
                 applyEntity.setEnabled(true);
+                applyEntity.setVisibility(VISIBLE);
                 break;
             case NativeViewport.SKETCH_ENTITY_KIND_CIRCLE:
                 entitySummary.setText(context.getString(R.string.tool_circle));
                 circleRow.setVisibility(VISIBLE);
                 circleFields[0].setText(unit.format(nativeEntity[v + 2]));
                 applyEntity.setEnabled(true);
+                applyEntity.setVisibility(VISIBLE);
                 break;
             case NativeViewport.SKETCH_ENTITY_KIND_LINE:
                 entitySummary.setText(context.getString(R.string.tool_line));
@@ -621,6 +627,7 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
                     lineFields[i].setText(unit.format(nativeEntity[v + i]));
                 }
                 applyEntity.setEnabled(true);
+                applyEntity.setVisibility(VISIBLE);
                 break;
             default:
                 entitySummary.setText(context.getString(R.string.sketch_polyline_summary,

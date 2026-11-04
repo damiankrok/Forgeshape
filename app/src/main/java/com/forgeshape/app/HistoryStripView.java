@@ -73,7 +73,10 @@ final class HistoryStripView extends LinearLayout {
             } else if (row.state == NativeViewport.TIMELINE_STATE_NOT_REGENERATED
                     || row.state == NativeViewport.TIMELINE_STATE_PENDING
                     || row.state == NativeViewport.TIMELINE_STATE_UNUSED) {
-                chip.setAlpha(0.6f);
+                // Live content in secondary ink, never faded (`WORKBENCH-UX-R1`):
+            // 60 % alpha put the label at 2.1:1; the row's own mark carries the
+            // state by shape.
+            chip.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextSecondary));
             }
             EditorControlStyles.setChipActive(chip, row.editing);
             if (row.editable()) {

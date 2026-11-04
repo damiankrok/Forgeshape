@@ -58,6 +58,11 @@
     <!-- An exact-value field, which is RECESSED into its panel rather than
          raised off it: a well you type into, not a button. -->
     <attr name="fsFieldSurface" format="color" />
+    <!-- A resting field's border (`WORKBENCH-UX-R1`): at least 3:1 against every
+         ground it borders in its palette (WCAG 1.4.11), where the control
+         border, at 1.25:1, left a field reading as a dark hole. The focused
+         field keeps the 2 dp accent ring. -->
+    <attr name="fsFieldBorder" format="color" />
 
     <!--
       The accent, split by JOB rather than by shade.

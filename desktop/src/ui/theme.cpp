@@ -44,6 +44,7 @@ bool Theme::loadOverrides(const std::string& path, std::string* report) {
         {"chromeHairline", &chromeHairline},         {"controlSurface", &controlSurface},
         {"controlSurfacePressed", &controlSurfacePressed},
         {"controlBorder", &controlBorder},           {"fieldSurface", &fieldSurface},
+        {"fieldBorder", &fieldBorder},               {"startPageSurface", &startPageSurface},
         {"accent", &accent},                         {"accentFill", &accentFill},
         {"primaryFillPressed", &primaryFillPressed}, {"textOnPrimary", &textOnPrimary},
         {"textPrimary", &textPrimary},               {"textSecondary", &textSecondary},
@@ -53,6 +54,7 @@ bool Theme::loadOverrides(const std::string& path, std::string* report) {
     const std::vector<std::pair<const char*, float*>> sizes = {
         {"fontSize", &fontSize},         {"smallFontSize", &smallFontSize},
         {"titleFontSize", &titleFontSize}, {"iconSize", &iconSize},
+        {"panelTitleFontSize", &panelTitleFontSize},
         {"controlHeight", &controlHeight}, {"rowHeight", &rowHeight},
         {"radius", &radius},             {"panelRadius", &panelRadius},
         {"spacing", &spacing},           {"toolbarHeight", &toolbarHeight},

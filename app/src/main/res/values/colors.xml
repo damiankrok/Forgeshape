@@ -74,6 +74,7 @@
     <color name="p1_control_border">#FF565149</color>
     <!-- A field is RECESSED rather than raised: a well you type into. -->
     <color name="p1_field_surface">#FF34322F</color>
+    <color name="p1_field_border">#FF9A9389</color>
     <color name="p1_selected_rest_pressed">#FF5C5A53</color>
     <color name="p1_accent_border">#734C8FD6</color>
     <color name="p1_primary_fill_pressed">#FF6BA3DF</color>
@@ -114,6 +115,7 @@
     <color name="p2_control_surface_pressed">#FF4A4F55</color>
     <color name="p2_control_border">#FF484D52</color>
     <color name="p2_field_surface">#FF292C2F</color>
+    <color name="p2_field_border">#FF8F969C</color>
     <color name="p2_selected_rest_pressed">#FF425264</color>
     <color name="p2_accent_border">#734C8FD6</color>
     <color name="p2_primary_fill_pressed">#FF6BA3DF</color>
@@ -151,6 +153,7 @@
     <color name="p3_control_surface_pressed">#FF63676A</color>
     <color name="p3_control_border">#FF5F6366</color>
     <color name="p3_field_surface">#FF404345</color>
+    <color name="p3_field_border">#FFB0B4B8</color>
     <color name="p3_selected_rest_pressed">#FF66717D</color>
     <color name="p3_accent_border">#734C8FD6</color>
     <color name="p3_primary_fill_pressed">#FF6BA3DF</color>
@@ -193,6 +196,7 @@
     <color name="p4_control_surface_pressed">#FFDDD5C6</color>
     <color name="p4_control_border">#FFD6CFC3</color>
     <color name="p4_field_surface">#FFE6DFD2</color>
+    <color name="p4_field_border">#FF776F63</color>
     <color name="p4_selected_rest_pressed">#FFC6D6E8</color>
     <color name="p4_accent_border">#734C8FD6</color>
     <color name="p4_primary_fill_pressed">#FF6BA3DF</color>
@@ -232,6 +236,7 @@
     <color name="p5_control_surface_pressed">#FFD6DCE3</color>
     <color name="p5_control_border">#FFC9D0D8</color>
     <color name="p5_field_surface">#FFDFE4EA</color>
+    <color name="p5_field_border">#FF6B747E</color>
     <color name="p5_selected_rest_pressed">#FFBFD1E5</color>
     <color name="p5_accent_border">#734C8FD6</color>
     <color name="p5_primary_fill_pressed">#FF6BA3DF</color>

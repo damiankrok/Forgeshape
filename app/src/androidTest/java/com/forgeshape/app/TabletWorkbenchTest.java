@@ -236,6 +236,67 @@ public final class TabletWorkbenchTest {
      * the strip is its History row's own act; all three step aside while a
      * sketch owns the viewport.
      */
+    /**
+     * `WORKBENCH-UX-R1`: nothing stands on the docked Properties panel. The
+     * sketch's orientation navigator and its actions column used to sit over
+     * the panel's Height field and its Apply; and opening Display used to hide
+     * the trailing host, so the panel slid into its place.
+     */
+    @Test
+    public void nothing_stands_on_the_docked_properties_and_display_moves_nothing() {
+        final int began = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int s = NativeViewport.sketchBegin(NativeViewport.WORKPLANE_XY);
+            workspace.onNativeStateChanged();
+            return s;
+        });
+        assertEquals(NativeViewport.CAD_OK, began);
+        settleLayout();
+        SystemClock.sleep(300);
+        settleLayout();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final android.graphics.Rect panel = windowRect(workspace.propertyInspector());
+            assertTrue("the Properties panel stands in a sketch",
+                    workspace.propertyInspector().isShown());
+            final View navigator = workspace.sketchNavigator();
+            assertTrue("the orientation navigator stands", navigator.isShown());
+            assertFalse("and not on the docked Properties panel: " + windowRect(navigator)
+                            + " vs " + panel,
+                    android.graphics.Rect.intersects(windowRect(navigator), panel));
+            final View modify = workspace.sketchModify();
+            if (modify.isShown()) {
+                assertFalse("nor does the sketch actions column: " + windowRect(modify),
+                        android.graphics.Rect.intersects(windowRect(modify), panel));
+            }
+            NativeViewport.sketchCancel();
+            workspace.onNativeStateChanged();
+            return null;
+        });
+        settleLayout();
+        final int[] before = new int[2];
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.propertyInspector().getLocationInWindow(before);
+            return null;
+        });
+        click(R.id.display_settings_button);
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue("Display opened", workspace.displayPopover().isOpen());
+            final int[] after = new int[2];
+            workspace.propertyInspector().getLocationInWindow(after);
+            assertEquals("opening Display moved the docked panel nowhere", before[0], after[0]);
+            assertTrue("the trailing tools stay", activity.findViewById(R.id.tool_rail_shape) == null
+                    || activity.findViewById(R.id.tool_rail_shape).isShown());
+            return null;
+        });
+        click(R.id.display_settings_button);
+    }
+
+    private static android.graphics.Rect windowRect(View view) {
+        final int[] at = new int[2];
+        view.getLocationInWindow(at);
+        return new android.graphics.Rect(at[0], at[1], at[0] + view.getWidth(),
+                at[1] + view.getHeight());
+    }
+
     @Test
     public void the_view_cube_the_view_bar_and_the_history_strip() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {

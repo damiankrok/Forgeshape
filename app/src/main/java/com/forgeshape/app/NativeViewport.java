@@ -2281,6 +2281,14 @@ final class NativeViewport {
      */
     static native boolean debugMeshCommand(int command);
 
+    /**
+     * Whether a hardware key may drive the debug fixtures (`WORKBENCH-UX-R1`):
+     * only when `adb shell setprop debug.forgeshape.debugkeys 1` asked for it,
+     * and never in a release build. Otherwise a plain E on a tablet's keyboard
+     * cover published a ~500k-vertex stress mesh over the user's work.
+     */
+    static native boolean debugKeysEnabled();
+
     // -----------------------------------------------------------------------
     // The sketch session and the CAD Body (CAD-R0-A1A2)
     // -----------------------------------------------------------------------

@@ -3404,7 +3404,10 @@ final class EditorWorkspaceView extends FrameLayout
                 uiState.precisionOpen(sculpting),
                 getContext().getString(precisionSurfaceName(sculpting)),
                 shortWindow,
-                displayPopover != null && displayPopover.isOpen(),
+                // Suppressed under the popover on a phone, where the popover
+                // stands where the host is; on a workbench it stands inboard
+                // of the host, which stays.
+                displayPopover != null && displayPopover.isOpen() && !workbench,
                 // Shape has no answer for an Imported Mesh, so the rail does
                 // not offer it for one. Asked from native truth rather than
                 // remembered, exactly like every other fact this snapshot
@@ -6111,8 +6114,20 @@ final class EditorWorkspaceView extends FrameLayout
             final ViewGroup.MarginLayoutParams params =
                     (ViewGroup.MarginLayoutParams) displayPopover.getLayoutParams();
             final int toolbarHeight = toolbar.getHeight();
-            if (toolbarHeight > 0 && params.topMargin != toolbarHeight) {
-                params.topMargin = toolbarHeight;
+            // On a workbench the popover stands INBOARD of the trailing host,
+            // over the docked Properties panel (the transient-menu exception),
+            // so opening it moves nothing (`WORKBENCH-UX-R1`): hiding the host
+            // let the panel slide into its place and the view bar re-centre.
+            final int rightMargin = workbench
+                    ? trailingHost.getWidth() + EditorControlStyles.dimen(getContext(),
+                            R.dimen.row_gap)
+                    : EditorControlStyles.dimen(getContext(), R.dimen.row_gap);
+            if ((toolbarHeight > 0 && params.topMargin != toolbarHeight)
+                    || params.rightMargin != rightMargin) {
+                if (toolbarHeight > 0) {
+                    params.topMargin = toolbarHeight;
+                }
+                params.rightMargin = rightMargin;
                 displayPopover.setLayoutParams(params);
             }
         }

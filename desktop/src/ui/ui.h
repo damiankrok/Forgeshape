@@ -86,6 +86,9 @@ public:
 
     // --- surfaces and widgets ---
     void panel(const Rect& r);
+    // A panel DOCKED to a window edge: square, unshadowed, opaque, with one
+    // hairline on the side it meets the model (0 none, 1 right, 2 left, 3 top).
+    void dockedPanel(const Rect& r, int hairlineSide);
     void separator(float x, float y, float w);
     bool button(const std::string& id, const Rect& r, const std::string& text,
                 const std::string& iconName = std::string(), bool primary = false,
@@ -94,18 +97,26 @@ public:
                     const std::string& tooltip, bool active = false, bool enabled = true);
     // A ribbon command: its icon over its caption, the caption ALWAYS drawn
     // (a ribbon says what each command is, as SolidCraft's and Shapr3D's do).
+    // `primary` is the screen's ONE commit (Finish, Extrude): the accent fill.
     bool ribbonButton(const std::string& id, const Rect& r, const std::string& iconName,
                       const std::string& caption, bool active = false, bool enabled = true,
-                      const std::string& tip = std::string());
+                      const std::string& tip = std::string(), bool primary = false);
     // A ribbon tab: its label, underlined when chosen.
     bool tab(const std::string& id, const Rect& r, const std::string& text, bool active);
     bool listRow(const std::string& id, const Rect& r, const std::string& text,
                  const std::string& iconName, bool selected, const std::string& detail = "");
     bool toggle(const std::string& id, const Rect& r, const std::string& text, bool* value);
     // A number field typed into; returns true on the frame its value is
-    // committed (Enter, Tab or a click elsewhere), with the parsed number.
+    // committed (Enter, Tab or a click elsewhere) AND the text differs from
+    // what it showed at focus, with the parsed number -- so focusing a field
+    // and leaving it writes nothing. The value is drawn at twelve significant
+    // digits, the same noise-free rule as Android's fields (`decimals` is
+    // kept for call sites and ignored).
     bool numberField(const std::string& id, const Rect& r, double* value, int decimals,
                      const std::string& unit);
+    // A value as a field draws it: <= 12 significant digits, no exponent,
+    // trailing zeros stripped, -0 as 0.
+    static std::string formatFieldNumber(double value);
     bool textField(const std::string& id, const Rect& r, std::string* value);
     void tooltip(const std::string& text);
 
@@ -116,6 +127,9 @@ private:
               float mode, float cx, float cy, float hw, float hh, float radius, float param,
               Color c);
     void flushCommand();
+    // The one selected treatment: the selected-at-rest fill and a textPrimary
+    // indicator bar, under a horizontal item or on a vertical one's leading edge.
+    void selectedMark(const Rect& r, bool leadingBar);
     bool editCommit(const std::string& id, std::string* committed);
 
     Atlas& atlas_;
@@ -135,6 +149,8 @@ private:
     std::string editBuffer_;
     size_t editCursor_ = 0;
     bool editCommitPending_ = false;
+    bool editSelectAll_ = false;    // the first keystroke replaces the text
+    std::string editInitial_;       // the text shown when the field took focus
     std::string tooltipText_;
     float tooltipX_ = 0, tooltipY_ = 0;
 };

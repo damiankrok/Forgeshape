@@ -40,7 +40,16 @@ struct Theme {
     Color controlSurfacePressed = Color::hex(0xFF565249);
     Color controlBorder = Color::hex(0xFF565149);
     Color fieldSurface = Color::hex(0xFF34322F);
+    // A resting field's border and a switch's track outline: at least 3:1
+    // against every ground it borders (WCAG 1.4.11), where the hairline is
+    // 1.25:1 and a field read as a dark hole.
+    Color fieldBorder = Color::hex(0xFF9A9389);
     Color accent = Color::hex(0xFF4C8FD6);
+    // The SELECTED-at-rest fill (Android's approved p1_selected_rest). A
+    // selected control is this fill, textPrimary ink and an indicator bar in
+    // textPrimary -- never an accent tint: the accent is spent on exactly two
+    // things, the ONE primary commit and the ring on a focused field
+    // (`WORKBENCH-UX-R1`, attrs.xml's own rule).
     Color accentFill = Color::hex(0xFF52504A);
     Color primaryFillPressed = Color::hex(0xFF6BA3DF);
     Color textOnPrimary = Color::hex(0xFF12110F);
@@ -51,24 +60,34 @@ struct Theme {
     Color textError = Color::hex(0xFFE8A093);
     Color textMeasure = Color::hex(0xFFE0A84B);
     Color shadow = Color::hex(0x66000000);
+    Color startPageSurface = Color::hex(0xFF262421);
+    // Ink rules: textDisabled is for DISABLED controls only. A live hint, an
+    // empty state and an enabled caption read in textSecondary; a measured
+    // value in textPrimary beside a textSecondary key; textMeasure is the
+    // on-canvas measure line alone.
 
     // Sizes, in density-independent pixels.
-    float fontSize = 13.5f;
+    // One type ramp, each size with a fixed job: caption 12, body 14, a
+    // section heading 14 bold in sentence case, a panel title 16 bold. No
+    // text is drawn below 12.
+    float fontSize = 14.0f;
     float smallFontSize = 12.0f;
-    float titleFontSize = 12.0f;
+    float titleFontSize = 14.0f;
+    float panelTitleFontSize = 16.0f;
     float iconSize = 20.0f;
     float controlHeight = 32.0f;
     float rowHeight = 30.0f;
-    float radius = 8.0f;
-    float panelRadius = 12.0f;
+    // Radii: a control 4, a floating overlay 8; a DOCKED panel has none.
+    float radius = 4.0f;
+    float panelRadius = 8.0f;
     float spacing = 8.0f;
     float toolbarHeight = 40.0f;   // the title row: file acts, Undo/Redo
-    float ribbonHeight = 96.0f;    // tabs, captioned commands, group names
+    float ribbonHeight = 100.0f;    // tabs, captioned commands, group names
     float historyHeight = 46.0f;   // the History strip along the bottom
     float statusHeight = 24.0f;
     float browserWidth = 264.0f;
     float propertiesWidth = 300.0f;
-    float panelInset = 10.0f;
+    float panelInset = 12.0f;   // padding INSIDE a docked panel, not a window gutter
     float shadowBlur = 16.0f;
 
     // Applies a theme file's overrides; unknown names and bad values are

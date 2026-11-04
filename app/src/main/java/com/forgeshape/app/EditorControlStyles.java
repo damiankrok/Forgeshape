@@ -163,6 +163,48 @@ final class EditorControlStyles {
         return view;
     }
 
+    /** A readout or a body line: primary ink at the body size, never bold. */
+    static TextView bodyText(Context context, int id, CharSequence text) {
+        final TextView view = new TextView(context);
+        view.setId(id);
+        view.setText(text);
+        applyRole(view, R.dimen.text_body, R.attr.fsTextPrimary, false);
+        return view;
+    }
+
+    /**
+     * Key/value rows as ONE text (`WORKBENCH-UX-R1`): each key in caption-size
+     * secondary ink, a tab, its value at the body size in primary ink, and one
+     * tab stop shared by every row, so the values stand in an aligned column
+     * whatever the keys' lengths.
+     */
+    static CharSequence keyValueGrid(Context context, String[][] rows) {
+        final android.text.SpannableStringBuilder out = new android.text.SpannableStringBuilder();
+        final android.text.TextPaint keyPaint = new android.text.TextPaint();
+        keyPaint.setTextSize(dimen(context, R.dimen.text_caption));
+        float widest = 0.0f;
+        for (String[] row : rows) {
+            widest = Math.max(widest, keyPaint.measureText(row[0]));
+        }
+        final int stop = Math.round(widest) + dimen(context, R.dimen.row_gap) * 2;
+        final int secondary = themeColor(context, R.attr.fsTextSecondary);
+        for (int i = 0; i < rows.length; i++) {
+            final int start = out.length();
+            out.append(rows[i][0]);
+            out.setSpan(new android.text.style.ForegroundColorSpan(secondary), start, out.length(),
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            out.setSpan(new android.text.style.AbsoluteSizeSpan(dimen(context, R.dimen.text_caption)),
+                    start, out.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            out.append('\t').append(rows[i][1]);
+            if (i + 1 < rows.length) {
+                out.append('\n');
+            }
+        }
+        out.setSpan(new android.text.style.TabStopSpan.Standard(stop), 0, out.length(),
+                android.text.Spanned.SPAN_INCLUSIVE_INCLUSIVE);
+        return out;
+    }
+
     /** Secondary prose: a status line, an option's one-line description. */
     static TextView captionText(Context context, int id, CharSequence text) {
         final TextView view = new TextView(context);
@@ -194,10 +236,11 @@ final class EditorControlStyles {
     static TextView sectionLabel(Context context, CharSequence text) {
         final TextView label = new TextView(context);
         label.setText(text);
-        applyRole(label, R.dimen.text_label, R.attr.fsTextSecondary, true);
-        // Kept, and reduced: tracking still separates a heading from the caption
-        // under it, and at sentence case it does not have to work as hard.
-        label.setLetterSpacing(0.04f);
+        // The heading role (`WORKBENCH-UX-R1`): 14 sp medium in PRIMARY ink, so
+        // a section's name is distinct from the 12 sp captions under it by
+        // size, weight and ink rather than by tracking alone -- the 11 sp grey
+        // headings and captions were the same size.
+        applyRole(label, R.dimen.text_heading, R.attr.fsTextPrimary, true);
         return label;
     }
 
@@ -449,7 +492,7 @@ final class EditorControlStyles {
      */
     static void setListRowActive(TextView row, boolean active) {
         row.setBackgroundResource(
-                active ? R.drawable.bg_control_active : R.drawable.bg_list_row);
+                active ? R.drawable.bg_list_row_active : R.drawable.bg_list_row);
         row.setActivated(active);
     }
 

@@ -71,16 +71,21 @@
          ===================================================================== -->
     <!-- The start chooser's headline. The only prominent type in the product. -->
     <dimen name="text_display">21sp</dimen>
-    <!-- A surface's own name: toolbar context, inspector title, option title. -->
-    <dimen name="text_title">15sp</dimen>
+    <!-- A surface's own name: toolbar context, inspector title, option title.
+         16 sp, so a panel's title is its largest text (`WORKBENCH-UX-R1`). -->
+    <dimen name="text_title">16sp</dimen>
+    <!-- The Global Toolbar's context label: the size its row budget was fitted at. -->
+    <dimen name="text_toolbar_context">15sp</dimen>
+    <!-- A section heading inside a surface: Extrude, Measure, Display unit. -->
+    <dimen name="text_heading">14sp</dimen>
     <!-- An exact value being typed. Larger than body on purpose. -->
     <dimen name="text_value">16sp</dimen>
     <!-- The default: chips, buttons, rail entries, summaries. -->
     <dimen name="text_body">14sp</dimen>
     <!-- Status lines, option descriptions, secondary prose. -->
     <dimen name="text_caption">12sp</dimen>
-    <!-- Section headings and field captions. -->
-    <dimen name="text_label">11sp</dimen>
+    <!-- Field captions: Width, Depth, Density. 12 sp, the caption floor. -->
+    <dimen name="text_label">12sp</dimen>
 
     <!-- Extra leading for anything that can wrap to a second line. -->
     <dimen name="text_line_spacing">3dp</dimen>
