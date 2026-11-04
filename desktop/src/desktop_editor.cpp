@@ -1899,13 +1899,19 @@ void DesktopEditor::buildProperties(const Rect& panel) {
         }
         const auto snapRow = [&](const char* name, const char* prefix, const double* steps,
                                  const char* const* labels, int count, bool move) {
-            ui.label({x, y, labelW, fieldH}, name, theme_.textPrimary, theme_.smallFontSize);
-            const float cellW = (w - labelW) / count - ui.px(3);
+            // A narrower name column than the fields' and centred steps with
+            // no row padding: five padded rows in the field column would not
+            // fit "10 cm" and would be drawn as an ellipsis.
+            const float nameW = ui.px(50);
+            ui.label({x, y, nameW, fieldH}, name, theme_.textPrimary, theme_.smallFontSize);
+            const float gap = ui.px(2);
+            const float cellW =
+                (w - nameW - gap * static_cast<float>(count - 1)) / static_cast<float>(count);
             for (int i = 0; i < count; ++i) {
                 const double current = move ? snap.translationMeters : snap.rotationDegrees;
-                const Rect cell{x + labelW + i * (cellW + ui.px(3)), y, cellW, fieldH};
-                if (ui.listRow(std::string(prefix) + std::to_string(i), cell, labels[i], "",
-                               current == steps[i])) {
+                const Rect cell{x + nameW + i * (cellW + gap), y, cellW, fieldH};
+                if (ui.tab(std::string(prefix) + std::to_string(i), cell, labels[i],
+                           current == steps[i])) {
                     std::lock_guard<std::mutex> lock(fs::editorStateMutex());
                     (move ? fs::gizmoSnapSettings().translationMeters
                           : fs::gizmoSnapSettings().rotationDegrees) = steps[i];
