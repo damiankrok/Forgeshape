@@ -409,8 +409,11 @@ public final class GlbImportExternalR1Test {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View importRow = workspace.findViewById(R.id.import_glb);
             assertNotNull("the import control exists by id", importRow);
-            assertEquals("Import GLB…",
+            // Since `INTERCHANGE-R1` the one row reads every mesh format.
+            assertEquals(activity.getString(R.string.import_glb),
                     ((android.widget.TextView) importRow).getText().toString());
+            assertTrue("the row names the formats it reads",
+                    ((android.widget.TextView) importRow).getText().toString().contains("STL"));
             return null;
         });
 

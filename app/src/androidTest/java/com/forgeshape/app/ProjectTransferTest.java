@@ -384,13 +384,11 @@ public final class ProjectTransferTest {
     @Test
     public void fsr1b18_noInterchangeFormatIsOfferedAnywhereInTheProjectSurface() {
         openProjectSurface();
-        // OBJ, FBX and the rest are absent in both directions and always were.
-        // GLB is deliberately NOT on this list any more: GLB-IMPORT-R0 added a
-        // named DIAGNOSTIC that reads a `.glb` back to check it, under
-        // ARCH-OWNER-08. What that changed is what the surface offers, not what
-        // the product supports, so the rest of this case tightened rather than
-        // relaxed — see below.
-        final String[] forbidden = {"gltf", "obj", "fbx", "stl", "collada", "dae", "usdz"};
+        // FBX and the rest are absent in both directions. GLB left this list
+        // with GLB-IMPORT-R0 and STL, OBJ, PLY and 3MF with `INTERCHANGE-R1`
+        // (OWNER 2026-11-04): the Import row reads every one of them. What
+        // stays forbidden is every format nothing in the product reads.
+        final String[] forbidden = {"gltf", "fbx", "collada", "dae", "usdz", "iges"};
         final StringBuilder visible = new StringBuilder();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             collectText(workspace.projectPopover(), visible);

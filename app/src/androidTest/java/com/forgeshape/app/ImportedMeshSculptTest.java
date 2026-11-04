@@ -514,7 +514,8 @@ public final class ImportedMeshSculptTest {
             final StringBuilder text = new StringBuilder();
             collectVisibleText(workspace.projectPopover(), text);
             final String surface = text.toString().toLowerCase(java.util.Locale.US);
-            assertFalse("no OBJ route is drawn", surface.contains("obj"));
+            // STL, OBJ, PLY and 3MF share the one import row since
+            // `INTERCHANGE-R1`; FBX is still read nowhere.
             assertFalse("no FBX route is drawn", surface.contains("fbx"));
             assertNotNull("and there is still exactly one import control",
                     workspace.findViewById(R.id.import_glb));

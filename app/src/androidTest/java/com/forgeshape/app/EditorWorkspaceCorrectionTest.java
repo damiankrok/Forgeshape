@@ -985,7 +985,7 @@ public final class EditorWorkspaceCorrectionTest {
             assertNotNull(chosen);
             assertTrue("precondition: the drafted primitive is drawn selected",
                     chosen.isActivated());
-            final GradientDrawable shape = shapeOf(chosen);
+            final GradientDrawable shape = selectedFillOf(chosen);
             assertNotNull("the selected background is a drawn shape", shape);
             assertNull("and it carries no stroke — the fill is the signal",
                     strokeColorOf(shape));
@@ -1460,6 +1460,26 @@ public final class EditorWorkspaceCorrectionTest {
             return null;
         }
         drawable = drawable.getCurrent();
+        return drawable instanceof GradientDrawable ? (GradientDrawable) drawable : null;
+    }
+
+    /**
+     * The FILL a selected control is drawn with.
+     *
+     * <p>Since `WORKBENCH-UX-R1` a selected control is a fill plus an indicator
+     * bar — a layer list whose bottom layer is the fill and whose top layer is a
+     * second solid shape, never a frame — so the fill is read off layer 0.
+     */
+    private static GradientDrawable selectedFillOf(View view) {
+        Drawable drawable = view.getBackground();
+        if (drawable == null) {
+            return null;
+        }
+        drawable = drawable.getCurrent();
+        if (drawable instanceof android.graphics.drawable.LayerDrawable
+                && ((android.graphics.drawable.LayerDrawable) drawable).getNumberOfLayers() > 0) {
+            drawable = ((android.graphics.drawable.LayerDrawable) drawable).getDrawable(0);
+        }
         return drawable instanceof GradientDrawable ? (GradientDrawable) drawable : null;
     }
 

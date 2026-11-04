@@ -660,7 +660,8 @@ public final class ImportedMeshDurableTest {
             return null;
         });
 
-        // And no OBJ or FBX route appeared beside the one GLB route.
+        // And no second import route appeared beside the one import row,
+        // which since `INTERCHANGE-R1` reads every mesh format; FBX is not one.
         openProjectSurface();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertNotNull("there is exactly one import control",
@@ -668,7 +669,6 @@ public final class ImportedMeshDurableTest {
             final StringBuilder text = new StringBuilder();
             collectVisibleText(workspace.projectPopover(), text);
             final String surface = text.toString().toLowerCase(java.util.Locale.US);
-            assertFalse("no OBJ route is drawn", surface.contains("obj"));
             assertFalse("no FBX route is drawn", surface.contains("fbx"));
             return null;
         });

@@ -461,7 +461,9 @@ public final class GlbImportPreviewTest {
             return null;
         });
         final String text = visible.toString().toLowerCase(java.util.Locale.US);
-        for (String forbidden : new String[]{"obj", "fbx", "stl", "collada", "dae", "usdz",
+        // STL, OBJ, PLY and 3MF are read since `INTERCHANGE-R1`; FBX and the
+        // rest are not, and nothing reads a material, a texture or an animation.
+        for (String forbidden : new String[]{"fbx", "collada", "dae", "usdz",
                 "material", "texture", "animation"}) {
             assertFalse("the project surface must not offer '" + forbidden + "': " + text,
                     text.contains(forbidden));
