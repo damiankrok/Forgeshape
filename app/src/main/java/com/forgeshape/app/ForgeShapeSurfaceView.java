@@ -78,7 +78,8 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
             }
             final int buttons = event.getButtonState();
             if ((buttons & MotionEvent.BUTTON_TERTIARY) != 0
-                    || ((buttons & MotionEvent.BUTTON_SECONDARY) != 0 && event.isShiftPressed())) {
+                    || ((buttons & MotionEvent.BUTTON_SECONDARY) != 0
+                            && (event.getMetaState() & android.view.KeyEvent.META_SHIFT_ON) != 0)) {
                 mouseNav = MOUSE_NAV_PAN;
             } else if ((buttons & MotionEvent.BUTTON_SECONDARY) != 0) {
                 mouseNav = MOUSE_NAV_ORBIT;

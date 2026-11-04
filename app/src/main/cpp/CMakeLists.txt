@@ -119,7 +119,10 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_selection_outline.cpp
     forgeshape_selection_pulse.cpp
     forgeshape_transform.cpp
-    forgeshape_renderer.cpp)
+    forgeshape_renderer.cpp
+    forgeshape_render_surface.cpp
+    forgeshape_editor_core.cpp
+    forgeshape_viewport_frame.cpp)
 
 # Self-test suites. Their only call sites are the `#ifndef NDEBUG` runners in
 # forgeshape_jni.cpp, so a release `.so` must not carry their code, their check

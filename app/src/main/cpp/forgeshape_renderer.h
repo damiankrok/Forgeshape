@@ -6,14 +6,10 @@
 // engine: one device, one swapchain, a fixed set of pipelines.
 #pragma once
 
-// Required before <vulkan/vulkan.h> to expose VkAndroidSurfaceCreateInfoKHR
-// and vkCreateAndroidSurfaceKHR.
-#ifndef VK_USE_PLATFORM_ANDROID_KHR
-#define VK_USE_PLATFORM_ANDROID_KHR
-#endif
-
-#include <android/native_window.h>
-#include <vulkan/vulkan.h>
+// The one platform seam: which window a swapchain is made for (an Android
+// ANativeWindow, a Win32 HWND or a headless desktop surface). It includes
+// <vulkan/vulkan.h> with the right platform define.
+#include "forgeshape_render_surface.h"
 
 #include <chrono>
 #include <cstdint>
@@ -138,7 +134,7 @@ public:
 
     // Binds the renderer to a live ANativeWindow. Creates (on first call) the
     // device, buffers and pipeline layout, then the surface-dependent objects.
-    bool attachSurface(ANativeWindow* window);
+    bool attachSurface(PlatformWindow window);
 
     // Releases every object that references the ANativeWindow. Safe to call
     // when no surface is attached.
@@ -167,6 +163,20 @@ public:
     // really reached the display instead of guessing a delay, which on a
     // software rasteriser with a four-image FIFO swapchain is seconds.
     uint64_t framesPresented() const { return frameIndex_; }
+
+#if !defined(__ANDROID__)
+    // DESKTOP ONLY (`DESKTOP-R1`): copies the NEXT presented frame back to the
+    // CPU as tightly packed RGBA8, top row first. What "Save view as image"
+    // and the headless CI check read; the Android build has no such path, so
+    // its frame is recorded exactly as before.
+    void requestFrameCapture() { captureRequested_ = true; }
+    bool frameCaptureReady() const { return captureReady_; }
+    const std::vector<uint8_t>& capturedFrame(uint32_t* width, uint32_t* height) const {
+        *width = captureWidth_;
+        *height = captureHeight_;
+        return captured_;
+    }
+#endif
 
 #ifndef NDEBUG
     // DEBUG-ONLY: makes the NEXT frame behave exactly as though the device had
@@ -607,7 +617,21 @@ private:
     float outlineWidthPixels_ = 0.0f;
 
     // Surface-dependent
-    ANativeWindow* window_ = nullptr;
+    PlatformWindow window_ = nullptr;
+#if !defined(__ANDROID__)
+    bool captureRequested_ = false;
+    bool captureRecorded_ = false;
+    bool captureReady_ = false;
+    uint32_t captureWidth_ = 0;
+    uint32_t captureHeight_ = 0;
+    std::vector<uint8_t> captured_;
+    VkBuffer captureBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory captureMemory_ = VK_NULL_HANDLE;
+    VkDeviceSize captureBufferSize_ = 0;
+    bool recordFrameCapture(VkCommandBuffer cmd, uint32_t imageIndex);
+    void readFrameCapture();
+    void destroyFrameCapture();
+#endif
     VkSurfaceKHR surface_ = VK_NULL_HANDLE;
     VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
     VkFormat swapchainFormat_ = VK_FORMAT_UNDEFINED;

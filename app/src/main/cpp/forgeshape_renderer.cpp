@@ -1,6 +1,6 @@
 #include "forgeshape_renderer.h"
 
-#include <android/log.h>
+#include "forgeshape_log.h"
 
 #include <algorithm>
 #include <chrono>
@@ -43,12 +43,11 @@ static const uint32_t kOutlineFragSpv[] =
     ;
 
 #define FS_TAG "ForgeShape"
-#define FS_LOGI(...) __android_log_print(ANDROID_LOG_INFO, FS_TAG, __VA_ARGS__)
-#define FS_LOGE(...) __android_log_print(ANDROID_LOG_ERROR, FS_TAG, __VA_ARGS__)
-#define FS_FAIL(reason)                                                    \
-    do {                                                                   \
-        __android_log_print(ANDROID_LOG_ERROR, FS_TAG,                     \
-                            "FORGESHAPE_NATIVE_VIEWPORT_FAIL:%s", reason); \
+#define FS_LOGI(...) FS_LOG_INFO(FS_TAG, __VA_ARGS__)
+#define FS_LOGE(...) FS_LOG_ERROR(FS_TAG, __VA_ARGS__)
+#define FS_FAIL(reason)                                                        \
+    do {                                                                       \
+        FS_LOG_ERROR(FS_TAG, "FORGESHAPE_NATIVE_VIEWPORT_FAIL:%s", reason);    \
     } while (0)
 
 #define FS_VK_CHECK(expr, reason)     \
@@ -259,7 +258,7 @@ bool Renderer::createInstance() {
 
     const char* extensions[] = {
         VK_KHR_SURFACE_EXTENSION_NAME,
-        VK_KHR_ANDROID_SURFACE_EXTENSION_NAME,
+        platformSurfaceExtensionName(),
     };
 
     VkInstanceCreateInfo createInfo{};
@@ -311,6 +310,9 @@ void Renderer::destroyDeviceScopedResources() {
         destroyMeshResources();
         destroyGridResources();
         destroyGizmoResources();
+#if !defined(__ANDROID__)
+        destroyFrameCapture();
+#endif
         destroySketchOverlayResources();
         destroyOutlineDeviceResources();
         if (vertShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, vertShader_, nullptr);
@@ -360,7 +362,7 @@ bool Renderer::rebuildDeviceAfterLoss() {
     // taken here and handed straight back to attachSurface, which takes
     // ownership of it. Without this the renderer would have to ask the Android
     // layer to re-deliver a Surface it never actually lost.
-    ANativeWindow* window = window_;
+    PlatformWindow window = window_;
     if (window == nullptr) {
         // No surface to come back to. Not a failure: the next attach builds a
         // fresh device anyway, because the teardown below clears device_.
@@ -369,7 +371,7 @@ bool Renderer::rebuildDeviceAfterLoss() {
         FS_LOGI("FORGESHAPE_%s:no_surface_to_restore", kRenderDeviceRebuiltToken);
         return true;
     }
-    ANativeWindow_acquire(window);
+    platformWindowAcquire(window);
 
     detachSurface();
     destroyDeviceScopedResources();
@@ -430,22 +432,24 @@ bool Renderer::handleFrameResult(int vkResultCode, const char* where) {
 // Surface attach / detach
 // ---------------------------------------------------------------------------
 
-bool Renderer::attachSurface(ANativeWindow* window) {
+bool Renderer::attachSurface(PlatformWindow window) {
     if (window == nullptr) {
         FS_FAIL("attachSurface_null_window");
         return false;
     }
     detachSurface();
 
-    window_ = window;  // takes ownership of the caller's ANativeWindow reference
+    window_ = window;  // takes ownership of the caller's window reference (Android)
 
-    VkAndroidSurfaceCreateInfoKHR surfaceInfo{};
-    surfaceInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
-    surfaceInfo.window = window_;
-    FS_VK_CHECK(vkCreateAndroidSurfaceKHR(instance_, &surfaceInfo, nullptr, &surface_),
-                "vkCreateAndroidSurfaceKHR");
-    FS_LOGI("Android Vulkan surface created (window %dx%d)",
-            ANativeWindow_getWidth(window_), ANativeWindow_getHeight(window_));
+    FS_VK_CHECK(platformCreateSurface(instance_, window_, &surface_),
+                "vkCreateSurface(platform)");
+    {
+        uint32_t w = 0;
+        uint32_t h = 0;
+        platformWindowSize(window_, &w, &h);
+        FS_LOGI("%s Vulkan surface created (window %dx%d)", platformSurfaceLabel(),
+                static_cast<int>(w), static_cast<int>(h));
+    }
 
     if (device_ == VK_NULL_HANDLE) {
         if (!pickPhysicalDeviceAndQueues()) return false;
@@ -494,12 +498,14 @@ void Renderer::detachSurface() {
     if (surface_ != VK_NULL_HANDLE) {
         vkDestroySurfaceKHR(instance_, surface_, nullptr);
         surface_ = VK_NULL_HANDLE;
-        FS_LOGI("Android Vulkan surface destroyed");
+        FS_LOGI("%s Vulkan surface destroyed", platformSurfaceLabel());
     }
     if (window_ != nullptr) {
-        ANativeWindow_release(window_);
+        platformWindowRelease(window_);
         window_ = nullptr;
+#if defined(__ANDROID__)
         FS_LOGI("ANativeWindow released");
+#endif
     }
 }
 
@@ -2100,10 +2106,13 @@ bool Renderer::createSwapchain() {
     FS_VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice_, surface_, &caps),
                 "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
 
+    uint32_t windowWidth = 0;
+    uint32_t windowHeight = 0;
+    platformWindowSize(window_, &windowWidth, &windowHeight);
     VkExtent2D extent = caps.currentExtent;
     if (extent.width == UINT32_MAX || extent.height == UINT32_MAX) {
-        extent.width = static_cast<uint32_t>(ANativeWindow_getWidth(window_));
-        extent.height = static_cast<uint32_t>(ANativeWindow_getHeight(window_));
+        extent.width = windowWidth;
+        extent.height = windowHeight;
     }
 
     // ------------------------------------------------------------------------
@@ -2186,6 +2195,13 @@ bool Renderer::createSwapchain() {
     info.imageExtent = extent;
     info.imageArrayLayers = 1;
     info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+#if !defined(__ANDROID__)
+    // The desktop can copy a presented frame back (requestFrameCapture); the
+    // Android swapchain asks for exactly what it always did.
+    if (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) {
+        info.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+#endif
     info.preTransform = preTransform;
     info.compositeAlpha = compositeAlpha;
     info.presentMode = VK_PRESENT_MODE_FIFO_KHR;  // always supported
@@ -2208,7 +2224,7 @@ bool Renderer::createSwapchain() {
     // regression never needs temporary instrumentation again.
     FS_LOGI("FORGESHAPE_SURFACE_CONFIG window=%dx%d currentExtent=%ux%u "
             "currentTransform=0x%x supportedTransforms=0x%x chosenExtent=%ux%u preTransform=0x%x",
-            ANativeWindow_getWidth(window_), ANativeWindow_getHeight(window_),
+            static_cast<int>(windowWidth), static_cast<int>(windowHeight),
             caps.currentExtent.width, caps.currentExtent.height,
             static_cast<unsigned>(caps.currentTransform),
             static_cast<unsigned>(caps.supportedTransforms), extent.width, extent.height,
@@ -3408,6 +3424,9 @@ bool Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     recordSketchOverlayDraw(cmd);
 
     vkCmdEndRenderPass(cmd);
+#if !defined(__ANDROID__)
+    captureRecorded_ = captureRequested_ && recordFrameCapture(cmd, imageIndex);
+#endif
     FS_VK_CHECK(vkEndCommandBuffer(cmd), "vkEndCommandBuffer");
     return true;
 }
@@ -3748,6 +3767,109 @@ Renderer::SelectionOutlineStats Renderer::selectionOutlineStats() const {
     return stats;
 }
 
+#if !defined(__ANDROID__)
+// ---------------------------------------------------------------------------
+// Frame capture (desktop only)
+// ---------------------------------------------------------------------------
+//
+// Recorded after the frame's own render pass, in the same command buffer: the
+// presented image is moved to TRANSFER_SRC, copied into one host-visible
+// buffer and moved back to PRESENT_SRC, so the frame that is presented is the
+// frame that is read. The buffer is grown once per size and reused.
+
+bool Renderer::recordFrameCapture(VkCommandBuffer cmd, uint32_t imageIndex) {
+    const VkDeviceSize bytes =
+        static_cast<VkDeviceSize>(swapchainExtent_.width) * swapchainExtent_.height * 4u;
+    if (bytes == 0) {
+        return false;
+    }
+    if (captureBufferSize_ != bytes) {
+        destroyFrameCapture();
+        if (!createBuffer(bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                          &captureBuffer_, &captureMemory_)) {
+            return false;
+        }
+        captureBufferSize_ = bytes;
+    }
+
+    VkImageMemoryBarrier toTransfer{};
+    toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toTransfer.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    toTransfer.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.image = swapchainImages_[imageIndex];
+    toTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    toTransfer.subresourceRange.levelCount = 1;
+    toTransfer.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &toTransfer);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.layerCount = 1;
+    region.imageExtent = {swapchainExtent_.width, swapchainExtent_.height, 1};
+    vkCmdCopyImageToBuffer(cmd, swapchainImages_[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           captureBuffer_, 1, &region);
+
+    VkImageMemoryBarrier toPresent = toTransfer;
+    toPresent.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    toPresent.dstAccessMask = 0;
+    toPresent.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &toPresent);
+    return true;
+}
+
+void Renderer::readFrameCapture() {
+    captureRecorded_ = false;
+    captureRequested_ = false;
+    // One frame's worth of waiting, on a path a user asked for explicitly.
+    vkQueueWaitIdle(graphicsQueue_);
+    void* mapped = nullptr;
+    if (vkMapMemory(device_, captureMemory_, 0, captureBufferSize_, 0, &mapped) != VK_SUCCESS) {
+        return;
+    }
+    const uint32_t w = swapchainExtent_.width;
+    const uint32_t h = swapchainExtent_.height;
+    captured_.resize(static_cast<size_t>(w) * h * 4u);
+    std::memcpy(captured_.data(), mapped, captured_.size());
+    vkUnmapMemory(device_, captureMemory_);
+    // A BGRA swapchain is handed back as RGBA, so a reader never asks.
+    const bool bgra = swapchainFormat_ == VK_FORMAT_B8G8R8A8_UNORM ||
+                      swapchainFormat_ == VK_FORMAT_B8G8R8A8_SRGB;
+    if (bgra) {
+        for (size_t i = 0; i < captured_.size(); i += 4) {
+            std::swap(captured_[i], captured_[i + 2]);
+        }
+    }
+    captureWidth_ = w;
+    captureHeight_ = h;
+    captureReady_ = true;
+}
+
+void Renderer::destroyFrameCapture() {
+    if (device_ == VK_NULL_HANDLE) {
+        return;
+    }
+    if (captureBuffer_ != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device_, captureBuffer_, nullptr);
+        captureBuffer_ = VK_NULL_HANDLE;
+    }
+    if (captureMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, captureMemory_, nullptr);
+        captureMemory_ = VK_NULL_HANDLE;
+    }
+    captureBufferSize_ = 0;
+}
+#endif
+
 bool Renderer::drawFrame() {
     if (surface_ == VK_NULL_HANDLE || device_ == VK_NULL_HANDLE) {
         return true;  // nothing to present yet
@@ -3868,8 +3990,13 @@ bool Renderer::drawFrame() {
         presentedThisSession_ = true;
         FS_LOGI("First frame submitted and presented (frame #%llu, %ux%u)",
                 (unsigned long long)frameIndex_, swapchainExtent_.width, swapchainExtent_.height);
-        __android_log_print(ANDROID_LOG_INFO, FS_TAG, "FORGESHAPE_NATIVE_VIEWPORT_OK");
+        FS_LOGI("FORGESHAPE_NATIVE_VIEWPORT_OK");
     }
+#if !defined(__ANDROID__)
+    if (captureRecorded_) {
+        readFrameCapture();
+    }
+#endif
 
     currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
     return true;

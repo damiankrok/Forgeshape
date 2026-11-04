@@ -40,7 +40,7 @@ fi
 SOURCES=()
 for src in "$CPP"/forgeshape_*.cpp; do
     case "$(basename "$src")" in
-        forgeshape_jni.cpp|forgeshape_renderer.cpp) continue ;;
+        forgeshape_jni.cpp|forgeshape_renderer.cpp|forgeshape_render_surface.cpp|forgeshape_viewport_frame.cpp) continue ;;
     esac
     SOURCES+=("$src")
 done

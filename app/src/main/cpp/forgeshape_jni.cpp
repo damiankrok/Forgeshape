@@ -94,6 +94,8 @@
 #include "forgeshape_render_recovery.h"
 #include "forgeshape_render_recovery_selftest.h"
 #include "forgeshape_renderer.h"
+#include "forgeshape_editor_core.h"
+#include "forgeshape_viewport_frame.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_scene_selftest.h"
 #include "forgeshape_sculpt.h"
@@ -232,9 +234,9 @@ std::atomic<int> g_outlineWidthPixelsCentis{0};
 // snapshot and then updates the selection: those two steps must see a
 // consistent state, and the render thread must not observe a torn one.
 // ---------------------------------------------------------------------------
-forgeshape::CameraController g_camera;
-forgeshape::SelectionController g_selection;
-std::mutex g_stateMutex;
+forgeshape::CameraController& g_camera = forgeshape::editorCamera();
+forgeshape::SelectionController& g_selection = forgeshape::editorSelection();
+std::mutex& g_stateMutex = forgeshape::editorStateMutex();
 
 // One-shot log tokens, so a live gesture never spams logcat.
 bool g_loggedOrbit = false;
@@ -2000,11 +2002,7 @@ void runMeshStress() {
 // the state lock by everything below.
 bool activeBodyDimensions(forgeshape::LocalBounds* outBounds,
                           forgeshape::BodyDimensions* outDimensions) {
-    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
-    if (!scene.hasProject()) {
-        return false;
-    }
-    return forgeshape::sceneBodyDimensions(scene.activeBodyId(), scene, outBounds, outDimensions);
+    return forgeshape::editorActiveBodyDimensions(outBounds, outDimensions);
 }
 
 // Whether the ACTIVE body is one Dimensions mode may stand on, right now.
@@ -2019,10 +2017,7 @@ bool activeBodyDimensions(forgeshape::LocalBounds* outBounds,
 // Called under g_stateMutex, like everything else that reads the scene.
 bool activeBodyDimensionsEditable(forgeshape::LocalBounds* outBounds,
                                   forgeshape::BodyDimensions* outDimensions) {
-    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
-    return activeBodyDimensions(outBounds, outDimensions) && scene.hasProject()
-        && forgeshape::bodySizeEditable(scene.activeBody())
-        && !forgeshape::sculptSession().inSculptMode();
+    return forgeshape::editorActiveBodyDimensionsEditable(outBounds, outDimensions);
 }
 
 // The Dimensions session, having first shut itself if its body left.
@@ -2063,98 +2058,6 @@ bool activeBodyDimensionAnchors(forgeshape::BodyDimensionLabelAnchors* out) {
     const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
     return forgeshape::bodyDimensionLabelAnchors(
         bounds, scene.activeBody().transform().values(), worldPerUnit, out);
-}
-
-// ---------------------------------------------------------------------------
-// The CAD operation preview (`CAD-VERTICAL-SLICE-R1`)
-// ---------------------------------------------------------------------------
-//
-// What an Add, a Cut or a New Body WILL make, drawn before it is committed. It
-// is the sketch session's own candidate evaluation -- the same regeneration
-// the commit applies -- handed to the RENDERER'S copy of the scene list only:
-// `viewSceneSnapshot()` stays exactly what picking, saving and export read, so
-// a preview can never be picked, saved, checkpointed or exported.
-//
-// Latest-only by construction: the evaluation is keyed by the candidate
-// revision and this runs once per frame, so a drag that moves forty times
-// between two frames costs at most one regeneration per frame and never
-// queues one per MotionEvent. The RuntimeMesh is rebuilt only when the
-// evaluation's revision changes, under a revision space of its own (high bit)
-// that no body's store can reach, so the renderer's revision-only upload gate
-// re-uploads on every change -- and again when the real mesh returns.
-constexpr forgeshape::ObjectId kCadNewBodyPreviewRenderKey = 1ull << 61;
-constexpr forgeshape::MeshRevision kCadPreviewRevisionBase = 1ull << 62;
-
-struct CadPreviewCache {
-    uint64_t evaluationRevision = 0;
-    forgeshape::ObjectId key = forgeshape::kNoObject;
-    forgeshape::RuntimeMeshPtr mesh;
-    forgeshape::MeshRevision nextRevision = kCadPreviewRevisionBase;
-};
-
-CadPreviewCache& cadPreviewCache() {
-    static CadPreviewCache cache;
-    return cache;
-}
-
-// Called with g_stateMutex held, on the render thread, on the list about to
-// be handed to the renderer.
-void applyCadOperationPreviewLocked(forgeshape::SceneSnapshot* list) {
-    forgeshape::SketchSession& session = forgeshape::sketchSession();
-    if (list == nullptr || session.state() != forgeshape::SketchSessionState::Ready) {
-        return;
-    }
-    const forgeshape::CadCandidateEvaluation& evaluation = session.evaluateCandidate();
-    if (evaluation.status != forgeshape::CadStatus::Ok || evaluation.mesh == nullptr) {
-        // An invalid candidate shows NO result -- never the last valid one --
-        // and the HUD names why.
-        return;
-    }
-    const forgeshape::ObjectId key = evaluation.targetBodyId != forgeshape::kNoObject
-                                             ? evaluation.targetBodyId
-                                             : kCadNewBodyPreviewRenderKey;
-    CadPreviewCache& cache = cadPreviewCache();
-    if (cache.mesh == nullptr || cache.evaluationRevision != evaluation.revision
-        || cache.key != key) {
-        const forgeshape::ConstructionMesh& m = evaluation.mesh->mesh;
-        forgeshape::RuntimeMeshPtr runtime = forgeshape::createRuntimeMesh(
-                key, cache.nextRevision++, m.vertices.data(),
-                static_cast<uint32_t>(m.vertices.size()), m.indices.data(),
-                static_cast<uint32_t>(m.indices.size()), nullptr, m.renderBothSides);
-        if (runtime == nullptr) {
-            return;
-        }
-        cache.mesh = std::move(runtime);
-        cache.evaluationRevision = evaluation.revision;
-        cache.key = key;
-    }
-    float tint[4];
-    forgeshape::cadOperationPreviewTint(evaluation.operation, tint);
-    if (evaluation.targetBodyId != forgeshape::kNoObject) {
-        // The target body is drawn AS its candidate: same key, same model.
-        for (forgeshape::SceneDrawItem& item : *list) {
-            if (item.objectId == evaluation.targetBodyId) {
-                item.mesh = cache.mesh;
-                std::copy(tint, tint + 4, item.previewTint);
-            }
-        }
-        return;
-    }
-    forgeshape::Mat4 model;
-    if (!session.candidateWorldModel(forgeshape::constructionScene(), &model)) {
-        return;
-    }
-    forgeshape::SceneDrawItem item;
-    item.objectId = key;
-    item.mesh = cache.mesh;
-    item.model = model;
-    if (!forgeshape::mat4AffineInverse(model, &item.inverseModel)) {
-        return;
-    }
-    item.normalModel = forgeshape::mat4NormalMatrix(model);
-    item.selected = false;
-    std::copy(tint, tint + 4, item.previewTint);
-    list->push_back(std::move(item));
 }
 
 void renderThreadMain() {
@@ -2242,156 +2145,29 @@ void renderThreadMain() {
         }
 
         if (renderer.hasSurface()) {
-            {
-                std::lock_guard<std::mutex> lock(g_stateMutex);
-                renderer.setCamera(g_camera.snapshot());
-                // One immutable snapshot of every renderable body: its own
-                // published mesh, its own derived model matrix and its own
-                // selection flag. Taken under the state mutex; the geometry
-                // work the renderer then does with it happens after the mutex
-                // is released, because the snapshot holds shared_ptrs rather
-                // than borrowing anything the scene could change underneath.
-                // WHICH scene is drawn. The imported preview is a diagnostic
-                // VIEW, so it replaces what the renderer is handed for the
-                // frame and changes nothing about the project: the scene it is
-                // standing in front of is untouched, still selected, still
-                // editable, and one call to setPreviewVisible(false) brings it
-                // straight back. The preview never merges with the project
-                // snapshot, because a mixed list is a list somebody would
-                // eventually pick, save or export from.
-                if (forgeshape::importedMeshPreview().visible()) {
-                    renderer.setScene(forgeshape::importedMeshPreview().snapshot());
-                } else {
-                    // The viewport's ONE list: the scene under whatever
-                    // restriction the Sculpt session holds (Sculpt Isolate).
-                    // Taps pick against the same function, so an isolated-out
-                    // body is neither drawn nor pickable, and the selection
-                    // outline's mask pass follows because it draws this list.
-                    forgeshape::SceneSnapshot list = forgeshape::viewSceneSnapshot();
-                    applyCadOperationPreviewLocked(&list);
-                    renderer.setScene(std::move(list));
+            // The ONE frame composition both shells draw (`DESKTOP-R1`). What
+            // still lives here -- the Fillet / Chamfer and Hole offers and the
+            // Measure reading -- reaches the one overlay slot through the
+            // shell source, under the same mutex and from the same instant.
+            forgeshape::ViewportFrameSources sources;
+            sources.shellOverlay = [](bool sketchActive) {
+                // Outside a sketch the one slot may carry the Fillet /
+                // Chamfer offer's edge highlight (`CAD-EDGE-FINISH-R1`).
+                forgeshape::SketchOverlayPtr edgeHighlight;
+                if (!sketchActive) {
+                    edgeHighlight = edgeFinishOfferOverlayLocked();
                 }
-                // Taken under the SAME mutex and from the same instant as the
-                // camera and the scene, so the pivot the handles are drawn
-                // around is the placement this frame's body is drawn at. Taking
-                // it separately is exactly how a handle would lag a drag by a
-                // frame.
-                //
-                // Handles are withdrawn while the preview is shown, for the
-                // same reason the editing controls are: a gizmo drawn over an
-                // imported mesh would be pointing at a body that is not on the
-                // screen, and dragging it would move something invisible.
-                //
-                // They are withdrawn in Dimensions mode for a related reason
-                // (Stage 020M): the leaders and the handles are two instruments
-                // for the same placement, and drawing both would invite a drag
-                // in a mode whose whole point is an exact typed value. The
-                // session already turned the gizmo off when it opened; this is
-                // the frame's own answer, so a mode entered mid-drag cannot
-                // leave one standing.
-                if (forgeshape::importedMeshPreview().visible()
-                    || forgeshape::bodyDimensionSession().active()) {
-                    renderer.setGizmo(forgeshape::GizmoSnapshot{});
-                } else if (forgeshape::freeformEditSession().active()) {
-                    // The cage's own instrument at the selection, on the
-                    // gizmo's terms (`MODELING-FOUNDATIONS-R1` B).
-                    renderer.setGizmo(forgeshape::freeformEditSession().gizmoSnapshot(
-                        g_camera.snapshot(), g_camera.viewportWidth(), g_camera.viewportHeight()));
-                } else {
-                    renderer.setGizmo(forgeshape::gizmoSession().snapshot(
-                        g_camera.snapshot(), g_camera.viewportWidth(),
-                        g_camera.viewportHeight()));
+                // ...or a measurement's points and line (`CAD-MEASURE-R1`),
+                // its crosses 14 px across at the first point's depth.
+                if (!edgeHighlight && measureLiveLocked() && g_measure.count > 0) {
+                    float metersPerPixel = 0.0f;
+                    forgeshape::worldMetersPerPixel(g_camera.snapshot(), g_measure.a,
+                                                    g_camera.viewportHeight(), &metersPerPixel);
+                    edgeHighlight = forgeshape::measureOverlay(g_measure, 14.0f * metersPerPixel);
                 }
-                // The sketch overlay, from the same instant. Sized by the same
-                // camera-derived world-per-unit the gizmo uses, so the snap
-                // marker reads at the same size the handles do. Empty -- and
-                // therefore free -- whenever no sketch is in progress.
-                {
-                    float worldPerUnit = 0.0f;
-                    forgeshape::gizmoWorldScale(g_camera.snapshot(),
-                                                forgeshape::Vec3{0.0f, 0.0f, 0.0f},
-                                                g_camera.viewportHeight(), &worldPerUnit);
-                    // The spatial support chooser and the sketch never both run:
-                    // the chooser draws the plane/face targets, then the sketch
-                    // it starts draws the entities. When neither is active the
-                    // overlay is empty and free.
-                    //
-                    // Dimensions mode is the third producer for the same one
-                    // slot, and it borrows the whole path rather than adding a
-                    // second: a body's dimension leaders and a sketch's
-                    // dimension annotation are the same kind of drawing, so the
-                    // renderer needed no change for either. The three are
-                    // mutually exclusive by construction -- a sketch cannot be
-                    // open over a body being measured, because the mode refuses
-                    // to open in Sculpt and creation is refused in a sketch.
-                    forgeshape::freeformEditSession().reconcile();
-                    if (forgeshape::supportChooser().active()) {
-                        renderer.setSketchOverlay(forgeshape::supportChooser().overlay());
-                    } else if (forgeshape::freeformEditSession().active()) {
-                        // The cage over the smooth surface: a fourth producer
-                        // for the one overlay slot, in its own revision space.
-                        renderer.setSketchOverlay(
-                            forgeshape::freeformEditSession().overlay(worldPerUnit));
-                    } else if (forgeshape::bodyDimensionSession().active()) {
-                        forgeshape::LocalBounds bounds;
-                        const forgeshape::ConstructionScene& scene =
-                            forgeshape::constructionScene();
-                        // The ONE predicate, asked here and by every chrome
-                        // read, so a frame and a refresh can never disagree
-                        // about whether the mode still has a body.
-                        const bool measurable = activeBodyDimensionsEditable(&bounds, nullptr);
-                        if (measurable) {
-                            renderer.setSketchOverlay(forgeshape::bodyDimensionSession().overlay(
-                                bounds, scene.activeBody().transform().values(), worldPerUnit));
-                        } else {
-                            // The mode CLOSES itself the moment what it measures
-                            // stops being measurable -- another body selected,
-                            // this one locked, hidden or deleted, Sculpt entered,
-                            // the project closed. One place decides that, every
-                            // frame, so no caller has to remember to unwind it
-                            // and the shell's next refresh simply finds the mode
-                            // shut.
-                            forgeshape::bodyDimensionSession().close();
-                            renderer.setSketchOverlay(forgeshape::SketchOverlayPtr{});
-                        }
-                    } else {
-                        // The manipulator's ONE scale fact for this frame, read
-                        // at its own base anchor rather than at the origin the
-                        // grid and the snap marker are sized from, so the drawn
-                        // head is the head the hit test grabs.
-                        forgeshape::SketchSession& session = forgeshape::sketchSession();
-                        // Outside a sketch the one slot may carry the Fillet /
-                        // Chamfer offer's edge highlight (`CAD-EDGE-FINISH-R1`).
-                        forgeshape::SketchOverlayPtr edgeHighlight;
-                        if (!session.active()) {
-                            edgeHighlight = edgeFinishOfferOverlayLocked();
-                        }
-                        // ...or a measurement's points and line (`CAD-MEASURE-R1`),
-                        // its crosses 14 px across at the first point's depth.
-                        if (!edgeHighlight && measureLiveLocked() && g_measure.count > 0) {
-                            float metersPerPixel = 0.0f;
-                            forgeshape::worldMetersPerPixel(g_camera.snapshot(), g_measure.a,
-                                                            g_camera.viewportHeight(),
-                                                            &metersPerPixel);
-                            edgeHighlight = forgeshape::measureOverlay(g_measure,
-                                                                      14.0f * metersPerPixel);
-                        }
-                        if (edgeHighlight) {
-                            renderer.setSketchOverlay(edgeHighlight);
-                        } else {
-                            forgeshape::CadExtrudeViewFacts view;
-                            session.extrudeViewFacts(g_camera.snapshot(), g_camera.viewportWidth(),
-                                                     g_camera.viewportHeight(), &view);
-                            renderer.setSketchOverlay(session.overlay(worldPerUnit, view));
-                        }
-                    }
-                }
-            }
-            // Presentation only, and deliberately OUTSIDE the state mutex: the
-            // display settings are plain atomics that no domain invariant
-            // depends on, so a frame must never wait on the geometry lock to
-            // find out which shading model to draw with.
-            renderer.setDisplaySettings(forgeshape::displaySettings().snapshot());
+                return edgeHighlight;
+            };
+            forgeshape::composeViewportFrame(renderer, sources);
 #ifndef NDEBUG
             {
                 bool inject = false;
