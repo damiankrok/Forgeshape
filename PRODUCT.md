@@ -454,6 +454,25 @@ rest.
   the choice holds for the session, across every refresh. A collapsed Browser
   gives the Objects capsule and the History control back.
 
+On the workbench the model also carries a **view cube** and a **view bar**,
+and the bottom edge a **History strip**:
+
+- **The view cube** shows the world's X (red), Y (green) and Z (blue) axes as
+  the camera sees them, at the top of the model on the side away from the Tool
+  Rail. Tapping an axis end turns the view to look along it: +Z is Front, +Y is
+  Top, +X is Right, and the faint ends are their opposites. Top looks exactly
+  straight down, and the first orbit leaves it without a jump.
+- **The view bar** at the bottom of the model: **Fit** frames everything drawn,
+  **Home** returns to the opening view, **Front**, **Top** and **Right**, and
+  the projection button switches between perspective and orthographic. A view
+  keeps how large the model is on screen; only the direction changes.
+- **The History strip** lists the active part's steps in the order they were
+  built, newest on the right, beside the Undo and Redo arrows, which step back
+  and forward one act at a time. Tapping a step does what tapping its row in
+  the History does — a sketch step opens Edit Sketch.
+
+All three step aside while a sketch is open and come back when it closes.
+
 A phone, and a tablet in a narrower window, keep the layout described above:
 no panel stands at rest.
 
@@ -2650,5 +2669,13 @@ face chooser, one click on the part's face begins a sketch there, a circle
 dragged on it and extruded as a Cut removes material from the same part as one
 Undo step, and the view is given back. A left drag orbits, the wheel zooms, the
 Move handles drag the part as one Undo step, and a saved project reopens and
-saves byte for byte the same. A Windows window, a Windows GPU and the installer
-on a real PC have not been run by anyone yet.
+saves byte for byte the same. Its window is laid out as SolidCraft's is: a
+title row with the file acts and Undo/Redo, a ribbon of captioned commands
+(the Model tab's Sketch, Primitives, Part and Arrange groups, the View tab's
+views, projection, display and panels, and a Sketch tab while one is open),
+the Browser and the Properties panel beside the model, a view cube whose axis
+ends are the six views, a view bar, and a History strip along the bottom whose
+back and forward arrows undo and redo; the check clicks the View ribbon's Top,
+the cube's +Z and +X ends, Fit after a deep zoom, and the strip's arrows. A
+Windows window, a Windows GPU and the installer on a real PC have not been run
+by anyone yet.

@@ -1,7 +1,61 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.117.0
+**Status Version:** 0.118.0
 **Updated:** 2026-11-04
+**Latest stage:** **`WORKBENCH-RIBBON-R1` — SolidCraft's arrangement on both
+shells: a ribbon, a view cube, a view bar and a History strip** (2026-11-04,
+OWNER: after comparing ForgeShape with SolidCraft, "no slider, back and
+forward arrows are enough; the rest as you see fit"). **TECH PASS (emulator,
+headless Linux, Windows build) / OWNER PHYSICAL REVIEW REQUIRED (Galaxy Tab S9
+Ultra, a Windows PC) / NOT MERGED.** Branch `claude/new-session-g87rge`,
+product at `7567ff1`.
+
+- **Standard views and Fit in the core**: `CameraController::setStandardView`
+  (Home, Front, Back, Left, Right, Top, Bottom; Top and Bottom EXACT through
+  the sketch view's frame but orbitable, the first orbit leaving for the
+  nearest orbit pose without a jump; target and span kept) and `frameBounds`,
+  with `editorSceneBounds` / `editorFitAll` over what is drawn. A sketch view
+  refuses both. Presentation only.
+- **The desktop** is laid out as SolidCraft is: a title row (file acts,
+  Undo/Redo), a ribbon of captioned commands in tabs and named groups (Model:
+  Sketch, Primitives, Part, Arrange; View: Views, Projection, Show, Panels; a
+  Sketch tab while one is open: Draw, Modify, Edit, Sketch, and Extrude with
+  the operation's own glyph), the Browser and Properties beside the model, a
+  view cube whose six axis ends are the six views, a view bar, and a History
+  strip along the bottom whose back and forward are Undo and Redo, with the
+  active part's steps. F fits. The UI kit gained a segment primitive, a ribbon
+  button, a tab and a per-frame record of each control's rectangle by id, which
+  the headless check clicks by.
+- **The tablet workbench** gains the view cube (at the top of the model on the
+  side away from the Tool Rail, mirrored with handedness, because the docked
+  face actions stand at the trailing inner edge), the view bar and the History
+  strip beside the Undo/Redo capsule, each a view of native truth; a step chip
+  is its History row's own act. All three are absent on a phone, in a medium
+  window and while a sketch is open. JNI `cameraStandardView`, `cameraFitAll`,
+  `cameraViewAxes`, `cameraSketchViewActive`.
+- **Evidence.** Host `HOST_SELFTESTS_OK` (4752 checks; the camera suite's nine
+  new checks). The desktop headless check 34/34 locally; `CI DESKTOP`
+  `41765752416` on `7567ff1`: Linux `FORGESHAPE_DESKTOP_HEADLESS_OK`, Windows
+  MSVC 4752 checks 0 failed and the installer. `CI FAST` `41765756115` success.
+  `CI DEVICE` `41765759366` (`TabletWorkbenchTest`, its new view-cube /
+  view-bar / History-strip case included) OK 4/4 and `41765765879`
+  (`CadVerticalSliceTest`, `SketchExtrudeTest`, `FaceSketchOfferTest`,
+  `HoleTest`, `HomeFlowTest`) OK 33/33, each 25/25 startup tokens. The layout
+  lane `41765762057` lost its first attempt to the runner (three startup log
+  captures dropped lines before any test ran) and is re-running. Deliverables (`7567ff1`): `app-debug.apk`
+  (artifact `13292617809`, SHA-256
+  `3a9f1cb74d1f83c24663c6a9d5282eac70d6c3855f021d47e84bc80dcba89d68`),
+  `ForgeShape-Setup-0.1.0.exe` (artifact `13292128332`, SHA-256
+  `22ada68e4ad82cc3059ed88eba44d19f3ff3c89e11d228029ca209f1c8cad4c4`),
+  `ForgeShape-0.1.0-portable.zip` (SHA-256
+  `f5f8453191e0d26cc16731c0b786574d1680fd0a6c9c56ea47c98925a25b22f3`). A
+  physical tablet, a Windows window and GPU, and the installer on a real PC are
+  UNVERIFIED.
+- **Not this stage:** the tablet's ribbon (`WORKBENCH-RIBBON-R2`), the
+  desktop's remaining CAD acts (`DESKTOP-R3`), a rollback marker (the owner
+  declined it), a Z-up view option, and document tabs.
+
+**Previous stage:** `TABLET-WORKBENCH-R1` + `DESKTOP-R1` + `DESKTOP-R2` (record below, unchanged).
 **Latest stage:** **`TABLET-WORKBENCH-R1` + `DESKTOP-R1` + `DESKTOP-R2` — a
 desktop-class workbench on a large Android window, a mouse and a keyboard, and
 ForgeShape for Windows on the one core, sketching and extruding** (2026-11-04,
@@ -3707,6 +3761,8 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Mouse wheel zoom, right-drag orbit (no selection), Ctrl+Z / Ctrl+Y, Esc closes the topmost surface | VERIFIED (`TabletWorkbenchTest`); middle-drag pan, Ctrl+S and Delete UNVERIFIED on a device |
 | Windows desktop editor: New CAD part sketch, mouse drawing, sketch Undo, Finish, Extrude creating the project, face chooser, Cut of the same body as one Undo, orbit, zoom, Move handles, save/reopen byte-identical | VERIFIED headless (Linux, software Vulkan); a Windows window, GPU and installer UNVERIFIED |
 | Windows build: MSVC build of the core and shell, every host self-test suite on MSVC, Inno Setup installer and portable zip | VERIFIED (`CI DESKTOP`) |
+| Tablet workbench view cube (six views by tap), view bar (Fit, Home, Front, Top, Right, projection) and History strip (steps open their editor), all withdrawn under a sketch | VERIFIED (`TabletWorkbenchTest`) |
+| Desktop ribbon (tabs, captioned groups, the Sketch tab), view cube, view bar, History strip back/forward as Undo/Redo | VERIFIED headless (Linux, software Vulkan); a Windows window UNVERIFIED |
 
 ## Self-test suite
 
@@ -5482,7 +5538,7 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: OWNER physical review of the 0.117.0 builds** — the
+**Exactly one next step: OWNER physical review of the 0.118.0 builds** — the
 APK on the Galaxy Tab S9 Ultra and the Windows installer on the OWNER's PC
 (artifacts named in the latest-stage record above). On the tablet in landscape:
 the Browser (Objects and the History) and the Properties panel stand docked at
@@ -5494,9 +5550,11 @@ unchanged in portrait and on a phone. On Windows: install
 the Start menu, New CAD part → draw a rectangle → Finish sketch → Extrude;
 New sketch → click the part's face → a circle → Finish → Cut → Extrude; save,
 reopen the `.forge` on the tablet and back, byte for byte the same project;
-a `theme.json` restyles it. This one review also carries every earlier
+a `theme.json` restyles it; the ribbon, the view cube (click an axis end),
+the view bar's Fit and the History strip's arrows on both. This one review also carries every earlier
 pending checklist below, whose APK it supersedes. If the OWNER then wants the
 desktop to reach the tablet's modelling depth, the next development stage is
+`WORKBENCH-RIBBON-R2` (the tablet's ribbon, carrying the face actions), then
 `DESKTOP-R3` (every remaining CAD act, then Freeform, Surface and Sculpt with
 a mouse or pen) — proposed in `docs/DESKTOP_AND_TABLET_PLAN.md`, not
 authorised here.
