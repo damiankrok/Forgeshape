@@ -1,7 +1,96 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.116.0
+**Status Version:** 0.117.0
 **Updated:** 2026-11-04
+**Latest stage:** **`TABLET-WORKBENCH-R1` + `DESKTOP-R1` + `DESKTOP-R2` — a
+desktop-class workbench on a large Android window, a mouse and a keyboard, and
+ForgeShape for Windows on the one core, sketching and extruding** (2026-11-04,
+OWNER decision of the same day; `docs/DESKTOP_AND_TABLET_PLAN.md`). **TECH PASS
+(emulator, headless Linux, Windows build) / OWNER PHYSICAL REVIEW REQUIRED
+(Galaxy Tab S9 Ultra, a Windows PC) / NOT MERGED.** Branch
+`claude/new-session-g87rge`, product at `ce576fe`.
+
+- **Tablet workbench** (`TABLET-WORKBENCH-R1`): in an `EXPANDED` window wide
+  enough for the leading column (`WorkspaceLayoutMode.workbench`; the column is
+  18 % of the window, 180..260 dp) the Browser holds the Objects list and,
+  beneath it, the active CAD or Surface body's History — the one
+  `FeatureHistoryView`, re-parented — and the Properties panel (the precision
+  surface) is pinned open; the Browser toggle beside the ForgeShape mark and
+  the precision toggle collapse and restore each for the session. Another
+  surface opening does not dismiss the pinned panel. A phone and a medium
+  window are unchanged.
+- **Mouse and keyboard on Android**: the wheel zooms about the pointer, a
+  right-button drag orbits, a middle (or Shift+right) drag pans, through new
+  `CameraController` doors (`orbitByPixels`, `panByPixels`, `zoomAtPixel`) on
+  the touch gestures' arithmetic; Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z, Ctrl+S,
+  Delete and Esc reach the one handler each act has; a focused field keeps its
+  keys.
+- **One core, two shells** (`DESKTOP-R1`): the renderer's platform coupling is
+  one seam (`forgeshape_log.h`, `forgeshape_render_surface.h`; on Android
+  `PlatformWindow` is `ANativeWindow*`); the camera, the selection, the state
+  mutex, the Dimensions predicate, the CAD operation preview and the gizmo's
+  activation rule moved from JNI into `forgeshape_editor_core`, and the render
+  loop's frame composition into `forgeshape_viewport_frame`
+  (`composeViewportFrame`), which the Android render thread and the desktop
+  both draw. `DESKTOP-R2` moved the sketch's acts there too — the view a
+  sketch borrows and gives back, the support chooser's begin and confirm,
+  Finish with its feature view, the CAD bootstrap and later commits, and a
+  sketch's share of a touch event (`editorSketchTouch`) — so both shells
+  frame, finish and commit a sketch through one path.
+- **ForgeShape for Windows** (`desktop/`): a Win32 shell (per-monitor DPI, dark
+  title bar, native Open/Save, drag-and-drop, `.forge` on the command line,
+  Save/Discard/Cancel by the core's fingerprint) around a platform-neutral
+  desktop editor: a command toolbar (open, save, export GLB, six primitives,
+  New sketch, Make CAD part, delete, Move/Rotate/Scale with World/Local,
+  Undo/Redo), the Browser (Objects, History), the Properties panel (placement,
+  a primitive's shape, Measure, Display) and a status bar, drawn by
+  ForgeShape's own interface kit through one renderer pipeline (rounded
+  panels, shadows, text from the system font read by its own TrueType reader,
+  icons rasterised from the Android vector drawables), themable by
+  `%APPDATA%\ForgeShape\theme.json`. The application icon is drawn at build
+  time from the Android launcher layers; Inno Setup packages a per-user
+  installer that registers `.forge` and updates in place.
+- **Sketch and Extrude on the desktop** (`DESKTOP-R2`): Home's New CAD part is
+  the CAD bootstrap (a sketch on XY whose first Extrude creates the project);
+  New sketch opens the support chooser (hover highlights, one click begins on
+  a plane or a flat face); the toolbar carries the eight sketch tools and the
+  sketch's own Undo/Redo; the left button is one pointer into the session (the
+  drawing, the arrow drag, a region click); Finish sketch leads to the Extrude
+  panel (extent, distances, Flip, New Body / Add / Cut / Intersect where the
+  session offers them, the candidate's refusal named); Enter finishes and
+  extrudes, Esc steps back.
+- **Evidence.** Host `HOST_SELFTESTS_OK` (4743 checks, 0 failed) through
+  `scripts/host-native-selftests.sh` and the desktop runner; the camera suite
+  gained the `pointer_*` checks. `CI FAST` `41753710285` (`843754f`) and
+  `41756750660` (`9e2542a`) success. `CI DEVICE` `41755909526`
+  (`TabletWorkbenchTest` OK 3/3, 25/25 startup tokens). `CI DESKTOP`
+  `41756739649` (`9e2542a`): the Windows job built `ForgeShape.exe` with MSVC,
+  ran every host suite on it (4743 checks, 0 failed) and packaged
+  `ForgeShape-Setup-0.1.0.exe` and `ForgeShape-0.1.0-portable.zip`; the Linux
+  job ran the headless desktop check on Mesa's software Vulkan. Locally on
+  `ce576fe` the headless check is `FORGESHAPE_DESKTOP_HEADLESS_OK` 25/25,
+  eleven of them the sketch: a line drawn and undone, a rectangle, Finish
+  choosing the one region, the first Extrude creating a one-part project with
+  an empty history, a click on the part's face beginning a sketch there, a
+  circle cut into the same body as one Undo, the view given back. PENDING on
+  `ce576fe`: `CI FAST` `41758183950`, `CI DESKTOP` `41758167675` and the three
+  sketch lanes of `CI DEVICE` (`41758187907`, `41758191639`, `41758195047`:
+  `SketchExtrudeTest`, `CadVerticalSliceTest`, `SpatialSketchTest`,
+  `FaceSketchOfferTest`, `SketchNavigatorCameraTest`, `HomeFlowTest`,
+  `ToFaceTest`, `RevolveFeatureTest`, `SketchKnifeUndoTest`, `SketchUxTest`,
+  `SketchPlaneTest`, `CadRevolveOwnerTest`,
+  `OwnerProjectShellSketchSupportTest`), which prove the JNI's move onto the
+  core's sketch acts; and `CI DEVICE` `41755913918` / `41756754202` (the
+  layout and gizmo lanes). A physical tablet, a Windows window, a Windows GPU
+  and the installer on a real PC are UNVERIFIED.
+- **Not this stage:** every CAD act after Extrude on the desktop (finishes,
+  holes, patterns, Revolve, measure distance, History editing), Freeform,
+  Surface and Sculpt on the desktop (`DESKTOP-R3`), cloud sync, an in-app
+  update check (it needs a network permission the product does not hold), and
+  every physical-hardware gate.
+
+**Previous stage:** `CAD-PRIMITIVES-R1` + `CAD-INTERSECT-R1` + `CAD-MEASURE-R1` +
+`CAD-REVOLVE-FACES-R1` (record below, unchanged).
 **Latest stage:** **`CAD-PRIMITIVES-R1` + `CAD-INTERSECT-R1` + `CAD-MEASURE-R1` +
 `CAD-REVOLVE-FACES-R1` — a primitive made a CAD part, Intersect, measuring a
 distance and an angle, and building on a revolved part** (2026-11-03).
@@ -3602,6 +3691,10 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | **The exported `.glb` opens in a third-party program (Godot, Blender or another importer)** | **UNVERIFIED** — no external importer was run here; not installed and not authorized. GLB-IMPORT-R0 rules out a ForgeShape exporter/parser defect but makes no claim about any external tool |
 | 16 KB page size *and* ARM64 in one target | **UNVERIFIED** — see Known Issues |
 | Stylus / S Pen tool type and pressure on real hardware | **UNVERIFIED** — verified synthetically end to end in INPUT-R1; closing it needs a person physically moving an S Pen |
+| Tablet workbench: Browser (Objects + History) and Properties docked at rest in an EXPANDED window, each collapsed and restored by one control; another surface leaves the pinned panel | VERIFIED (`TabletWorkbenchTest`) |
+| Mouse wheel zoom, right-drag orbit (no selection), Ctrl+Z / Ctrl+Y, Esc closes the topmost surface | VERIFIED (`TabletWorkbenchTest`); middle-drag pan, Ctrl+S and Delete UNVERIFIED on a device |
+| Windows desktop editor: New CAD part sketch, mouse drawing, sketch Undo, Finish, Extrude creating the project, face chooser, Cut of the same body as one Undo, orbit, zoom, Move handles, save/reopen byte-identical | VERIFIED headless (Linux, software Vulkan); a Windows window, GPU and installer UNVERIFIED |
+| Windows build: MSVC build of the core and shell, every host self-test suite on MSVC, Inno Setup installer and portable zip | VERIFIED (`CI DESKTOP`) |
 
 ## Self-test suite
 
@@ -5377,19 +5470,24 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: OWNER physical-device review of the
-`CAD-EDGE-FINISH-R1` APK** (`app-debug.apk` in artifact `13200945155` of
-`CI FAST` `41568427411`, branch `claude/new-session-g87rge`): tap beside an
-edge of an extruded block → Fillet → Apply → the edge is round, Undo takes it
-back; tap the middle of a face → Round edges / Bevel edges; History → the
-finish row → change the value or Delete. It also carries `STARTUP-FACE-ICONS-R1`: the
-app starts straight to Home; after an extrusion, tap a flat face → *Sketch
-here* → the sketch opens on that face; the new launcher icon and glyphs read as
-what they do. It carries everything below, so that one review also covers the
-earlier pending checklists. If the OWNER then wants modelling depth, the first
-proposed stage in `docs/CAD_UX_RESEARCH.md` §6 not yet done (B: selection
-suggests the action, including push/pull of a face) needs explicit
-authorisation — it is NOT authorised here.
+**Exactly one next step: OWNER physical review of the 0.117.0 builds** — the
+APK on the Galaxy Tab S9 Ultra and the Windows installer on the OWNER's PC
+(artifacts named in the latest-stage record above). On the tablet in landscape:
+the Browser (Objects and the History) and the Properties panel stand docked at
+rest, each collapses with its one control and comes back; a Bluetooth mouse's
+wheel zooms about the pointer, a right drag orbits, a middle drag pans; Ctrl+Z
+/ Ctrl+Y / Ctrl+S / Delete / Esc do what the controls do; the phone layout is
+unchanged in portrait and on a phone. On Windows: install
+`ForgeShape-Setup-<version>.exe` (or unzip the portable build), open it from
+the Start menu, New CAD part → draw a rectangle → Finish sketch → Extrude;
+New sketch → click the part's face → a circle → Finish → Cut → Extrude; save,
+reopen the `.forge` on the tablet and back, byte for byte the same project;
+a `theme.json` restyles it. This one review also carries every earlier
+pending checklist below, whose APK it supersedes. If the OWNER then wants the
+desktop to reach the tablet's modelling depth, the next development stage is
+`DESKTOP-R3` (every remaining CAD act, then Freeform, Surface and Sculpt with
+a mouse or pen) — proposed in `docs/DESKTOP_AND_TABLET_PLAN.md`, not
+authorised here.
 
 The earlier review it subsumes: the
 `SKETCH-NAVIGATOR-OUTCOME-R1` APK (`ci-fast-evidence` artifact `13179561711`

@@ -434,6 +434,43 @@ box keeps its proportions in both; rotating the device only makes the picture
 larger or smaller, and never stretches it one way. What you can tap follows what
 you see, so a tap that hits the model in portrait hits it in landscape too.
 
+## On a large tablet: the workbench
+
+On a window wide enough to keep a model at least 480 dp wide between two
+columns — a large tablet such as a Galaxy Tab S9 Ultra in landscape, or a
+resizable desktop window — the workspace becomes a **workbench**, laid out the
+way a desktop CAD application is: the model in the middle, the **Browser** on
+the leading edge and the **Properties** panel on the trailing edge, both open at
+rest.
+
+- **The Browser** holds the scene's Objects and, under them, the active CAD or
+  Surface body's **History** — the same History the History control opens on a
+  phone, docked rather than floating. While it is docked there is no second
+  History control on the capsule.
+- **The Properties panel** is the precision surface, pinned open. Opening
+  another surface, such as the Display popover, does not close it.
+- **Each panel collapses with one control and comes back with the same one** —
+  the Browser toggle beside the ForgeShape mark and the precision toggle — and
+  the choice holds for the session, across every refresh. A collapsed Browser
+  gives the Objects capsule and the History control back.
+
+A phone, and a tablet in a narrower window, keep the layout described above:
+no panel stands at rest.
+
+## A mouse and a keyboard
+
+A mouse and a keyboard work on any window, as they do in a desktop
+application:
+
+- **The wheel zooms** about the pointer.
+- **A right-button drag orbits**, and selects nothing.
+- **Ctrl+Z** undoes and **Ctrl+Y** redoes, exactly as the Undo and Redo
+  controls do — the same history and the same step.
+- **Esc** closes the topmost surface, one step, as Back does; a pinned
+  Properties panel stays.
+
+The left button behaves as a finger does.
+
 ## Several bodies, and which one you are editing
 
 The **Objects capsule**, low on the leading edge, names the body you are working
@@ -2601,8 +2638,17 @@ handle and draws a stroke exactly as a fingertip does and changes nothing about
 what the stroke deposits. The interface is *laid out* to stay comfortable with a
 stylus, which is a design constraint rather than a feature.
 
-**ForgeShape is an Android application and runs nowhere else.** There is no
-Apple, Windows or web client, no account, no login and no sync. The code is
-arranged so the domain could be carried to another platform later — described in
-`ARCHITECTURE.md` — which is a constraint on how this codebase is written, not a
-claim that any other platform is supported.
+**ForgeShape for Windows is built, and its window is UNVERIFIED.** The same
+core is built as a Windows desktop application with an installer (see
+`README.md`); there is no Apple or web client, no account, no login and no
+sync. What has run is the desktop editor's own automated check on a Linux
+machine without a GPU, through a software Vulkan driver: from its Home, New CAD
+part opens a sketch on XY; a mouse drag draws a line, Undo takes it back, and a
+drag draws a rectangle; Finish sketch chooses the one region and Extrude creates
+a one-part project with an empty history; New sketch then opens the plane and
+face chooser, one click on the part's face begins a sketch there, a circle
+dragged on it and extruded as a Cut removes material from the same part as one
+Undo step, and the view is given back. A left drag orbits, the wheel zooms, the
+Move handles drag the part as one Undo step, and a saved project reopens and
+saves byte for byte the same. A Windows window, a Windows GPU and the installer
+on a real PC have not been run by anyone yet.
