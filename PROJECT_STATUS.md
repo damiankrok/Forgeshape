@@ -43,9 +43,27 @@ short form.
   lanes `41863069887`, `41863074153` and `41863083269` reached 25/25 startup
   tokens and failed six older cases that asserted the lifted bans ("no OBJ
   anywhere", "Import GLB…") or read the selected control's layer-list
-  background as a plain shape — updated in `160fd8a`. The re-runs of those
-classes (`160fd8a`) and of the sculpt classes after the stale-warning wording
-(`dee045b`) were still running when this record was written.
+  background as a plain shape — updated in `160fd8a`; every other case in those
+lanes passed (47/49, 64/67, 102/103). Re-runs, each 25/25 tokens in order:
+`41871667467` OK 58 (`ImportedMeshDurableTest`, `ImportedMeshSculptTest`,
+`EditorWorkspaceCorrectionTest`); `41875589246` OK 50 on `e30a0e8`
+(`ProjectTransferTest`, `GlbImportPreviewTest`, `GlbImportExternalR1Test`;
+its first attempt `41871660970` stopped at startup on a dropped log capture,
+24/25 tokens, zero failure lines, liblog drops, no test run); on `dee045b`
+`41872276270` OK 16 (`PrecisionSculptInterchangeTest` — CAD → Sculpt, the CAD
+stale warning, arrange, snap, every format exported and read back, the Export
+menu — `ImportedMeshSculptTest`, `EditorWorkspaceSculptRetentionTest`) and
+`41872283462` OK 38 (`EditorWorkspaceHistoryTest`,
+`ProjectAutosaveRecoveryTest`, `Stage027SculptWorkflowTest`). `CI FAST`
+`41872289314` on `dee045b` success. Deliverables: `app-debug.apk` (`CI FAST`
+`41872289314`, artifact `13346755165`, SHA-256
+`f9603e7fb177b94c09683887c4cccd85dedcd134ef503b91ab99a05a45139a67`),
+`ForgeShape-Setup-0.1.0.exe` (`CI DESKTOP` `41863478533`, artifact
+`13340463716`, SHA-256
+`a7b23df9ca602cfacf11c7c34d8098ff596127cfd045015237d447def44f7be8`) and
+`ForgeShape-0.1.0-portable.zip` (SHA-256
+`ac2e91579609533b7cef3c0cee24370832ced6bb0a6ccab459fdcb57fca62523`); no desktop
+source changed after `aef7425`.
   A physical tablet (S Pen strokes on a sculpted part, a real drag landing on
   a snap step, the system picker naming `.stl`/`.ply`), a slicer opening the
   STL/3MF, and the installer on a real PC are UNVERIFIED.
