@@ -91,6 +91,8 @@ public:
     void deleteActive();
     void closeProject();
     void reloadTheme();
+    // Move, Rotate or Scale (0..2), or -1 to put the transform handles away.
+    void setTransformMode(int mode);
 
     const std::string& status() const { return status_; }
 
@@ -126,6 +128,8 @@ private:
     float dragLastX_ = 0, dragLastY_ = 0;
     float pressX_ = 0, pressY_ = 0;
     bool dragTravelled_ = false;
+    // A transform handle captured by the left button (the gizmo's own drag).
+    bool gizmoDragging_ = false;
     fsui::Rect viewportRect_;
 
     bool browserOpen_ = true;

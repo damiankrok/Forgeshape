@@ -199,31 +199,34 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 
 ## Platform boundary
 
-Android is the **first production platform and the only one that exists**. There
-is no Apple target, no Xcode project, no Metal backend, no MoltenVK and no
-cross-platform UI framework, and none is authorized. What follows is a constraint
-on how this codebase is arranged, not a claim about where it runs. There is no
-Apple, Windows, web or cloud client, no account, no login and no sync — none of
-those is implemented, and nothing here should be read as saying otherwise.
-
-**The domain is platform-neutral C++ and the Android layer is an adapter over
-it.**
+**Android and Windows are the two shells of ONE core** (`DESKTOP-R1`, OWNER
+decision 2026-11-04; `docs/DESKTOP_AND_TABLET_PLAN.md`). There is no Apple
+target, no Xcode project, no Metal backend, no MoltenVK and no cross-platform UI
+framework, and none is authorized; there is no web or cloud client, no account,
+no login and no sync.
 
 | | rule |
 | --- | --- |
-| Domain code | Construction, geometry, sculpt, picking, camera and selection stay platform-neutral C++17. `forgeshape_camera`, `forgeshape_construction`, `forgeshape_transform`, `forgeshape_picking`, `forgeshape_selection`, `forgeshape_mesh` and `forgeshape_sculpt` contain no JNI, Android, Vulkan, renderer or UI type — that is asserted throughout the ownership table above and must stay asserted |
-| Android types | `View`, `Activity`, `MotionEvent`, `Surface`, `jobject` and every other Android or JNI type may never become domain truth. They reach exactly as far as `forgeshape_jni.cpp` and stop |
-| The Android UI | is a platform shell/adapter. It owns draft, presentation and layout state and nothing else, and reads authoritative state back from native code rather than assuming it |
-| Input | crosses the boundary as **semantic, platform-neutral** data. `forgeshape_input.h`'s `TouchAction`/`TouchPointer` is that boundary, and it carries tool type, pressure and tilt alongside id and position -- in ForgeShape's own enum and its own units, never Android's. A pointer sample is translated out of Android's vocabulary in the Android layer rather than carried inward. Hover and generic (non-touch) motion are still outside the vocabulary and stay a consumer-driven question |
-| Platform services | file, storage and system services have narrow boundaries of their own, for the same reason input has one: `ProjectSlot`, `ProjectCheckpoint` and `ProjectTransfer` (Java) turn a path or a `Uri` into bytes and bytes into a document, and none of them reaches JNI or the codec |
-| Serialization | the `.forge` document (`forgeshape_project_document.{h,cpp}` + `forgeshape_project_bytes.{h,cpp}`) is **platform-independent and explicitly versioned**: a byte layout, an endianness and a version field decided by the domain, never a platform serializer, an Android `Parcelable`, a Java object stream or anything whose meaning depends on which OS wrote it. A file written on one platform is readable on another, and an older file is readable by a newer build or refused by version, never misread. `DATA_PACKAGE_SPEC.md` owns the layout |
-| Renderer coupling | the renderer's dependency on a platform surface stays **explicit and local**: `forgeshape_jni.cpp` owns the `ANativeWindow` and hands it over, and `Renderer` never creates or releases one. That single visible seam is what a second backend would be added beside |
+| Domain code | Construction, geometry, sculpt, picking, camera and selection stay platform-neutral C++17. `forgeshape_camera`, `forgeshape_construction`, `forgeshape_transform`, `forgeshape_picking`, `forgeshape_selection`, `forgeshape_mesh` and `forgeshape_sculpt` contain no JNI, Android, Win32, Vulkan, renderer or UI type |
+| Platform types | `View`, `Activity`, `MotionEvent`, `Surface`, `jobject`, `HWND` and every other platform type may never become domain truth. Android's reach exactly as far as `forgeshape_jni.cpp`, Windows' as far as `desktop/src/main_win32.cpp` |
+| The shells | the Android UI (framework Views) and the desktop interface (`desktop/src`, ForgeShape's own kit) own draft, presentation and layout state and nothing else, and read authoritative state back from the core |
+| Shared glue | what both shells need beyond the domain lives in `forgeshape_editor_core` (the camera, the selection, the state mutex, the Dimensions predicate, the CAD operation preview) and `forgeshape_viewport_frame` (`composeViewportFrame`, the ONE frame composition both shells draw). It moves out of JNI act by act; what still lives in a shell reaches a frame through `ViewportFrameSources` |
+| Input | crosses the boundary as **semantic, platform-neutral** data: `forgeshape_input.h`'s `TouchAction`/`TouchPointer` for touch, and the camera's pointer-device doors (`orbitByPixels`, `panByPixels`, `zoomAtPixel`) for a mouse on either shell |
+| Platform services | file, storage and system services have narrow boundaries of their own: `ProjectSlot`, `ProjectCheckpoint` and `ProjectTransfer` on Android, `DesktopPlatform` on Windows; each turns a path, a `Uri` or a dialog into bytes and bytes into a document, and none reaches the codec |
+| Serialization | the `.forge` document (`forgeshape_project_document.{h,cpp}` + `forgeshape_project_bytes.{h,cpp}`) is **platform-independent and explicitly versioned**, so a project saved on Windows opens on a phone and the reverse, byte for byte. `DATA_PACKAGE_SPEC.md` owns the layout |
+| Renderer coupling | ONE seam: `forgeshape_log.h` (logcat or stderr) and `forgeshape_render_surface.h` (`PlatformWindow`: an `ANativeWindow` on Android, a `DesktopWindow` holding an `HWND` on Windows, a headless surface for the Linux check). On Android `PlatformWindow` IS `ANativeWindow*`, so the Android path is the same Vulkan calls it always was. The desktop-only pieces — the interface layer (`forgeshape_renderer_ui.cpp`, `forgeshape_ui_frame.h`, `ui.vert`/`ui.frag`) and the frame read-back — are compiled only outside Android |
 
-The practical test is one question: *if this file had to compile on a platform
-that has no Android, what would break?* For everything below `forgeshape_jni.cpp`
-the answer must stay "nothing". This is deliberately **not** an abstraction layer
-— no renderer interface, no platform façade, no `#ifdef` for an operating system
-that has no target. The seams stay where they are; nothing new crosses them.
+### The Windows desktop application (`desktop/`)
+
+| Module | Owns |
+| --- | --- |
+| `desktop/CMakeLists.txt` | the desktop build: every platform-neutral core source unchanged, the vendored kernel, the shaders, the embedded icons (the Android `ic_*.xml` drawables plus `desktop/icons`), the host self-test runner, ForgeShape.exe (Windows) and the headless check (Linux) |
+| `desktop/src/main_win32.cpp` | the Win32 shell: window, DPI, input samples, native dialogs, drag-and-drop, the Save/Discard/Cancel question |
+| `desktop/src/main_headless.cpp` | the automated check on Mesa's software Vulkan: drives the editor, reads a frame back, checks it |
+| `desktop/src/desktop_editor.{h,cpp}` | the platform-neutral desktop editor: the toolbar, the Browser (Objects, History), the Properties panel, the status bar and Home; every act through the core's own functions |
+| `desktop/src/ui/` | ForgeShape's own interface kit: `raster` (coverage rasteriser), `truetype` (system-font reader), `vector_icon` (Android vector drawables), `atlas`, `theme` (tokens and `theme.json` overrides), `ui` (immediate-mode widgets) |
+| `desktop/tools/make_app_icon.cpp` | the build-time `.ico` from the Android launcher icon's two layers |
+| `desktop/installer/forgeshape.iss` | the per-user Inno Setup installer; a newer setup with the same `AppId` is the update |
 
 ## Android layer
 

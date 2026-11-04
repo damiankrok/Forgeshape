@@ -4066,33 +4066,15 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_setGizmoActive(JNI
     bool nowActive = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
-        const bool activeIsLocked = scene.hasProject() && scene.activeBody().locked();
-        const bool activeIsDerived = scene.hasProject() && scene.activeBody().isFaceSupportedCad();
-        if (active == JNI_TRUE && forgeshape::sculptSession().inSculptMode()) {
-            refusedInSculpt = true;
-            // Still turned OFF, so entering Sculpt with a gizmo up cannot leave
-            // one standing — and a captured handle is cancelled by setActive.
-            forgeshape::gizmoSession().setActive(false);
-        } else if (active == JNI_TRUE && activeIsLocked) {
-            // Stage 018A. The SECOND of lock's two guards, covering direct
-            // manipulation the way the transform entry point covers typed
-            // values. Turned OFF rather than merely not turned on, on exactly
-            // the Sculpt branch's terms: a gizmo left standing over a locked
-            // body would be a control that cannot succeed, and `setActive(false)`
-            // also cancels a captured handle so a finger already on one stops.
-            refusedLocked = true;
-            forgeshape::gizmoSession().setActive(false);
-        } else if (active == JNI_TRUE && activeIsDerived) {
-            // `CAD-FACE-SUPPORTED-PLACEMENT-R1`. A face-supported CAD Body is
-            // placed by its producer's face, so a handle over it could only
-            // move a stored transform nothing reads. Turned OFF on the lock's
-            // terms; `GizmoSession` refuses to draw or drag one regardless.
-            refusedDerived = true;
-            forgeshape::gizmoSession().setActive(false);
-        } else {
-            forgeshape::gizmoSession().setActive(active == JNI_TRUE);
-        }
+        // The ONE activation rule both shells ask (forgeshape_editor_core):
+        // a refusal turns the gizmo OFF rather than merely not on, so entering
+        // Sculpt, locking the body or standing it on a face cannot leave a
+        // handle up, and `setActive(false)` cancels a captured drag too.
+        const forgeshape::GizmoActivation result =
+            forgeshape::editorSetGizmoActive(active == JNI_TRUE);
+        refusedInSculpt = result == forgeshape::GizmoActivation::RefusedInSculpt;
+        refusedLocked = result == forgeshape::GizmoActivation::RefusedLocked;
+        refusedDerived = result == forgeshape::GizmoActivation::RefusedDerived;
         nowActive = forgeshape::gizmoSession().active();
     }
     if (refusedInSculpt) {

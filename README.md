@@ -49,6 +49,35 @@ gradlew.bat :app:assembleDebug
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
+### Windows desktop (`DESKTOP-R1`)
+
+Needs Visual Studio 2022 (C++), CMake 3.20+ and the Vulkan SDK (which provides
+`glslc` and the loader library); a machine running it needs only a graphics
+driver with Vulkan 1.0.
+
+```
+cmake -S desktop -B build\desktop -G "Visual Studio 17 2022" -A x64
+cmake --build build\desktop --config Release
+build\desktop\Release\ForgeShape.exe
+build\desktop\Release\forgeshape_core_selftests.exe
+```
+
+The installer is built from `desktop\installer\forgeshape.iss` with Inno Setup
+(`ISCC.exe /DAppVersion=<v> /DBuildDir=<Release dir> /DIconFile=<ForgeShape.ico>`);
+`CI DESKTOP` builds both and uploads them as the `ForgeShape-Windows` artifact.
+A theme file at `%APPDATA%\ForgeShape\theme.json` overrides any interface token
+(colours as `"#RRGGBB"`, sizes in dp), e.g. `{"accent": "#E0A84B", "fontSize": 14}`;
+the toolbar's settings control reloads it.
+
+On Linux the same tree builds the headless check, which runs the editor on
+Mesa's software Vulkan driver and writes a frame:
+
+```
+cmake -S desktop -B build/desktop -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/desktop
+build/desktop/forgeshape_desktop_check desktop-headless.png   # FORGESHAPE_DESKTOP_HEADLESS_OK
+```
+
 ## Booting the emulator
 
 **Never boot `ForgeShape_Stage006` (or any ForgeShape AVD) without an explicit

@@ -5,6 +5,7 @@
 
 #include "forgeshape_body_commands.h"
 #include "forgeshape_cad_extrude_tool.h"
+#include "forgeshape_gizmo.h"
 #include "forgeshape_render_mesh.h"
 #include "forgeshape_sculpt.h"
 #include "forgeshape_sketch_session.h"
@@ -38,6 +39,25 @@ bool editorActiveBodyDimensionsEditable(LocalBounds* outBounds, BodyDimensions* 
     const ConstructionScene& scene = constructionScene();
     return editorActiveBodyDimensions(outBounds, outDimensions) && scene.hasProject()
         && bodySizeEditable(scene.activeBody()) && !sculptSession().inSculptMode();
+}
+
+GizmoActivation editorSetGizmoActive(bool active) {
+    const ConstructionScene& scene = constructionScene();
+    GizmoSession& gizmo = gizmoSession();
+    if (active && sculptSession().inSculptMode()) {
+        gizmo.setActive(false);
+        return GizmoActivation::RefusedInSculpt;
+    }
+    if (active && scene.hasProject() && scene.activeBody().locked()) {
+        gizmo.setActive(false);
+        return GizmoActivation::RefusedLocked;
+    }
+    if (active && scene.hasProject() && scene.activeBody().isFaceSupportedCad()) {
+        gizmo.setActive(false);
+        return GizmoActivation::RefusedDerived;
+    }
+    gizmo.setActive(active);
+    return gizmo.active() ? GizmoActivation::Active : GizmoActivation::Inactive;
 }
 
 namespace {

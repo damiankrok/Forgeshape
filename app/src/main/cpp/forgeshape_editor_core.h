@@ -40,6 +40,20 @@ bool editorActiveBodyDimensions(LocalBounds* outBounds, BodyDimensions* outDimen
 // Called under editorStateMutex().
 bool editorActiveBodyDimensionsEditable(LocalBounds* outBounds, BodyDimensions* outDimensions);
 
+// What turning the transform gizmo on over the active body came to.
+enum class GizmoActivation {
+    Active,
+    Inactive,
+    RefusedInSculpt,   // the Sculpt target holds still; strokes own the finger
+    RefusedLocked,     // a locked body refuses being moved (Stage 018A)
+    RefusedDerived,    // a face-supported part stands where its face puts it
+};
+
+// Turns the transform gizmo on or off, refusing by name where a drag could
+// only be refused. The ONE rule both shells ask; a refusal leaves it off.
+// Called under editorStateMutex().
+GizmoActivation editorSetGizmoActive(bool active);
+
 // Substitutes the sketch session's candidate (`CAD-VERTICAL-SLICE-R1`, "the
 // preview IS the candidate") into the RENDERER's copy of the scene list, or
 // appends it for a New Body. Never the list picking, saving or export read.

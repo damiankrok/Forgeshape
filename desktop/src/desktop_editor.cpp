@@ -15,6 +15,7 @@
 #include "forgeshape_display.h"
 #include "forgeshape_editor_core.h"
 #include "forgeshape_freeform_session.h"
+#include "forgeshape_gizmo.h"
 #include "forgeshape_gltf_export.h"
 #include "forgeshape_history.h"
 #include "forgeshape_log.h"
@@ -474,6 +475,27 @@ void DesktopEditor::closeProject() {
     refreshTitle();
 }
 
+// Move, Rotate or Scale (0..2) over the active body, or -1 to put the handles
+// away; choosing the mode already up puts them away too. Through the core's
+// one activation rule, so a locked or face-placed body refuses by name.
+void DesktopEditor::setTransformMode(int mode) {
+    std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    fs::GizmoSession& gizmo = fs::gizmoSession();
+    if (mode < 0 || (gizmo.active() && static_cast<int>(gizmo.mode()) == mode)) {
+        fs::editorSetGizmoActive(false);
+        return;
+    }
+    gizmo.setMode(static_cast<fs::GizmoMode>(mode));
+    switch (fs::editorSetGizmoActive(true)) {
+        case fs::GizmoActivation::RefusedLocked: report("The body is locked", true); break;
+        case fs::GizmoActivation::RefusedDerived:
+            report("This part is placed by the face it stands on", true);
+            break;
+        case fs::GizmoActivation::RefusedInSculpt: report("Not while sculpting", true); break;
+        default: break;
+    }
+}
+
 bool DesktopEditor::shortcut(char key, bool ctrl, bool shift) {
     if (ui_ && ui_->typing()) return false;
     if (ctrl) {
@@ -505,6 +527,12 @@ bool DesktopEditor::frame(int width, int height, float scale, const fsui::InputS
         std::lock_guard<std::mutex> lock(fs::editorStateMutex());
         fs::editorCamera().setViewport(width, height);
     }
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        if (fs::gizmoSession().active() && !gizmoDragging_) {
+            fs::editorSetGizmoActive(true);  // re-asks the rule for the body now active
+        }
+    }
     ui_->begin(width, height, scale, input);
     buildInterface(width, height);
     // The viewport gets what no surface or control took this frame.
@@ -523,6 +551,37 @@ void DesktopEditor::routeViewportInput(int width, int height) {
     if (!overUi && input_.wheel != 0.0f) {
         std::lock_guard<std::mutex> lock(fs::editorStateMutex());
         camera.zoomAtPixel(input_.mouseX, input_.mouseY, input_.wheel);
+    }
+    // A transform handle under the left button takes the whole drag: the
+    // gizmo's own capture, frozen basis and one-transaction commit.
+    if (gizmoDragging_) {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        fs::GizmoSession& gizmo = fs::gizmoSession();
+        const bool cancel = input_.mousePressed[1] ||
+                            std::find(input_.keys.begin(), input_.keys.end(), fsui::Key::Escape) !=
+                                input_.keys.end();
+        if (cancel) {
+            gizmo.cancelDrag();
+            gizmoDragging_ = false;
+        } else if (input_.mouseReleased[0]) {
+            gizmo.updateDrag(0, camera.snapshot(), input_.mouseX, input_.mouseY, width, height);
+            gizmo.commitDrag();
+            gizmoDragging_ = false;
+        } else {
+            gizmo.updateDrag(0, camera.snapshot(), input_.mouseX, input_.mouseY, width, height);
+        }
+        return;
+    }
+    if (input_.mousePressed[0] && !overUi && dragButton_ < 0) {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        fs::GizmoSession& gizmo = fs::gizmoSession();
+        if (gizmo.active() &&
+            gizmo.hitTest(camera.snapshot(), input_.mouseX, input_.mouseY, width, height) !=
+                fs::GizmoHandle::None &&
+            gizmo.beginDrag(0, camera.snapshot(), input_.mouseX, input_.mouseY, width, height)) {
+            gizmoDragging_ = true;
+            return;
+        }
     }
     for (int b = 0; b < 3; ++b) {
         if (input_.mousePressed[b] && !overUi && dragButton_ < 0) {
@@ -665,6 +724,27 @@ void DesktopEditor::buildToolbar(const Rect& bar) {
     gap();
     if (tool("tb_cad_part", "ic_op_new_body", "Make CAD part")) makeCadPart();
     if (tool("tb_delete", "ic_delete", "Delete body  Del")) deleteActive();
+    gap();
+    int gizmoMode = -1;
+    bool localSpace = false;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        const fs::GizmoSession& gizmo = fs::gizmoSession();
+        if (gizmo.active()) gizmoMode = static_cast<int>(gizmo.mode());
+        localSpace = gizmo.space() == fs::GizmoSpace::Local;
+    }
+    if (tool("tb_move", "ic_gizmo_move", "Move", gizmoMode == 0)) setTransformMode(0);
+    if (tool("tb_rotate", "ic_gizmo_rotate", "Rotate", gizmoMode == 1)) setTransformMode(1);
+    if (tool("tb_scale", "ic_gizmo_scale", "Scale", gizmoMode == 2)) setTransformMode(2);
+    // World / Local where it applies: a world-axis scale of a turned body is a
+    // shear, so Scale has no space to choose.
+    if (gizmoMode == 0 || gizmoMode == 1) {
+        if (tool("tb_space", localSpace ? "ic_space_local" : "ic_space_world",
+                 localSpace ? "Local axes (switch to World)" : "World axes (switch to Local)")) {
+            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+            fs::gizmoSession().setSpace(localSpace ? fs::GizmoSpace::World : fs::GizmoSpace::Local);
+        }
+    }
     gap();
     if (tool("tb_undo", "ic_undo", "Undo  Ctrl+Z")) undo();
     if (tool("tb_redo", "ic_redo", "Redo  Ctrl+Y")) redo();

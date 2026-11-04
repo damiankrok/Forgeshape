@@ -12,6 +12,10 @@
 #include <vector>
 
 #include "desktop_editor.h"
+#include "forgeshape_editor_core.h"
+#include "forgeshape_gizmo.h"
+#include "forgeshape_history.h"
+#include "forgeshape_scene.h"
 #include "forgeshape_render_surface.h"
 #include "png_writer.h"
 
@@ -82,6 +86,74 @@ int main(int argc, char** argv) {
     editor.openProjectBytes(saved, "headless.forge");
     editor.saveProject();
     check("reopen_encodes_identically", platform.lastSaved == saved);
+
+    // The mouse, through the very path a Windows mouse takes. A left drag on
+    // empty viewport orbits; the wheel zooms in about the pointer.
+    const auto frameWith = [&](const fsui::InputState& in) { editor.frame(width, height, 1.0f, in); };
+    const auto mouse = [](float x, float y) {
+        fsui::InputState in;
+        in.mouseX = x;
+        in.mouseY = y;
+        return in;
+    };
+    {
+        const float yaw = forgeshape::editorCamera().yaw();
+        fsui::InputState in = mouse(800, 700);
+        in.mousePressed[0] = in.mouseDown[0] = true;
+        frameWith(in);
+        for (int i = 1; i <= 6; ++i) {
+            in = mouse(800 + 20.0f * i, 700);
+            in.mouseDown[0] = true;
+            frameWith(in);
+        }
+        in = mouse(920, 700);
+        in.mouseReleased[0] = true;
+        frameWith(in);
+        check("a_left_drag_orbits", forgeshape::editorCamera().yaw() != yaw);
+        const float distance = forgeshape::editorCamera().distance();
+        in = mouse(800, 450);
+        in.wheel = 1.0f;
+        frameWith(in);
+        check("the_wheel_zooms_in", forgeshape::editorCamera().distance() < distance);
+    }
+    // The Move handles: find the X axis under the cursor, drag it, and the
+    // body moves along X as ONE Undo step.
+    {
+        editor.setTransformMode(0);
+        frameWith(fsui::InputState());
+        const forgeshape::CameraSnapshot camera = forgeshape::editorCamera().snapshot();
+        float hx = -1, hy = -1;
+        for (int y = 150; y < 750 && hx < 0; y += 3) {
+            for (int x = 320; x < 1280 && hx < 0; x += 3) {
+                if (forgeshape::gizmoSession().hitTest(camera, static_cast<float>(x), static_cast<float>(y),
+                                                        width, height) == forgeshape::GizmoHandle::AxisX) {
+                    hx = static_cast<float>(x);
+                    hy = static_cast<float>(y);
+                }
+            }
+        }
+        check("the_move_handles_stand_over_the_body", hx >= 0);
+        const double before = forgeshape::constructionScene().activeBody().transform().values().positionX;
+        const size_t undo = forgeshape::constructionHistory().undoDepth();
+        fsui::InputState in = mouse(hx, hy);
+        in.mousePressed[0] = in.mouseDown[0] = true;
+        frameWith(in);
+        for (int i = 1; i <= 5; ++i) {
+            in = mouse(hx + 18.0f * i, hy);
+            in.mouseDown[0] = true;
+            frameWith(in);
+        }
+        in = mouse(hx + 90.0f, hy);
+        in.mouseReleased[0] = true;
+        frameWith(in);
+        const double after = forgeshape::constructionScene().activeBody().transform().values().positionX;
+        check("dragging_the_x_handle_moves_the_body_along_x", after != before);
+        check("one_drag_is_one_undo_step", forgeshape::constructionHistory().undoDepth() == undo + 1);
+        editor.undo();
+        check("undo_puts_it_back",
+              forgeshape::constructionScene().activeBody().transform().values().positionX == before);
+        editor.setTransformMode(-1);
+    }
 
     editor.requestCapture();
     for (int i = 0; i < 4 && !editor.captureReady(); ++i) editor.frame(width, height, 1.0f, idle);
