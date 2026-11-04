@@ -99,11 +99,24 @@ int main(int argc, char** argv) {
         if (!ok) ++failures;
     };
     fsui::InputState idle;
+    // The gallery (`WORKBENCH-UX-R1`): named captures of the states the look
+    // is iterated against, written beside the evidence image.
+    const std::string gallery = out.substr(0, out.size() - 4) + "-";
+    const auto snap = [&](const char* name) {
+        editor.requestCapture();
+        for (int i = 0; i < 6 && !editor.captureReady(); ++i) editor.frame(width, height, 1.0f, idle);
+        if (!editor.captureReady()) return;
+        uint32_t cw = 0, ch = 0;
+        const std::vector<uint8_t>& shot = editor.capture(&cw, &ch);
+        fsdesktop::writePng(gallery + name + ".png", shot.data(), cw, ch, 4);
+    };
     // Home first: one frame, then a CAD part, a cylinder beside it, a frame.
     for (int i = 0; i < 2; ++i) editor.frame(width, height, 1.0f, idle);
+    snap("01-home");
     editor.newCadPart();
     editor.addPrimitive(1);  // a cylinder
     for (int i = 0; i < 3; ++i) editor.frame(width, height, 1.0f, idle);
+    snap("02-two-bodies");
     // Save and re-open through the core's own codec: the same bytes come back.
     editor.saveProject();
     check("save_wrote_a_forge_document", platform.lastSaved.size() > 16
@@ -225,8 +238,10 @@ int main(int argc, char** argv) {
     editor.setSketchTool(forgeshape::sketchToolIndex(forgeshape::SketchTool::Rectangle));
     drag(700, 330, 900, 530);
     check("a_mouse_drag_draws_a_rectangle", forgeshape::sketchSession().sketch().entities.size() == 1);
+    snap("03-sketch-rectangle");
     editor.finishSketch();
     frameWith(idle);
+    snap("04-sketch-ready");
     check("finish_sketch_chooses_the_one_region",
           forgeshape::sketchSession().state() == forgeshape::SketchSessionState::Ready &&
               forgeshape::sketchSession().selectionChosen());
@@ -276,7 +291,7 @@ int main(int argc, char** argv) {
     if (editor.captureReady()) {
         uint32_t cw = 0, ch = 0;
         const std::vector<uint8_t>& shot = editor.capture(&cw, &ch);
-        const std::string cutPreview = out.substr(0, out.size() - 4) + "-cut-preview.png";
+        const std::string cutPreview = gallery + "05-face-cut-preview.png";
         fsdesktop::writePng(cutPreview, shot.data(), cw, ch, 4);
     }
     const size_t undoBeforeCut = forgeshape::constructionHistory().undoDepth();
@@ -292,6 +307,7 @@ int main(int argc, char** argv) {
     check("the_cut_is_one_undo_step",
           forgeshape::constructionHistory().undoDepth() == undoBeforeCut + 1);
     check("the_sketch_view_is_given_back", !forgeshape::sketchSession().active());
+    snap("06-part-with-cut");
 
     // --- the ribbon, the view cube, the view bar, the History strip ------
     // (`WORKBENCH-RIBBON-R1`), every control found by its semantic id.
@@ -360,6 +376,8 @@ int main(int argc, char** argv) {
     check("history_forward_redoes_it",
           forward && forgeshape::constructionHistory().undoDepth() == depth &&
               std::abs(redone.volume - pocketed.volume) < 1e-9);
+    clickId("ribbon_tab_View");
+    snap("07-view-ribbon");
     clickId("ribbon_tab_Model");
     clickId("vb_home");
 
