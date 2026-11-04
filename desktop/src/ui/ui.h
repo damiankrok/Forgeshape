@@ -60,12 +60,19 @@ public:
     // Called by a surface that should swallow the pointer (panels, menus).
     void block(const Rect& r);
     bool typing() const { return !editId_.empty(); }
+    // Where the control with `id` stood in the frame last built, so an
+    // automated check finds a control by its semantic id, never by a
+    // coordinate. False when it was not drawn.
+    bool widgetRect(const std::string& id, Rect* out) const;
 
     // --- drawing primitives ---
     void rect(const Rect& r, Color c, float radiusPx);
     void border(const Rect& r, Color c, float radiusPx, float widthPx);
     void shadow(const Rect& r, Color c, float radiusPx, float blurPx);
     void icon(const std::string& name, const Rect& box, Color c);
+    // An anti-aliased segment `widthPx` wide with round ends, and a disc.
+    void line(float x0, float y0, float x1, float y1, float widthPx, Color c);
+    void circle(float cx, float cy, float radiusPx, Color c);
     // Draws UTF-8 text with its baseline at `baseline`; returns the advance.
     float text(float x, float baseline, const std::string& utf8, Color c, float sizeDp,
                bool bold = false);
@@ -85,6 +92,13 @@ public:
                 bool enabled = true);
     bool iconButton(const std::string& id, const Rect& r, const std::string& iconName,
                     const std::string& tooltip, bool active = false, bool enabled = true);
+    // A ribbon command: its icon over its caption, the caption ALWAYS drawn
+    // (a ribbon says what each command is, as SolidCraft's and Shapr3D's do).
+    bool ribbonButton(const std::string& id, const Rect& r, const std::string& iconName,
+                      const std::string& caption, bool active = false, bool enabled = true,
+                      const std::string& tip = std::string());
+    // A ribbon tab: its label, underlined when chosen.
+    bool tab(const std::string& id, const Rect& r, const std::string& text, bool active);
     bool listRow(const std::string& id, const Rect& r, const std::string& text,
                  const std::string& iconName, bool selected, const std::string& detail = "");
     bool toggle(const std::string& id, const Rect& r, const std::string& text, bool* value);
@@ -113,6 +127,7 @@ private:
     std::vector<Rect> clips_;
     uint32_t commandStart_ = 0;
     std::vector<Rect> blockers_;
+    std::vector<std::pair<std::string, Rect>> widgetRects_;
     std::vector<Rect> previousBlockers_;
     std::string pressedId_;
     std::string hotId_;

@@ -1039,6 +1039,73 @@ int runCameraSelfTests(CameraSelfTestResult* out, int maxOut) {
                   c.yaw() == lockedYaw && c.orbitCount() == orbits);
     }
 
+    // 18. Standard views and fit (`WORKBENCH-RIBBON-R1`): the direction a
+    // view cube names, the target and span kept; Top EXACTLY down with Front at
+    // the bottom; an orbit leaves it without a jump; Fit puts the whole box on
+    // screen in both projections; a sketch view refuses both.
+    {
+        CameraController c = makeController();
+        const auto eyeDir = [](const CameraSnapshot& s) {
+            return vec3Normalize(vec3Sub(s.eye, s.target));
+        };
+        c.panByPixels(40.0f, 10.0f);
+        const Vec3 target = c.target();
+        const float distance = c.distance();
+        bool directions = true;
+        const struct { StandardView view; Vec3 dir; } expected[] = {
+            {StandardView::Front, {0.0f, 0.0f, 1.0f}},  {StandardView::Back, {0.0f, 0.0f, -1.0f}},
+            {StandardView::Right, {1.0f, 0.0f, 0.0f}},  {StandardView::Left, {-1.0f, 0.0f, 0.0f}},
+            {StandardView::Top, {0.0f, 1.0f, 0.0f}},    {StandardView::Bottom, {0.0f, -1.0f, 0.0f}},
+        };
+        for (const auto& e : expected) {
+            directions = directions && c.setStandardView(e.view);
+            const Vec3 d = eyeDir(c.snapshot());
+            directions = directions && vec3Dot(d, e.dir) > 0.99999f;
+        }
+        rec.check("standard_views_look_along_their_axes", directions);
+        rec.check("standard_views_keep_target_and_distance",
+                  nearly(c.target().x, target.x, 1e-6f) && nearly(c.target().y, target.y, 1e-6f) &&
+                      nearly(c.target().z, target.z, 1e-6f) && c.distance() == distance);
+        c.setStandardView(StandardView::Top);
+        const CameraSnapshot top = c.snapshot();
+        const Vec3 right{top.view.m[0], top.view.m[4], top.view.m[8]};
+        const Vec3 up{top.view.m[1], top.view.m[5], top.view.m[9]};
+        rec.check("top_view_is_exact_with_front_at_the_bottom",
+                  c.alignedViewActive() && vec3Dot(right, Vec3{1.0f, 0.0f, 0.0f}) > 0.99999f &&
+                      vec3Dot(up, Vec3{0.0f, 0.0f, -1.0f}) > 0.99999f);
+        c.orbitByPixels(1.0f, 0.0f);
+        const Vec3 after = eyeDir(c.snapshot());
+        rec.check("an_orbit_leaves_the_exact_view_without_a_jump",
+                  !c.alignedViewActive() && vec3Dot(after, Vec3{0.0f, 1.0f, 0.0f}) > 0.99f);
+        c.setStandardView(StandardView::Home);
+        rec.check("home_is_the_opening_pose",
+                  c.yaw() == kInitialYaw && c.pitch() == kInitialPitch && !c.alignedViewActive());
+        for (int mode = 0; mode < 2; ++mode) {
+            CameraController f = makeController();
+            if (mode == 1) f.setProjectionMode(ProjectionMode::Orthographic);
+            const Vec3 lo{3.0f, -1.0f, 2.0f}, hi{7.0f, 1.0f, 4.0f};
+            const bool framed = f.frameBounds(lo, hi);
+            const CameraSnapshot s = f.snapshot();
+            bool inside = framed;
+            for (int corner = 0; corner < 8; ++corner) {
+                const Vec3 p{(corner & 1) ? hi.x : lo.x, (corner & 2) ? hi.y : lo.y,
+                             (corner & 4) ? hi.z : lo.z};
+                const NdcPoint q = projectPoint(s, p);
+                inside = inside && std::fabs(q.x) < 1.0f && std::fabs(q.y) < 1.0f;
+            }
+            rec.check(mode == 0 ? "fit_frames_the_box_perspective" : "fit_frames_the_box_orthographic",
+                      inside && nearly(f.target().x, 5.0f, 1e-5f) && nearly(f.target().z, 3.0f, 1e-5f));
+        }
+        CameraController g = makeController();
+        g.frameSketchView(Vec3{0.0f, 0.0f, 0.0f}, Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f},
+                          Vec3{0.0f, 0.0f, 1.0f});
+        rec.check("a_sketch_view_refuses_views_and_fit",
+                  !g.setStandardView(StandardView::Front) &&
+                      !g.frameBounds(Vec3{0, 0, 0}, Vec3{1, 1, 1}) && g.sketchViewActive());
+        rec.check("an_inverted_box_is_refused",
+                  !makeController().frameBounds(Vec3{1, 1, 1}, Vec3{0, 0, 0}));
+    }
+
     runProjectionSelfTests(rec);
 
     return rec.n;

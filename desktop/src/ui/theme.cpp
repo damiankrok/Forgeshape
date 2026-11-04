@@ -57,6 +57,7 @@ bool Theme::loadOverrides(const std::string& path, std::string* report) {
         {"radius", &radius},             {"panelRadius", &panelRadius},
         {"spacing", &spacing},           {"toolbarHeight", &toolbarHeight},
         {"statusHeight", &statusHeight}, {"browserWidth", &browserWidth},
+        {"ribbonHeight", &ribbonHeight}, {"historyHeight", &historyHeight},
         {"propertiesWidth", &propertiesWidth}, {"panelInset", &panelInset},
         {"shadowBlur", &shadowBlur}};
     int applied = 0;

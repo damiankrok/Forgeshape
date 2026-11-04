@@ -11,6 +11,8 @@
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_from_primitive.h"
 #include "forgeshape_cad_timeline.h"
+#include "forgeshape_cad_from_primitive.h"
+#include "forgeshape_camera.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_display.h"
 #include "forgeshape_editor_core.h"
@@ -687,6 +689,22 @@ void DesktopEditor::commitSketch() {
     report(std::string("Extruded \xC2\xB7 ") + operationLabel(commit.operation));
 }
 
+void DesktopEditor::setStandardView(int view) {
+    fs::StandardView chosen;
+    if (!fs::standardViewFromIndex(view, &chosen)) return;
+    std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    fs::editorCamera().setStandardView(chosen);
+}
+
+void DesktopEditor::fitAll() {
+    std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+    fs::editorFitAll();
+}
+
+bool DesktopEditor::widgetRect(const std::string& id, fsui::Rect* out) const {
+    return ui_ && ui_->widgetRect(id, out);
+}
+
 void DesktopEditor::cancelSketch() {
     std::lock_guard<std::mutex> lock(fs::editorStateMutex());
     fs::editorSketchCancel();
@@ -846,21 +864,38 @@ void DesktopEditor::buildInterface(int width, int height) {
         buildHome(width, height);
         return;
     }
+    // The SolidCraft / Shapr3D shape (`WORKBENCH-RIBBON-R1`): a title row of
+    // file acts, the ribbon of captioned commands under it, the Browser and
+    // the Properties panel beside the model, the History strip along the
+    // bottom, and the view cube and view bar standing on the model.
     fsui::Ui& ui = *ui_;
     const float pad = ui.px(theme_.panelInset);
-    const Rect bar{0, 0, static_cast<float>(width), ui.px(theme_.toolbarHeight)};
-    const Rect status{0, height - ui.px(theme_.statusHeight), static_cast<float>(width),
-                      ui.px(theme_.statusHeight)};
-    const float top = bar.bottom() + pad;
-    const float bottom = status.y - pad;
+    const float w = static_cast<float>(width);
+    const Rect title{0, 0, w, ui.px(theme_.toolbarHeight)};
+    const Rect ribbon{0, title.bottom(), w, ui.px(theme_.ribbonHeight)};
+    const Rect status{0, height - ui.px(theme_.statusHeight), w, ui.px(theme_.statusHeight)};
+    const Rect history{pad, status.y - pad * 0.6f - ui.px(theme_.historyHeight), w - 2 * pad,
+                       ui.px(theme_.historyHeight)};
+    const float top = ribbon.bottom() + pad;
+    const float bottom = history.y - pad;
+    float viewLeft = 0, viewRight = w;
     if (browserOpen_) {
-        buildBrowser({pad, top, ui.px(theme_.browserWidth), bottom - top});
+        const Rect browser{pad, top, ui.px(theme_.browserWidth), bottom - top};
+        buildBrowser(browser);
+        viewLeft = browser.right();
     }
     if (propertiesOpen_) {
-        const float w = ui.px(theme_.propertiesWidth);
-        buildProperties({width - w - pad, top, w, bottom - top});
+        const float pw = ui.px(theme_.propertiesWidth);
+        const Rect properties{w - pw - pad, top, pw, bottom - top};
+        buildProperties(properties);
+        viewRight = properties.x;
     }
-    buildToolbar(bar);
+    viewportRect_ = {viewLeft, top, viewRight - viewLeft, bottom - top};
+    buildViewCube(viewportRect_);
+    buildViewBar(viewportRect_);
+    buildHistoryStrip(history);
+    buildRibbon(ribbon);
+    buildTitleBar(title);
     buildStatusBar(status);
 }
 
@@ -891,94 +926,435 @@ void DesktopEditor::buildHome(int width, int height) {
              theme_.smallFontSize);
 }
 
-void DesktopEditor::buildToolbar(const Rect& bar) {
+namespace {
+
+// Lays out one ribbon row: commands side by side, each a captioned button,
+// in named groups with a hairline between them.
+class RibbonRow {
+public:
+    RibbonRow(fsui::Ui& ui, const fsui::Theme& theme, const Rect& area)
+        : ui_(ui), theme_(theme), area_(area), x_(area.x + ui.px(10)), groupStart_(x_) {}
+
+    bool command(const std::string& id, const char* icon, const std::string& caption,
+                 bool active = false, bool enabled = true, const std::string& tip = std::string()) {
+        const float w = std::max(ui_.px(58), ui_.textWidth(caption, theme_.smallFontSize - 1.0f) +
+                                                 ui_.px(14));
+        const bool click = ui_.ribbonButton(id, {x_, area_.y, w, ui_.px(52)}, icon, caption, active,
+                                            enabled, tip);
+        x_ += w + ui_.px(2);
+        return click;
+    }
+    void endGroup(const std::string& name) {
+        ui_.label({groupStart_, area_.y + ui_.px(52), x_ - groupStart_, ui_.px(14)}, name,
+                  theme_.textSecondary, theme_.smallFontSize - 1.5f, false, true);
+        ui_.rect({x_ + ui_.px(3), area_.y + ui_.px(6), 1.0f, area_.h - ui_.px(12)},
+                 theme_.chromeHairline, 0);
+        x_ += ui_.px(10);
+        groupStart_ = x_;
+    }
+    void note(const std::string& text) {
+        const float w = ui_.textWidth(text, theme_.smallFontSize) + ui_.px(16);
+        ui_.label({x_, area_.y, w, ui_.px(52)}, text, theme_.textSecondary, theme_.smallFontSize);
+        x_ += w;
+    }
+
+private:
+    fsui::Ui& ui_;
+    const fsui::Theme& theme_;
+    Rect area_;
+    float x_;
+    float groupStart_;
+};
+
+}  // namespace
+
+void DesktopEditor::buildTitleBar(const Rect& bar) {
     fsui::Ui& ui = *ui_;
     ui.rect(bar, theme_.chromeSurface, 0);
-    ui.separator(bar.x, bar.bottom() - 1, bar.w);
     ui.block(bar);
-    const float s = ui.px(36);
+    const float s = ui.px(32);
     const float y = bar.y + (bar.h - s) * 0.5f;
     float x = bar.x + ui.px(10);
-    ui.icon("ic_forgeshape_mark", {x + ui.px(4), y + ui.px(6), ui.px(24), ui.px(24)}, theme_.accent);
+    ui.icon("ic_forgeshape_mark", {x + ui.px(4), y + ui.px(4), ui.px(24), ui.px(24)}, theme_.accent);
     x += ui.px(36);
-    const float titleW = std::min(ui.px(180), ui.textWidth(projectName_.empty() ? "ForgeShape" : projectName_, theme_.fontSize, true) + ui.px(8));
-    ui.label({x, bar.y, titleW, bar.h}, projectName_.empty() ? "ForgeShape" : projectName_,
-             theme_.textPrimary, theme_.fontSize, true);
+    const std::string name = projectName_.empty() ? std::string("ForgeShape") : projectName_;
+    const float titleW = std::min(ui.px(200), ui.textWidth(name, theme_.fontSize, true) + ui.px(8));
+    ui.label({x, bar.y, titleW, bar.h}, name, theme_.textPrimary, theme_.fontSize, true);
     x += titleW + ui.px(10);
     const auto gap = [&]() {
-        ui.rect({x + ui.px(4), y + ui.px(8), 1.0f, s - ui.px(16)}, theme_.chromeHairline, 0);
+        ui.rect({x + ui.px(4), y + ui.px(7), 1.0f, s - ui.px(14)}, theme_.chromeHairline, 0);
         x += ui.px(10);
     };
-    const auto tool = [&](const char* id, const char* icon, const char* tip, bool active = false) {
-        const bool click = ui.iconButton(id, {x, y, s, s}, icon, tip, active);
+    const auto tool = [&](const char* id, const char* icon, const char* tip, bool active = false,
+                          bool enabled = true) {
+        const bool click = ui.iconButton(id, {x, y, s, s}, icon, tip, active, enabled);
         x += s + ui.px(2);
         return click;
     };
-    if (tool("tb_browser", "ic_panel_browser", "Browser (objects and history)", browserOpen_))
-        browserOpen_ = !browserOpen_;
-    gap();
-    bool sketchOwns = false;
+    bool sketching = false, canUndo = false, canRedo = false;
     {
         std::lock_guard<std::mutex> lock(fs::editorStateMutex());
-        sketchOwns = fs::sketchSession().active() || fs::supportChooser().active();
-    }
-    if (sketchOwns) {
-        buildSketchToolbar(bar, x, y, s);
-        return;
-    }
-    if (tool("tb_open", "ic_project", "Open project\xE2\x80\xA6  Ctrl+O")) openProject();
-    if (tool("tb_save", "ic_save", "Save project\xE2\x80\xA6  Ctrl+S")) saveProject();
-    if (tool("tb_export", "ic_export", "Export GLB\xE2\x80\xA6  Ctrl+E")) exportGlb();
-    gap();
-    static const fs::PrimitiveKind kinds[] = {fs::PrimitiveKind::Box, fs::PrimitiveKind::Cylinder,
-                                              fs::PrimitiveKind::Sphere, fs::PrimitiveKind::Cone,
-                                              fs::PrimitiveKind::Capsule, fs::PrimitiveKind::Plane};
-    static const char* names[] = {"Add Box", "Add Cylinder", "Add Sphere", "Add Cone",
-                                  "Add Capsule", "Add Plane"};
-    for (int i = 0; i < 6; ++i) {
-        const std::string id = std::string("tb_add_") + std::to_string(i);
-        if (tool(id.c_str(), primitiveIcon(kinds[i]), names[i])) addPrimitive(static_cast<int>(kinds[i]));
+        sketching = fs::sketchSession().active();
+        canUndo = sketching ? fs::sketchSession().canUndoSketchEdit()
+                            : fs::constructionHistory().canUndo();
+        canRedo = sketching ? fs::sketchSession().canRedoSketchEdit()
+                            : fs::constructionHistory().canRedo();
     }
     gap();
-    if (tool("tb_new_sketch", "ic_sketch_new", "New sketch")) newSketch();
-    if (tool("tb_cad_part", "ic_op_new_body", "Make CAD part")) makeCadPart();
-    if (tool("tb_delete", "ic_delete", "Delete body  Del")) deleteActive();
-    gap();
-    int gizmoMode = -1;
-    bool localSpace = false;
-    {
-        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
-        const fs::GizmoSession& gizmo = fs::gizmoSession();
-        if (gizmo.active()) gizmoMode = static_cast<int>(gizmo.mode());
-        localSpace = gizmo.space() == fs::GizmoSpace::Local;
+    if (!sketching) {
+        if (tool("tb_open", "ic_project", "Open project\xE2\x80\xA6  Ctrl+O")) openProject();
+        if (tool("tb_save", "ic_save", "Save project\xE2\x80\xA6  Ctrl+S")) saveProject();
+        if (tool("tb_export", "ic_export", "Export GLB\xE2\x80\xA6  Ctrl+E")) exportGlb();
+        gap();
     }
-    if (tool("tb_move", "ic_gizmo_move", "Move", gizmoMode == 0)) setTransformMode(0);
-    if (tool("tb_rotate", "ic_gizmo_rotate", "Rotate", gizmoMode == 1)) setTransformMode(1);
-    if (tool("tb_scale", "ic_gizmo_scale", "Scale", gizmoMode == 2)) setTransformMode(2);
-    // World / Local where it applies: a world-axis scale of a turned body is a
-    // shear, so Scale has no space to choose.
-    if (gizmoMode == 0 || gizmoMode == 1) {
-        if (tool("tb_space", localSpace ? "ic_space_local" : "ic_space_world",
-                 localSpace ? "Local axes (switch to World)" : "World axes (switch to Local)")) {
-            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
-            fs::gizmoSession().setSpace(localSpace ? fs::GizmoSpace::World : fs::GizmoSpace::Local);
-        }
-    }
-    gap();
-    if (tool("tb_undo", "ic_undo", "Undo  Ctrl+Z")) undo();
-    if (tool("tb_redo", "ic_redo", "Redo  Ctrl+Y")) redo();
+    if (tool("tb_undo", "ic_undo", "Undo  Ctrl+Z", false, canUndo)) undo();
+    if (tool("tb_redo", "ic_redo", "Redo  Ctrl+Y", false, canRedo)) redo();
 
-    // The trailing group, right aligned.
     float rx = bar.right() - ui.px(10) - s;
     const auto right = [&](const char* id, const char* icon, const char* tip, bool active = false) {
         const bool click = ui.iconButton(id, {rx, y, s, s}, icon, tip, active);
         rx -= s + ui.px(2);
         return click;
     };
-    if (right("tb_close", "ic_sketch_cancel", "Close project")) closeProject();
+    if (!sketching && right("tb_close", "ic_sketch_cancel", "Close project")) closeProject();
     if (right("tb_properties", "ic_precision", "Properties", propertiesOpen_))
         propertiesOpen_ = !propertiesOpen_;
+    if (right("tb_browser", "ic_panel_browser", "Browser", browserOpen_)) browserOpen_ = !browserOpen_;
     if (right("tb_theme", "ic_settings", "Reload theme (theme.json)")) reloadTheme();
+}
+
+void DesktopEditor::buildRibbon(const Rect& bar) {
+    fsui::Ui& ui = *ui_;
+    ui.rect(bar, theme_.chromeSurface, 0);
+    ui.separator(bar.x, bar.y, bar.w);
+    ui.separator(bar.x, bar.bottom() - 1, bar.w);
+    ui.block(bar);
+    bool sketching = false;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        sketching = fs::sketchSession().active() || fs::supportChooser().active();
+    }
+    // While a sketch is open the Model tab gives way to the Sketch tab: its
+    // acts are refused under a sketch, and a control that cannot succeed is
+    // not drawn.
+    struct TabEntry { int index; const char* name; };
+    static const TabEntry kModelTabs[2] = {{0, "Model"}, {1, "View"}};
+    static const TabEntry kSketchTabs[2] = {{2, "Sketch"}, {1, "View"}};
+    const TabEntry* tabs = sketching ? kSketchTabs : kModelTabs;
+    if (sketching && ribbonTab_ == 0) ribbonTab_ = 2;
+    if (!sketching && ribbonTab_ == 2) ribbonTab_ = 0;
+    float tx = bar.x + ui.px(10);
+    for (int t = 0; t < 2; ++t) {
+        const TabEntry& tab = tabs[t];
+        const float tw = ui.textWidth(tab.name, theme_.fontSize, true) + ui.px(28);
+        const std::string id = std::string("ribbon_tab_") + tab.name;
+        if (ui.tab(id, {tx, bar.y + ui.px(4), tw, ui.px(24)}, tab.name, ribbonTab_ == tab.index)) {
+            ribbonTab_ = tab.index;
+        }
+        tx += tw + ui.px(4);
+    }
+    const Rect area{bar.x, bar.y + ui.px(30), bar.w, bar.h - ui.px(30)};
+    switch (ribbonTab_) {
+        case 1: buildViewRibbon(area); break;
+        case 2: buildSketchRibbon(area); break;
+        default: buildModelRibbon(area); break;
+    }
+}
+
+void DesktopEditor::buildModelRibbon(const Rect& area) {
+    RibbonRow row(*ui_, theme_, area);
+    int gizmoMode = -1;
+    bool localSpace = false, convertible = false, deletable = false;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        const fs::GizmoSession& gizmo = fs::gizmoSession();
+        if (gizmo.active()) gizmoMode = static_cast<int>(gizmo.mode());
+        localSpace = gizmo.space() == fs::GizmoSpace::Local;
+        const fs::ConstructionScene& scene = fs::constructionScene();
+        if (scene.hasProject()) {
+            const fs::SceneObject& body = scene.activeBody();
+            const fs::ConstructionObject* construction = body.constructionOrNull();
+            convertible = construction != nullptr && !body.frozenSculpt().mesh.frozen() &&
+                          fs::primitiveHasCadPart(construction->spec());
+            deletable = scene.bodyCount() > 1;
+        }
+    }
+    if (row.command("rb_new_sketch", "ic_sketch_new", "New sketch")) newSketch();
+    row.endGroup("Sketch");
+    static const fs::PrimitiveKind kinds[] = {fs::PrimitiveKind::Box, fs::PrimitiveKind::Cylinder,
+                                              fs::PrimitiveKind::Sphere, fs::PrimitiveKind::Cone,
+                                              fs::PrimitiveKind::Capsule, fs::PrimitiveKind::Plane};
+    static const char* names[] = {"Box", "Cylinder", "Sphere", "Cone", "Capsule", "Plane"};
+    for (int i = 0; i < 6; ++i) {
+        if (row.command("rb_add_" + std::to_string(i), primitiveIcon(kinds[i]), names[i])) {
+            addPrimitive(static_cast<int>(kinds[i]));
+        }
+    }
+    row.endGroup("Primitives");
+    // Drawn only where it can succeed: a primitive body becomes a part.
+    if (convertible) {
+        if (row.command("rb_cad_part", "ic_op_new_body", "CAD part", false, true,
+                        "Make the primitive a CAD part")) {
+            makeCadPart();
+        }
+        row.endGroup("Part");
+    }
+    if (row.command("rb_move", "ic_gizmo_move", "Move", gizmoMode == 0)) setTransformMode(0);
+    if (row.command("rb_rotate", "ic_gizmo_rotate", "Rotate", gizmoMode == 1)) setTransformMode(1);
+    if (row.command("rb_scale", "ic_gizmo_scale", "Scale", gizmoMode == 2)) setTransformMode(2);
+    // World / Local where it applies: a world-axis scale of a turned body is a
+    // shear, so Scale has no space to choose.
+    if (gizmoMode == 0 || gizmoMode == 1) {
+        if (row.command("rb_space", localSpace ? "ic_space_local" : "ic_space_world",
+                        localSpace ? "Local" : "World", false, true,
+                        localSpace ? "Local axes (switch to World)" : "World axes (switch to Local)")) {
+            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+            fs::gizmoSession().setSpace(localSpace ? fs::GizmoSpace::World : fs::GizmoSpace::Local);
+        }
+    }
+    // The last body of a project is never deleted, so Delete is absent then.
+    if (deletable && row.command("rb_delete", "ic_delete", "Delete", false, true, "Delete body  Del")) {
+        deleteActive();
+    }
+    row.endGroup("Arrange");
+}
+
+void DesktopEditor::buildViewRibbon(const Rect& area) {
+    RibbonRow row(*ui_, theme_, area);
+    bool sketchView = false, ortho = false;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        sketchView = fs::editorCamera().sketchViewActive();
+        ortho = fs::editorCamera().projectionMode() == fs::ProjectionMode::Orthographic;
+    }
+    // A sketch is drawn through its own exact view, which owns the camera:
+    // the views and the projection come back the moment it is finished.
+    if (!sketchView) {
+        if (row.command("rb_view_home", "ic_view_home", "Home")) setStandardView(0);
+        if (row.command("rb_view_fit", "ic_view_fit", "Fit", false, true, "Fit everything  F")) fitAll();
+        if (row.command("rb_view_front", "ic_view_front", "Front")) {
+            setStandardView(static_cast<int>(fs::StandardView::Front));
+        }
+        if (row.command("rb_view_top", "ic_view_top", "Top")) {
+            setStandardView(static_cast<int>(fs::StandardView::Top));
+        }
+        if (row.command("rb_view_right", "ic_view_right", "Right")) {
+            setStandardView(static_cast<int>(fs::StandardView::Right));
+        }
+        row.endGroup("Views");
+        const auto project = [&](fs::ProjectionMode mode) {
+            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+            fs::editorCamera().setProjectionMode(mode);
+        };
+        if (row.command("rb_perspective", "ic_projection_perspective", "Perspective", !ortho)) {
+            project(fs::ProjectionMode::Perspective);
+        }
+        if (row.command("rb_orthographic", "ic_projection_orthographic", "Orthographic", ortho)) {
+            project(fs::ProjectionMode::Orthographic);
+        }
+        row.endGroup("Projection");
+    }
+    fs::DisplaySettingsStore& display = fs::displaySettings();
+    const fs::ViewportDisplaySettings settings = display.snapshot();
+    if (row.command("rb_grid", "ic_view_grid", "Grid", settings.gridVisible)) {
+        display.setGridVisible(!settings.gridVisible);
+    }
+    if (row.command("rb_outline", "ic_view_outline", "Outline", settings.selectionOutlineVisible, true,
+                    "Selection outline")) {
+        display.setSelectionOutlineVisible(!settings.selectionOutlineVisible);
+    }
+    row.endGroup("Show");
+    if (row.command("rb_browser", "ic_panel_browser", "Browser", browserOpen_)) browserOpen_ = !browserOpen_;
+    if (row.command("rb_properties", "ic_precision", "Properties", propertiesOpen_)) {
+        propertiesOpen_ = !propertiesOpen_;
+    }
+    row.endGroup("Panels");
+}
+
+void DesktopEditor::buildHistoryStrip(const Rect& bar) {
+    fsui::Ui& ui = *ui_;
+    ui.panel(bar);
+    ui.block(bar);
+    std::vector<fs::CadTimelineRow> rows;
+    bool sketching = false, canUndo = false, canRedo = false;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        const fs::ConstructionScene& scene = fs::constructionScene();
+        sketching = fs::sketchSession().active();
+        canUndo = sketching ? fs::sketchSession().canUndoSketchEdit()
+                            : fs::constructionHistory().canUndo();
+        canRedo = sketching ? fs::sketchSession().canRedoSketchEdit()
+                            : fs::constructionHistory().canRedo();
+        if (scene.hasProject()) {
+            if (const fs::CadBody* cad = scene.activeBody().cadOrNull()) {
+                rows = fs::buildCadTimelineFor(cad->state()).rows;
+            }
+        }
+    }
+    const float s = ui.px(30);
+    const float y = bar.y + (bar.h - s) * 0.5f;
+    float x = bar.x + ui.px(12);
+    const float labelW = ui.textWidth("History", theme_.fontSize, true) + ui.px(12);
+    ui.label({x, bar.y, labelW, bar.h}, "History", theme_.textPrimary, theme_.fontSize, true);
+    x += labelW;
+    // Back and forward are Undo and Redo -- the one history, stepped one act
+    // at a time (the sketch's own while a sketch is open); there is no
+    // rollback marker, because a rolled-back chain would need durable
+    // semantics the project does not have.
+    if (ui.iconButton("hist_back", {x, y, s, s}, "ic_undo", "Back (Undo)  Ctrl+Z", false, canUndo)) undo();
+    x += s + ui.px(2);
+    if (ui.iconButton("hist_forward", {x, y, s, s}, "ic_redo", "Forward (Redo)  Ctrl+Y", false, canRedo)) {
+        redo();
+    }
+    x += s + ui.px(10);
+    ui.rect({x, y + ui.px(4), 1.0f, s - ui.px(8)}, theme_.chromeHairline, 0);
+    x += ui.px(10);
+    if (rows.empty()) {
+        ui.label({x, bar.y, bar.right() - x - ui.px(12), bar.h},
+                 sketching ? std::string("Sketching \xC2\xB7 Finish to add the step")
+                           : std::string("The active body has no feature history"),
+                 theme_.textDisabled, theme_.smallFontSize);
+        return;
+    }
+    // The steps in construction order, newest at the right; when they do not
+    // fit, the oldest scroll off the leading edge.
+    std::vector<float> widths;
+    float total = 0;
+    for (const fs::CadTimelineRow& row : rows) {
+        const float cw = ui.textWidth(timelineRowLabel(row), theme_.smallFontSize) + ui.px(38);
+        widths.push_back(cw);
+        total += cw + ui.px(6);
+    }
+    const float room = bar.right() - ui.px(10) - x;
+    float cx = total > room ? x + room - total : x;
+    ui.pushClip({x, bar.y, room, bar.h});
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const fs::CadTimelineRow& row = rows[i];
+        const Rect chip{cx, y, widths[i], s};
+        const bool failed = row.state == fs::CadTimelineRowState::Failed;
+        const bool stale = row.state == fs::CadTimelineRowState::NotRegenerated;
+        ui.rect(chip, theme_.controlSurface, ui.px(theme_.radius));
+        ui.border(chip, failed ? theme_.textError : theme_.controlBorder, ui.px(theme_.radius), 1.0f);
+        const fsui::Color ink = failed ? theme_.textError : stale ? theme_.textDisabled : theme_.textPrimary;
+        ui.icon(timelineRowIcon(row), {chip.x + ui.px(7), chip.y + (s - ui.px(18)) * 0.5f, ui.px(18),
+                                       ui.px(18)}, ink);
+        ui.label({chip.x + ui.px(30), chip.y, chip.w - ui.px(34), s}, timelineRowLabel(row), ink,
+                 theme_.smallFontSize);
+        cx += widths[i] + ui.px(6);
+    }
+    ui.popClip();
+}
+
+void DesktopEditor::buildViewCube(const Rect& vp) {
+    if (homeVisible_ || vp.w < ui_->px(200) || vp.h < ui_->px(160)) return;
+    fsui::Ui& ui = *ui_;
+    fs::CameraSnapshot camera;
+    bool sketchView = false;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        camera = fs::editorCamera().snapshot();
+        sketchView = fs::editorCamera().sketchViewActive();
+    }
+    const float radius = ui.px(40);
+    const float cx = vp.right() - ui.px(18) - radius;
+    const float cy = vp.y + ui.px(18) + radius;
+    const Rect box{cx - radius - ui.px(8), cy - radius - ui.px(8), 2 * radius + ui.px(16),
+                   2 * radius + ui.px(16)};
+    ui.circle(cx, cy, radius + ui.px(8), theme_.surfaceFloating.alpha(0.55f));
+    ui.block(box);
+    // The view matrix's rows are screen right, screen up and toward the eye.
+    const float right[3] = {camera.view.m[0], camera.view.m[4], camera.view.m[8]};
+    const float up[3] = {camera.view.m[1], camera.view.m[5], camera.view.m[9]};
+    const float toward[3] = {camera.view.m[2], camera.view.m[6], camera.view.m[10]};
+    struct End { int axis; bool positive; float depth; float sx, sy; };
+    std::vector<End> ends;
+    for (int a = 0; a < 3; ++a) {
+        for (int sign = 0; sign < 2; ++sign) {
+            const float k = sign == 0 ? 1.0f : -1.0f;
+            ends.push_back({a, sign == 0, k * toward[a], cx + k * right[a] * radius * 0.78f,
+                            cy - k * up[a] * radius * 0.78f});
+        }
+    }
+    std::sort(ends.begin(), ends.end(), [](const End& l, const End& r) { return l.depth < r.depth; });
+    static const fsui::Color colours[3] = {fsui::Color::hex(0xFFE5534B), fsui::Color::hex(0xFF57AB5A),
+                                           fsui::Color::hex(0xFF539BF5)};
+    static const char* letters[3] = {"X", "Y", "Z"};
+    // Each end is a view: +X Right, +Y Top, +Z Front, and their opposites.
+    static const fs::StandardView views[3][2] = {
+        {fs::StandardView::Right, fs::StandardView::Left},
+        {fs::StandardView::Top, fs::StandardView::Bottom},
+        {fs::StandardView::Front, fs::StandardView::Back}};
+    for (const End& end : ends) {
+        const fsui::Color colour = colours[end.axis];
+        const float r = end.positive ? ui.px(10) : ui.px(7);
+        if (end.positive) ui.line(cx, cy, end.sx, end.sy, ui.px(2.5f), colour);
+        const std::string id = std::string("cube_") + (end.positive ? "+" : "-") +
+                               static_cast<char>('x' + end.axis);
+        // In a sketch view the cube only reports orientation: the sketch owns
+        // the camera, so its ends are not controls there.
+        bool hot = false;
+        if (!sketchView) {
+            const Rect target{end.sx - ui.px(12), end.sy - ui.px(12), ui.px(24), ui.px(24)};
+            if (ui.iconButton(id, target, "", std::string(end.positive ? "" : "-") + letters[end.axis] +
+                                                  " \xC2\xB7 " + fs::standardViewName(views[end.axis][end.positive ? 0 : 1]) + " view")) {
+                setStandardView(static_cast<int>(views[end.axis][end.positive ? 0 : 1]));
+            }
+            hot = target.contains(input_.mouseX, input_.mouseY);
+        }
+        if (end.positive) {
+            ui.circle(end.sx, end.sy, r + (hot ? ui.px(2) : 0.0f), colour);
+            ui.label({end.sx - r, end.sy - r, 2 * r, 2 * r}, letters[end.axis],
+                     fsui::Color::hex(0xFF12110F), theme_.smallFontSize - 1.0f, true, true);
+        } else {
+            ui.circle(end.sx, end.sy, r + (hot ? ui.px(2) : 0.0f), colour.alpha(0.45f));
+        }
+    }
+    if (!sketchView) {
+        const float s = ui.px(26);
+        if (ui.iconButton("cube_home", {box.x - s - ui.px(2), box.y, s, s}, "ic_view_home", "Home view")) {
+            setStandardView(0);
+        }
+    }
+}
+
+void DesktopEditor::buildViewBar(const Rect& vp) {
+    if (homeVisible_) return;
+    bool sketchView = false, ortho = false;
+    {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        sketchView = fs::editorCamera().sketchViewActive();
+        ortho = fs::editorCamera().projectionMode() == fs::ProjectionMode::Orthographic;
+    }
+    if (sketchView) return;  // the sketch's exact view owns the camera
+    fsui::Ui& ui = *ui_;
+    const float s = ui.px(32);
+    const int count = 6;
+    const float w = count * (s + ui.px(2)) + ui.px(10) + ui.px(10);
+    const Rect bar{vp.x + (vp.w - w) * 0.5f, vp.bottom() - s - ui.px(18), w, s + ui.px(8)};
+    if (bar.x < vp.x) return;
+    ui.shadow(bar, theme_.shadow, ui.px(theme_.panelRadius), ui.px(10));
+    ui.rect(bar, theme_.surfaceFloating, ui.px(theme_.panelRadius));
+    ui.block(bar);
+    float x = bar.x + ui.px(6);
+    const float y = bar.y + ui.px(4);
+    const auto tool = [&](const char* id, const char* icon, const char* tip, bool active = false) {
+        const bool click = ui.iconButton(id, {x, y, s, s}, icon, tip, active);
+        x += s + ui.px(2);
+        return click;
+    };
+    if (tool("vb_fit", "ic_view_fit", "Fit everything  F")) fitAll();
+    if (tool("vb_home", "ic_view_home", "Home view")) setStandardView(0);
+    if (tool("vb_front", "ic_view_front", "Front view")) setStandardView(static_cast<int>(fs::StandardView::Front));
+    if (tool("vb_top", "ic_view_top", "Top view")) setStandardView(static_cast<int>(fs::StandardView::Top));
+    if (tool("vb_right", "ic_view_right", "Right view")) setStandardView(static_cast<int>(fs::StandardView::Right));
+    ui.rect({x + ui.px(3), y + ui.px(6), 1.0f, s - ui.px(12)}, theme_.chromeHairline, 0);
+    x += ui.px(8);
+    if (tool("vb_projection", ortho ? "ic_projection_orthographic" : "ic_projection_perspective",
+             ortho ? "Orthographic (switch to Perspective)" : "Perspective (switch to Orthographic)")) {
+        std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+        fs::editorCamera().setProjectionMode(ortho ? fs::ProjectionMode::Perspective
+                                                   : fs::ProjectionMode::Orthographic);
+    }
 }
 
 void DesktopEditor::buildBrowser(const Rect& panel) {
@@ -993,22 +1369,15 @@ void DesktopEditor::buildBrowser(const Rect& panel) {
     const float rowH = ui.px(theme_.rowHeight);
     std::vector<std::pair<fs::ObjectId, fs::BodyRepresentation>> bodies;
     fs::ObjectId active = fs::kNoObject;
-    std::vector<fs::CadTimelineRow> timeline;
     {
         std::lock_guard<std::mutex> lock(fs::editorStateMutex());
         const fs::ConstructionScene& scene = fs::constructionScene();
         for (size_t i = 0; i < scene.bodyCount(); ++i) {
             bodies.push_back({scene.bodyAt(i).objectId(), scene.bodyAt(i).representation()});
         }
-        if (scene.hasProject()) {
-            active = scene.activeBodyId();
-            if (const fs::CadBody* cad = scene.activeBody().cadOrNull()) {
-                timeline = fs::buildCadTimelineFor(cad->state()).rows;
-            }
-        }
+        if (scene.hasProject()) active = scene.activeBodyId();
     }
-    const float listBottom = timeline.empty() ? panel.bottom() - inner : panel.y + panel.h * 0.5f;
-    ui.pushClip({panel.x, y, panel.w, listBottom - y});
+    ui.pushClip({panel.x, y, panel.w, panel.bottom() - inner - y});
     for (const auto& body : bodies) {
         const std::string id = "obj_" + std::to_string(body.first);
         if (ui.listRow(id, {x, y, w, rowH}, bodyLabel(body.first), representationIcon(body.second),
@@ -1020,23 +1389,6 @@ void DesktopEditor::buildBrowser(const Rect& panel) {
                 fs::editorSelection().setSelected(body.first);
             }
         }
-        y += rowH + ui.px(2);
-    }
-    ui.popClip();
-    if (timeline.empty()) return;
-    y = listBottom + ui.px(6);
-    ui.separator(x, y, w);
-    y += ui.px(8);
-    ui.label({x + ui.px(4), y, w, ui.px(22)}, "HISTORY", theme_.textSecondary, theme_.titleFontSize, true);
-    y += ui.px(26);
-    ui.pushClip({panel.x, y, panel.w, panel.bottom() - inner - y});
-    for (const fs::CadTimelineRow& row : timeline) {
-        const std::string id = "hist_" + std::to_string(static_cast<int>(row.kind)) + "_" +
-                               std::to_string(row.id);
-        const char* state = row.state == fs::CadTimelineRowState::Failed ? "failed"
-                            : row.state == fs::CadTimelineRowState::NotRegenerated ? "not rebuilt"
-                                                                                    : "";
-        ui.listRow(id, {x, y, w, rowH}, timelineRowLabel(row), timelineRowIcon(row), false, state);
         y += rowH + ui.px(2);
     }
     ui.popClip();
@@ -1419,6 +1771,10 @@ bool DesktopEditor::routeSketchInput(int width, int height, bool overUi) {
 
 void DesktopEditor::sketchKeys() {
     if (ui_ && ui_->typing()) return;
+    // F frames everything, as in most CAD applications.
+    for (char32_t c : input_.text) {
+        if (c == U'f' || c == U'F') fitAll();
+    }
     for (fsui::Key key : input_.keys) {
         fs::SketchSessionState state = fs::SketchSessionState::Inactive;
         bool choosing = false;
@@ -1454,59 +1810,81 @@ void DesktopEditor::sketchKeys() {
     }
 }
 
-void DesktopEditor::buildSketchToolbar(const Rect& bar, float x, float y, float s) {
-    fsui::Ui& ui = *ui_;
+void DesktopEditor::buildSketchRibbon(const Rect& area) {
+    RibbonRow row(*ui_, theme_, area);
     fs::SketchSessionState state = fs::SketchSessionState::Inactive;
     fs::SketchTool current = fs::SketchTool::Select;
-    bool canUndo = false, canRedo = false, canExtrude = false;
+    bool canUndo = false, canRedo = false, canExtrude = false, oneSide = false, selected = false;
+    bool choosing = false;
+    fs::CadFeatureOperation operation = fs::CadFeatureOperation::NewBody;
     {
         std::lock_guard<std::mutex> lock(fs::editorStateMutex());
         fs::SketchSession& sketch = fs::sketchSession();
+        choosing = fs::supportChooser().active();
         state = sketch.state();
         current = sketch.tool();
         canUndo = sketch.canUndoSketchEdit();
         canRedo = sketch.canRedoSketchEdit();
+        selected = !sketch.selectedEntityIds().empty();
+        oneSide = sketch.extrude().extent == fs::ExtrudeExtentMode::OneSide;
+        operation = sketch.operation();
         if (state == fs::SketchSessionState::Ready && sketch.selectionChosen()) {
             canExtrude = sketch.evaluateCandidate().valid;
         }
     }
-    const auto tool = [&](const char* id, const char* icon, const std::string& tip, bool active,
-                          bool enabled = true) {
-        const bool click = ui.iconButton(id, {x, y, s, s}, icon, tip, active, enabled);
-        x += s + ui.px(2);
-        return click;
-    };
+    if (choosing && state == fs::SketchSessionState::Inactive) {
+        row.note("Click a plane or a flat face of a part");
+        if (row.command("rb_chooser_cancel", "ic_sketch_cancel", "Cancel")) cancelSketch();
+        row.endGroup("New sketch");
+        return;
+    }
     if (state == fs::SketchSessionState::Editing) {
-        for (size_t i = 0; i < sizeof(kSketchTools) / sizeof(kSketchTools[0]); ++i) {
-            const SketchToolEntry& entry = kSketchTools[i];
-            const std::string id = std::string("sk_tool_") + std::to_string(i);
-            if (tool(id.c_str(), entry.icon, entry.name, entry.tool == current)) {
+        const auto toolCommand = [&](size_t index, const char* group) {
+            (void)group;
+            const SketchToolEntry& entry = kSketchTools[index];
+            if (row.command("sk_tool_" + std::to_string(index), entry.icon, entry.name,
+                            entry.tool == current, true, entry.hint)) {
                 setSketchTool(fs::sketchToolIndex(entry.tool));
             }
+        };
+        for (size_t i = 1; i <= 6; ++i) toolCommand(i, "Draw");  // Line .. Spline
+        row.endGroup("Draw");
+        toolCommand(0, "Modify");  // Select
+        toolCommand(7, "Modify");  // Trim
+        if (selected && row.command("sk_delete", "ic_delete", "Delete", false, true,
+                                    "Delete the selected curve  Del")) {
+            deleteActive();
         }
-        ui.rect({x + ui.px(4), y + ui.px(8), 1.0f, s - ui.px(16)}, theme_.chromeHairline, 0);
-        x += ui.px(10);
-        if (tool("sk_undo", "ic_undo", "Undo  Ctrl+Z", false, canUndo)) undo();
-        if (tool("sk_redo", "ic_redo", "Redo  Ctrl+Y", false, canRedo)) redo();
+        row.endGroup("Modify");
+        if (row.command("sk_undo", "ic_undo", "Undo", false, canUndo)) undo();
+        if (row.command("sk_redo", "ic_redo", "Redo", false, canRedo)) redo();
+        row.endGroup("Edit");
+        if (row.command("sk_finish", "ic_sketch_keep", "Finish", true, true, "Finish sketch  Enter")) {
+            finishSketch();
+        }
+        if (row.command("sk_cancel", "ic_sketch_cancel", "Cancel", false, true, "Cancel sketch")) {
+            cancelSketch();
+        }
+        row.endGroup("Sketch");
     } else if (state == fs::SketchSessionState::Ready) {
-        if (tool("sk_back", "ic_sketch_back", "Back to sketch  Esc", false)) backToSketch();
-    }
-    // The trailing group: the way on, and the way out.
-    const float bw = ui.px(150);
-    float rx = bar.right() - ui.px(10);
-    if (state == fs::SketchSessionState::Editing) {
-        rx -= bw;
-        if (ui.button("sk_finish", {rx, y, bw, s}, "Finish sketch", "ic_sketch_keep", true)) finishSketch();
-    } else if (state == fs::SketchSessionState::Ready) {
-        rx -= bw;
-        if (ui.button("sk_extrude", {rx, y, bw, s}, "Extrude", "ic_op_new_body", true, canExtrude)) {
+        // The operation's own glyph: what this Extrude will do to the part.
+        if (row.command("sk_extrude", operationIcon(operation), "Extrude", true, canExtrude,
+                        std::string("Extrude \xC2\xB7 ") + operationLabel(operation) + "  Enter")) {
             commitSketch();
         }
-    }
-    rx -= s + ui.px(8);
-    if (ui.iconButton("sk_cancel", {rx, y, s, s}, "ic_sketch_cancel",
-                      state == fs::SketchSessionState::Inactive ? "Cancel" : "Cancel sketch")) {
-        cancelSketch();
+        if (oneSide && row.command("sk_flip", "ic_extrude_flip", "Flip", false, true,
+                                   "Flip the direction")) {
+            std::lock_guard<std::mutex> lock(fs::editorStateMutex());
+            fs::sketchSession().flipExtrudeDirection();
+        }
+        row.endGroup("Extrude");
+        if (row.command("sk_back", "ic_sketch_back", "Back", false, true, "Back to sketch  Esc")) {
+            backToSketch();
+        }
+        if (row.command("sk_cancel", "ic_sketch_cancel", "Cancel", false, true, "Cancel sketch")) {
+            cancelSketch();
+        }
+        row.endGroup("Sketch");
     }
 }
 

@@ -160,6 +160,24 @@ constexpr float kInitialYaw = 0.7f;
 constexpr float kInitialPitch = 0.5f;
 constexpr float kInitialDistance = 8.2f;
 
+// The standard views a view cube and a view bar offer (`WORKBENCH-RIBBON-R1`).
+// ForgeShape is +Y up and right-handed, so Front looks along -Z from the +Z
+// side, Right along -X from +X, Top straight down -Y with Front at the
+// bottom of the screen, and Home is the product's own opening pose.
+enum class StandardView : uint8_t {
+    Home,
+    Front,
+    Back,
+    Left,
+    Right,
+    Top,
+    Bottom,
+};
+
+constexpr int kStandardViewCount = 7;
+const char* standardViewName(StandardView view);
+bool standardViewFromIndex(int index, StandardView* out);
+
 class CameraController {
 public:
     CameraController();
@@ -218,6 +236,22 @@ public:
     // clamps refuse moves nothing, the target included.
     void zoomAtPixel(float x, float y, float notches);
 
+    // Turns the camera to a standard view about the CURRENT target, keeping
+    // the projection and the visible span, so the model stays the size it was
+    // and only the direction changes. Top and Bottom are EXACT -- the eye on
+    // the world Y axis, which the orbit's clamped pitch cannot reach -- through
+    // the same exact frame a sketch view uses, but orbitable: the first orbit
+    // leaves it for the nearest orbit pose, with no jump in where the camera
+    // looks. Refused (false) inside a sketch view, which owns the camera.
+    // Presentation only, like every pose.
+    bool setStandardView(StandardView view);
+
+    // Frames a world-space box: the target at its centre and the distance (or
+    // the orthographic span) so its bounding sphere fills the shorter side of
+    // the viewport with a margin. The view direction is kept. Refused (false)
+    // for a non-finite or inverted box and inside a sketch view.
+    bool frameBounds(const Vec3& boundsMin, const Vec3& boundsMax);
+
     // Restores the initial pose. Not wired to any gesture; used by self-tests.
     void resetCamera();
     // The orbit target back at the world origin, out of any sketch view, with
@@ -269,6 +303,8 @@ public:
 
     // Whether a sketch-frame view is currently installed.
     bool sketchViewActive() const { return sketchView_; }
+    // Whether an exact Top or Bottom view is installed (orbit leaves it).
+    bool alignedViewActive() const { return alignedView_; }
 
     // Switches the projection, PRESERVING THE FRAMING at the target plane.
     //
@@ -330,6 +366,10 @@ private:
     // the sketch with no pitch-clamp and no gimbal singularity. `target_` is
     // the in-plane look-at point (pan moves it along svU_/svV_).
     bool sketchView_ = false;
+    // An exact standard view (Top, Bottom) in the sketch view's frame fields,
+    // but orbitable: applyOrbit converts it to the orbit pose already stored
+    // in yaw_/pitch_ before turning. Never both this and sketchView_.
+    bool alignedView_ = false;
     Vec3 svU_{1.0f, 0.0f, 0.0f};
     Vec3 svV_{0.0f, 1.0f, 0.0f};
     Vec3 svN_{0.0f, 0.0f, 1.0f};

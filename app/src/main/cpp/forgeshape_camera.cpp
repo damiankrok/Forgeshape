@@ -1,5 +1,6 @@
 #include "forgeshape_camera.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace forgeshape {
@@ -111,8 +112,95 @@ bool CameraController::setPose(float yaw, float pitch, float distance) {
     return true;
 }
 
+const char* standardViewName(StandardView view) {
+    switch (view) {
+        case StandardView::Home: return "Home";
+        case StandardView::Front: return "Front";
+        case StandardView::Back: return "Back";
+        case StandardView::Left: return "Left";
+        case StandardView::Right: return "Right";
+        case StandardView::Top: return "Top";
+        case StandardView::Bottom: return "Bottom";
+    }
+    return "Unknown";
+}
+
+bool standardViewFromIndex(int index, StandardView* out) {
+    if (index < 0 || index >= kStandardViewCount || out == nullptr) {
+        return false;
+    }
+    *out = static_cast<StandardView>(index);
+    return true;
+}
+
+bool CameraController::setStandardView(StandardView view) {
+    if (sketchView_) {
+        return false;
+    }
+    constexpr float kHalfPi = 1.5707963f;
+    constexpr float kPi = 3.1415927f;
+    alignedView_ = false;
+    switch (view) {
+        case StandardView::Home:
+            yaw_ = kInitialYaw;
+            pitch_ = kInitialPitch;
+            break;
+        case StandardView::Front: yaw_ = 0.0f; pitch_ = 0.0f; break;
+        case StandardView::Back: yaw_ = kPi; pitch_ = 0.0f; break;
+        case StandardView::Right: yaw_ = kHalfPi; pitch_ = 0.0f; break;
+        case StandardView::Left: yaw_ = -kHalfPi; pitch_ = 0.0f; break;
+        case StandardView::Top:
+        case StandardView::Bottom: {
+            // Exact: screen-right +X, and Front at the bottom of a Top view
+            // (screen-up -Z), as the orbit at yaw 0 approaches the pole.
+            const bool top = view == StandardView::Top;
+            yaw_ = 0.0f;
+            pitch_ = top ? kPitchLimitRadians : -kPitchLimitRadians;
+            svU_ = Vec3{1.0f, 0.0f, 0.0f};
+            svV_ = top ? Vec3{0.0f, 0.0f, -1.0f} : Vec3{0.0f, 0.0f, 1.0f};
+            svN_ = top ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{0.0f, -1.0f, 0.0f};
+            alignedView_ = true;
+            break;
+        }
+    }
+    resetGesture();
+    return true;
+}
+
+bool CameraController::frameBounds(const Vec3& boundsMin, const Vec3& boundsMax) {
+    if (sketchView_ || !vec3Finite(boundsMin) || !vec3Finite(boundsMax)
+        || boundsMax.x < boundsMin.x || boundsMax.y < boundsMin.y || boundsMax.z < boundsMin.z) {
+        return false;
+    }
+    const Vec3 centre = vec3Scale(vec3Add(boundsMin, boundsMax), 0.5f);
+    const Vec3 diagonal = vec3Sub(boundsMax, boundsMin);
+    const float radius = std::max(0.5f * std::sqrt(vec3Dot(diagonal, diagonal)), 0.01f);
+    // A margin so the silhouette does not touch the edge.
+    constexpr float kMargin = 1.15f;
+    const float aspect = viewportHeight_ > 0
+                             ? static_cast<float>(viewportWidth_) / static_cast<float>(viewportHeight_)
+                             : 1.0f;
+    // The shorter side decides: in a portrait window the width is the limit.
+    const float halfHeightNeeded = radius * kMargin / std::min(1.0f, aspect > 0.0f ? aspect : 1.0f);
+    target_ = centre;
+    if (projection_ == ProjectionMode::Orthographic) {
+        orthoHalfHeightMeters_ =
+            clampf(halfHeightNeeded, kMinOrthoHalfHeightMeters, kMaxOrthoHalfHeightMeters);
+    } else {
+        // The sphere's silhouette subtends asin(r / d): fit it inside the half
+        // field of view on the limiting side.
+        const float halfFov = kFovYRadians * 0.5f;
+        const float fitHalf = std::atan(std::tan(halfFov) * std::min(1.0f, aspect > 0.0f ? aspect : 1.0f));
+        const float d = radius * kMargin / std::sin(fitHalf);
+        distance_ = clampf(d, kMinDistance, kMaxDistance);
+    }
+    resetGesture();
+    return true;
+}
+
 void CameraController::resetCamera() {
     sketchView_ = false;
+    alignedView_ = false;
     target_ = Vec3{0.0f, 0.0f, 0.0f};
     yaw_ = kInitialYaw;
     pitch_ = kInitialPitch;
@@ -127,6 +215,7 @@ void CameraController::resetCamera() {
 
 void CameraController::resetTarget() {
     sketchView_ = false;
+    alignedView_ = false;
     target_ = Vec3{0.0f, 0.0f, 0.0f};
     resetGesture();
 }
@@ -161,6 +250,7 @@ void CameraController::restorePose(const Pose& pose) {
                                         kMaxOrthoHalfHeightMeters);
     }
     sketchView_ = false;  // a captured pose is an orbit pose; leave sketch view
+    alignedView_ = false;
     resetGesture();
 }
 
@@ -181,6 +271,7 @@ void CameraController::frameSketchView(const Vec3& origin, const Vec3& u, const 
     }
     projection_ = ProjectionMode::Orthographic;
     sketchView_ = true;
+    alignedView_ = false;
     svU_ = un;
     svV_ = vn;
     svN_ = nn;
@@ -193,6 +284,7 @@ void CameraController::frameWorkplane(float yaw, float pitch) {
         return;
     }
     sketchView_ = false;
+    alignedView_ = false;
     target_ = Vec3{0.0f, 0.0f, 0.0f};
     yaw_ = wrapAngle(yaw);
     pitch_ = clampf(pitch, -kPitchLimitRadians, kPitchLimitRadians);
@@ -328,7 +420,7 @@ Vec3 CameraController::orbitDirection() const {
 }
 
 void CameraController::cameraBasis(Vec3* right, Vec3* up) const {
-    if (sketchView_) {
+    if (sketchView_ || alignedView_) {
         // In a sketch view the plane's own axes ARE screen right and up, so pan
         // slides the sketch under the fingers with no rounding through yaw.
         *right = svU_;
@@ -359,6 +451,10 @@ void CameraController::applyOrbit(float dx, float dy) {
     if (dx == 0.0f && dy == 0.0f) {
         return;
     }
+    // An exact Top or Bottom view turns from the orbit pose it was installed
+    // with (pitch at the clamp, the same screen-right), so leaving it costs
+    // the ~3 degrees the clamp keeps from the pole and nothing else.
+    alignedView_ = false;
     yaw_ = wrapAngle(yaw_ - dx * kOrbitRadiansPerPixel);
     pitch_ = clampf(pitch_ + dy * kOrbitRadiansPerPixel, -kPitchLimitRadians, kPitchLimitRadians);
     ++orbitCount_;
@@ -507,8 +603,9 @@ CameraSnapshot CameraController::snapshot() const {
     // the frame's own V, so the view is EXACTLY normal to the plane -- including
     // straight down, which the orbit's world-up look-at cannot express without
     // gimbal lock. That is why the sketch view bypasses yaw/pitch entirely.
-    const Vec3 direction = sketchView_ ? svN_ : orbitDirection();  // target -> eye
-    const Vec3 upVector = sketchView_ ? svV_ : Vec3{0.0f, 1.0f, 0.0f};
+    const bool framed = sketchView_ || alignedView_;
+    const Vec3 direction = framed ? svN_ : orbitDirection();  // target -> eye
+    const Vec3 upVector = framed ? svV_ : Vec3{0.0f, 1.0f, 0.0f};
 
     // The view plane sits at the orbit eye in Perspective and is pulled back in
     // Orthographic. Only the projection differs in where it puts the eye; the

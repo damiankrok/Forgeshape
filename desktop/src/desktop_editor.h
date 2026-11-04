@@ -109,6 +109,15 @@ public:
     void commitSketch();
     void cancelSketch();
 
+    // The view (`WORKBENCH-RIBBON-R1`): a standard view by index
+    // (`forgeshape::StandardView`), and Fit, framing everything drawn.
+    void setStandardView(int view);
+    void fitAll();
+
+    // Where a control stood in the last frame, by its semantic id; the
+    // headless check finds controls this way and never by a coordinate.
+    bool widgetRect(const std::string& id, fsui::Rect* out) const;
+
     const std::string& status() const { return status_; }
 
     // Whether the open project differs from what the last New, Open or Save
@@ -121,11 +130,17 @@ public:
 private:
     void buildInterface(int width, int height);
     void buildHome(int width, int height);
-    void buildToolbar(const fsui::Rect& bar);
+    void buildTitleBar(const fsui::Rect& bar);
+    void buildRibbon(const fsui::Rect& bar);
+    void buildModelRibbon(const fsui::Rect& area);
+    void buildViewRibbon(const fsui::Rect& area);
+    void buildHistoryStrip(const fsui::Rect& bar);
+    void buildViewCube(const fsui::Rect& viewport);
+    void buildViewBar(const fsui::Rect& viewport);
     void buildBrowser(const fsui::Rect& panel);
     void buildProperties(const fsui::Rect& panel);
     void buildStatusBar(const fsui::Rect& bar);
-    void buildSketchToolbar(const fsui::Rect& bar, float x, float y, float size);
+    void buildSketchRibbon(const fsui::Rect& area);
     void buildSketchProperties(const fsui::Rect& panel);
     void buildChooserProperties(const fsui::Rect& panel);
     // Routes the mouse while a sketch or the support chooser owns the
@@ -157,6 +172,8 @@ private:
     float sketchLastX_ = 0, sketchLastY_ = 0;
     fsui::Rect viewportRect_;
 
+    // The ribbon's chosen tab: 0 Model, 1 View, 2 Sketch (while one is open).
+    int ribbonTab_ = 0;
     bool browserOpen_ = true;
     bool propertiesOpen_ = true;
     bool homeVisible_ = true;

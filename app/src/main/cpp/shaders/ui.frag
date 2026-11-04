@@ -29,9 +29,16 @@ void main() {
         float d = roundedBox(vLocal, vHalf, vShape.x);
         float w = vShape.z;
         coverage = clamp(0.5 - (abs(d + 0.5 * w) - 0.5 * w), 0.0, 1.0);
-    } else {
+    } else if (mode < 3.5) {
         float d = roundedBox(vLocal, vHalf, vShape.x);
         coverage = 1.0 - smoothstep(-vShape.z, vShape.z, d);
+    } else {
+        // A segment (the view cube's axes): vLocal is relative to its first
+        // end, vHalf is the vector to the second, vShape.x the half width.
+        vec2 ba = vHalf;
+        float h = clamp(dot(vLocal, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+        float d = length(vLocal - ba * h) - vShape.x;
+        coverage = clamp(0.5 - d, 0.0, 1.0);
     }
     outColor = vec4(vColor.rgb, vColor.a * coverage);
 }

@@ -65,6 +65,14 @@ GizmoActivation editorSetGizmoActive(bool active);
 // Called under editorStateMutex(), on the thread that draws.
 void applyCadOperationPreview(SceneSnapshot* list);
 
+// The world box of everything the viewport DRAWS (`viewSceneSnapshot()`:
+// hidden bodies and an isolated-away body excluded), from the published
+// meshes placed by their models. False with nothing drawn.
+bool editorSceneBounds(Vec3* outMin, Vec3* outMax);
+// Fit (`WORKBENCH-RIBBON-R1`): the camera framed on that box, the view
+// direction kept. False with nothing to frame or inside a sketch view.
+bool editorFitAll();
+
 // ---------------------------------------------------------------------------
 // The sketch acts both shells take (`DESKTOP-R2`)
 // ---------------------------------------------------------------------------

@@ -212,6 +212,10 @@ int main(int argc, char** argv) {
     frameWith(idle);
     check("new_cad_part_opens_a_sketch_over_an_empty_scene",
           forgeshape::sketchSession().active() && !forgeshape::constructionScene().hasProject());
+    // The ribbon gives the Model tab up to the Sketch tab while drawing.
+    check("a_sketch_brings_the_sketch_tab_and_its_tools",
+          editor.widgetRect("ribbon_tab_Sketch", nullptr) && editor.widgetRect("sk_finish", nullptr) &&
+              editor.widgetRect("sk_tool_3", nullptr) && !editor.widgetRect("rb_add_0", nullptr));
     editor.setSketchTool(forgeshape::sketchToolIndex(forgeshape::SketchTool::Line));
     drag(640, 300, 700, 300);
     const size_t afterLine = forgeshape::sketchSession().sketch().entities.size();
@@ -289,6 +293,76 @@ int main(int argc, char** argv) {
           forgeshape::constructionHistory().undoDepth() == undoBeforeCut + 1);
     check("the_sketch_view_is_given_back", !forgeshape::sketchSession().active());
 
+    // --- the ribbon, the view cube, the view bar, the History strip ------
+    // (`WORKBENCH-RIBBON-R1`), every control found by its semantic id.
+    const auto clickId = [&](const char* id) {
+        // A fresh frame first: a control drawn before the act that moved it
+        // stood elsewhere one frame ago.
+        frameWith(idle);
+        fsui::Rect r;
+        if (!editor.widgetRect(id, &r)) return false;
+        click(r.x + r.w * 0.5f, r.y + r.h * 0.5f);
+        return true;
+    };
+    frameWith(idle);
+    check("the_model_ribbon_is_back_after_the_sketch",
+          editor.widgetRect("rb_new_sketch", nullptr) && editor.widgetRect("rb_add_0", nullptr));
+    const bool viewTab = clickId("ribbon_tab_View");
+    const bool topClicked = viewTab && clickId("rb_view_top");
+    check("the_view_ribbon_top_command_looks_straight_down",
+          topClicked && forgeshape::editorCamera().alignedViewActive());
+    const auto eyeDirection = []() {
+        const forgeshape::CameraSnapshot snap = forgeshape::editorCamera().snapshot();
+        return forgeshape::vec3Normalize(forgeshape::vec3Sub(snap.eye, snap.target));
+    };
+    const bool frontClicked = clickId("cube_+z");
+    check("the_view_cube_z_end_is_the_front_view",
+          frontClicked && eyeDirection().z > 0.9999f);
+    const bool rightClicked = clickId("cube_+x");
+    check("the_view_cube_x_end_is_the_right_view", rightClicked && eyeDirection().x > 0.9999f);
+    clickId("vb_home");
+    // Zoom far in, then Fit: the whole part is back on screen.
+    {
+        fsui::InputState in = mouse(800, 450);
+        in.wheel = 12.0f;
+        frameWith(in);
+    }
+    const bool fitClicked = clickId("vb_fit");
+    frameWith(idle);
+    bool allInside = fitClicked;
+    {
+        forgeshape::MassProperties now;
+        measureActive(&now);
+        for (int corner = 0; corner < 8; ++corner) {
+            const forgeshape::Vec3 p{
+                static_cast<float>((corner & 1) ? now.boundsMax.x : now.boundsMin.x),
+                static_cast<float>((corner & 2) ? now.boundsMax.y : now.boundsMin.y),
+                static_cast<float>((corner & 4) ? now.boundsMax.z : now.boundsMin.z)};
+            float sx = -1, sy = -1;
+            allInside = allInside && screenOf(p, width, height, &sx, &sy) && sx > 0 && sx < width &&
+                        sy > 0 && sy < height;
+        }
+    }
+    check("fit_frames_the_whole_part", allInside);
+    // The History strip's back and forward arrows are Undo and Redo.
+    const size_t depth = forgeshape::constructionHistory().undoDepth();
+    const bool back = clickId("hist_back");
+    for (int i = 0; i < 2; ++i) frameWith(idle);
+    forgeshape::MassProperties undone;
+    measureActive(&undone);
+    check("history_back_undoes_the_cut",
+          back && forgeshape::constructionHistory().undoDepth() == depth - 1 &&
+              undone.volume > pocketed.volume + 1e-9);
+    const bool forward = clickId("hist_forward");
+    for (int i = 0; i < 2; ++i) frameWith(idle);
+    forgeshape::MassProperties redone;
+    measureActive(&redone);
+    check("history_forward_redoes_it",
+          forward && forgeshape::constructionHistory().undoDepth() == depth &&
+              std::abs(redone.volume - pocketed.volume) < 1e-9);
+    clickId("ribbon_tab_Model");
+    clickId("vb_home");
+
     editor.requestCapture();
     for (int i = 0; i < 4 && !editor.captureReady(); ++i) editor.frame(width, height, 1.0f, idle);
     check("a_frame_was_read_back", editor.captureReady());
@@ -313,7 +387,8 @@ int main(int argc, char** argv) {
     }
     check("the_model_is_drawn_in_the_viewport", modelPixels > 200);
     const Pixel browser = at(rgba, w, 120, 300);
-    const Pixel properties = at(rgba, w, w - 120, 300);
+    // Below the panel's last section, where nothing but the panel stands.
+    const Pixel properties = at(rgba, w, w - 120, h - 140);
     check("the_browser_panel_stands_on_the_left", near(browser, 0x46, 0x43, 0x3F, 12));
     check("the_properties_panel_stands_on_the_right", near(properties, 0x46, 0x43, 0x3F, 12));
     editor.stop();

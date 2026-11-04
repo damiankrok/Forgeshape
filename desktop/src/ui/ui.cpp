@@ -74,6 +74,7 @@ void Ui::begin(int width, int height, float scale, const InputState& input) {
     commandStart_ = 0;
     previousBlockers_ = blockers_;
     blockers_.clear();
+    widgetRects_.clear();
     hotId_.clear();
     tooltipText_.clear();
     if (input_.mouseReleased[0] && pressedId_ != "") {
@@ -194,6 +195,17 @@ void Ui::shadow(const Rect& r, Color c, float radiusPx, float blurPx) {
          0, 0, 3.0f, cx, cy, r.w * 0.5f, r.h * 0.5f, radiusPx, blurPx, c);
 }
 
+void Ui::line(float x0, float y0, float x1, float y1, float widthPx, Color c) {
+    if (c.a == 0) return;
+    const float pad = widthPx * 0.5f + 1.5f;
+    quad(std::min(x0, x1) - pad, std::min(y0, y1) - pad, std::max(x0, x1) + pad,
+         std::max(y0, y1) + pad, 0, 0, 0, 0, 4.0f, x0, y0, x1 - x0, y1 - y0, widthPx * 0.5f, 0, c);
+}
+
+void Ui::circle(float cx, float cy, float radiusPx, Color c) {
+    rect({cx - radiusPx, cy - radiusPx, radiusPx * 2.0f, radiusPx * 2.0f}, c, radiusPx);
+}
+
 void Ui::icon(const std::string& name, const Rect& box, Color c) {
     const int size = static_cast<int>(std::lround(std::min(box.w, box.h)));
     const AtlasEntry& e = atlas_.icon(name, size);
@@ -276,7 +288,18 @@ bool Ui::hot(const std::string& id, const Rect& r) {
     return false;
 }
 
+bool Ui::widgetRect(const std::string& id, Rect* out) const {
+    for (const auto& entry : widgetRects_) {
+        if (entry.first == id) {
+            if (out != nullptr) *out = entry.second;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Ui::clicked(const std::string& id, const Rect& r, bool enabled) {
+    widgetRects_.push_back({id, r});
     if (!enabled) return false;
     const bool over = hot(id, r);
     if (over && input_.mousePressed[0]) pressedId_ = id;
@@ -325,6 +348,40 @@ bool Ui::iconButton(const std::string& id, const Rect& r, const std::string& ico
     const Color ink = !enabled ? theme_.textDisabled : active ? theme_.accent : theme_.textPrimary;
     icon(iconName, {r.x + (r.w - s) * 0.5f, r.y + (r.h - s) * 0.5f, s, s}, ink);
     if (over && !tip.empty()) tooltip(tip);
+    return click;
+}
+
+bool Ui::ribbonButton(const std::string& id, const Rect& r, const std::string& iconName,
+                      const std::string& caption, bool active, bool enabled,
+                      const std::string& tip) {
+    const bool click = clicked(id, r, enabled);
+    const bool over = enabled && hotId_ == id;
+    const float radius = px(theme_.radius);
+    if (active) {
+        rect(r, theme_.accent.alpha(0.22f), radius);
+        border(r, theme_.accent.alpha(0.55f), radius, 1.0f);
+    } else if (over) {
+        rect(r, theme_.controlSurfacePressed.alpha(0.85f), radius);
+    }
+    const float s = px(24);
+    const Color ink = !enabled ? theme_.textDisabled : active ? theme_.accent : theme_.textPrimary;
+    icon(iconName, {r.x + (r.w - s) * 0.5f, r.y + px(6), s, s}, ink);
+    label({r.x + px(2), r.y + px(34), r.w - px(4), px(16)}, caption,
+          enabled ? theme_.textPrimary : theme_.textDisabled, theme_.smallFontSize - 1.0f, false,
+          true);
+    if (over && !tip.empty()) tooltip(tip);
+    return click;
+}
+
+bool Ui::tab(const std::string& id, const Rect& r, const std::string& textValue, bool active) {
+    const bool click = clicked(id, r, true);
+    const bool over = hotId_ == id;
+    if (active) {
+        rect(r, theme_.accent.alpha(0.18f), px(theme_.radius));
+    } else if (over) {
+        rect(r, theme_.controlSurfacePressed.alpha(0.7f), px(theme_.radius));
+    }
+    label(r, textValue, active ? theme_.accent : theme_.textPrimary, theme_.fontSize, active, true);
     return click;
 }
 

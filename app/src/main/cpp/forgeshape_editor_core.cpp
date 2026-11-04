@@ -159,6 +159,37 @@ void applyCadOperationPreview(SceneSnapshot* list) {
 }
 
 
+bool editorSceneBounds(Vec3* outMin, Vec3* outMax) {
+    bool any = false;
+    Vec3 lo{0.0f, 0.0f, 0.0f}, hi{0.0f, 0.0f, 0.0f};
+    for (const SceneDrawItem& item : viewSceneSnapshot()) {
+        if (!item.mesh) continue;
+        const MeshVertex* vertices = item.mesh->vertices();
+        for (uint32_t i = 0; i < item.mesh->vertexCount(); ++i) {
+            const Vec3 local{vertices[i].position[0], vertices[i].position[1],
+                             vertices[i].position[2]};
+            const Vec3 p = mat4TransformPoint(item.model, local);
+            if (!any) {
+                lo = hi = p;
+                any = true;
+            } else {
+                lo = Vec3{std::min(lo.x, p.x), std::min(lo.y, p.y), std::min(lo.z, p.z)};
+                hi = Vec3{std::max(hi.x, p.x), std::max(hi.y, p.y), std::max(hi.z, p.z)};
+            }
+        }
+    }
+    if (any && outMin != nullptr && outMax != nullptr) {
+        *outMin = lo;
+        *outMax = hi;
+    }
+    return any;
+}
+
+bool editorFitAll() {
+    Vec3 lo, hi;
+    return editorSceneBounds(&lo, &hi) && editorCamera().frameBounds(lo, hi);
+}
+
 // ---------------------------------------------------------------------------
 // The sketch acts both shells take (`DESKTOP-R2`)
 // ---------------------------------------------------------------------------

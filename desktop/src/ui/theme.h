@@ -62,8 +62,10 @@ struct Theme {
     float radius = 8.0f;
     float panelRadius = 12.0f;
     float spacing = 8.0f;
-    float toolbarHeight = 48.0f;
-    float statusHeight = 28.0f;
+    float toolbarHeight = 40.0f;   // the title row: file acts, Undo/Redo
+    float ribbonHeight = 96.0f;    // tabs, captioned commands, group names
+    float historyHeight = 46.0f;   // the History strip along the bottom
+    float statusHeight = 24.0f;
     float browserWidth = 264.0f;
     float propertiesWidth = 300.0f;
     float panelInset = 10.0f;
