@@ -1668,6 +1668,18 @@ on the host, with no device, and is the fast native loop.
   the project drawer, Add Primitive) standing over a DOCKED workbench panel
   while it is open: it consumes every touch in its bounds and closes on the
   next act, exactly as a desktop menu over a side panel does.
+  **A workbench also carries the view cube, the view bar and the History
+  strip** (`WORKBENCH-RIBBON-R1`, OWNER 2026-11-04: "no slider, back and
+  forward arrows are enough"): the cube at the top of the model on the side
+  AWAY from the trailing controls (their docked face actions stand at the
+  inner edge from the top), the bar at the bottom centre of the model, the
+  strip along the bottom edge beside the Undo / Redo pair, all three absent on
+  a phone, in a medium window and while a sketch owns the viewport. The views
+  and Fit are native's (`CameraController::setStandardView`, `frameBounds`,
+  `editorFitAll`), presentation only; Top and Bottom are EXACT and orbitable.
+  The strip is a VIEW of the same timeline read the History shows, a step
+  chip is its row's own act, and its back and forward are Undo and Redo:
+  there is no rollback marker.
 - **Chrome reports, it does not instruct.** The status line carries verdicts and
   standing faults only; a message that is always true is a permanent surface
   whatever its timeout says, and the rail entry, the control that opened a panel
@@ -1901,7 +1913,14 @@ on the host, with no device, and is the fast native loop.
   *Reference* dimension (a persistent sketch dimension whose value can be typed
   to change the geometry / one that only reads it, written in parentheses),
   *History* (the surface listing a CAD or Surface body's sketches and features
-in construction order; never a "timeline bar"), *Freeform* (a body shaped by
+in construction order; never a "timeline bar"), *History strip* (the same
+steps along the bottom edge of a workbench or the desktop, beside Undo and
+Redo; never a "timeline" with a rollback marker, which does not exist),
+*ribbon* (the desktop's captioned command row under the title row, in tabs —
+Model, View, and Sketch while one is open — and named groups), *view cube*
+(the world axes drawn from the camera, each end a standard view; never a
+"gizmo"), *view bar* (Fit, Home, Front, Top, Right and the projection, standing
+on the model), *Fit* (framing everything drawn), *Freeform* (a body shaped by
 its quad control cage, subdivided smooth; never "T-Spline" or "SubD" to the
 user), *control cage* (a Freeform body's vertices, edges and faces),
 *Surface* (a body built from open surface features), *patch* (one derived

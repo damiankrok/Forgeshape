@@ -92,7 +92,9 @@ UNVERIFIED until the owner runs the build.
 
 | Stage | Delivers |
 | --- | --- |
-| `DESKTOP-R1` | window, renderer seam, navigation, selection, the UI kit's shell (top command row, Browser, Properties, status), New / Open / Save / Save As / Export GLB, primitives, Undo / Redo, Delete, Display settings, theme file, installer, CI |
-| `DESKTOP-R2` | Sketch and Extrude (New Body / Add / Cut / Intersect) with the mouse. `SketchSession` already takes platform-neutral touch samples (`onTouch`, `toggleRegionAt`, `finish`, `commitSketch`); what moves out of JNI into the editor core is the sketch VIEW (`beginSketchView` / `endSketchView`, the feature view after Finish) and the first-project commit, so both shells frame and commit a sketch through one path |
+| `DESKTOP-R1` ✅ | window, renderer seam, navigation, selection, the UI kit's shell (top command row, Browser, Properties, status), New / Open / Save / Save As / Export GLB, primitives, Undo / Redo, Delete, Display settings, theme file, installer, CI |
+| `DESKTOP-R2` ✅ | Sketch and Extrude (New Body / Add / Cut / Intersect) with the mouse. `SketchSession` already takes platform-neutral touch samples (`onTouch`, `toggleRegionAt`, `finish`, `commitSketch`); what moves out of JNI into the editor core is the sketch VIEW (`beginSketchView` / `endSketchView`, the feature view after Finish) and the first-project commit, so both shells frame and commit a sketch through one path |
+| `WORKBENCH-RIBBON-R1` | the SolidCraft arrangement on both shells (OWNER 2026-11-04, after comparing the two): standard views and Fit in the core; on the desktop a title row, a ribbon of captioned commands in tabs and named groups, a History strip along the bottom whose back and forward are Undo and Redo (no rollback marker, by the owner's choice), a view cube and a view bar; on a tablet workbench the view cube, the view bar and the History strip |
+| `WORKBENCH-RIBBON-R2` | the tablet's ribbon: the workbench's captioned command row under the Global Toolbar, the face actions (Sketch here, Hole, Pattern, Mirror, Round / Bevel edges) in its contextual group |
 | `DESKTOP-R3` | every remaining CAD act (finishes, holes, patterns, revolve, measure, History editing), then Freeform, Surface and Sculpt with a mouse or pen |
 | later | cloud: the same `.forge` document opened from a shared location by either application |
