@@ -3306,6 +3306,24 @@ Java_com_forgeshape_app_NativeViewport_sceneBodyName(JNIEnv* env, jclass, jlong 
     return newJavaString(env, name);
 }
 
+// The label a body is SHOWN by (`WORKBENCH-RIBBON-R2`): its stored name, or
+// the representation-named default the core derives — one rule for both
+// shells. Never stored; see forgeshape::defaultBodyLabel.
+JNIEXPORT jstring JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneBodyDisplayName(JNIEnv* env, jclass,
+                                                             jlong objectId) {
+    std::string label;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SceneObject* body = forgeshape::constructionScene().findBody(
+            static_cast<forgeshape::ObjectId>(objectId));
+        if (body != nullptr) {
+            label = forgeshape::bodyDisplayLabel(*body);
+        }
+    }
+    return newJavaString(env, label);
+}
+
 // Whether a body's geometry came from a file rather than from parameters.
 //
 // The Android layer asks so it can withdraw the controls an imported body has

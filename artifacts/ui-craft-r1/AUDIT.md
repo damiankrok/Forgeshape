@@ -113,7 +113,11 @@ and both handednesses take it unchanged.
   all four representations). Ids and content descriptions are unchanged.
 - `text_display` 21→22 sp.
 
-## 3. Recommended next (each needs an OWNER decision; none is implemented)
+## 3. Recommended next — all four DECIDED and DONE by `WORKBENCH-RIBBON-R2` (OWNER 2026-11-05)
+
+Item 1 was already true (Add Primitive carries a Sketch tile, `add_sketch`);
+2, 3 and 4 landed in `WORKBENCH-RIBBON-R2` together with the tablet ribbon
+and the Layout preference. The list is kept as the record of what was asked.
 
 1. A *Sketch* entry beside the six primitives in Add Primitive — the `+`
    becomes "add a shape or a sketch" — keeping the drawer's New Sketch as

@@ -190,7 +190,7 @@ project, with an empty Undo history; Back to Home before that costs nothing.
 Once a project is open, the **ForgeShape mark** in the top-left corner opens
 the project drawer, which unfolds from the mark down the left edge: **Create**
 (**New Sketch**, **New Project…**), **Project** (Save Project, Open Saved
-Project), **Transfer** (Save Copy…, Open File…, Share Diagnostics…), **Import a
+Project), **Transfer** (Export as…, Save Copy…, Open File…, Share Diagnostics…), **Import a
 mesh** (Import GLB…) and **Application** (Settings…). Tapping the mark again,
 or System Back, closes it; choosing a row closes it and does that thing. The
 mark is not there in a brand-new CAD sketch, before the first Extrude, because
@@ -221,8 +221,8 @@ floating groups with the model visible between and behind them — the
 **ForgeShape mark** first, in the top-left corner, which opens the project
 drawer; an editing group beside it carrying what is being edited and the
 control that crosses between constructing and sculpting; and a utility group on
-the trailing edge carrying Export, the viewport's display settings and the
-control that hides the chrome. On a narrow phone the mark and the trailing
+the trailing edge carrying the viewport's display settings and the control that
+hides the chrome. On a narrow phone the mark and the trailing
 controls keep their full size and only the transition's label gives way.
 
 **The workspace at rest says nothing, and draws nothing to say it.** A status or
@@ -484,8 +484,26 @@ and the bottom edge a **History strip**:
 
 All three step aside while a sketch is open and come back when it closes.
 
+**The ribbon.** Under the top row the workbench carries the same captioned
+command row the Windows version has, in two tabs. **Model**: *Sketch* (New
+sketch), *Primitives* (Box, Cylinder, Sphere, Cone, Capsule, Plane), *Part*
+(CAD part — only while the selected shape can become one), *Arrange* (Move,
+Rotate, Scale, then World / Local while a mode that has a choice is held, and
+Delete — never for the last body), and *Face*, which appears when you tap a
+face of a part and carries that face's acts: Sketch here, Round, Bevel, Hole,
+Pattern, Mirror. On the workbench those acts live on the ribbon rather than in
+the column beside the panels; the hollow marker still shows which face, and the
+editors still open docked. **View**: *Show* — Grid, Outline, Edges, each lit
+while it is on. Every ribbon command is the same act the capsules, the Add
+Primitive surface or a face tap would do. While a sketch is open, or while you
+are sculpting, the ribbon steps aside: the Tool Rail is the sketch's and the
+brushes' home.
+
 A phone, and a tablet in a narrower window, keep the layout described above:
-no panel stands at rest. On such a wide window Home's column stands in the
+no panel stands at rest. **Settings → Workspace → Layout** overrules the window:
+*Phone* keeps the compact composition on any screen, *Workbench* asks for the
+desktop arrangement on any window at least 600 dp wide (the Browser still
+needs room for a 480 dp model), and *Automatic (default)* follows the window. On such a wide window Home's column stands in the
 middle of the page and **New Project** and **Open File…** stand side by side
 as two tiles; a phone keeps them one under the other.
 
@@ -511,7 +529,8 @@ The left button behaves as a finger does.
 
 The **Objects capsule**, low on the leading edge, names the body you are working
 on. Tapping that name opens the scene list, which rises out of the capsule: one
-row per body, labelled `Body #1`, `Body #2` and so on, with the selected one
+row per body, labelled by what it is — `Body #1` for a shape, `Part #2` for a
+CAD part, `Mesh #3` for an imported mesh, `Freeform #4`, `Surface #5` — with the selected one
 visibly active, and a **+** to add another. It closes again on a second tap, so
 while it is shut it costs the picture nothing. On a window wide enough for it, and
 while you are constructing, the same list is a permanent panel beside the model
@@ -602,8 +621,8 @@ new name appears wherever the object is named — the row, the Objects capsule,
 the panel title, the status line — because there is one name and every surface
 reads it. Accented letters, other scripts and emoji all survive exactly. An
 empty name is refused and the old one stands: a nameless object falls back to
-*Body #3*, and that is what an object with no name gets, not something you can
-type your way into. Back, or closing the strip, cancels and changes nothing.
+*Body #3* (*Part #3* for a CAD part, *Mesh #3* for an imported mesh), and that
+is what an object with no name gets, not something you can type your way into. Back, or closing the strip, cancels and changes nothing.
 
 **Show / Hide.** A hidden object stops being drawn and stops being selectable in
 the viewport — you cannot tap it by accident, and it grows no selection outline.
@@ -2242,7 +2261,12 @@ same body selected and the same tool in hand. While it stands the viewport is
 not reachable, and nothing behind it can be touched.
 
 Four groups. **Appearance** is the five palettes above. **Workspace** is
-**Handedness**: *Right-handed (default)* keeps the tool rail on the right edge;
+**Handedness** and **Layout**. Layout is *Automatic (default)* — a phone is
+compact, a large tablet in landscape is the workbench — *Phone*, which keeps
+the compact composition on any screen, and *Workbench*, which asks for the
+ribbon and the docked panels on any window at least 600 dp wide; changing it is
+exactly a resize, and nothing about the project moves. Handedness:
+*Right-handed (default)* keeps the tool rail on the right edge;
 *Left-handed* moves the rail — and the exact-value panel, the sculpt sliders
 and, on a wide window, the Objects column — to the left edge, the same 8 dp off
 it, the same width, the same height down the window, with the exact-value panel
@@ -2418,8 +2442,10 @@ are never asked about it again. It cannot loop, and it cannot replace anything.
 
 ## Moving a project on and off the device
 
-The project surface carries two more actions, under **Transfer**:
+The project surface carries three more actions, under **Transfer**:
 
+- **Export as…** opens the format menu described below and writes a model file
+  for another program.
 - **Save Copy…** asks where to put a copy and writes the project there, using
   the system's own file UI. Your saved project is unchanged.
 - **Open File…** asks which project file to read and opens it. The project
@@ -2437,7 +2463,7 @@ version — is refused with the reason, leaving your work exactly as it was.
 
 ## Sending the model to another program
 
-**Export**, in the top bar, writes what you have made as a **`.glb` model file**
+**Export as…**, in the project drawer's Transfer group, writes what you have made as a **`.glb` model file**
 — the standard binary form of glTF, which Blender, Godot, Unreal, Windows 3D
 Viewer, macOS Quick Look and most other 3D programs open directly. You choose
 where it goes, using the system's own file UI, and the suggested name ends

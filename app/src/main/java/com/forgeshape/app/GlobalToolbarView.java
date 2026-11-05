@@ -99,7 +99,6 @@ final class GlobalToolbarView extends LinearLayout {
     private boolean extrudeReady = true;
     /** The sketch state {@link #showContext} last drew. */
     private int sketchState = NativeViewport.SKETCH_INACTIVE;
-    private final TextView exportAction;
     /**
      * The ForgeShape mark, the ONE project door (`MODELING-R1-OWNER-CORRECTION`):
      * the leading control of the row, top-left, opening the project drawer
@@ -408,38 +407,12 @@ final class GlobalToolbarView extends LinearLayout {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // Export WORKS now, for exactly one format.
-        //
-        // It kept this placement through three stages as a drawn, recessed,
-        // honestly-unavailable control, which is why it is here and not
-        // somewhere new: the reserved home was the promise, and this is the
-        // promise being kept rather than a control being added. What changed is
-        // that it is an ordinary capsule member instead of a recessed well, and
-        // that pressing it does something.
-        //
-        // The label stays the single word the row was measured for. "Export
-        // GLB…" was tried and REJECTED by UIR4B-16: the extra width comes out
-        // of the same toolbar row as the transition button, which then
-        // abbreviates to "← Construction". Critical navigation outranks naming
-        // the format in the label, so the format is carried where it costs the
-        // row nothing — the content description, and the .glb filename the
-        // system picker opens with.
-        exportAction = EditorControlStyles.chip(context, R.id.export_action,
-                context.getString(R.string.export));
-        EditorControlStyles.asCapsuleMember(exportAction, R.drawable.bg_capsule_tonal);
-        exportAction.setTextColor(
-                EditorControlStyles.themeColor(context, R.attr.fsTextPrimary));
-        exportAction.setContentDescription(context.getString(R.string.export_glb_description));
+        // Export is NOT here any more (`WORKBENCH-RIBBON-R2`): it is a row of
+        // the project drawer's Transfer group, and the format menu it opens is
+        // still this toolbar's (showExportMenu), hung from the mark the
+        // drawer closed from. The utility group is two icon controls, so the
+        // transition button never competes with a word for the row.
         exportActions = actions;
-        // A tap opens the format menu (`INTERCHANGE-R1`): GLB, STL, 3MF, OBJ,
-        // PLY. A transient menu anchored to the chip, closed by its own choice.
-        exportAction.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showExportMenu();
-            }
-        });
-        utilityGroup.addView(exportAction, EditorControlStyles.wrap(0));
 
         // The project actions are NOT here any more
         // (`MODELING-R1-OWNER-CORRECTION`): the ForgeShape mark at the leading
@@ -619,8 +592,13 @@ final class GlobalToolbarView extends LinearLayout {
         }
     }
 
-    private void showExportMenu() {
-        final android.widget.PopupMenu menu = new android.widget.PopupMenu(getContext(), exportAction);
+    /**
+     * The Export as… format menu (`INTERCHANGE-R1`), opened by the drawer's
+     * row (`WORKBENCH-RIBBON-R2`) and hung from the ForgeShape mark — the
+     * drawer has already closed, and the mark is where the act came from.
+     */
+    void showExportMenu() {
+        final android.widget.PopupMenu menu = new android.widget.PopupMenu(getContext(), projectMark);
         for (int i = 0; i < EditorWorkspaceView.EXPORT_FORMATS.length; i++) {
             final EditorWorkspaceView.ExportFormat format = EditorWorkspaceView.EXPORT_FORMATS[i];
             menu.getMenu().add(0, format.code, i, format.label);
@@ -745,7 +723,6 @@ final class GlobalToolbarView extends LinearLayout {
     void showBootstrap(boolean open) {
         bootstrap = open;
         backToHomeButton.setVisibility(open ? VISIBLE : GONE);
-        exportAction.setVisibility(open ? GONE : VISIBLE);
         markGroup.setVisibility(open ? GONE : VISIBLE);
         applyEditingComposition();
     }

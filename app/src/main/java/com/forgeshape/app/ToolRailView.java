@@ -286,7 +286,8 @@ final class ToolRailView extends LinearLayout {
      * chrome, the chrome consumes it, and the {@code SurfaceView} beneath never
      * sees any of it either way.
      */
-    private static final class RailEntryView extends LinearLayout {
+    /** Package-private since `WORKBENCH-RIBBON-R2`: the ribbon's commands are rail entries. */
+    static final class RailEntryView extends LinearLayout {
 
         /**
          * How far past the platform's own scroll threshold a drag must travel

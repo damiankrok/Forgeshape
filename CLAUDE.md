@@ -1212,8 +1212,10 @@ on the host, with no device, and is the fast native loop.
 - **Preferences are application state, never project truth** (`UI-PREF-R1`,
   UI-OWNER-37, UI-OWNER-32, UI-OWNER-42). `AppPreferences` is ONE versioned,
   immutable value — palette, handedness, gizmo visual scale, gizmo stroke
-  weight, and since `CAD-VERTICAL-SLICE-R1` Tool Labels (default OFF: short
-  captions on the canvas CAD HUD's icons; a missing key is OFF) — persisted by `AppPreferencesStore` in the app's own
+  weight, since `CAD-VERTICAL-SLICE-R1` Tool Labels (default OFF: short
+  captions on the canvas CAD HUD's icons; a missing key is OFF) and since
+  `WORKBENCH-RIBBON-R2` Layout (Automatic / Phone / Workbench; a missing or
+  unknown name is Automatic, the schema is still 1) — persisted by `AppPreferencesStore` in the app's own
   `SharedPreferences` file and read BEFORE the Activity applies its theme, so
   the first frame is already the stored palette. It enters no `.forge` byte,
   moves no fingerprint, dirties no project, records no Construction or Sculpt
@@ -1716,7 +1718,28 @@ on the host, with no device, and is the fast native loop.
   `editorFitAll`), presentation only; Top and Bottom are EXACT and orbitable.
   The strip is a VIEW of the same timeline read the History shows, a step
   chip is its row's own act, and its back and forward are Undo and Redo:
-  there is no rollback marker.
+  there is no rollback marker. **A workbench also carries the RIBBON**
+  (`WORKBENCH-RIBBON-R2`, OWNER 2026-11-05: the SolidCraft arrangement on the
+  tablet as on the PC): `WorkbenchRibbonView`, under the Global Toolbar, full
+  width, part of the window frame; tabs *Model* and *View*; the desktop's
+  groups word for word — *Sketch* (New sketch), *Primitives* (the six shapes),
+  *Part* (CAD part, drawn only where the primitive can become one), *Arrange*
+  (Move, Rotate, Scale, World / Local where a space applies, Delete never for
+  the last body), the contextual *Face* group (Sketch here, Round, Bevel,
+  Hole, Pattern, Mirror) drawn exactly when the touched face offers those acts
+  — on a workbench the ribbon is their home and the docked face column stands
+  down (`CadExtrudeCanvasView.setOfferBarWithdrawnWhen`), while the hollow
+  marker and every editor still dock — and *Show* (Grid, Outline, Edges). Each
+  command is a rail entry calling the ONE handler the workspace already had;
+  what is drawn is `WorkbenchRibbonPresentation`'s answer over native facts,
+  read on every refresh. The ribbon stands down while a sketch or Sculpt owns
+  the viewport (the Tool Rail is the tablet's Sketch tab), and never on a
+  phone. **Which layout a window gets is the user's to overrule**: the
+  `Layout` preference (`WorkspaceLayoutPreference`: Automatic, Phone,
+  Workbench) feeds `WorkspaceLayoutMode.forWindow` on every measure — Phone is
+  the compact composition on any screen, Workbench the expanded one on any
+  window at least 600 dp wide, Automatic the arithmetic — and is application
+  state like every other preference.
 - **The workbench is one grammar on both shells** (`WORKBENCH-UX-R1`). ONE
   selected treatment — the selected-at-rest fill plus a `fsTextPrimary` bar
   under a horizontal item or on a vertical one's leading edge, never colour
@@ -1768,7 +1791,10 @@ on the host, with no device, and is the fast native loop.
   and 3MF in MILLIMETRES (what every slicer reads) and OBJ and PLY in metres,
   every one from the ONE snapshot the GLB export takes (`captureGlbExportScene`)
   in world space, so a body is the same shape at the same place whichever
-  format is chosen, deterministically (fixed number format, fixed ZIP
+  format is chosen — on Android from **Export as…**, a row of the project
+  drawer's Transfer group (`WORKBENCH-RIBBON-R2`) that closes the drawer and
+  opens the toolbar's format menu from the mark, so the toolbar's utility group
+  is Display and Hide UI alone — deterministically (fixed number format, fixed ZIP
   timestamps) and with no axis converted; a double-sided submesh's reversed
   twins are dropped because those formats cannot say double-sided. FBX, STEP
   and every other format stay absent, and no exporter may write a second
@@ -1848,9 +1874,16 @@ on the host, with no device, and is the fast native loop.
   existing name rule** (`sanitizeImportedMeshName` /
   `importedMeshNameIsStorable` / `kMaxImportedMeshNameBytes`) rather than a
   second policy, an empty or unsanitizable name is REFUSED rather than replaced
-  by the ObjectId fallback label, and the JNI boundary reads UTF-16 units
+  by the fallback label, and the JNI boundary reads UTF-16 units
   through `utf16ToUtf8` — never `GetStringUTFChars`, whose modified UTF-8 would
-  make the sanitizer drop a legitimate emoji. **Duplicate** mints a fresh
+  make the sanitizer drop a legitimate emoji. **A body with no stored name is
+  shown by a representation-named default** (`WORKBENCH-RIBBON-R2`,
+  `defaultBodyLabel` / `bodyDisplayLabel` in `forgeshape_body_commands`, ONE
+  rule both shells read — Android through `sceneBodyDisplayName`, the desktop
+  directly): `Body #n` for a Construction primitive exactly as before,
+  `Part #n` for a CAD body, `Mesh #n` for an Imported Mesh, `Freeform #n` and
+  `Surface #n`; `n` is the ObjectId, and the label is presentation that never
+  reaches a `.forge` byte. **Duplicate** mints a fresh
   `ObjectId`, never reuses one, and copies the source representation's own
   truth, the placement, the visibility, the lock, a deterministic `name copy`
   suffix and the Frozen Sculpt Mesh's current geometry — but NOT the
@@ -1989,8 +2022,11 @@ on the host, with no device, and is the fast native loop.
 in construction order; never a "timeline bar"), *History strip* (the same
 steps along the bottom edge of a workbench or the desktop, beside Undo and
 Redo; never a "timeline" with a rollback marker, which does not exist),
-*ribbon* (the desktop's captioned command row under the title row, in tabs —
-Model, View, and Sketch while one is open — and named groups), *view cube*
+*ribbon* (the captioned command row in tabs and named groups — under the
+desktop's title row with Model, View, and Sketch while one is open; under a
+tablet workbench's Global Toolbar with Model and View, the Tool Rail being its
+Sketch tab), *Layout* (the Settings preference choosing Automatic, Phone or
+Workbench), *view cube*
 (the world axes drawn from the camera, each end a standard view; never a
 "gizmo"), *view bar* (Fit, Home, Front, Top, Right, Isometric and the projection,
 standing on the model), *Fit* (framing everything drawn), *Isometric* (the

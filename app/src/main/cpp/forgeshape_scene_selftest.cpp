@@ -1295,6 +1295,27 @@ int runSceneSelfTests(SceneSelfTestResult* out, int max) {
                     !part->isFaceSupportedCad());
         }
     }
+    // -----------------------------------------------------------------------
+    // WORKBENCH-RIBBON-R2 -- the default label names the representation, and
+    // is presentation only
+    // -----------------------------------------------------------------------
+    {
+        r.check("rb2_default_label_construction_is_body",
+                defaultBodyLabel(BodyRepresentation::Construction, 7) == "Body #7");
+        r.check("rb2_default_label_cad_is_part",
+                defaultBodyLabel(BodyRepresentation::Cad, 7) == "Part #7");
+        r.check("rb2_default_label_imported_is_mesh",
+                defaultBodyLabel(BodyRepresentation::Imported, 12) == "Mesh #12");
+        r.check("rb2_default_label_freeform_and_surface",
+                defaultBodyLabel(BodyRepresentation::Freeform, 1) == "Freeform #1"
+                    && defaultBodyLabel(BodyRepresentation::Surface, 2) == "Surface #2");
+        ConstructionScene scene;
+        const SceneObject& body = scene.bodyAt(0);
+        r.check("rb2_display_label_falls_back_to_the_default",
+                bodyDisplayLabel(body) == defaultBodyLabel(body.representation(), body.objectId()));
+        r.check("rb2_display_label_stores_nothing", body.name().empty());
+    }
+
     return r.n;
 }
 

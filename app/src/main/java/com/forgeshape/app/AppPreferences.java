@@ -59,24 +59,32 @@ final class AppPreferences {
      * user asks for, not a cost every user pays in canvas width.
      */
     private final boolean toolLabels;
+    /**
+     * The workspace layout the user asked for (`WORKBENCH-RIBBON-R2`):
+     * automatic, the phone composition, or the workbench. Read on every
+     * window measure, so changing it is exactly a resize.
+     */
+    private final WorkspaceLayoutPreference layout;
 
     /** Tool Labels' product default: icons only. */
     static final boolean TOOL_LABELS_DEFAULT = false;
 
     private AppPreferences(AppTheme palette, Handedness handedness, float gizmoVisualScale,
-                           GizmoStrokeWeight gizmoStrokeWeight, boolean toolLabels) {
+                           GizmoStrokeWeight gizmoStrokeWeight, boolean toolLabels,
+                           WorkspaceLayoutPreference layout) {
         this.palette = palette;
         this.handedness = handedness;
         this.gizmoVisualScale = gizmoVisualScale;
         this.gizmoStrokeWeight = gizmoStrokeWeight;
         this.toolLabels = toolLabels;
+        this.layout = layout;
     }
 
     /** Exactly the product as it shipped before preferences existed. */
     static AppPreferences defaults() {
         return new AppPreferences(AppTheme.defaultTheme(), Handedness.defaultHandedness(),
                 GIZMO_VISUAL_SCALE_DEFAULT, GizmoStrokeWeight.defaultWeight(),
-                TOOL_LABELS_DEFAULT);
+                TOOL_LABELS_DEFAULT, WorkspaceLayoutPreference.defaultPreference());
     }
 
     /**
@@ -97,11 +105,27 @@ final class AppPreferences {
     static AppPreferences fromStored(int schemaVersion, String paletteName,
                                      String handednessName, float gizmoVisualScale,
                                      String gizmoStrokeWeightName, Boolean toolLabels) {
+        return fromStored(schemaVersion, paletteName, handednessName, gizmoVisualScale,
+                gizmoStrokeWeightName, toolLabels, null);
+    }
+
+    /**
+     * The same read with the layout name (`WORKBENCH-RIBBON-R2`); a missing
+     * or unknown name is {@link WorkspaceLayoutPreference#AUTOMATIC}, the
+     * product before the field existed. The schema version is still 1: a new
+     * key with a default is exactly what the one-rule-per-field reading
+     * absorbs.
+     */
+    static AppPreferences fromStored(int schemaVersion, String paletteName,
+                                     String handednessName, float gizmoVisualScale,
+                                     String gizmoStrokeWeightName, Boolean toolLabels,
+                                     String layoutName) {
         return new AppPreferences(AppTheme.fromStoredName(paletteName),
                 Handedness.fromStoredName(handednessName),
                 clampGizmoVisualScale(gizmoVisualScale),
                 GizmoStrokeWeight.fromStoredName(gizmoStrokeWeightName),
-                toolLabels == null ? TOOL_LABELS_DEFAULT : toolLabels.booleanValue());
+                toolLabels == null ? TOOL_LABELS_DEFAULT : toolLabels.booleanValue(),
+                WorkspaceLayoutPreference.fromStoredName(layoutName));
     }
 
     /**
@@ -146,31 +170,40 @@ final class AppPreferences {
         return toolLabels;
     }
 
+    WorkspaceLayoutPreference layout() {
+        return layout;
+    }
+
     AppPreferences withPalette(AppTheme value) {
         return new AppPreferences(value == null ? AppTheme.defaultTheme() : value, handedness,
-                gizmoVisualScale, gizmoStrokeWeight, toolLabels);
+                gizmoVisualScale, gizmoStrokeWeight, toolLabels, layout);
     }
 
     AppPreferences withHandedness(Handedness value) {
         return new AppPreferences(palette,
                 value == null ? Handedness.defaultHandedness() : value, gizmoVisualScale,
-                gizmoStrokeWeight, toolLabels);
+                gizmoStrokeWeight, toolLabels, layout);
     }
 
     /** Applies the numeric rule, so no value outside the range can be held. */
     AppPreferences withGizmoVisualScale(float value) {
         return new AppPreferences(palette, handedness, clampGizmoVisualScale(value),
-                gizmoStrokeWeight, toolLabels);
+                gizmoStrokeWeight, toolLabels, layout);
     }
 
     AppPreferences withGizmoStrokeWeight(GizmoStrokeWeight value) {
         return new AppPreferences(palette, handedness, gizmoVisualScale,
-                value == null ? GizmoStrokeWeight.defaultWeight() : value, toolLabels);
+                value == null ? GizmoStrokeWeight.defaultWeight() : value, toolLabels, layout);
     }
 
     AppPreferences withToolLabels(boolean value) {
         return new AppPreferences(palette, handedness, gizmoVisualScale, gizmoStrokeWeight,
-                value);
+                value, layout);
+    }
+
+    AppPreferences withLayout(WorkspaceLayoutPreference value) {
+        return new AppPreferences(palette, handedness, gizmoVisualScale, gizmoStrokeWeight,
+                toolLabels, value == null ? WorkspaceLayoutPreference.defaultPreference() : value);
     }
 
     @Override
@@ -182,7 +215,8 @@ final class AppPreferences {
         return palette == that.palette && handedness == that.handedness
                 && Float.compare(gizmoVisualScale, that.gizmoVisualScale) == 0
                 && gizmoStrokeWeight == that.gizmoStrokeWeight
-                && toolLabels == that.toolLabels;
+                && toolLabels == that.toolLabels
+                && layout == that.layout;
     }
 
     @Override
@@ -192,6 +226,7 @@ final class AppPreferences {
         hash = 31 * hash + Float.floatToIntBits(gizmoVisualScale);
         hash = 31 * hash + gizmoStrokeWeight.hashCode();
         hash = 31 * hash + (toolLabels ? 1 : 0);
+        hash = 31 * hash + layout.hashCode();
         return hash;
     }
 
@@ -199,6 +234,6 @@ final class AppPreferences {
     public String toString() {
         return "AppPreferences{palette=" + palette + ", handedness=" + handedness
                 + ", gizmoVisualScale=" + gizmoVisualScale + ", gizmoStrokeWeight="
-                + gizmoStrokeWeight + ", toolLabels=" + toolLabels + "}";
+                + gizmoStrokeWeight + ", toolLabels=" + toolLabels + ", layout=" + layout + "}";
     }
 }

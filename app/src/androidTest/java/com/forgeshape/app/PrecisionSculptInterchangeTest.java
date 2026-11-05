@@ -181,6 +181,14 @@ public final class PrecisionSculptInterchangeTest {
 
     @Test
     public void the_export_chip_opens_the_format_menu() {
+        // Export as… is a row of the project drawer (`WORKBENCH-RIBBON-R2`):
+        // open the drawer, press the row; the drawer closes and the toolbar's
+        // format menu opens from the mark.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.project_actions_button).performClick();
+            return null;
+        });
+        settleLayout();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             workspace.findViewById(R.id.export_action).performClick();
             return null;

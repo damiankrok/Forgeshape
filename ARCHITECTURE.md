@@ -188,7 +188,9 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | The dimension leaders, and the Dimensions interaction state | `forgeshape_body_dimension_overlay.{h,cpp}` | presentation on the sketch overlay's terms: a world-space line list in the SketchOverlay's own structure and ranges, fed through the renderer's existing line path so no renderer change was needed. Also the session-only mode, active axis and anchor, which no Java flag mirrors |
 | The deterministic external-GLB compatibility fixture | `forgeshape_glb_import_fixture.{h,cpp}` | a synthetic file with the structural feature set of an external low-poly export; every coordinate an integer over a power of two, so its bytes are the same everywhere. A debug test seam, reachable from no product path |
 | What an imported preview IS, and every boundary it may not cross | `forgeshape_import_preview.{h,cpp}` | session-only: no scene `ObjectId`, no Construction Source, no sculpt representation, no `MeshStore`, no history, no `.forge`, no checkpoint, not selectable, not re-exportable, gone with the process. Its renderer keys are resource keys and never identities. Since `IMPORT-01A` it is reachable only from the verification suites |
-| What a body is CALLED wherever the user reads it | `BodyLabels` (Java) | one answer for the Objects list, the Objects capsule, the precision surface's title and the status line: an Imported Mesh uses the name its file gave it, a Construction Body is `Body #id`, and the empty string native code returns for the latter is the SIGNAL for that fallback, not a name |
+| What a body is CALLED wherever the user reads it | `defaultBodyLabel` / `bodyDisplayLabel` (`forgeshape_body_commands`), read by `BodyLabels` (Java) through `sceneBodyDisplayName` and by the desktop directly | one answer for both shells: the stored name, or a representation-named default — `Body #id` for a Construction primitive, `Part #id`, `Mesh #id`, `Freeform #id`, `Surface #id` (`WORKBENCH-RIBBON-R2`); presentation, never stored |
+| The tablet's ribbon (`WORKBENCH-RIBBON-R2`) | `WorkbenchRibbonView` (Java), `WorkbenchRibbonPresentation` (Java, JVM-tested) | the desktop's captioned command row on a workbench: tabs Model / View, groups Sketch, Primitives, Part, Arrange, the contextual Face group and Show; every command the workspace's one existing handler, every visibility a pure function over native facts; the docked face offer bar stands down while the ribbon shows |
+| Which layout a window gets | `WorkspaceLayoutMode.forWindow(width, height, preference)` with `WorkspaceLayoutPreference` (an `AppPreferences` field) | Automatic is the window arithmetic; Phone forces the compact composition; Workbench forces the expanded one on any window ≥ 600 dp wide |
 | Whether the file agrees with the scene | `forgeshape_glb_roundtrip.{h,cpp}` | compares the independently parsed file against DOMAIN truth re-derived from the generator and `modelMatrix()`, never against the exporter's captured arrays. Reads only, and reports a number rather than a boolean |
 | Export as STL, OBJ, PLY or 3MF, and the format menu's ordinals | `forgeshape_mesh_export.{h,cpp}` | one world-space snapshot taken through `captureGlbExportScene`, four deterministic encoders (STL and 3MF in millimetres, OBJ and PLY in metres, no axis converted); `Glb` delegates to `exportSceneAsGlb` byte for byte — see *Mesh interchange* |
 | Reading STL, OBJ, PLY and 3MF | `forgeshape_mesh_import.{h,cpp}` | `detectMeshImportFormat` decides by the bytes, `importMeshFile` produces the SAME `ParsedGlbScene` the GLB reader does, so one commit and one `IMPT` record serve every format; 3MF's ZIP and inflater are this file's own |
@@ -4860,10 +4862,11 @@ A name from another tool is arbitrary bytes, so it goes through
 replaced, malformed UTF-8 dropped, trimmed, cut on a character boundary at 96
 bytes. The function is idempotent, which is what lets the `.forge` decoder state
 its rule as "the stored name is what this would produce" rather than as a second
-list. `BodyLabels` is the one place the UI asks what a body is called: an
-Imported Mesh uses its stored name, a Construction Body is still `Body #id`, and
-the empty string native code returns for the latter is the signal for that
-fallback rather than a name.
+list. `BodyLabels` is the one place the Android UI asks what a body is
+called, and since `WORKBENCH-RIBBON-R2` it asks the core (`bodyDisplayLabel`
+through `sceneBodyDisplayName`): the stored name, or the representation-named
+default the desktop shows too — `Body #id` for a Construction primitive,
+`Part #id`, `Mesh #id`, `Freeform #id`, `Surface #id` — never stored.
 
 ### What an imported body is NOT
 
@@ -5032,8 +5035,10 @@ breaking a tie, and `importMeshFile` produces a `ParsedGlbScene`, the shape
 the durable GLB import already commits through `commitImportedGlbScene`. An
 STL body is welded so it can be sculpted without tearing; OBJ and PLY keep the
 file's own topology; 3MF bakes each build item's transform. Android offers the
-formats from the Export chip's menu and one Import mesh picker; the desktop
-from the project menu, Ctrl+I and a dropped file.
+formats from the project drawer's Export as… row — which closes the drawer and
+opens the Global Toolbar's format menu from the mark (`WORKBENCH-RIBBON-R2`) —
+and one Import mesh picker; the desktop from the project menu, Ctrl+I and a
+dropped file.
 
 ## Deleting a body
 

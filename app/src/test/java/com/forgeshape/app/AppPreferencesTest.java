@@ -32,6 +32,28 @@ public final class AppPreferencesTest {
     }
 
     @Test
+    public void theLayoutIsAutomaticByDefaultAndEveryNameRoundTrips() {
+        assertSame(WorkspaceLayoutPreference.AUTOMATIC, AppPreferences.defaults().layout());
+        for (WorkspaceLayoutPreference layout : WorkspaceLayoutPreference.values()) {
+            assertSame(layout, WorkspaceLayoutPreference.fromStoredName(layout.name()));
+            assertSame(layout, AppPreferences.defaults().withLayout(layout).layout());
+        }
+        assertSame("an unknown name is the default", WorkspaceLayoutPreference.AUTOMATIC,
+                WorkspaceLayoutPreference.fromStoredName("DESKTOP"));
+        assertSame("a missing key is the default", WorkspaceLayoutPreference.AUTOMATIC,
+                AppPreferences.fromStored(AppPreferences.SCHEMA_VERSION, null, null,
+                        Float.NaN, null, null, null).layout());
+        assertSame(WorkspaceLayoutPreference.PHONE,
+                AppPreferences.fromStored(AppPreferences.SCHEMA_VERSION, null, null,
+                        Float.NaN, null, null, "PHONE").layout());
+        assertSame("null is the default, never a hole", WorkspaceLayoutPreference.AUTOMATIC,
+                AppPreferences.defaults().withLayout(null).layout());
+        assertEquals("a layout is part of the value", false,
+                AppPreferences.defaults().equals(
+                        AppPreferences.defaults().withLayout(WorkspaceLayoutPreference.PHONE)));
+    }
+
+    @Test
     public void missingKeysAreTheExactDefaults() {
         final AppPreferences read = AppPreferences.fromStored(
                 AppPreferences.SCHEMA_VERSION, null, null, Float.NaN, null, null);
@@ -155,7 +177,7 @@ public final class AppPreferencesTest {
         // The field set, stated by the value's own description: exactly these
         // five and no sixth.
         assertEquals("AppPreferences{palette=WARM_GRAPHITE, handedness=RIGHT,"
-                        + " gizmoVisualScale=1.0, gizmoStrokeWeight=REGULAR, toolLabels=false}",
+                        + " gizmoVisualScale=1.0, gizmoStrokeWeight=REGULAR, toolLabels=false, layout=AUTOMATIC}",
                 AppPreferences.defaults().toString());
     }
 

@@ -17,4 +17,42 @@
     <item name="history_strip" type="id" />
     <item name="history_strip_steps" type="id" />
     <item name="history_strip_step" type="id" />
+
+    <!-- The tablet's ribbon (`WORKBENCH-RIBBON-R2`): the desktop's captioned
+         command row under the Global Toolbar. Ids name the ACT, as the
+         rail's do; a command calls the workspace's one existing handler. -->
+    <item name="workbench_ribbon" type="id" />
+    <item name="ribbon_tab_model" type="id" />
+    <item name="ribbon_tab_view" type="id" />
+    <item name="ribbon_model_row" type="id" />
+    <item name="ribbon_view_row" type="id" />
+    <item name="ribbon_group_sketch" type="id" />
+    <item name="ribbon_group_primitives" type="id" />
+    <item name="ribbon_group_part" type="id" />
+    <item name="ribbon_group_arrange" type="id" />
+    <item name="ribbon_group_face" type="id" />
+    <item name="ribbon_group_show" type="id" />
+    <item name="ribbon_new_sketch" type="id" />
+    <item name="ribbon_add_box" type="id" />
+    <item name="ribbon_add_cylinder" type="id" />
+    <item name="ribbon_add_sphere" type="id" />
+    <item name="ribbon_add_cone" type="id" />
+    <item name="ribbon_add_capsule" type="id" />
+    <item name="ribbon_add_plane" type="id" />
+    <item name="ribbon_cad_part" type="id" />
+    <item name="ribbon_move" type="id" />
+    <item name="ribbon_rotate" type="id" />
+    <item name="ribbon_scale" type="id" />
+    <item name="ribbon_space_world" type="id" />
+    <item name="ribbon_space_local" type="id" />
+    <item name="ribbon_delete" type="id" />
+    <item name="ribbon_sketch_here" type="id" />
+    <item name="ribbon_fillet" type="id" />
+    <item name="ribbon_chamfer" type="id" />
+    <item name="ribbon_hole" type="id" />
+    <item name="ribbon_pattern" type="id" />
+    <item name="ribbon_mirror" type="id" />
+    <item name="ribbon_grid" type="id" />
+    <item name="ribbon_outline" type="id" />
+    <item name="ribbon_edges" type="id" />
 </resources>

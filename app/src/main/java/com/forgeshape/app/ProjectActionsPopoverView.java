@@ -56,6 +56,15 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
 
         void onOpenProjectRequested();
 
+        /**
+         * Export as… (`WORKBENCH-RIBBON-R2`): the drawer closes first and the
+         * toolbar shows the format menu — GLB, STL, 3MF, OBJ, PLY — from the
+         * mark the drawer hung from. Export moved here from the Global
+         * Toolbar's utility group: it is a transfer, done once per session,
+         * and it no longer competes with the transition button for the row.
+         */
+        void onExportAsRequested();
+
         void onSaveCopyRequested();
 
         void onOpenFileRequested();
@@ -73,6 +82,7 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
     private final TextView newRow;
     private final TextView saveRow;
     private final TextView openRow;
+    private final TextView exportRow;
     private final TextView saveCopyRow;
     private final TextView openFileRow;
     private final TextView diagnosticsRow;
@@ -163,11 +173,13 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
         newRow = built[1];
         saveRow = built[2];
         openRow = built[3];
-        saveCopyRow = built[4];
-        openFileRow = built[5];
-        diagnosticsRow = built[6];
-        importRow = built[7];
-        settingsRow = built[8];
+        exportRow = built[4];
+        exportRow.setContentDescription(context.getString(R.string.export_glb_description));
+        saveCopyRow = built[5];
+        openFileRow = built[6];
+        diagnosticsRow = built[7];
+        importRow = built[8];
+        settingsRow = built[9];
         importSectionLabel = importLabel;
         settingsRow.setContentDescription(context.getString(R.string.settings));
     }

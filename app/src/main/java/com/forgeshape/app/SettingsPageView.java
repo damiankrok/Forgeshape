@@ -47,6 +47,9 @@ final class SettingsPageView extends StartPageView {
         /** Tool Labels: whether the canvas's icon controls also draw a caption. */
         void onToolLabelsChosen(boolean visible);
 
+        /** The workspace layout: automatic, phone or workbench (`WORKBENCH-RIBBON-R2`). */
+        void onLayoutChosen(WorkspaceLayoutPreference layout);
+
         void onSettingsBackRequested();
     }
 
@@ -81,6 +84,10 @@ final class SettingsPageView extends StartPageView {
     private final TextView[] sizeRows = new TextView[SIZE_IDS.length];
     private final TextView[] weightRows = new TextView[WEIGHT_IDS.length];
     private final TextView[] toolLabelRows = new TextView[TOOL_LABEL_IDS.length];
+    private static final int[] LAYOUT_IDS = {
+        R.id.layout_automatic, R.id.layout_phone, R.id.layout_workbench
+    };
+    private final TextView[] layoutRows = new TextView[LAYOUT_IDS.length];
 
     SettingsPageView(Context context, final OnSettingsAction listener) {
         super(context, R.id.settings_page, R.id.settings_panel,
@@ -111,6 +118,23 @@ final class SettingsPageView extends StartPageView {
                         @Override
                         public void onClick(View v) {
                             listener.onHandednessChosen(handedness);
+                        }
+                    });
+        }
+
+        // The layout (`WORKBENCH-RIBBON-R2`): the one place the user chooses
+        // the phone composition on a tablet, or the workbench on a window that
+        // can carry it. A list of named options on the page's own grammar.
+        addFieldLabel(context.getString(R.string.settings_layout));
+        addCaption(context.getString(R.string.layout_description));
+        final WorkspaceLayoutPreference[] layouts = WorkspaceLayoutPreference.values();
+        for (int i = 0; i < layouts.length; i++) {
+            final WorkspaceLayoutPreference layout = layouts[i];
+            layoutRows[i] = addOptionRow(LAYOUT_IDS[i], context.getString(layout.labelRes()),
+                    new OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            listener.onLayoutChosen(layout);
                         }
                     });
         }
@@ -197,6 +221,10 @@ final class SettingsPageView extends StartPageView {
         }
         for (int i = 0; i < TOOL_LABEL_IDS.length; i++) {
             markOption(toolLabelRows[i], (i == 1) == preferences.toolLabels());
+        }
+        final WorkspaceLayoutPreference[] layouts = WorkspaceLayoutPreference.values();
+        for (int i = 0; i < layouts.length; i++) {
+            markOption(layoutRows[i], layouts[i] == preferences.layout());
         }
     }
 

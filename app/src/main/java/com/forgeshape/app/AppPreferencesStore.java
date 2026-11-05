@@ -36,6 +36,7 @@ final class AppPreferencesStore {
     static final String KEY_GIZMO_VISUAL_SCALE = "gizmo_visual_scale";
     static final String KEY_GIZMO_STROKE_WEIGHT = "gizmo_stroke_weight";
     static final String KEY_TOOL_LABELS = "tool_labels";
+    static final String KEY_LAYOUT = "workspace_layout";
 
     /** The one in-memory copy; null until first read in this process. */
     private static AppPreferences current;
@@ -115,8 +116,9 @@ final class AppPreferencesStore {
         final float scale = readFloat(prefs, KEY_GIZMO_VISUAL_SCALE);
         final String weight = readString(prefs, KEY_GIZMO_STROKE_WEIGHT);
         final Boolean toolLabels = readBoolean(prefs, KEY_TOOL_LABELS);
+        final String layout = readString(prefs, KEY_LAYOUT);
         return AppPreferences.fromStored(schema, palette, handedness, scale, weight,
-                toolLabels);
+                toolLabels, layout);
     }
 
     private static void write(Context context, AppPreferences value) {
@@ -127,6 +129,7 @@ final class AppPreferencesStore {
                 .putFloat(KEY_GIZMO_VISUAL_SCALE, value.gizmoVisualScale())
                 .putString(KEY_GIZMO_STROKE_WEIGHT, value.gizmoStrokeWeight().name())
                 .putBoolean(KEY_TOOL_LABELS, value.toolLabels())
+                .putString(KEY_LAYOUT, value.layout().name())
                 .commit();
     }
 

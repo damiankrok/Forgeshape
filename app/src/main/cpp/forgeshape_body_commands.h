@@ -227,6 +227,22 @@ std::string duplicateBodyName(const std::string& sourceName, const ConstructionS
 std::string derivedBodyName(const std::string& sourceName, const std::string& suffix,
                             const ConstructionScene& scene);
 
+// The label a body with NO stored name is shown by, in BOTH shells
+// (`WORKBENCH-RIBBON-R2`): "Body #3" for a Construction primitive, exactly
+// as before; "Part #3" for a CAD body, "Mesh #3" for an Imported Mesh,
+// "Freeform #3" and "Surface #3" for the two modelling bodies. The id is
+// still the ObjectId, so the number never changes when a body is renamed
+// or deleted and a reader can still find it in the Objects list.
+//
+// PRESENTATION, never stored: Rename writes a real name, Duplicate and
+// Mirror derive from the stored name alone (`derivedBodyName`), and this
+// label never reaches a `.forge` byte. One function so Android and the
+// desktop cannot drift into two naming rules.
+std::string defaultBodyLabel(BodyRepresentation representation, ObjectId id);
+
+// The stored name when there is one, otherwise `defaultBodyLabel`.
+std::string bodyDisplayLabel(const SceneObject& body);
+
 // ---------------------------------------------------------------------------
 // Mirror (`MIRROR-01`)
 // ---------------------------------------------------------------------------

@@ -151,6 +151,32 @@ BodyCommandStatus setSceneBodyLocked(ObjectId id, bool locked, ConstructionScene
     return BodyCommandStatus::Ok;
 }
 
+std::string defaultBodyLabel(BodyRepresentation representation, ObjectId id) {
+    const char* noun = "Body";
+    switch (representation) {
+        case BodyRepresentation::Imported:
+            noun = "Mesh";
+            break;
+        case BodyRepresentation::Cad:
+            noun = "Part";
+            break;
+        case BodyRepresentation::Freeform:
+            noun = "Freeform";
+            break;
+        case BodyRepresentation::Surface:
+            noun = "Surface";
+            break;
+        default:
+            break;
+    }
+    return std::string(noun) + " #" + std::to_string(static_cast<unsigned long long>(id));
+}
+
+std::string bodyDisplayLabel(const SceneObject& body) {
+    return body.name().empty() ? defaultBodyLabel(body.representation(), body.objectId())
+                               : body.name();
+}
+
 std::string derivedBodyName(const std::string& sourceName, const std::string& suffix,
                             const ConstructionScene& scene) {
     if (sourceName.empty()) {

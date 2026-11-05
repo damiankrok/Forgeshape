@@ -100,7 +100,11 @@ public final class EditorWorkspaceControlsTest {
                                 .contains("not implemented"));
             }
 
+            // Export lives in the project drawer's Transfer group since
+            // `WORKBENCH-RIBBON-R2`; the drawer is opened to reach its row.
+            workspace.findViewById(R.id.project_actions_button).performClick();
             final View export = workspace.findViewById(R.id.export_action);
+            assertNotNull("Export is a row of the project drawer", export);
             assertEquals(View.VISIBLE, export.getVisibility());
             // Export writes a real GLB now, so the rule that used to exempt it
             // no longer applies to it: nothing drawn as an action is inert.

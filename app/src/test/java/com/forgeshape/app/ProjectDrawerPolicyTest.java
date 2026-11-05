@@ -37,6 +37,7 @@ public final class ProjectDrawerPolicyTest {
         @Override public void onNewProjectRequested() { calls.add("newProject"); }
         @Override public void onSaveProjectRequested() { calls.add("save"); }
         @Override public void onOpenProjectRequested() { calls.add("open"); }
+        @Override public void onExportAsRequested() { calls.add("exportAs"); }
         @Override public void onSaveCopyRequested() { calls.add("saveCopy"); }
         @Override public void onOpenFileRequested() { calls.add("openFile"); }
         @Override public void onShareDiagnosticsRequested() { calls.add("diagnostics"); }
@@ -56,7 +57,7 @@ public final class ProjectDrawerPolicyTest {
         final String[][] expected = {
             {"NEW_SKETCH", "newSketch"}, {"NEW_PROJECT", "newProject"},
             {"SAVE_PROJECT", "save"}, {"OPEN_SAVED_PROJECT", "open"},
-            {"SAVE_COPY", "saveCopy"}, {"OPEN_FILE", "openFile"},
+            {"EXPORT_AS", "exportAs"}, {"SAVE_COPY", "saveCopy"}, {"OPEN_FILE", "openFile"},
             {"SHARE_DIAGNOSTICS", "diagnostics"}, {"IMPORT_GLB", "import"},
             {"SETTINGS", "settings"},
         };
@@ -68,7 +69,8 @@ public final class ProjectDrawerPolicyTest {
         // The semantic ids the old popover's rows had are kept, so every
         // existing verification still names the same act.
         final int[] ids = {R.id.project_new_sketch, R.id.project_new, R.id.project_save,
-                R.id.project_open, R.id.project_save_copy, R.id.project_open_file,
+                R.id.project_open, R.id.export_action, R.id.project_save_copy,
+                R.id.project_open_file,
                 R.id.project_share_diagnostics, R.id.import_glb, R.id.project_settings};
         for (int i = 0; i < ids.length; i++) {
             assertEquals("row " + i, ids[i], ProjectDrawerPolicy.ROWS[i].id);
@@ -202,9 +204,10 @@ public final class ProjectDrawerPolicyTest {
     // longest transition read in full and the utility group fit the row
     // without overlap. Widths in dp from dimens.xml: the mark is the 48 dp
     // target in a 4 dp-padded capsule plus the 4 dp gap; the utility group is
-    // Export (a chip of about 66 dp), Display and Hide UI (48 dp each, a 4 dp
-    // gap before each) in its 4 dp-padded capsule, plus the status slot's two
-    // 4 dp margins.
+    // Display and Hide UI (48 dp each, a 4 dp gap before each) in its 4 dp-padded
+    // capsule, plus the status slot's two 4 dp margins. (Export was a 66 dp
+    // chip here until `WORKBENCH-RIBBON-R2` moved it into the drawer; the
+    // budget is still measured WITH it, as the harder case.)
     @Test
     public void aNarrowPortraitRowFitsTheMarkTheTransitionAndTheUtilityGroup() {
         final int density = 3;               // px per dp on a 1080 px-wide phone

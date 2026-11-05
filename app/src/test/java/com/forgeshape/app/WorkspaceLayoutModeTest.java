@@ -288,4 +288,22 @@ public final class WorkspaceLayoutModeTest {
                     viewport >= 480);
         }
     }
+
+    // `WORKBENCH-RIBBON-R2`: the user's layout preference overrules the
+    // arithmetic, within what a window can carry.
+    @Test
+    public void theLayoutPreferenceOverrulesTheWindowWhereItCan() {
+        assertEquals("automatic is the arithmetic", WorkspaceLayoutMode.EXPANDED,
+                WorkspaceLayoutMode.forWindow(1280, 800, WorkspaceLayoutPreference.AUTOMATIC));
+        assertEquals("phone is compact on a tablet", WorkspaceLayoutMode.COMPACT,
+                WorkspaceLayoutMode.forWindow(1280, 800, WorkspaceLayoutPreference.PHONE));
+        assertEquals("phone is compact in a medium window", WorkspaceLayoutMode.COMPACT,
+                WorkspaceLayoutMode.forWindow(700, 500, WorkspaceLayoutPreference.PHONE));
+        assertEquals("workbench on a medium window", WorkspaceLayoutMode.EXPANDED,
+                WorkspaceLayoutMode.forWindow(700, 400, WorkspaceLayoutPreference.WORKBENCH));
+        assertEquals("but a phone cannot hold three columns", WorkspaceLayoutMode.COMPACT,
+                WorkspaceLayoutMode.forWindow(411, 914, WorkspaceLayoutPreference.WORKBENCH));
+        assertEquals("the two-argument form is unchanged", WorkspaceLayoutMode.EXPANDED,
+                WorkspaceLayoutMode.forWindow(1280, 800));
+    }
 }

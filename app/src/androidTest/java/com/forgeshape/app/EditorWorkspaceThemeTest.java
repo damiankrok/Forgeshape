@@ -515,9 +515,11 @@ public final class EditorWorkspaceThemeTest {
                 // still lives — in the palette, which must keep a visibly dimmer
                 // disabled tone for whatever next needs one — and Export itself
                 // is asserted to be an ordinary working control in every theme.
-                final View export = workspace.findViewById(R.id.export_action);
-                assertTrue(theme + ": Export works and must answer a press",
-                        export.isEnabled() && hasPressedFeedback(export));
+                // Export is a project-drawer row since `WORKBENCH-RIBBON-R2`;
+                // the mark that opens the drawer is the working control here.
+                final View door = workspace.findViewById(R.id.project_actions_button);
+                assertTrue(theme + ": the project door works and must answer a press",
+                        door.isEnabled() && hasPressedFeedback(door));
                 final int disabled = EditorControlStyles.themeColor(activity, R.attr.fsTextDisabled);
                 final int secondary = EditorControlStyles.themeColor(activity,
                         R.attr.fsTextSecondary);

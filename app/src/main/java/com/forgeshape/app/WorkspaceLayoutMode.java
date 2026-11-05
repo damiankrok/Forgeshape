@@ -61,6 +61,26 @@ enum WorkspaceLayoutMode {
         SIDE_DOCK
     }
 
+    /**
+     * The window arithmetic, overruled by the user's layout preference
+     * (`WORKBENCH-RIBBON-R2`). {@code PHONE} is the compact composition
+     * whatever the window; {@code WORKBENCH} is the expanded one on any window
+     * at least {@link #MEDIUM_MIN_WIDTH_DP} wide, because below that no
+     * preference can make the columns fit; {@code AUTOMATIC} is the
+     * arithmetic alone.
+     */
+    static WorkspaceLayoutMode forWindow(int widthDp, int heightDp,
+                                         WorkspaceLayoutPreference preference) {
+        if (preference == WorkspaceLayoutPreference.PHONE) {
+            return COMPACT;
+        }
+        if (preference == WorkspaceLayoutPreference.WORKBENCH
+                && widthDp >= MEDIUM_MIN_WIDTH_DP) {
+            return EXPANDED;
+        }
+        return forWindow(widthDp, heightDp);
+    }
+
     static WorkspaceLayoutMode forWindow(int widthDp, int heightDp) {
         if (widthDp >= EXPANDED_MIN_WIDTH_DP && heightDp >= LOW_HEIGHT_MAX_DP) {
             return EXPANDED;

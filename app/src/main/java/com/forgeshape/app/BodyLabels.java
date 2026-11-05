@@ -26,8 +26,11 @@ final class BodyLabels {
 
     /** The label for one body, whichever representation it has. */
     static String of(Context context, long objectId) {
-        final String stored = NativeViewport.sceneBodyName(objectId);
-        return stored.isEmpty() ? context.getString(R.string.body_label, objectId) : stored;
+        // The core's one rule for both shells (`WORKBENCH-RIBBON-R2`): the
+        // stored name, or a default that names the representation. The
+        // resource label stays only for an id the scene does not hold.
+        final String shown = NativeViewport.sceneBodyDisplayName(objectId);
+        return shown.isEmpty() ? context.getString(R.string.body_label, objectId) : shown;
     }
 
     /** The label for the body the editors currently act on. */

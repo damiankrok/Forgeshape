@@ -37,4 +37,28 @@
     <string name="snap_5deg">5°</string>
     <string name="snap_15deg">15°</string>
     <string name="snap_45deg">45°</string>
+
+    <!-- The tablet's ribbon (`WORKBENCH-RIBBON-R2`): the desktop's tabs,
+         groups and captions, word for word, so the two shells read alike. -->
+    <string name="ribbon_tab_model">Model</string>
+    <string name="ribbon_tab_view">View</string>
+    <string name="ribbon_group_sketch">Sketch</string>
+    <string name="ribbon_group_primitives">Primitives</string>
+    <string name="ribbon_group_part">Part</string>
+    <string name="ribbon_group_arrange">Arrange</string>
+    <string name="ribbon_group_face">Face</string>
+    <string name="ribbon_group_show">Show</string>
+    <string name="ribbon_new_sketch">New sketch</string>
+    <string name="ribbon_cad_part">CAD part</string>
+    <string name="ribbon_delete">Delete</string>
+    <string name="ribbon_delete_description">Delete the active body. One Undo brings it back.</string>
+    <string name="ribbon_round">Round</string>
+    <string name="ribbon_round_description">Round every edge of the touched face (Fillet)</string>
+    <string name="ribbon_bevel">Bevel</string>
+    <string name="ribbon_bevel_description">Bevel every edge of the touched face (Chamfer)</string>
+    <string name="ribbon_grid">Grid</string>
+    <string name="ribbon_outline">Outline</string>
+    <string name="ribbon_outline_description">Selection outline</string>
+    <string name="ribbon_edges">Edges</string>
+    <string name="ribbon_edges_description">Feature edges</string>
 </resources>

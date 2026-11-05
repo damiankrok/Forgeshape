@@ -36,6 +36,11 @@
     <item name="settings_page" type="id" />
     <item name="settings_panel" type="id" />
     <item name="settings_back" type="id" />
+    <!-- The workspace layout rows (`WORKBENCH-RIBBON-R2`): automatic, the
+         phone composition, the workbench. -->
+    <item name="layout_automatic" type="id" />
+    <item name="layout_phone" type="id" />
+    <item name="layout_workbench" type="id" />
     <!-- Its rows, named for the act each performs. The three original
          appearance ids are unchanged: an id names the act, not the surface it
          moved to. -->

@@ -142,6 +142,8 @@
       have given.
     -->
     <string name="export">Export</string>
+    <!-- The project drawer's Export row (`WORKBENCH-RIBBON-R2`). -->
+    <string name="export_as">Export as…</string>
     <string name="export_glb_description">Export — save the model as GLB, STL, 3MF, OBJ or PLY</string>
     <string name="status_export_glb_written">Exported — %1$s as GLB.</string>
     <string name="status_export_glb_failed">Could not export the model. Nothing was written; your work is unchanged.</string>
@@ -336,6 +338,12 @@
 
     <string name="settings_workspace">Workspace</string>
     <string name="handedness">Handedness</string>
+    <!-- The workspace layout (`WORKBENCH-RIBBON-R2`). -->
+    <string name="settings_layout">Layout</string>
+    <string name="layout_description">Automatic follows the window: a phone is compact, a tablet in landscape is the workbench with the ribbon and docked panels. Phone keeps the compact composition on any screen; Workbench asks for the desktop arrangement wherever the window can carry it.</string>
+    <string name="layout_automatic">Automatic (default)</string>
+    <string name="layout_phone">Phone</string>
+    <string name="layout_workbench">Workbench</string>
     <string name="handedness_description">Which edge the tool rail and its panels stand on. The model, its axes and every gesture stay the same.</string>
     <string name="handedness_right">Right-handed (default)</string>
     <string name="handedness_left">Left-handed</string>
@@ -437,6 +445,20 @@
     <string name="context_cad_body">CAD Body</string>
     <string name="finish_sketch">Finish Sketch</string>
     <string name="extrude">Extrude</string>
+    <!-- The captions under the trailing host's icon entries (`WORKBENCH-RIBBON-R2`):
+         one word each, read under the glyph like a Tool Rail entry's. The full
+         wording stays the content description. -->
+    <string name="rail_caption_move">Move</string>
+    <string name="rail_caption_rotate">Rotate</string>
+    <string name="rail_caption_scale">Scale</string>
+    <string name="rail_caption_world">World</string>
+    <string name="rail_caption_local">Local</string>
+    <string name="rail_caption_size">Size</string>
+    <string name="rail_caption_relative">Relative</string>
+    <string name="rail_caption_cancel">Cancel</string>
+    <string name="rail_caption_back">Back</string>
+    <string name="rail_caption_keep">Keep</string>
+    <string name="rail_caption_exact">Exact</string>
     <string name="cancel_sketch">Cancel Sketch</string>
     <string name="back_to_sketch">Back to Sketch</string>
     <string name="new_sketch">New Sketch</string>

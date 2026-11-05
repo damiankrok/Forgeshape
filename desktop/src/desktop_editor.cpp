@@ -310,7 +310,8 @@ void DesktopEditor::refreshTitle() {
 
 std::string DesktopEditor::bodyLabel(uint64_t objectId) const {
     const fs::SceneObject* body = fs::constructionScene().findBody(objectId);
-    if (body != nullptr && !body->name().empty()) return body->name();
+    // The core's one rule for both shells (`WORKBENCH-RIBBON-R2`).
+    if (body != nullptr) return fs::bodyDisplayLabel(*body);
     return "Body #" + std::to_string(objectId);
 }
 

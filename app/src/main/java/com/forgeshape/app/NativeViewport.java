@@ -710,6 +710,15 @@ final class NativeViewport {
     static native String sceneBodyName(long objectId);
 
     /**
+     * The label a body is SHOWN by (`WORKBENCH-RIBBON-R2`): its stored name, or
+     * the core's representation-named default ("Part #3", "Mesh #3",
+     * "Freeform #3", "Surface #3", a Construction primitive's "Body #3"). The
+     * same function the desktop labels with, so the two shells agree; the
+     * empty string only for an id the scene does not hold.
+     */
+    static native String sceneBodyDisplayName(long objectId);
+
+    /**
      * Whether a body's geometry came from a file rather than from parameters.
      *
      * <p>Asked rather than inferred from an empty name or an absent dimension:

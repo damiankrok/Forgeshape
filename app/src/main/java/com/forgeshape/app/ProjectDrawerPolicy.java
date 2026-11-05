@@ -40,6 +40,8 @@ final class ProjectDrawerPolicy {
         NEW_PROJECT,
         SAVE_PROJECT,
         OPEN_SAVED_PROJECT,
+        /** Export as… (`WORKBENCH-RIBBON-R2`): the format menu, from the Transfer group. */
+        EXPORT_AS,
         SAVE_COPY,
         OPEN_FILE,
         SHARE_DIAGNOSTICS,
@@ -73,6 +75,7 @@ final class ProjectDrawerPolicy {
         new Row(Group.CREATE, Action.NEW_PROJECT, R.id.project_new, R.string.project_new),
         new Row(Group.PROJECT, Action.SAVE_PROJECT, R.id.project_save, R.string.project_save),
         new Row(Group.PROJECT, Action.OPEN_SAVED_PROJECT, R.id.project_open, R.string.project_open),
+        new Row(Group.TRANSFER, Action.EXPORT_AS, R.id.export_action, R.string.export_as),
         new Row(Group.TRANSFER, Action.SAVE_COPY, R.id.project_save_copy,
                 R.string.project_save_copy),
         new Row(Group.TRANSFER, Action.OPEN_FILE, R.id.project_open_file,
@@ -162,6 +165,9 @@ final class ProjectDrawerPolicy {
                 break;
             case OPEN_SAVED_PROJECT:
                 listener.onOpenProjectRequested();
+                break;
+            case EXPORT_AS:
+                listener.onExportAsRequested();
                 break;
             case SAVE_COPY:
                 listener.onSaveCopyRequested();

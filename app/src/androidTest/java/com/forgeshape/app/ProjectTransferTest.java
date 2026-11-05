@@ -428,10 +428,10 @@ public final class ProjectTransferTest {
         assertFalse("and nothing in the group still calls it a preview: " + text,
                 text.contains("preview"));
 
-        // Export exists and works, but it lives in the Global Toolbar, not
-        // here: writing a `.glb` is a different act with a different
-        // destination from moving a project.
-        assertNotNull("Export keeps its own home in the toolbar",
+        // Export as… is the Transfer group's first row since
+        // `WORKBENCH-RIBBON-R2`: writing a `.glb` is a transfer, and the row
+        // closes the drawer and opens the toolbar's format menu.
+        assertNotNull("Export is a row of the drawer",
                 onWorkspace(rule.getScenario(),
                         (activity, workspace) -> workspace.findViewById(R.id.export_action)));
     }

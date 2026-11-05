@@ -1,6 +1,7 @@
 package com.forgeshape.app;
 
 import android.content.Context;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -8,6 +9,7 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 /**
  * Owns composition and presentation of the Editor Workspace's right context.
@@ -223,27 +225,32 @@ final class WorkspaceTrailingHostView extends FrameLayout
                 R.drawable.ic_gizmo_move, R.string.transform_mode_move,
                 view -> callbacks.onTransformModeRequested(NativeViewport.GIZMO_MODE_MOVE));
         transformModeGroup.addView(transformMoveAction, internalButtonParams(context, 0));
+        transformModeGroup.addView(captionUnder(context, transformMoveAction, R.string.rail_caption_move), captionParams(context));
         transformRotateAction = selectorButton(context, R.id.transform_mode_rotate,
                 R.drawable.ic_gizmo_rotate, R.string.transform_mode_rotate,
                 view -> callbacks.onTransformModeRequested(NativeViewport.GIZMO_MODE_ROTATE));
         transformModeGroup.addView(transformRotateAction, internalButtonParams(context,
                 EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
+        transformModeGroup.addView(captionUnder(context, transformRotateAction, R.string.rail_caption_rotate), captionParams(context));
         transformScaleAction = selectorButton(context, R.id.transform_mode_scale,
                 R.drawable.ic_gizmo_scale, R.string.transform_mode_scale,
                 view -> callbacks.onTransformModeRequested(NativeViewport.GIZMO_MODE_SCALE));
         transformModeGroup.addView(transformScaleAction, internalButtonParams(context,
                 EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
+        transformModeGroup.addView(captionUnder(context, transformScaleAction, R.string.rail_caption_scale), captionParams(context));
 
         transformSpaceGroup = internalGroup(context, R.id.transform_space_group);
         transformSpaceWorldAction = selectorButton(context, R.id.transform_space_world,
                 R.drawable.ic_space_world, R.string.transform_space_world,
                 view -> callbacks.onTransformSpaceRequested(NativeViewport.GIZMO_SPACE_WORLD));
         transformSpaceGroup.addView(transformSpaceWorldAction, internalButtonParams(context, 0));
+        transformSpaceGroup.addView(captionUnder(context, transformSpaceWorldAction, R.string.rail_caption_world), captionParams(context));
         transformSpaceLocalAction = selectorButton(context, R.id.transform_space_local,
                 R.drawable.ic_space_local, R.string.transform_space_local,
                 view -> callbacks.onTransformSpaceRequested(NativeViewport.GIZMO_SPACE_LOCAL));
         transformSpaceGroup.addView(transformSpaceLocalAction, internalButtonParams(context,
                 EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
+        transformSpaceGroup.addView(captionUnder(context, transformSpaceLocalAction, R.string.rail_caption_local), captionParams(context));
 
         transformSelectorRow = new LinearLayout(context);
         transformSelectorRow.setId(R.id.transform_selector_row);
@@ -266,11 +273,13 @@ final class WorkspaceTrailingHostView extends FrameLayout
                 R.drawable.ic_dimensions, R.string.body_dimensions,
                 view -> callbacks.onBodyDimensionsRequested());
         bodySizeGroup.addView(bodyDimensionsAction, internalButtonParams(context, 0));
+        bodySizeGroup.addView(captionUnder(context, bodyDimensionsAction, R.string.rail_caption_size), captionParams(context));
         bodyRelativeScaleAction = selectorButton(context, R.id.body_relative_scale,
                 R.drawable.ic_relative_scale, R.string.body_relative_scale,
                 view -> callbacks.onRelativeScaleRequested());
         bodySizeGroup.addView(bodyRelativeScaleAction, internalButtonParams(context,
                 EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
+        bodySizeGroup.addView(captionUnder(context, bodyRelativeScaleAction, R.string.rail_caption_relative), captionParams(context));
         transformSelectorRow.addView(bodySizeGroup, sectionParams(context,
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
@@ -314,11 +323,13 @@ final class WorkspaceTrailingHostView extends FrameLayout
                 R.drawable.ic_sketch_cancel, R.string.cancel_sketch,
                 view -> callbacks.onCancelSketchRequested());
         sketchGroup.addView(cancelSketchAction, internalButtonParams(context, 0));
+        sketchGroup.addView(captionUnder(context, cancelSketchAction, R.string.rail_caption_cancel), captionParams(context));
         backToSketchAction = selectorButton(context, R.id.back_to_sketch,
                 R.drawable.ic_sketch_back, R.string.back_to_sketch,
                 view -> callbacks.onBackToSketchRequested());
         sketchGroup.addView(backToSketchAction, internalButtonParams(context,
                 EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
+        sketchGroup.addView(captionUnder(context, backToSketchAction, R.string.rail_caption_back), captionParams(context));
         // Keep Sketch (`CAD-R2`): the sketch's other commit, the one that makes
         // no feature. It lives with the sketch's own controls rather than in
         // the toolbar row, which carries ONE transition at a time.
@@ -328,6 +339,7 @@ final class WorkspaceTrailingHostView extends FrameLayout
         keepSketchAction.setVisibility(GONE);
         sketchGroup.addView(keepSketchAction, internalButtonParams(context,
                 EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
+        sketchGroup.addView(captionUnder(context, keepSketchAction, R.string.rail_caption_keep), captionParams(context));
         sketchGroup.setVisibility(GONE);
         contentColumn.addView(sketchGroup, sectionParams(context,
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
@@ -338,6 +350,7 @@ final class WorkspaceTrailingHostView extends FrameLayout
         precisionToggle.setBackgroundResource(R.drawable.bg_rail_entry);
         precisionToggle.setOnClickListener(view -> callbacks.onPrecisionRequested());
         precisionGroup.addView(precisionToggle, internalButtonParams(context, 0));
+        precisionGroup.addView(captionUnder(context, precisionToggle, R.string.rail_caption_exact), captionParams(context));
         contentColumn.addView(precisionGroup, sectionParams(context,
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
     }
@@ -353,7 +366,11 @@ final class WorkspaceTrailingHostView extends FrameLayout
         if (!backOffered) {
             backToSketchAction.setVisibility(GONE);
         }
+        syncEntryCaptions(compactEntries);
     }
+
+    /** The last compactness rendered, so a later visibility change keeps the captions right. */
+    private boolean compactEntries;
 
     /** For verification. */
     ImageView keepSketchAction() {
@@ -499,6 +516,8 @@ final class WorkspaceTrailingHostView extends FrameLayout
                         state.dimensionAnchor == NativeViewport.DIMENSION_ANCHOR_POSITIVE);
             }
         }
+        syncEntryCaptions(state.compactRail);
+        compactEntries = state.compactRail;
         setVisibility(state.displaySuppressed ? GONE : VISIBLE);
     }
 
@@ -510,6 +529,50 @@ final class WorkspaceTrailingHostView extends FrameLayout
     @Override
     public void onToolSelected(int key) {
         callbacks.onToolSelected(key);
+    }
+
+    /**
+     * The captions under the host's own icon entries (`WORKBENCH-RIBBON-R2`,
+     * closing `UI-CRAFT-R1` finding 7): Move, Rotate, Scale, World, Local,
+     * Size, Relative, Cancel, Back, Keep and Exact read under their glyphs
+     * exactly as the Tool Rail's entries do, so the column is one grammar
+     * from top to bottom instead of seven captioned entries over a few bare
+     * ones. A caption is not a target — the 48 dp ImageView above it stays
+     * the whole hit area — and it follows its button's visibility, so a
+     * withdrawn act takes its word with it. On a short window the captions go
+     * and the entries fall back to the glyph, as the rail's compact form does.
+     */
+    private final java.util.LinkedHashMap<ImageView, TextView> entryCaptions =
+            new java.util.LinkedHashMap<>();
+
+    private TextView captionUnder(Context context, ImageView button, int labelRes) {
+        final TextView caption = new TextView(context);
+        caption.setText(labelRes);
+        caption.setGravity(Gravity.CENTER);
+        caption.setSingleLine(true);
+        caption.setIncludeFontPadding(false);
+        caption.setTextSize(TypedValue.COMPLEX_UNIT_PX,
+                EditorControlStyles.dimen(context, R.dimen.rail_label_size));
+        caption.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextSecondary));
+        caption.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        entryCaptions.put(button, caption);
+        return caption;
+    }
+
+    private static LinearLayout.LayoutParams captionParams(Context context) {
+        final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                EditorControlStyles.dimen(context, R.dimen.rail_item_width),
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        return params;
+    }
+
+    /** Each caption shows exactly when its entry does, and never on a short window. */
+    private void syncEntryCaptions(boolean compact) {
+        for (java.util.Map.Entry<ImageView, TextView> entry : entryCaptions.entrySet()) {
+            final boolean shown = !compact && entry.getKey().getVisibility() == VISIBLE;
+            entry.getValue().setVisibility(shown ? VISIBLE : GONE);
+        }
     }
 
     private ImageView selectorButton(Context context, int id, int icon, int label,

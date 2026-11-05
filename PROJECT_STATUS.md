@@ -1,7 +1,59 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.121.0
-**Updated:** 2026-11-04
+**Status Version:** 0.122.0
+**Updated:** 2026-11-05
+**Latest stage:** **`WORKBENCH-RIBBON-R2` — the tablet's ribbon, the Layout
+switch, and the audit's four decisions** (2026-11-05, OWNER: "do all of it;
+the PC and Android versions share `.forge` files and one code base and must
+have the same functions; the layout must be roughly SolidCraft's bar at the
+top on the PC and on the tablet; it must be possible to switch the Android
+view from the PC-like tablet version to the small-phone version"). **TECH
+PASS (JVM, host self-tests, NDK and Linux desktop builds) / UNVERIFIED ON A
+SCREEN / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
+`claude/new-session-g87rge`.
+
+- **The ribbon on a tablet workbench** (`WorkbenchRibbonView`,
+  `WorkbenchRibbonPresentation`): under the Global Toolbar, full width, the
+  desktop's tabs and groups word for word — *Model*: Sketch (New sketch),
+  Primitives (six), Part (CAD part, where the primitive can become one),
+  Arrange (Move, Rotate, Scale, World / Local where a space applies, Delete
+  never for the last body), the contextual *Face* group (Sketch here, Round,
+  Bevel, Hole, Pattern, Mirror) exactly when the touched face offers them,
+  with the docked face column standing down there (one home per act per
+  layout; the marker and the editors still dock); *View*: Show (Grid,
+  Outline, Edges). Every command is a rail entry calling the ONE handler the
+  workspace already had; what is drawn is a pure function over native facts
+  (JVM-tested). The ribbon stands down while a sketch or Sculpt owns the
+  viewport and never appears on a phone. The desktop already had the
+  SolidCraft arrangement (`WORKBENCH-RIBBON-R1`); no desktop UI changed.
+- **The Layout preference** (`WorkspaceLayoutPreference`: Automatic / Phone /
+  Workbench; Settings → Workspace → Layout): Phone forces the compact
+  composition on any screen, Workbench the expanded one on any window
+  ≥ 600 dp wide, Automatic is the window arithmetic; read by
+  `WorkspaceLayoutMode.forWindow` on every measure, so a change is exactly a
+  resize. An `AppPreferences` field, schema still 1, a missing key Automatic.
+- **The audit's four items** (`artifacts/ui-craft-r1/AUDIT.md` §3): a Sketch
+  tile in Add Primitive already existed; **Export as…** is now a row of the
+  project drawer's Transfer group that closes the drawer and opens the
+  toolbar's format menu from the mark (id `export_action` kept; the utility
+  group is Display and Hide UI); **captions** under every trailing-host icon
+  entry (Move, Rotate, Scale, World, Local, Size, Relative, Cancel, Back,
+  Keep, Exact), hidden on a short window; **default body labels name the
+  representation** from ONE core function both shells read
+  (`defaultBodyLabel` / `bodyDisplayLabel`, JNI `sceneBodyDisplayName`, the
+  desktop's `bodyLabel`): `Body #n` for a primitive as before, `Part #n`,
+  `Mesh #n`, `Freeform #n`, `Surface #n`; presentation, never stored.
+- **Evidence.** JVM `:app:testDebugUnitTest` 220 tests, 0 failures
+  (AppPreferences, WorkspaceLayoutMode, ProjectDrawerPolicy and the new
+  `WorkbenchRibbonPresentationTest`); `:app:compileDebugAndroidTestJavaWithJavac`
+  with the five Export cases rewritten for the drawer; host
+  `HOST_SUITE_OK SCENE (193 checks)` with six new `rb2_*` label checks;
+  the NDK `assembleDebug` and the Linux desktop build (`cmake -S desktop`, core self-tests) were IN FLIGHT when this record was committed and their results are recorded in the next status commit on this branch. **No device run and no capture**: the ribbon's
+  height and groups on the Galaxy Tab S9 Ultra, the Layout switch both ways,
+  the drawer's Export row, the captioned column and the new labels are judged
+  there; `CI FAST`, `CI DEVICE` and `CI DESKTOP` run on the pushed branch.
+
+**Previous stage:** `UI-CRAFT-R1` (record below).
 **Latest stage:** **`UI-CRAFT-R1` — the Android shell's look, audited and
 tightened** (2026-11-04, OWNER: "the app is the basis of CAD modelling that
 can then be turned into Sculpt to add detail — audit it for look,
@@ -5751,10 +5803,18 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: OWNER physical review of the `UI-CRAFT-R1` tree**
-— the APK `CI FAST` builds from `claude/new-session-g87rge` on the Galaxy
-Tab S9 Ultra, and the 0.120.0 Windows installer on the OWNER's PC (artifacts
-named in the `PRECISION-SCULPT-INTERCHANGE-R1` record above). First the look,
+**Exactly one next step: OWNER physical review of the `WORKBENCH-RIBBON-R2`
+tree** — the APK `CI FAST` builds from `claude/new-session-g87rge` on the
+Galaxy Tab S9 Ultra, and the Windows installer `CI DESKTOP` builds from the
+same branch on the OWNER's PC. First the parity: on the tablet in landscape
+the ribbon under the top row (Model: Sketch, Primitives, Part, Arrange; tap a
+part's face and the Face group appears while the side column does not; View:
+Grid, Outline, Edges lit while on), Settings → Workspace → Layout → *Phone*
+turning the tablet into the phone composition and *Automatic* back, the
+drawer's Export as… row opening the format menu from the mark, the captions
+under the trailing column's entries (gone in a short landscape window), a
+CAD part reading *Part #n* and an imported mesh *Mesh #n* in the Objects list
+on both the tablet and the PC. Then the `UI-CRAFT-R1` look,
 in all five palettes (Settings → Appearance): Home and New Project (the
 tagline, the icon wells, the chevrons), a project's toolbar capsules, the
 Tool Rail, the Objects and history capsules, the precision sheet, the Display

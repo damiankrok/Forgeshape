@@ -349,6 +349,74 @@ final class CadExtrudeCanvasView extends FrameLayout {
      * so the chip cannot outlive the surface it would stand on.
      */
     private java.util.function.BooleanSupplier retainedChipWithdrawn = () -> false;
+    /**
+     * Whether the DOCKED offer bar (Sketch here, Round, Bevel, Hole, Pattern,
+     * Mirror) is withdrawn because the workbench's ribbon carries those acts
+     * (`WORKBENCH-RIBBON-R2`): one home per act per layout. The hollow marker
+     * on the face and every editor still dock exactly as before.
+     */
+    private java.util.function.BooleanSupplier offerBarWithdrawn = () -> false;
+
+    void setOfferBarWithdrawnWhen(java.util.function.BooleanSupplier withdrawn) {
+        offerBarWithdrawn = withdrawn != null ? withdrawn : () -> false;
+    }
+
+    /**
+     * The face acts the touched face offers right now, as
+     * {@code WorkbenchRibbonPresentation.FACE_*} bits — the same native reads
+     * the docked bar draws from, so the ribbon and the bar can never disagree.
+     */
+    int faceActsOffered() {
+        if (!anchorSpace.ready() || NativeViewport.supportChooserActive()
+                || NativeViewport.sceneActiveBodyId() == NativeViewport.NO_OBJECT) {
+            return 0;
+        }
+        final boolean editing = edgeEditorKind >= 0 || patternPanel.isOpen() || holePanel.isOpen();
+        if (editing) {
+            return 0;
+        }
+        int acts = 0;
+        if (NativeViewport.faceSketchOfferPoint(faceOfferPoint)) {
+            acts |= WorkbenchRibbonPresentation.FACE_SKETCH_HERE;
+        }
+        if (NativeViewport.edgeFinishOfferState(edgeOffer)) {
+            acts |= WorkbenchRibbonPresentation.FACE_FINISH;
+        }
+        if (NativeViewport.holeOfferState(holeOffer)) {
+            acts |= WorkbenchRibbonPresentation.FACE_HOLE;
+        }
+        if (NativeViewport.patternOfferState(patternOffer)) {
+            acts |= WorkbenchRibbonPresentation.FACE_PATTERN;
+        }
+        return acts;
+    }
+
+    /** Performs one face act exactly as the docked bar's own control would. */
+    void performFaceAct(int act) {
+        switch (act) {
+            case WorkbenchRibbonPresentation.ACT_SKETCH_HERE:
+                sketchOnFace.setVisibility(GONE);
+                actions.onCanvasSketchOnFaceRequested();
+                break;
+            case WorkbenchRibbonPresentation.ACT_FILLET:
+                openEdgeFinishEditor(NativeViewport.EDGE_FINISH_FILLET);
+                break;
+            case WorkbenchRibbonPresentation.ACT_CHAMFER:
+                openEdgeFinishEditor(NativeViewport.EDGE_FINISH_CHAMFER);
+                break;
+            case WorkbenchRibbonPresentation.ACT_HOLE:
+                openNewHole();
+                break;
+            case WorkbenchRibbonPresentation.ACT_PATTERN:
+                openNewPattern(NativeViewport.PATTERN_LINEAR);
+                break;
+            case WorkbenchRibbonPresentation.ACT_MIRROR:
+                openNewPattern(NativeViewport.PATTERN_MIRROR);
+                break;
+            default:
+                break;
+        }
+    }
     /** The dock's box size last applied, px. */
     private int appliedDockWidth;
     private int appliedDockHeight;
@@ -1536,7 +1604,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         // An open feature editor owns the dock; the face's own offer waits.
         final boolean editing = edgeEditorKind >= 0 || patternPanel.isOpen() || holePanel.isOpen();
         dockedBelow = 0;
-        if (faceOffered && !editing) {
+        if (faceOffered && !editing && !offerBarWithdrawn.getAsBoolean()) {
             sketchOnFace.setVisibility(VISIBLE);
             setVisibility(VISIBLE);
             // Docked beside the trailing controls (`CAD-UI-DOCK-R1`), the
@@ -1884,7 +1952,10 @@ final class CadExtrudeCanvasView extends FrameLayout {
         mirrorAction.setVisibility(patternOffered ? VISIBLE : GONE);
         edgeFillet.setVisibility(finishOffered ? VISIBLE : GONE);
         edgeChamfer.setVisibility(finishOffered ? VISIBLE : GONE);
-        if (!finishOffered && !patternOffered && !holeOffered) {
+        if ((!finishOffered && !patternOffered && !holeOffered)
+                || offerBarWithdrawn.getAsBoolean()) {
+            // Nothing offered -- or the workbench's ribbon carries the acts
+            // (`WORKBENCH-RIBBON-R2`), so the docked bar stands down.
             edgeFinishBar.setVisibility(GONE);
             return false;
         }

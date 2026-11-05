@@ -80,6 +80,7 @@ final class EditorWorkspaceView extends FrameLayout
         FeatureHistoryView.OnHistoryRowChosen,
         WorkbenchViewCubeView.OnViewChosen,
         WorkbenchViewBarView.Host,
+        WorkbenchRibbonView.Host,
         FeatureHistoryView.OnHistoryAct,
         RegenerationIssueView.OnIssueAction,
         SurfaceEditorView.Host,
@@ -262,6 +263,8 @@ final class EditorWorkspaceView extends FrameLayout
     private final WorkbenchViewCubeView viewCube;
     private final WorkbenchViewBarView viewBar;
     private final HistoryStripView historyStrip;
+    /** The tablet's ribbon (`WORKBENCH-RIBBON-R2`), under the toolbar on a workbench. */
+    private final WorkbenchRibbonView ribbon;
     private final View bottomSpacer;
     /** Which edge the rail zone was last seated on; null until the first. */
     private Boolean appliedLeftHanded;
@@ -706,6 +709,14 @@ final class EditorWorkspaceView extends FrameLayout
         chromeRoot.addView(toolbar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // The ribbon stands between the toolbar and the model, full width,
+        // part of the window frame like the desktop's: drawn on a workbench
+        // over a project outside a sketch, and never on a phone.
+        ribbon = new WorkbenchRibbonView(context, this);
+        ribbon.setVisibility(GONE);
+        chromeRoot.addView(ribbon, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         middleRow = new LinearLayout(context);
         middleRow.setOrientation(LinearLayout.HORIZONTAL);
         // The row is spatial, not typographic. Baseline alignment makes a tall
@@ -1084,6 +1095,9 @@ final class EditorWorkspaceView extends FrameLayout
         // anchor, so only the floating one withdraws it.
         cadExtrudeCanvas.setRetainedChipWithdrawnWhen(
                 () -> featureHistory.isOpen() && !historyDocked());
+        // On a workbench the ribbon's Face group is the home of the face acts,
+        // so the docked offer bar stands down there (`WORKBENCH-RIBBON-R2`).
+        cadExtrudeCanvas.setOfferBarWithdrawnWhen(() -> ribbon.getVisibility() == VISIBLE);
         settingsPage.setVisibility(GONE);
         addView(settingsPage, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
@@ -1627,7 +1641,8 @@ final class EditorWorkspaceView extends FrameLayout
         final int widthDp = EditorControlStyles.toDp(context, widthPx);
         final int heightDp = EditorControlStyles.toDp(context, heightPx);
 
-        layoutMode = WorkspaceLayoutMode.forWindow(widthDp, heightDp);
+        layoutMode = WorkspaceLayoutMode.forWindow(widthDp, heightDp,
+                currentPreferences().layout());
 
         toolbar.setStatusInline(WorkspaceLayoutMode.statusInlineWithControls(heightDp));
         // A compact window cannot fit the context label AND every global action
@@ -2522,6 +2537,23 @@ final class EditorWorkspaceView extends FrameLayout
         if (AppPreferencesStore.update(getContext(), before.withToolLabels(visible))) {
             cadExtrudeCanvas.setToolLabelsVisible(visible);
             refreshWorldAnchoredUi();
+        }
+        settingsPage.showPreferences(currentPreferences());
+    }
+
+    /**
+     * The workspace layout (`WORKBENCH-RIBBON-R2`): automatic, the phone
+     * composition or the workbench. Application state, never project truth.
+     * Applying it is exactly a resize: the cached window is discarded and the
+     * adaptive decision runs again on the next measure.
+     */
+    @Override
+    public void onLayoutChosen(WorkspaceLayoutPreference layout) {
+        final AppPreferences before = currentPreferences();
+        if (AppPreferencesStore.update(getContext(), before.withLayout(layout))) {
+            appliedWidthPx = 0;
+            appliedHeightPx = 0;
+            requestLayout();
         }
         settingsPage.showPreferences(currentPreferences());
     }
@@ -3611,6 +3643,7 @@ final class EditorWorkspaceView extends FrameLayout
         }
         final boolean project = NativeViewport.projectOpen();
         final boolean sketching = isSketching();
+        refreshRibbon(project, sketching);
         final boolean views = workbench && project && !sketching;
         viewCube.setVisibility(views ? VISIBLE : GONE);
         viewBar.setVisibility(views ? VISIBLE : GONE);
@@ -3625,6 +3658,145 @@ final class EditorWorkspaceView extends FrameLayout
         if (strip) {
             historyStrip.showModel(readTimeline(false));
         }
+    }
+
+    /**
+     * The ribbon (`WORKBENCH-RIBBON-R2`): drawn where
+     * {@link WorkbenchRibbonPresentation#shown} says, redrawn from one
+     * snapshot of native facts. The transform facts are read exactly as the
+     * trailing host reads them, so the ribbon's Move / Rotate / Scale and the
+     * host's agree on every refresh.
+     */
+    private void refreshRibbon(boolean project, boolean sketching) {
+        if (ribbon == null || cadExtrudeCanvas == null) {
+            return;
+        }
+        final boolean sculpting = isSculpting();
+        final boolean transformOffered = project && !sculpting && !sketching
+                && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
+                && !NativeViewport.sceneActiveBodyIsLocked()
+                && !NativeViewport.sceneActiveBodyIsFaceSupportedCad()
+                && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
+        if (transformOffered) {
+            NativeViewport.gizmoState(nativeGizmo);
+        }
+        final WorkbenchRibbonPresentation.State state = new WorkbenchRibbonPresentation.State(
+                project, sketching, sculpting,
+                project && NativeViewport.sceneActiveHasCadPart(),
+                transformOffered,
+                transformOffered ? (int) nativeGizmo[NativeViewport.GIZMO_MODE]
+                        : NativeViewport.GIZMO_MODE_MOVE,
+                transformOffered && nativeGizmo[NativeViewport.GIZMO_SPACE_SELECTABLE] != 0.0,
+                transformOffered ? (int) nativeGizmo[NativeViewport.GIZMO_SPACE]
+                        : NativeViewport.GIZMO_SPACE_LOCAL,
+                project && NativeViewport.sceneBodyCount() > 1,
+                project && workbench ? cadExtrudeCanvas.faceActsOffered() : 0,
+                NativeViewport.gridVisible(),
+                NativeViewport.selectionOutlineVisible(),
+                NativeViewport.featureEdgesVisible());
+        final boolean shown = WorkbenchRibbonPresentation.shown(workbench, state);
+        final boolean was = ribbon.getVisibility() == VISIBLE;
+        ribbon.setVisibility(shown ? VISIBLE : GONE);
+        if (shown) {
+            ribbon.show(state);
+        }
+        if (shown != was) {
+            // The docked face column follows the ribbon's presence.
+            cadExtrudeCanvas.refreshFromNative();
+        }
+    }
+
+    // --- WorkbenchRibbonView.Host: every act is the handler that already existed ---
+
+    @Override
+    public void onRibbonNewSketch() {
+        onNewSketchSpatial();
+    }
+
+    @Override
+    public void onRibbonAddPrimitive(int primitiveKind) {
+        onAddPrimitiveChosen(primitiveKind);
+    }
+
+    /** Make CAD part (`CAD-PRIMITIVES-R1`), exactly as the Shape panel's row does it. */
+    @Override
+    public void onRibbonMakeCadPart() {
+        final long body = NativeViewport.sceneActiveBodyId();
+        final int status = NativeViewport.sceneConvertToCadPart(body);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
+            return;
+        }
+        onNativeStateChanged();
+        showStatus(getContext().getString(R.string.status_made_cad_part), R.attr.fsTextSecondary);
+        finishEditing();
+    }
+
+    /** Move / Rotate / Scale: holds the Transform tool first, so the gizmo is live. */
+    @Override
+    public void onRibbonTransformMode(int mode) {
+        if (uiState.constructionTool() != EditorUiState.CONSTRUCTION_TOOL_TRANSFORM) {
+            onToolSelected(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM);
+        }
+        onTransformModeRequested(mode);
+        refreshWorkbenchViewControls();
+    }
+
+    @Override
+    public void onRibbonTransformSpace(int space) {
+        onTransformSpaceRequested(space);
+        refreshWorkbenchViewControls();
+    }
+
+    /** Delete the active body: one transaction, one Undo, never the last body (`UI-OWNER-45`). */
+    @Override
+    public void onRibbonDeleteActive() {
+        final long body = NativeViewport.sceneActiveBodyId();
+        if (body == NativeViewport.NO_OBJECT) {
+            return;
+        }
+        final String label = BodyLabels.of(getContext(), body);
+        final int status = NativeViewport.sceneDeleteBody(body);
+        if (status != NativeViewport.DELETE_OK) {
+            showStatus(getContext().getString(
+                    status == NativeViewport.DELETE_REFUSED_LAST_BODY
+                            ? R.string.status_body_delete_refused_last
+                            : R.string.status_body_delete_failed),
+                    R.attr.fsTextError);
+            return;
+        }
+        onNativeStateChanged();
+        showStatus(getContext().getString(R.string.status_body_deleted, label),
+                R.attr.fsTextSecondary);
+    }
+
+    @Override
+    public void onRibbonFaceAct(int act) {
+        cadExtrudeCanvas.performFaceAct(act);
+        refreshWorkbenchViewControls();
+    }
+
+    @Override
+    public void onRibbonGridVisible(boolean visible) {
+        onGridVisibleRequested(visible);
+        refreshWorkbenchViewControls();
+    }
+
+    @Override
+    public void onRibbonOutlineVisible(boolean visible) {
+        onSelectionOutlineVisibleRequested(visible);
+        refreshWorkbenchViewControls();
+    }
+
+    @Override
+    public void onRibbonEdgesVisible(boolean visible) {
+        onFeatureEdgesVisibleRequested(visible);
+        refreshWorkbenchViewControls();
+    }
+
+    /** The ribbon, for verification. */
+    WorkbenchRibbonView ribbon() {
+        return ribbon;
     }
 
     @Override
@@ -6713,6 +6885,12 @@ final class EditorWorkspaceView extends FrameLayout
     // the source file. A refusal changes nothing at all — the domain builds and
     // validates every object before any of them reaches the scene — so there is
     // nothing to undo after one and no half-imported state to describe.
+
+    /** Export as… from the drawer (`WORKBENCH-RIBBON-R2`): the toolbar's own format menu. */
+    @Override
+    public void onExportAsRequested() {
+        toolbar.showExportMenu();
+    }
 
     @Override
     public void onImportGlbRequested() {
