@@ -48,7 +48,7 @@ SCREEN / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
   `WorkbenchRibbonPresentationTest`); `:app:compileDebugAndroidTestJavaWithJavac`
   with the five Export cases rewritten for the drawer; host
   `HOST_SUITE_OK SCENE (193 checks)` with six new `rb2_*` label checks;
-  the NDK `assembleDebug` and the Linux desktop build (`cmake -S desktop`, core self-tests) were IN FLIGHT when this record was committed and their results are recorded in the next status commit on this branch. **No device run and no capture**: the ribbon's
+  NDK `:app:assembleDebug` (x86_64 + arm64-v8a, the JNI `sceneBodyDisplayName` compiled and packaged) BUILD SUCCESSFUL on this tree; the Linux desktop build (`cmake -S desktop`, Ninja, Release) compiled `desktop_editor.cpp` with `bodyDisplayLabel` and its `forgeshape_core_selftests` printed `HOST_SELFTESTS_OK (4826 checks, 0 failed)`; `forgeshape_desktop_check` drew its headless frame. **No device run and no capture**: the ribbon's
   height and groups on the Galaxy Tab S9 Ultra, the Layout switch both ways,
   the drawer's Export row, the captioned column and the new labels are judged
   there; `CI FAST`, `CI DEVICE` and `CI DESKTOP` run on the pushed branch.
