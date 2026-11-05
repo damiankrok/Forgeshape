@@ -9,9 +9,19 @@
   by an outline. There is no real backdrop blur here and there cannot be — the
   viewport is a SurfaceView and the platform cannot blur what is behind one — so
   "glass" is tone plus opacity plus depth, which is a look the platform keeps.
+
+  A 1 dp HAIRLINE (`UI-CRAFT-R1`). Tone and a soft shadow alone left a
+  translucent surface over a rendered model reading as a smudge rather than
+  as an edge; the hairline, in the palette's own fsChromeHairline, is what
+  every precision tool draws around a floating panel and is what makes the
+  surface's corner crisp. It is a hairline and never a frame: 1 dp, at the
+  low contrast the role was approved at.
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="?attr/fsSurfaceFloating" />
     <corners android:radius="@dimen/radius_capsule" />
+    <stroke
+        android:width="@dimen/control_border_width"
+        android:color="?attr/fsChromeHairline" />
 </shape>

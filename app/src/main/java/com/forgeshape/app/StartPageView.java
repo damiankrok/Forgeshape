@@ -1,6 +1,7 @@
 package com.forgeshape.app;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.graphics.Rect;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -57,6 +58,8 @@ abstract class StartPageView extends FrameLayout {
     static final int WIDE_COLUMN_DP = 720;
     /** At most this many actions stand side by side as tiles. */
     static final int MAX_TILES = 3;
+    /** The view tag of an action card's trailing chevron, hidden in a tile. */
+    private static final String CHEVRON_TAG = "start_page_action_chevron";
 
     StartPageView(Context context, int id, int contentId, CharSequence headline,
                   CharSequence caption) {
@@ -138,6 +141,15 @@ abstract class StartPageView extends FrameLayout {
         mark.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         masthead.addView(wordmark, EditorControlStyles.rowParams(0));
 
+        // One line under the name saying what the program is for
+        // (`UI-CRAFT-R1`): a wordmark with nothing under it read as an app
+        // that had not decided what it was. Secondary ink, caption size — it
+        // is read once and never again.
+        final TextView tagline = EditorControlStyles.captionText(context,
+                R.id.start_page_tagline, context.getString(R.string.start_page_tagline));
+        masthead.addView(tagline, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
         final TextView title = EditorControlStyles.titleText(context, R.id.start_page_headline,
                 headline);
         masthead.addView(title, EditorControlStyles.rowParams(
@@ -159,7 +171,7 @@ abstract class StartPageView extends FrameLayout {
         final LinearLayout action = new LinearLayout(context);
         action.setId(id);
         action.setOrientation(LinearLayout.HORIZONTAL);
-        action.setGravity(Gravity.TOP);
+        action.setGravity(Gravity.CENTER_VERTICAL);
         action.setBackgroundResource(R.drawable.bg_start_page_action);
         final int pad = EditorControlStyles.dimen(context, R.dimen.chooser_option_padding);
         action.setPadding(pad, pad, pad, pad);
@@ -169,12 +181,25 @@ abstract class StartPageView extends FrameLayout {
         action.setContentDescription(title + ". " + description);
         action.setOnClickListener(onChosen);
 
-        final View icon = EditorControlStyles.icon(context, iconRes,
-                R.dimen.chooser_option_icon_size);
-        final LinearLayout.LayoutParams iconParams =
-                (LinearLayout.LayoutParams) icon.getLayoutParams();
-        iconParams.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
-        action.addView(icon, iconParams);
+        // The glyph stands in a tonal WELL (`UI-CRAFT-R1`): a square one step
+        // lighter than the card, which gives a bare line icon the footprint of
+        // a tile and lines the four cards' icons up on one column. Primary
+        // ink, because on a start page the act's name and its glyph are one
+        // thing; the well itself carries no state and takes no touch of its
+        // own — the whole card is the target.
+        final FrameLayout well = new FrameLayout(context);
+        well.setBackgroundResource(R.drawable.bg_control);
+        well.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        final ImageView icon = EditorControlStyles.icon(context, iconRes,
+                R.dimen.start_page_action_icon_size);
+        icon.setImageTintList(ColorStateList.valueOf(
+                EditorControlStyles.themeColor(context, R.attr.fsTextPrimary)));
+        final int glyph = EditorControlStyles.dimen(context, R.dimen.start_page_action_icon_size);
+        final FrameLayout.LayoutParams glyphParams = new FrameLayout.LayoutParams(glyph, glyph);
+        glyphParams.gravity = Gravity.CENTER;
+        well.addView(icon, glyphParams);
+        final int wellSize = EditorControlStyles.dimen(context, R.dimen.start_page_icon_well);
+        action.addView(well, new LinearLayout.LayoutParams(wellSize, wellSize));
 
         final LinearLayout text = new LinearLayout(context);
         text.setOrientation(LinearLayout.VERTICAL);
@@ -185,8 +210,22 @@ abstract class StartPageView extends FrameLayout {
                         EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
         final LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        textParams.leftMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        textParams.leftMargin = EditorControlStyles.dimen(context, R.dimen.inspector_padding);
         action.addView(text, textParams);
+
+        // A trailing chevron says the card LEADS somewhere — New Project to a
+        // choice, Open File to the system picker — which a filled rectangle
+        // with prose in it did not. Hidden when the card is a wide tile, where
+        // the tile's own shape already says it.
+        final ImageView chevron = EditorControlStyles.icon(context, R.drawable.ic_chevron_down,
+                R.dimen.icon_size);
+        chevron.setRotation(-90.0f);
+        chevron.setTag(CHEVRON_TAG);
+        chevron.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        final LinearLayout.LayoutParams chevronParams =
+                (LinearLayout.LayoutParams) chevron.getLayoutParams();
+        chevronParams.leftMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        action.addView(chevron, chevronParams);
 
         if (actionRow == null) {
             actionRow = new LinearLayout(context);
@@ -260,6 +299,10 @@ abstract class StartPageView extends FrameLayout {
                 action.setLayoutParams(p);
                 action.setMinimumHeight(tiles ? Math.round(112 * density)
                         : EditorControlStyles.dimen(context, R.dimen.control_height));
+                final View chevron = action.findViewWithTag(CHEVRON_TAG);
+                if (chevron != null) {
+                    chevron.setVisibility(tiles ? GONE : VISIBLE);
+                }
             }
         }
     }
@@ -329,8 +372,29 @@ abstract class StartPageView extends FrameLayout {
 
     /** A quiet action at the foot of the page: the way back out of a subpage. */
     final TextView addSecondaryAction(int id, CharSequence label, OnClickListener onClick) {
+        return addSecondaryAction(id, 0, label, onClick);
+    }
+
+    /**
+     * The same quiet action with a leading glyph (`UI-CRAFT-R1`): Settings
+     * wears the gear and Back the arrow, so the foot of the page reads as a
+     * control rather than as a stray word. Secondary ink like its label.
+     */
+    final TextView addSecondaryAction(int id, int iconRes, CharSequence label,
+                                      OnClickListener onClick) {
         final Context context = getContext();
         final TextView chip = EditorControlStyles.secondaryActionChip(context, id, label);
+        if (iconRes != 0) {
+            final android.graphics.drawable.Drawable glyph =
+                    context.getDrawable(iconRes).mutate();
+            final int size = EditorControlStyles.dimen(context, R.dimen.icon_size);
+            glyph.setBounds(0, 0, size, size);
+            glyph.setTintList(ColorStateList.valueOf(
+                    EditorControlStyles.themeColor(context, R.attr.fsTextSecondary)));
+            chip.setCompoundDrawablesRelative(glyph, null, null, null);
+            chip.setCompoundDrawablePadding(
+                    EditorControlStyles.dimen(context, R.dimen.row_gap));
+        }
         chip.setOnClickListener(onClick);
         final LinearLayout.LayoutParams params = EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.section_gap));

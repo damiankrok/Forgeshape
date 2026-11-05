@@ -85,7 +85,8 @@ final class NewProjectChooserView extends StartPageView {
                     }
                 });
         addStatusLine();
-        addSecondaryAction(R.id.new_project_cancel, context.getString(R.string.back),
+        addSecondaryAction(R.id.new_project_cancel, R.drawable.ic_sketch_back,
+                context.getString(R.string.back),
                 new OnClickListener() {
                     @Override
                     public void onClick(View v) {

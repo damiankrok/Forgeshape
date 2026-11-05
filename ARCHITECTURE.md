@@ -797,8 +797,8 @@ trailing group is uniformly tertiary.
 
 **A capsule is a relation between controls, so a group of one is not drawn as a
 group.** The editing group holds the context label and the one transition, and a
-`COMPACT` window withdraws the label — which left a 26 dp dark pill painted
-around a single 22 dp button, a crescent of host showing all the way round it,
+`COMPACT` window withdraws the label — which left a capsule painted around a
+single inset button, a crescent of host showing all the way round it,
 and the transition as the heaviest object in a workspace whose subject is the
 model. `applyEditingComposition` resolves it in the only direction that is
 honest: the lone member *becomes* the capsule, taking `radius_capsule` and the
@@ -927,12 +927,26 @@ transparent so they cannot read as nested capsules.
 **A control's corner is concentric with its host's.** The rule is
 `inner = outer − gap`: two rounded rectangles that do not share a corner centre
 leave a crescent of the outer one showing at each end, which reads as a rendering
-fault rather than as a control. `radius_control_inset` (22 dp) is the corner of a
-member of a `radius_capsule` (26 dp) control group with 4 dp of padding;
-`radius_rail_entry` (20 dp) is a Tool Rail entry inside the same 26 dp capsule
-with 6 dp of padding. It applies to the resting, pressed and active forms alike,
-which is why capsule members have their own drawables rather than reusing
-`bg_control*`.
+fault rather than as a control. `radius_control_inset` (12 dp) is the corner of a
+member of a `radius_capsule` (16 dp) control group with 4 dp of padding;
+`radius_rail_entry` (10 dp) is a Tool Rail entry inside the same 16 dp capsule
+with 6 dp of padding; the CAD HUD's member (14 dp) sits 2 dp inside it. It
+applies to the resting, pressed and active forms alike, which is why capsule
+members have their own drawables rather than reusing `bg_control*`.
+
+**Nothing is a pill, and every floating surface has an edge** (`UI-CRAFT-R1`).
+The radii are 8 / 12 / 16 dp (control / floating / sheet and capsule), all
+well under half the height of what they round, so a 56 dp group draws a
+straight run between its corners and the Tool Rail is a column rather than a
+900-pixel lozenge. Tier 1, tier 2 and tier 3 surfaces, the chooser panel, the
+navigator, the status capsule, the lone tonal transition and a start page's
+action card each draw a 1 dp `fsChromeHairline` — the per-palette role that
+was approved and unused — and the shadows are shallower (3 / 6 / 12 dp)
+because the hairline now carries the separation. A selected control is still
+fill plus indicator bar with no stroke; the accent is still spent on a primary
+commit and a focused field alone. The editing group also paints nothing
+around ZERO members (a Surface or Freeform body offers no transition), where
+it used to leave an 8 dp dot of padding beside the mark.
 
 **The Objects surface is one view with two hosts, owned by the workspace.** An
 expanded window with room gives the scene list a leading-edge column

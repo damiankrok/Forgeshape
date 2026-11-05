@@ -1,7 +1,47 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.120.0
+**Status Version:** 0.121.0
 **Updated:** 2026-11-04
+**Latest stage:** **`UI-CRAFT-R1` — the Android shell's look, audited and
+tightened** (2026-11-04, OWNER: "the app is the basis of CAD modelling that
+can then be turned into Sculpt to add detail — audit it for look,
+professionalism, ergonomics and intuitiveness, and fix the UI/UX, because it
+looks like AI slop now"). **TECH PASS (JVM) / UNVERIFIED ON A SCREEN / OWNER
+PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch `claude/new-session-g87rge`.
+The audit is `artifacts/ui-craft-r1/AUDIT.md`: source-backed and read against
+the newest device captures in the repository (2026-11-03), because this
+session had no emulator and no device.
+
+- **What it found.** Every control group was a 26 dp pill on a 56 dp group
+  (the Tool Rail a 900-pixel one), no floating surface had an edge, four
+  unrelated radii shared one screen, shadows were deep on a dark ground, and
+  a Surface or Freeform body left an 8 dp dot beside the ForgeShape mark
+  (the editing capsule painted around zero members). The start pages were
+  structurally right and generic in execution, and Home's copy still named
+  only CAD and Sculpt.
+- **What it changed — presentation only.** Radii 8 / 12 / 16 dp (control /
+  floating / sheet and capsule; inset 12, rail entry 10, CAD HUD member 14
+  by the concentric rule), depth 3 / 6 / 12 dp, a 1 dp `fsChromeHairline`
+  on tier 1, 2 and 3 surfaces, the chooser panel, the navigator (now at the
+  floating radius), the status capsule, the lone tonal transition and a
+  start page's action card; the empty editing group paints nothing; the
+  start pages gain a tagline under the wordmark, a 44 dp tonal icon well
+  and a trailing chevron per action card, a glyph on the foot action, and
+  shorter, current copy. No `.forge` byte, history step, fingerprint, id,
+  touch target or palette value moved; no colour is written in Java; the
+  selected-control rule (`UIR4B-14`) and the concentric rule still hold.
+- **Evidence.** `:app:compileDebugJavaWithJavac`,
+  `:app:compileDebugAndroidTestJavaWithJavac` and `:app:testDebugUnitTest`
+  (215 JVM tests, 0 failures) on this tree. **No device run, no capture, no
+  contrast measurement**: the hairline's weight, the 3 dp shadow, the 16 dp
+  capsule and the start pages are judged on the Galaxy Tab S9 Ultra, in all
+  five palettes, before any of this is called verified; `CI FAST` and
+  `CI DEVICE` run on the pushed branch.
+- **Recorded for the OWNER, not done** (`AUDIT.md` §3): a Sketch entry in
+  Add Primitive, Export moved into the drawer, captions for the rail's
+  Cancel and precision entries, default names by representation.
+
+**Previous stage:** `PRECISION-SCULPT-INTERCHANGE-R1` (record below).
 **Latest stage:** **`PRECISION-SCULPT-INTERCHANGE-R1` — lay a part out
 precisely, sculpt detail into it, and move it in and out in five formats**
 (2026-11-04, OWNER: "arrange elements as precisely as in CAD, then go into
@@ -3133,7 +3173,7 @@ Construction`, taken where the row genuinely cannot carry the sentence; the
 content description is the full wording either way. And where a `COMPACT` window
 withdraws the context label the editing group holds one member, so the group
 stops drawing itself and the member takes the capsule's own corner and depth — a
-26 dp pill painted around a 22 dp button is a halo, and it made the transition
+capsule painted around one inset button is a halo, and it made the transition
 the heaviest object in a resting workspace whose subject is the model. The hit
 area did not change: 8 dp of host went, not 8 dp of control.
 
@@ -3238,9 +3278,10 @@ wear on a phone. `sideDockWidthDp` is 30 % capped at 340 dp because at 28 %/320
 the docked panel clipped "Cylinder" to "Cyl".
 
 **A control's corner is concentric with its host's — and a group of one has no
-host.** `radius_control_inset` (22 dp) inside a 26 dp capsule with 4 dp of
-padding, `radius_rail_entry` (20 dp) inside the rail's own 26 dp capsule with
-6 dp. Two corners that do not share a centre leave a crescent of the host
+host.** `radius_control_inset` (12 dp) inside a 16 dp capsule with 4 dp of
+padding, `radius_rail_entry` (10 dp) inside the rail's own 16 dp capsule with
+6 dp (`UI-CRAFT-R1` lowered the set from 22 / 26 / 20: nothing is a pill any
+more, and every floating surface draws a 1 dp `fsChromeHairline`). Two corners that do not share a centre leave a crescent of the host
 showing, which reads as a rendering fault. UI-R4C added the other half of the
 same rule: a capsule is a relation between controls, so where the editing group
 holds one visible member it stops painting and the member takes
@@ -5710,9 +5751,17 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: OWNER physical review of the 0.120.0 builds** — the
-APK on the Galaxy Tab S9 Ultra and the Windows installer on the OWNER's PC
-(artifacts named in the latest-stage record above). First this stage's
+**Exactly one next step: OWNER physical review of the `UI-CRAFT-R1` tree**
+— the APK `CI FAST` builds from `claude/new-session-g87rge` on the Galaxy
+Tab S9 Ultra, and the 0.120.0 Windows installer on the OWNER's PC (artifacts
+named in the `PRECISION-SCULPT-INTERCHANGE-R1` record above). First the look,
+in all five palettes (Settings → Appearance): Home and New Project (the
+tagline, the icon wells, the chevrons), a project's toolbar capsules, the
+Tool Rail, the Objects and history capsules, the precision sheet, the Display
+popover, the sketch navigator and the extent palette — each should read as a
+crisp rounded rectangle with a visible hairline, never a pill or a smudge; a
+Surface or Freeform body must show nothing beside the mark; then decide the
+four items in `artifacts/ui-craft-r1/AUDIT.md` §3. Then the 0.120.0
 workflow: make a CAD part, Transform → its exact values → Drop to ground and
 Centre on origin; turn Snap to 1 cm and drag the Move handle (the position
 lands on whole centimetres) and Rotate at 15°; Start Sculpting on the part,

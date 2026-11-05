@@ -6,18 +6,31 @@
   option cards are recessed into their panel: a well is the tonal way to say
   "this is a slot you choose", and a raised card on an opaque page would bring
   back the floating-dialog reading the page exists to remove.
+
+  A 1 dp HAIRLINE (`UI-CRAFT-R1`). Tone and a soft shadow alone left a
+  translucent surface over a rendered model reading as a smudge rather than
+  as an edge; the hairline, in the palette's own fsChromeHairline, is what
+  every precision tool draws around a floating panel and is what makes the
+  surface's corner crisp. It is a hairline and never a frame: 1 dp, at the
+  low contrast the role was approved at.
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
             <solid android:color="?attr/fsControlSurfacePressed" />
-            <corners android:radius="@dimen/radius_control" />
+            <corners android:radius="@dimen/radius_floating" />
+            <stroke
+                android:width="@dimen/control_border_width"
+                android:color="?attr/fsChromeHairline" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
             <solid android:color="?attr/fsChooserCardSurface" />
-            <corners android:radius="@dimen/radius_control" />
+            <corners android:radius="@dimen/radius_floating" />
+            <stroke
+                android:width="@dimen/control_border_width"
+                android:color="?attr/fsChromeHairline" />
         </shape>
     </item>
 </selector>

@@ -161,7 +161,8 @@ final class SettingsPageView extends StartPageView {
         }
 
         addStatusLine();
-        addSecondaryAction(R.id.settings_back, context.getString(R.string.back),
+        addSecondaryAction(R.id.settings_back, R.drawable.ic_sketch_back,
+                context.getString(R.string.back),
                 new OnClickListener() {
                     @Override
                     public void onClick(View v) {

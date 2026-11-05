@@ -5,9 +5,21 @@
   A Tier 1 floating control group standing ON the sketch: translucent, because
   the grid and the strokes behind a corner control are informative and the
   navigator must not become a wall in the corner of the drawing.
+
+  A 1 dp HAIRLINE (`UI-CRAFT-R1`). Tone and a soft shadow alone left a
+  translucent surface over a rendered model reading as a smudge rather than
+  as an edge; the hairline, in the palette's own fsChromeHairline, is what
+  every precision tool draws around a floating panel and is what makes the
+  surface's corner crisp. It is a hairline and never a frame: 1 dp, at the
+  low contrast the role was approved at.
+  At the FLOATING radius since `UI-CRAFT-R1`: the navigator is a compact
+  corner control, not a sheet, and it shares the popovers' corner.
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="?attr/fsSurfaceFloating" />
-    <corners android:radius="@dimen/radius_sheet" />
+    <corners android:radius="@dimen/radius_floating" />
+    <stroke
+        android:width="@dimen/control_border_width"
+        android:color="?attr/fsChromeHairline" />
 </shape>

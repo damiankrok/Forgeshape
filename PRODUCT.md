@@ -242,7 +242,7 @@ the panel and the panel's own title already say those things. Choosing
 Construction and switching between shape and placement are silent.
 
 The control that crosses between constructing and sculpting is a single control —
-one pill, not a button set into a second one — and it is never abbreviated where
+one capsule, not a button set into a second one — and it is never abbreviated where
 the window can carry its wording. **Back to Construction** is the way out of
 Sculpt Mode, so on a window too narrow for the sentence it reads
 **← Construction** rather than trailing off mid-word; it is announced as *Back to

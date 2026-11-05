@@ -25,6 +25,7 @@
     <item name="start_page_wordmark" type="id" />
     <item name="start_page_mark" type="id" />
     <item name="start_page_product_name" type="id" />
+    <item name="start_page_tagline" type="id" />
     <item name="start_page_headline" type="id" />
     <item name="home_panel" type="id" />
     <item name="home_new_project" type="id" />

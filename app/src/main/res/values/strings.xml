@@ -25,9 +25,12 @@
       viewport behind it is honestly empty.
     -->
     <string name="home_title">Start</string>
-    <string name="home_prompt">Open a saved project file, or start a new one. Nothing is created until you choose.</string>
-    <string name="home_new_project_description">Begin a CAD model from a sketch on a plane, or a sculpt on a prepared sphere.</string>
-    <string name="home_open_file_description">Open a ForgeShape project (.forge) from your files. Nothing changes until it opens.</string>
+    <string name="home_prompt">Open a saved project, or begin a new one.</string>
+    <!-- The line under the wordmark (`UI-CRAFT-R1`): what the program is for,
+         in the four words the product has verified. -->
+    <string name="start_page_tagline">Precise parts, sculpted detail.</string>
+    <string name="home_new_project_description">Begin with a CAD sketch, a sculpt, a Freeform cage or a Surface.</string>
+    <string name="home_open_file_description">A ForgeShape project (.forge) from your files.</string>
     <string name="status_home_open_cancelled">Nothing opened. Choose a file, or start a new project.</string>
     <!--
       New Project chooser. Two ways to begin and nothing else. The subtitle
@@ -35,12 +38,12 @@
       sketches and sculpting all stay reachable for the life of the project.
     -->
     <string name="new_project">New Project</string>
-    <string name="new_project_prompt">Choose how this project begins. You can add shapes, sketches and sculpting later.</string>
+    <string name="new_project_prompt">Choose how the project begins. Shapes, sketches and sculpting can be added later.</string>
     <string name="back">Back</string>
     <string name="new_project_cad_title">CAD</string>
-    <string name="new_project_cad_description">Start on a flat sketch grid, draw a closed profile and extrude the first body. Sizes and depth stay exact, editable values.</string>
+    <string name="new_project_cad_description">Draw a closed profile on a sketch grid and extrude the first body. Every size stays an exact, editable value.</string>
     <string name="new_project_sculpt_title">Sculpt</string>
-    <string name="new_project_sculpt_description">Begin on a sphere already prepared for sculpting. Its exact source is kept, so Back to Construction returns to it.</string>
+    <string name="new_project_sculpt_description">Begin on a sphere prepared for sculpting. Its exact source is kept, so Back to Construction returns to it.</string>
     <string name="status_started_sculpt">Now sculpting a sphere. The Construction sphere is kept.</string>
     <string name="status_sculpt_start_failed">Could not prepare a sculptable mesh. No project was created.</string>
     <!--

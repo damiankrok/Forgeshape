@@ -695,14 +695,19 @@ final class GlobalToolbarView extends LinearLayout {
             }
         }
         final boolean solo = visible == 1;
-        if (editingGroupSolo != null && editingGroupSolo == solo
+        // A group of NONE is not a group either (`UI-CRAFT-R1`): a Surface or
+        // Freeform body has no transition to offer, and painting the capsule
+        // around zero members drew an 8 dp dot of padding beside the mark —
+        // which read as a stray indicator light rather than as nothing.
+        final boolean bare = visible <= 1;
+        if (editingGroupSolo != null && editingGroupSolo == bare
                 && editingGroupLoneMember == lone) {
             return;
         }
-        editingGroupSolo = solo;
+        editingGroupSolo = bare;
         editingGroupLoneMember = lone;
 
-        if (solo) {
+        if (bare) {
             editingGroup.setBackground(null);
             editingGroup.setElevation(0.0f);
             editingGroup.setPadding(0, 0, 0, 0);

@@ -15,52 +15,65 @@
 -->
 <resources>
     <!-- =====================================================================
-         Corner radius: three semantic levels, not one number.
+         Corner radius: four semantic levels, not one number — and NONE of
+         them a pill (`UI-CRAFT-R1`).
 
          A single radius on both a 48 dp chip and a 360 dp panel is what made
          every surface read as the same flat card. The level says what KIND of
          thing is being drawn, so a control never has to guess.
+
+         The previous set (10 / 18 / 24 / 26) made every control GROUP a full
+         pill: a 56 dp capsule, a 900 px Tool Rail and a 24 dp sheet all drew
+         the same half-round end, so the whole shell read as a row of blobs
+         rather than as an instrument. A precision tool's chrome is crisp:
+         radii stay well below half the height of what they round, every level
+         is on the 4 dp grid, and the difference between levels is visible.
          ===================================================================== -->
-    <!-- A thing you press: chip, field, button, rail entry, object row. -->
-    <dimen name="radius_control">10dp</dimen>
-    <!-- A surface that floats over the model: rail, popover, brush controls. -->
-    <dimen name="radius_floating">18dp</dimen>
+    <!-- A thing you press: chip, field, button, object row. -->
+    <dimen name="radius_control">8dp</dimen>
+    <!-- A surface that floats over the model: popover, navigator, palette. -->
+    <dimen name="radius_floating">12dp</dimen>
     <!-- A panel or sheet that carries a whole body of content. -->
-    <dimen name="radius_sheet">24dp</dimen>
+    <dimen name="radius_sheet">16dp</dimen>
     <!-- A floating control GROUP: a capsule holding two or three controls that
-         belong together. Large enough that a 56 dp-tall group reads as a pill
-         rather than as a rounded rectangle, which is the difference between a
-         group of controls and a small panel. -->
-    <dimen name="radius_capsule">26dp</dimen>
+         belong together. 16 dp on a 56 dp-tall group is a rounded rectangle
+         with a clearly straight run between its corners — a toolbar, not a
+         pill — and the same value as the sheet, so a capsule standing beside
+         the precision sheet shares its corner. -->
+    <dimen name="radius_capsule">16dp</dimen>
     <!--
       A control that lives INSIDE a floating capsule: an icon control, the
       Objects capsule's body label, a mode-transition button, Export.
 
-      CONCENTRIC with its host, and that is the whole reason it exists. A 10 dp
-      corner painted flush inside a 26 dp capsule leaves a crescent of capsule
-      showing at each end, because the two arcs do not share a centre — which is
-      what made an active icon control read as a box dropped into a pill rather
-      than as the pill's own selected state. The rule is inner = outer minus the
-      gap between them: a 26 dp capsule with 4 dp of group padding takes a 22 dp
+      CONCENTRIC with its host, and that is the whole reason it exists. A corner
+      painted flush inside a larger corner leaves a crescent of capsule showing
+      at each end when the two arcs do not share a centre — which is what made
+      an active icon control read as a box dropped into a pill rather than as
+      the pill's own selected state. The rule is inner = outer minus the gap
+      between them: a 16 dp capsule with 4 dp of group padding takes a 12 dp
       control.
     -->
-    <dimen name="radius_control_inset">22dp</dimen>
+    <dimen name="radius_control_inset">12dp</dimen>
     <!--
       A Tool Rail entry, by the same rule. The rail wears the Tier 1 floating
       capsule (radius_capsule) like every other control group, with 6 dp of
-      padding around its entries, so an entry is concentric with it at 20 dp.
+      padding around its entries, so an entry is concentric with it at 10 dp.
     -->
-    <dimen name="radius_rail_entry">20dp</dimen>
+    <dimen name="radius_rail_entry">10dp</dimen>
 
     <!-- =====================================================================
          Depth. Only surfaces that genuinely float get any, and none of them
          gets much: a heavy shadow over a rendered model reads as dirt on the
-         screen. A DOCKED inspector deliberately has none — it is beside the
-         model, not above it, and a card shadow would be a lie about the layout.
+         screen, and since `UI-CRAFT-R1` every floating surface also draws a
+         1 dp hairline (bg_chrome_overlay, bg_surface_context), which carries
+         most of the separation a shadow used to, so the shadows are shallower
+         than they were. A DOCKED inspector deliberately has none — it is
+         beside the model, not above it, and a card shadow would be a lie
+         about the layout.
          ===================================================================== -->
-    <dimen name="elevation_floating">6dp</dimen>
-    <dimen name="elevation_sheet">10dp</dimen>
-    <dimen name="elevation_chooser">16dp</dimen>
+    <dimen name="elevation_floating">3dp</dimen>
+    <dimen name="elevation_sheet">6dp</dimen>
+    <dimen name="elevation_chooser">12dp</dimen>
 
     <!-- =====================================================================
          Typography: five roles plus the rail's own caption.
@@ -70,7 +83,7 @@
          and it is what a Light theme will not have to re-argue.
          ===================================================================== -->
     <!-- The start chooser's headline. The only prominent type in the product. -->
-    <dimen name="text_display">21sp</dimen>
+    <dimen name="text_display">22sp</dimen>
     <!-- A surface's own name: toolbar context, inspector title, option title.
          16 sp, so a panel's title is its largest text (`WORKBENCH-UX-R1`). -->
     <dimen name="text_title">16sp</dimen>
@@ -317,6 +330,11 @@
     <dimen name="start_page_padding">28dp</dimen>
     <dimen name="start_page_max_width">520dp</dimen>
     <dimen name="start_page_mark_size">40dp</dimen>
+    <!-- An action card's icon well and the glyph inside it (`UI-CRAFT-R1`):
+         a 44 dp tonal square, so the four cards' glyphs stand on one column
+         and read as tiles rather than as loose line art. -->
+    <dimen name="start_page_icon_well">44dp</dimen>
+    <dimen name="start_page_action_icon_size">24dp</dimen>
     <!-- The project drawer the ForgeShape mark opens: wide enough for its
          longest row at body size, and narrower than any supported phone. -->
     <dimen name="project_drawer_min_width">260dp</dimen>

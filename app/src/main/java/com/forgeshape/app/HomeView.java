@@ -65,7 +65,8 @@ final class HomeView extends StartPageView {
                     }
                 });
         addStatusLine();
-        addSecondaryAction(R.id.home_settings, context.getString(R.string.settings),
+        addSecondaryAction(R.id.home_settings, R.drawable.ic_settings,
+                context.getString(R.string.settings),
                 new OnClickListener() {
                     @Override
                     public void onClick(View v) {

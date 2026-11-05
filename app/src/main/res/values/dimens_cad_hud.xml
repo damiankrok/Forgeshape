@@ -17,9 +17,9 @@
          borderless at rest, so adjacent 48 dp hit rectangles still read as
          separate glyphs. -->
     <dimen name="cad_hud_capsule_padding">2dp</dimen>
-    <!-- A member's corner, concentric with the capsule: the capsule's 26 dp
+    <!-- A member's corner, concentric with the capsule: the capsule's 16 dp
          corner minus the 2 dp between the two edges — inner = outer - gap. -->
-    <dimen name="cad_hud_member_radius">24dp</dimen>
+    <dimen name="cad_hud_member_radius">14dp</dimen>
     <!-- Horizontal breathing room around a caption, when Tool Labels is on. -->
     <dimen name="cad_hud_caption_padding_horizontal">6dp</dimen>
     <!-- Between a glyph and the caption under it. -->
