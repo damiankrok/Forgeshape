@@ -501,9 +501,11 @@ brushes' home.
 
 A phone, and a tablet in a narrower window, keep the layout described above:
 no panel stands at rest. **Settings → Workspace → Layout** overrules the window:
-*Phone* keeps the compact composition on any screen, *Workbench* asks for the
-desktop arrangement on any window at least 600 dp wide (the Browser still
-needs room for a 480 dp model), and *Automatic (default)* follows the window. On such a wide window Home's column stands in the
+*Phone* keeps the compact composition on any screen, a tablet included;
+*Workbench* gives the desktop arrangement on any screen — the ribbon, the view
+cube, the view bar and the History strip — with the Properties panel docked
+open from 600 dp and the Browser column where the window has room for it next
+to a 480 dp model; *Automatic (default)* follows the window. On such a wide window Home's column stands in the
 middle of the page and **New Project** and **Open File…** stand side by side
 as two tiles; a phone keeps them one under the other.
 
@@ -2263,8 +2265,8 @@ not reachable, and nothing behind it can be touched.
 Four groups. **Appearance** is the five palettes above. **Workspace** is
 **Handedness** and **Layout**. Layout is *Automatic (default)* — a phone is
 compact, a large tablet in landscape is the workbench — *Phone*, which keeps
-the compact composition on any screen, and *Workbench*, which asks for the
-ribbon and the docked panels on any window at least 600 dp wide; changing it is
+the compact composition on any screen, and *Workbench*, which gives the ribbon
+and the view controls on any screen and docks the panels where they fit; changing it is
 exactly a resize, and nothing about the project moves. Handedness:
 *Right-handed (default)* keeps the tool rail on the right edge;
 *Left-handed* moves the rail — and the exact-value panel, the sculpt sliders

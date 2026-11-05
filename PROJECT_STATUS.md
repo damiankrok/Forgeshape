@@ -53,6 +53,22 @@ SCREEN / OWNER PHYSICAL REVIEW REQUIRED / NOT MERGED.** Branch
   the drawer's Export row, the captioned column and the new labels are judged
   there; `CI FAST`, `CI DEVICE` and `CI DESKTOP` run on the pushed branch.
 
+- **Correction after the OWNER's first run (2026-11-05: "after changing the
+  option the desktop view does not start on Android").** The Workbench choice
+  forced the window EXPANDED, but the ribbon, the view cube, the view bar, the
+  History strip and the pinned Properties all still asked
+  `WorkspaceLayoutMode.workbench()` — room for the Browser column AND the
+  side panel beside a 480 dp model, about 1055 dp — so on a tablet in
+  portrait or a phone the choice changed nothing. Now
+  `WorkspaceLayoutMode.workbenchChrome(mode, width, preference)` decides the
+  chrome (Workbench: every window; Phone: never; Automatic: the arithmetic)
+  and the docked panels stay arithmetic (Properties pinned where the inspector
+  docks at the side, i.e. from 600 dp under Workbench; the Browser and its
+  toggle only where the column fits). Leaving a layout that pinned the panel
+  closes it. JVM-tested (`workbenchChromeFollowsThePreferenceOnEveryWindow`);
+  `WorkbenchLayoutSwitchTest` switches the preference in three real emulator
+  windows (phone, 800 dp medium, 1706 dp tablet) with captures.
+
 **Previous stage:** `UI-CRAFT-R1` (record below).
 **Latest stage:** **`UI-CRAFT-R1` — the Android shell's look, audited and
 tightened** (2026-11-04, OWNER: "the app is the basis of CAD modelling that

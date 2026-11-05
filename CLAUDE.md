@@ -1736,10 +1736,15 @@ on the host, with no device, and is the fast native loop.
   the viewport (the Tool Rail is the tablet's Sketch tab), and never on a
   phone. **Which layout a window gets is the user's to overrule**: the
   `Layout` preference (`WorkspaceLayoutPreference`: Automatic, Phone,
-  Workbench) feeds `WorkspaceLayoutMode.forWindow` on every measure — Phone is
-  the compact composition on any screen, Workbench the expanded one on any
-  window at least 600 dp wide, Automatic the arithmetic — and is application
-  state like every other preference.
+  Workbench) feeds `WorkspaceLayoutMode.forWindow` and
+  `WorkspaceLayoutMode.workbenchChrome` on every measure — Phone is the compact
+  composition on any screen, a tablet included; Workbench is the workbench
+  CHROME (ribbon, view cube, view bar, History strip) on EVERY window and the
+  EXPANDED mode from 600 dp, while the docked PANELS stay window arithmetic
+  (Properties pinned only where the inspector docks at the side, the Browser
+  only where `objectsDocked` affords its column); Automatic is the arithmetic —
+  and is application state like every other preference. Leaving a layout that
+  pinned the Properties panel closes it rather than leaving a phone's sheet.
 - **The workbench is one grammar on both shells** (`WORKBENCH-UX-R1`). ONE
   selected treatment — the selected-at-rest fill plus a `fsTextPrimary` bar
   under a horizontal item or on a vertical one's leading edge, never colour

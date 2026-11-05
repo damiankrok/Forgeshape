@@ -188,6 +188,35 @@ enum WorkspaceLayoutMode {
     }
 
     /**
+     * Whether the window wears the WORKBENCH chrome — the ribbon, the view
+     * cube, the view bar and the History strip, and the pinned Properties
+     * panel where the inspector docks at the side — once the user's Layout
+     * preference is applied (`WORKBENCH-RIBBON-R2`).
+     *
+     * <p>{@code PHONE} never; {@code AUTOMATIC} exactly where the window
+     * arithmetic earns it ({@link #workbench}); {@code WORKBENCH} on EVERY
+     * window, because that is what the user asked for: the desktop's command
+     * arrangement. What a narrow window cannot carry is the docked PANELS, and
+     * those stay window arithmetic — the Browser column only where
+     * {@link #objectsDocked} affords it, the Properties panel pinned only where
+     * the inspector docks at the side ({@link #inspectorPlacement}). Before
+     * this, the preference forced the window EXPANDED but every piece of
+     * workbench chrome still asked {@link #workbench}, which needs about
+     * 1055 dp, so on a tablet in portrait or a phone choosing Workbench changed
+     * nothing at all.
+     */
+    static boolean workbenchChrome(WorkspaceLayoutMode mode, int widthDp,
+                                   WorkspaceLayoutPreference preference) {
+        if (preference == WorkspaceLayoutPreference.PHONE) {
+            return false;
+        }
+        if (preference == WorkspaceLayoutPreference.WORKBENCH) {
+            return true;
+        }
+        return mode.workbench(widthDp);
+    }
+
+    /**
      * How wide the leading column is: 18 % of the window between
      * {@link #OBJECTS_DOCK_WIDTH_DP} and 260 dp.
      *

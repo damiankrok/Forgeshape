@@ -340,7 +340,7 @@
     <string name="handedness">Handedness</string>
     <!-- The workspace layout (`WORKBENCH-RIBBON-R2`). -->
     <string name="settings_layout">Layout</string>
-    <string name="layout_description">Automatic follows the window: a phone is compact, a tablet in landscape is the workbench with the ribbon and docked panels. Phone keeps the compact composition on any screen; Workbench asks for the desktop arrangement wherever the window can carry it.</string>
+    <string name="layout_description">Automatic follows the window: a phone is compact, a large tablet in landscape is the workbench. Workbench gives the desktop arrangement on any screen — the ribbon, the view cube, the view bar and the History strip — and docks the panels where the window has room for them. Phone keeps the compact composition on any screen, a tablet included.</string>
     <string name="layout_automatic">Automatic (default)</string>
     <string name="layout_phone">Phone</string>
     <string name="layout_workbench">Workbench</string>

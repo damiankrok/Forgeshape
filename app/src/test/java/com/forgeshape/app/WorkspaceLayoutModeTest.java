@@ -306,4 +306,39 @@ public final class WorkspaceLayoutModeTest {
         assertEquals("the two-argument form is unchanged", WorkspaceLayoutMode.EXPANDED,
                 WorkspaceLayoutMode.forWindow(1280, 800));
     }
+
+    // The Workbench preference gives the workbench CHROME on every window;
+    // only the docked panels stay window arithmetic. Before, the chrome asked
+    // workbench(), which needs about 1055 dp, and Workbench changed nothing
+    // on a tablet in portrait or a phone.
+    @Test
+    public void workbenchChromeFollowsThePreferenceOnEveryWindow() {
+        final WorkspaceLayoutPreference auto = WorkspaceLayoutPreference.AUTOMATIC;
+        final WorkspaceLayoutPreference phone = WorkspaceLayoutPreference.PHONE;
+        final WorkspaceLayoutPreference bench = WorkspaceLayoutPreference.WORKBENCH;
+        // A tablet in portrait: EXPANDED by the arithmetic, but no room for the Browser.
+        final WorkspaceLayoutMode portrait = WorkspaceLayoutMode.forWindow(870, 1393, auto);
+        assertEquals(WorkspaceLayoutMode.EXPANDED, portrait);
+        assertFalse("automatic: no workbench in tablet portrait",
+                WorkspaceLayoutMode.workbenchChrome(portrait, 870, auto));
+        assertTrue("workbench: the chrome stands in tablet portrait",
+                WorkspaceLayoutMode.workbenchChrome(
+                        WorkspaceLayoutMode.forWindow(870, 1393, bench), 870, bench));
+        assertFalse("but the Browser column still does not fit there",
+                WorkspaceLayoutMode.forWindow(870, 1393, bench).objectsDocked(870));
+        // A phone.
+        final WorkspaceLayoutMode onPhone = WorkspaceLayoutMode.forWindow(411, 914, bench);
+        assertEquals("a phone cannot dock panels", WorkspaceLayoutMode.COMPACT, onPhone);
+        assertTrue("but it can wear the ribbon and the view controls",
+                WorkspaceLayoutMode.workbenchChrome(onPhone, 411, bench));
+        assertEquals("and keeps its bottom sheet",
+                InspectorPlacement.BOTTOM_SHEET, onPhone.inspectorPlacement(914));
+        // A large tablet in landscape.
+        final WorkspaceLayoutMode landscape = WorkspaceLayoutMode.forWindow(1393, 870, auto);
+        assertTrue("automatic: the workbench", WorkspaceLayoutMode.workbenchChrome(landscape, 1393, auto));
+        final WorkspaceLayoutMode asPhone = WorkspaceLayoutMode.forWindow(1393, 870, phone);
+        assertFalse("phone: no workbench on a tablet",
+                WorkspaceLayoutMode.workbenchChrome(asPhone, 1393, phone));
+        assertFalse("and no docked Browser", asPhone.objectsDocked(1393));
+    }
 }

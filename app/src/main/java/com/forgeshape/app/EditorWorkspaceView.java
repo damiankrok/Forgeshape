@@ -1641,8 +1641,8 @@ final class EditorWorkspaceView extends FrameLayout
         final int widthDp = EditorControlStyles.toDp(context, widthPx);
         final int heightDp = EditorControlStyles.toDp(context, heightPx);
 
-        layoutMode = WorkspaceLayoutMode.forWindow(widthDp, heightDp,
-                currentPreferences().layout());
+        final WorkspaceLayoutPreference layoutPreference = currentPreferences().layout();
+        layoutMode = WorkspaceLayoutMode.forWindow(widthDp, heightDp, layoutPreference);
 
         toolbar.setStatusInline(WorkspaceLayoutMode.statusInlineWithControls(heightDp));
         // A compact window cannot fit the context label AND every global action
@@ -1657,7 +1657,10 @@ final class EditorWorkspaceView extends FrameLayout
         brushControls.setTrackHeightPx(Math.round(heightPx * 0.45f));
 
         objectsColumnAffordable = layoutMode.objectsDocked(widthDp);
-        workbench = layoutMode.workbench(widthDp);
+        // The workbench CHROME follows the Layout preference; the docked
+        // panels stay window arithmetic (objectsColumnAffordable above, the
+        // inspector's SIDE_DOCK below). See WorkspaceLayoutMode.workbenchChrome.
+        workbench = WorkspaceLayoutMode.workbenchChrome(layoutMode, widthDp, layoutPreference);
         appliedWindowWidthDp = widthDp;
         applyObjectsPlacement();
         applyBrowserWidth();
@@ -1667,6 +1670,14 @@ final class EditorWorkspaceView extends FrameLayout
         trailingHost.refreshParentPlacement();
         placeInspector(layoutMode.inspectorPlacement(heightDp), widthDp, heightDp);
         renderTrailingHost(isSculpting());
+        if (closeUnpinnedInspectorAfterLayout) {
+            closeUnpinnedInspectorAfterLayout = false;
+            post(() -> {
+                if (!propertiesPinned() && inspector.isOpen()) {
+                    setPrecisionOpen(false);
+                }
+            });
+        }
     }
 
     /**
@@ -1689,7 +1700,8 @@ final class EditorWorkspaceView extends FrameLayout
         // The History docks wherever the Browser stands, and floats back to its
         // capsule wherever it does not.
         placeFeatureHistory(objectsDocked());
-        toolbar.showBrowserToggle(workbench && projectOpen && !sculpting, !browserCollapsed);
+        toolbar.showBrowserToggle(workbench && objectsColumnAffordable && projectOpen
+                && !sculpting, !browserCollapsed);
         post(this::refreshWorkbenchViewControls);
     }
 
@@ -2551,12 +2563,19 @@ final class EditorWorkspaceView extends FrameLayout
     public void onLayoutChosen(WorkspaceLayoutPreference layout) {
         final AppPreferences before = currentPreferences();
         if (AppPreferencesStore.update(getContext(), before.withLayout(layout))) {
+            // A panel the workbench pinned open is not something the user
+            // opened: leaving a layout that pinned it (Workbench -> Phone)
+            // must not leave it standing as a phone's bottom sheet.
+            closeUnpinnedInspectorAfterLayout = propertiesPinned();
             appliedWidthPx = 0;
             appliedHeightPx = 0;
             requestLayout();
         }
         settingsPage.showPreferences(currentPreferences());
     }
+
+    /** Set by a Layout change that left a pinned panel; consumed by the next layout. */
+    private boolean closeUnpinnedInspectorAfterLayout;
 
     /** The preferences in force, read through the one store. */
     AppPreferences currentPreferences() {
@@ -3835,6 +3854,11 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     /** The workbench's view cube, for a test. */
+    /** The workbench's view bar, for a test. */
+    WorkbenchViewBarView viewBar() {
+        return viewBar;
+    }
+
     WorkbenchViewCubeView viewCube() {
         return viewCube;
     }
@@ -4476,7 +4500,7 @@ final class EditorWorkspaceView extends FrameLayout
         final boolean open = !inspector.isOpen();
         // On a workbench the toggle collapses and restores the pinned panel,
         // and the choice holds for the session (TABLET-WORKBENCH-R1).
-        if (workbench) {
+        if (workbench && inspectorPlacement == WorkspaceLayoutMode.InspectorPlacement.SIDE_DOCK) {
             propertiesCollapsed = !open;
         }
         setPrecisionOpen(open);
@@ -4484,7 +4508,7 @@ final class EditorWorkspaceView extends FrameLayout
 
     @Override
     public void onPrecisionCloseRequested() {
-        if (workbench) {
+        if (workbench && inspectorPlacement == WorkspaceLayoutMode.InspectorPlacement.SIDE_DOCK) {
             propertiesCollapsed = true;
         }
         setPrecisionOpen(false);
